@@ -1,0 +1,26 @@
+# Docker Compose local (04 mục 3, 13): postgres, mailpit, source-se, cfo-api, cfo-web. Owner: Dev 2 (luồng B) — M0.
+services:
+  postgres:
+    image: postgres:16
+    environment: {POSTGRES_USER: cfo, POSTGRES_PASSWORD: cfo, POSTGRES_DB: cfo}
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+  mailpit:
+    image: axllent/mailpit
+    ports: ["8025:8025", "1025:1025"]
+  source-se:
+    build: ./source_system
+    environment: {DATABASE_URL: "postgresql+asyncpg://cfo:cfo@postgres:5432/src_se", API_KEY: "dev-key"}
+    ports: ["8100:8100"]
+    depends_on: [postgres]
+  cfo-api:
+    build: ./backend
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: [postgres, source-se, mailpit]
+  cfo-web:
+    build: ./frontend
+    ports: ["5173:5173"]
+    depends_on: [cfo-api]
+volumes:
+  pgdata: {}

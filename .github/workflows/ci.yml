@@ -1,0 +1,32 @@
+# CI (08 mục 8, 09 mục 12): ruff, black, mypy (strict engine), import-linter, pytest + Postgres, build web.
+# Owner: Dev 2 (luồng B) — M0.
+name: ci
+on: [push, pull_request]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: cfo, POSTGRES_PASSWORD: cfo, POSTGRES_DB: cfo}
+        ports: ["5432:5432"]
+    defaults: {run: {working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: black --check .
+      - run: mypy app/engine
+      - run: lint-imports
+      - run: pytest
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: frontend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
+      - run: npm install
+      - run: npm run build

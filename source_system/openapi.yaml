@@ -1,0 +1,5 @@
+# Hợp đồng nguồn dùng chung mọi nước (06 mục 16; US-SRC-02). Sinh/đồng bộ từ source_system/app/api.py.
+# Contract test chạy với instance SE và một instance giả khác. TODO(#M1-source-contract)
+openapi: 3.1.0
+info: {title: CFO Source System (mock), version: 0.1.0}
+paths: {}
