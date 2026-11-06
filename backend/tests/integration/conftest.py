@@ -63,10 +63,14 @@ def empty_db(server_dsn: str) -> Iterator[str]:
 
 
 def alembic_config(dsn: str) -> Config:
-    """Config alembic trỏ vào DB test (không đọc DATABASE_URL của môi trường)."""
+    """Config alembic trỏ vào DB test (không đọc DATABASE_URL của môi trường).
+
+    Alembic lưu option qua ConfigParser có nội suy `%(...)s`, nên `%` trong DSN (mật khẩu URL-encode như
+    `%40`) phải escape thành `%%`; `get_main_option` trả lại đúng DSN gốc.
+    """
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", dsn)
+    cfg.set_main_option("sqlalchemy.url", dsn.replace("%", "%%"))
     return cfg
 
 
