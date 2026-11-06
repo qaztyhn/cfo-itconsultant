@@ -12,6 +12,8 @@ REF_HR = (
     "VALUES (1, 'store', 'ST-1', 'Store 1', 59.4, 18.1)",
     "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, position_code, hire_date) "
     "VALUES (1, 'E1', 'Test', 'One', 'TEST_POS', '2026-01-01')",
+    "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, position_code, hire_date) "
+    "VALUES (1, 'E2', 'Test', 'Two', 'TEST_POS', '2026-01-01')",
     "INSERT INTO ref.app_user (employee_id, email, password_hash, roles) "
     "VALUES (1, 'user1@cfo.test', 'not-a-real-hash', '{dispatcher}')",
     "INSERT INTO ref.customer (market_id, external_ref, type, name) "
@@ -80,4 +82,52 @@ def alert_sql(key: str) -> str:
     return (
         "INSERT INTO ops.alert (market_id, level, type, message, target_roles, dedupe_key) "
         f"VALUES (1, 'warning', 'RISK_ORANGE', 'Test', '{{dispatcher}}', '{key}')"
+    )
+
+
+def run_sql(order_id: int, run_no: int, kind: str = "initial", result: str = "feasible") -> str:
+    return (
+        "INSERT INTO plan.planning_run (order_id, order_version, run_no, kind, input_snapshot, result) "
+        f"VALUES ({order_id}, 1, {run_no}, '{kind}', '{{}}', '{result}')"
+    )
+
+
+def plan_sql(
+    run_id: int, order_id: int, rank: int, status: str = "proposed", manual: str | None = None
+) -> str:
+    mr = f"'{manual}'" if manual else "NULL"
+    return (
+        "INSERT INTO plan.fulfilment_plan (run_id, order_id, rank, status, warehouse_id, vehicle_count, "
+        "total_capacity_kg, total_capacity_m3, target_date, goods_ready_at, loading_start_at, depart_at, "
+        "eta_at, trip_end_at, distance_km, drive_min, prep_hours, capacity_fill, score, score_breakdown, "
+        "planning_reserve_min, route_provenance, workload, checks, explanation, manual_reason_code) VALUES "
+        f"({run_id}, {order_id}, {rank}, '{status}', 1, 1, 8000, 30, '2026-11-10', '2026-11-10T06:00Z', "
+        "'2026-11-10T06:30Z', '2026-11-10T07:00Z', '2026-11-10T09:00Z', '2026-11-10T11:00Z', 42, 120, 1.5, "
+        f"0.5, 0.25, '{{}}', 2880, 'fallback', '[]', '{{}}', 'Test plan', {mr})"
+    )
+
+
+def plan_vehicle_sql(plan_id: int, seq: int, vehicle_id: int, driver_id: int = 1) -> str:
+    return (
+        "INSERT INTO plan.plan_vehicle (plan_id, seq, vehicle_id, driver_employee_id, load_kg, load_m3, "
+        "load_lines, loading_start_at, depart_at, eta_at, trip_end_at) VALUES "
+        f"({plan_id}, {seq}, {vehicle_id}, {driver_id}, 1000, 2, '[]', '2026-11-10T06:30Z', "
+        "'2026-11-10T07:00Z', '2026-11-10T09:00Z', '2026-11-10T11:00Z')"
+    )
+
+
+def vehicle_res_sql(
+    run_id: int,
+    plan_id: int,
+    pv_id: int,
+    order_id: int,
+    vehicle_id: int,
+    driver_id: int,
+    during: str = "[2026-11-10 06:30+00, 2026-11-10 11:00+00)",
+    status: str = "held",
+) -> str:
+    return (
+        "INSERT INTO plan.vehicle_reservation (run_id, plan_id, plan_vehicle_id, order_id, vehicle_id, "
+        "driver_employee_id, during, status) VALUES "
+        f"({run_id}, {plan_id}, {pv_id}, {order_id}, {vehicle_id}, {driver_id}, '{during}', '{status}')"
     )
