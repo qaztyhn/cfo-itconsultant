@@ -1,4 +1,23 @@
 {
   "demoBanner": "DEMO · SYNTHETIC DATA",
-  "noOrders": "No orders match these filters"
+  "noOrders": "No orders match these filters",
+  "signIn": "Sign in",
+  "email": "Email",
+  "password": "Password",
+  "loading": "Loading…",
+  "retry": "Retry",
+  "empty": "Nothing here yet",
+  "approve": "Approve",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "close": "Close",
+  "send": "Send",
+  "discard": "Discard",
+  "edit": "Edit",
+  "rerun": "Rerun plan",
+  "planManually": "Plan manually",
+  "reasonRequired": "A reason is required",
+  "reasonLabel": "Reason",
+  "noteLabel": "Notes (optional)"
 }
