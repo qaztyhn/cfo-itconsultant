@@ -1,8 +1,8 @@
 """Giữ chỗ (05 mục 7; BR-RES-01..04; US-RES-01).
 
-Hold 15 phút cả 3 phương án; hàng/giờ công một lần cho (đơn, kho); xe/tài xế từng phương án (EXCLUDE).
-Trước khi ghi: advisory lock stock:<kho>:<sp>, labour:<kho>:<ngày> theo thứ tự cố định rồi đọc lại phần
-trống. extend ≤ 2 lần (HOLD_EXTENSION_LIMIT); expire_due() cho job hold_expiry; release_order() khi đóng
+Hold 15 phút cả 3 phương án; hàng/giờ công một lần cho (đơn, kho); xe/tài xế từng xe của từng phương án
+(EXCLUDE). v1.2: KHÔNG khóa khi giữ chỗ, cho phép vượt tồn kho/công suất (chỉ ApprovalService chặn khi
+duyệt). extend ≤ 2 lần (HOLD_EXTENSION_LIMIT); expire_due() cho job hold_expiry; release_order() khi đóng
 kế hoạch.
 
 Owner: Dev 1 (A) — M5.

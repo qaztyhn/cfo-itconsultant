@@ -2,7 +2,7 @@
 services:
   postgres:
     image: postgres:16
-    environment: {POSTGRES_USER: cfo, POSTGRES_PASSWORD: cfo, POSTGRES_DB: cfo}
+    environment: {POSTGRES_USER: cfo, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set in .env}", POSTGRES_DB: cfo}
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
   mailpit:
@@ -10,7 +10,7 @@ services:
     ports: ["8025:8025", "1025:1025"]
   source-se:
     build: ./source_system
-    environment: {DATABASE_URL: "postgresql+asyncpg://cfo:cfo@postgres:5432/src_se", API_KEY: "dev-key"}
+    environment: {DATABASE_URL: "${SOURCE_SE_DATABASE_URL:?set in .env}", API_KEY: "${SOURCE_SE_API_KEY:?set in .env}"}
     ports: ["8100:8100"]
     depends_on: [postgres]
   cfo-api:

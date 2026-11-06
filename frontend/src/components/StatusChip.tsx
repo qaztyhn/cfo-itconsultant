@@ -1,5 +1,5 @@
 /**
- * StatusChip — Pill mono theo enum trạng thái đơn (MANUAL_PLANNING, PREPARING… không viết tắt; 03 #35).
+ * StatusChip — Pill mono theo enum trạng thái đơn (PREPARING… không viết tắt; không còn MANUAL_PLANNING; kế hoạch tay là nhãn phụ; 03 #35).
  * Owner: Dev 3 (luồng C).
  */
 export interface StatusChipProps {

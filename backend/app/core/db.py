@@ -3,7 +3,8 @@
 - engine/sessionmaker async; một use case một transaction (09 mục 5).
 - advisory_lock(session, key): pg_advisory_xact_lock(hashtextextended(key, 0)) — dùng cho
   `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>` (05 mục 7, 04 mục 7 quy tắc 8).
-- Thứ tự khóa bắt buộc: kho → sản phẩm → ngày → xe → tài xế (09 mục 5).
+- v1.2: CHỈ khóa khi DUYỆT; lúc lập kế hoạch giữ chỗ không khóa và được phép vượt.
+- Thứ tự khóa bắt buộc: kho → sản phẩm → ngày → mọi xe → mọi tài xế của phương án (09 mục 5).
 
 Owner: Dev 1 (luồng A) — M0, dùng ở M5.
 """

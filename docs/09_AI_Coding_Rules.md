@@ -1,6 +1,8 @@
 # 09 — AI Coding Rules (CFO MVP)
 
-> **Phiên bản 1.1 (06/11/2026):** bất biến 10, 11 sửa; thêm bất biến 21–23 (đóng kế hoạch cũ, POD theo lần giao, không quản lý thiết bị kho); thứ tự khóa mới; bảng tra tên chuẩn cập nhật.
+> **Phiên bản 1.2 (06/11/2026):** bất biến 10 (nhiều xe/đơn, không ghép đơn), 11 (chỉ khóa khi duyệt), 21 (gợi ý lập lại), thêm 24–25 (đơn vị nhỏ nhất, không bí mật trong file nộp); bỏ `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`; `kpi_scopes`.
+>
+> Lịch sử **v1.1:** bất biến 10, 11 sửa; thêm bất biến 21–23 (đóng kế hoạch cũ, POD theo lần giao, không quản lý thiết bị kho); thứ tự khóa mới; bảng tra tên chuẩn cập nhật.
 >
 > Quy tắc bắt buộc cho agent AI (và lập trình viên) khi viết mã cho dự án này. Đọc toàn bộ tài liệu này **trước khi viết dòng mã đầu tiên**, và đọc lại mục 4 (bất biến) trước mỗi lần mở PR. Nếu quy tắc ở đây mâu thuẫn với suy đoán của bạn, **làm theo quy tắc**. Nếu quy tắc mâu thuẫn với tài liệu 01–08, **làm theo tài liệu có thứ tự ưu tiên cao hơn ở mục 2** và ghi lại mâu thuẫn.
 
@@ -47,8 +49,8 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 7. **Giờ công đơn như nhau ở mọi kho.** Không dùng giờ công làm tiêu chí so sánh giữa các kho; định mức là **một bộ chung** do IT quản lý (`efficiency_factor` mặc định 1,0, không có UI).
 8. **Xếp hạng = 0,5 × `n_km` + 0,5 × `n_fill`** (min–max trong các phương án khả thi của cùng đơn, có vùng bỏ qua). **Không quy ra tiền, không dùng "cost/SEK" làm tiêu chí hay hiển thị xếp hạng.** KPI "cost per delivery" là giờ công và km.
 9. **Chỉ IT ánh xạ SKU** sang sản phẩm global và gán nhóm xử lý. Không vai trò nào khác gọi được endpoint `mapping/*` ghi.
-10. **Một kho xử lý trọn đơn; một xe một đơn một chuyến.** Đơn cần nhiều nguồn/nhiều xe/xe ngoài đội → `MANUAL_PLANNING`; dispatcher lập tay với **một** xe qua gate, hoặc ghi nhận xử lý ngoài CFO → `HANDLED_EXTERNALLY`. **Không** viết thuật toán nhiều xe, không bỏ qua gate để "cho qua".
-11. **Giữ chỗ cả 3 phương án; hàng và giờ công chỉ tính một lần cho (đơn, kho).** Hold 15 phút, gia hạn tối đa 2 lần. Xe/tài xế của các phương án **cùng đơn** được trùng, **khác đơn** thì không (ràng buộc EXCLUDE ở DB). Hàng và giờ công **không** có ràng buộc DB: khi tạo giữ chỗ và khi duyệt phải lấy `pg_advisory_xact_lock` theo `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>` rồi kiểm tra lại; tổng `held` còn hạn + `committed` không bao giờ vượt khả dụng.
+10. **Một kho xử lý trọn đơn; một xe chỉ chở một đơn trong một chuyến (không ghép đơn); một đơn được dùng nhiều xe.** Engine chọn bộ xe **ít nhất** cùng kho, cùng ngày, chia hàng theo tải/thể tích, các xe tới chênh ≤ `multi_vehicle.max_arrival_spread_min`; không giới hạn số xe. Thiếu loại xe hoặc kín xe → `NO_FEASIBLE_DATE` (check `truck`). Không có trạng thái `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`. Không bỏ qua gate để "cho qua".
+11. **Giữ chỗ cả 3 phương án; hàng và giờ công chỉ tính một lần cho (đơn, kho).** Hold 15 phút, gia hạn tối đa 2 lần. Xe/tài xế của các phương án **cùng đơn** được trùng, **khác đơn** thì không (ràng buộc EXCLUDE ở DB). Hàng và giờ công **không** có ràng buộc DB: **lúc lập kế hoạch không khóa** (giữ chỗ `held` được phép vượt); **khi duyệt** phải lấy `pg_advisory_xact_lock` theo `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>` rồi kiểm tra lại; tổng `committed` không bao giờ vượt khả dụng.
 12. **Chuyển trạng thái đơn chỉ qua `transition()`** tra `ops.order_transition`; không `UPDATE customer_order SET status` ở nơi khác.
 13. **`audit.decision_log` và `ops.milestone_event` chỉ thêm.** Không UPDATE/DELETE, không "sửa bản ghi cho đúng".
 14. **Mọi quyết định ghi `decision_log`** qua `record_decision()` trong **cùng transaction** với nghiệp vụ; hành động có lý do bắt buộc (`ALT_SELECTED`, `CRITERIA_CHANGED_RERUN`, `MANUAL_PLAN_CREATED`, từ chối ánh xạ, hủy/lập lại, bỏ nháp báo trễ) phải từ chối nếu thiếu lý do.
@@ -58,9 +60,11 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 18. **Công nhân kho không có tài khoản.** Quản lý/trưởng ca ghi mốc và điểm danh thay.
 19. **Một nhân viên chỉ một phân công hiệu lực; mỗi kho/cửa hàng đúng một quản lý chính.**
 20. **Không hard-code số cấu hình** (giờ hữu ích, 90%, hold 15 phút, ngưỡng 33/66, buffer 2 ngày, tốc độ fallback…). Đọc từ `MarketConfig` hoặc bảng cấu hình.
-21. **Đóng kế hoạch cũ trong cùng transaction.** Lập lại (`APPROVED → SUBMITTED`), xếp lại (`FAILED → SUBMITTED`), hủy, chạy lại: kế hoạch cũ → `superseded`, giữ chỗ → `released`, `trip_stop`/`delivery_trip` chưa xong → `cancelled`, xóa `approved_plan_id`/`committed_date`/`promise_*` (giá trị cũ vào `decision_log.before`). Không để hai kế hoạch `approved`/`manual` cùng tồn tại.
+21. **Đóng kế hoạch cũ trong cùng transaction.** Lập lại (`APPROVED → SUBMITTED`), xếp lại (`FAILED → SUBMITTED`), hủy, chạy lại: kế hoạch cũ → `superseded`, giữ chỗ → `released`, `trip_stop`/`delivery_trip` chưa xong → `cancelled`, xóa `approved_plan_id`/`committed_date`/`promise_*` (giá trị cũ vào `decision_log.before`). Không để hai kế hoạch `approved`/`manual` cùng tồn tại. Gợi ý lập lại tự động (`replan_suggestion`): tính coi như kế hoạch hiện tại của chính đơn không tồn tại, **không giữ chỗ**, **không bao giờ tự duyệt**; khi dispatcher duyệt thì đóng kế hoạch cũ và commit kế hoạch mới trong cùng transaction.
 22. **POD theo từng lần giao** (`trip_stop_id`), không theo đơn; không UPDATE POD cũ khi giao lại.
 23. **Không có quản lý thiết bị kho trong MVP.** Không tạo bảng, endpoint, check hay mã `PREP_NO_EQUIPMENT`; năng lực cẩu/ben chỉ là thuộc tính xe.
+24. **Giờ công theo đơn vị cơ sở nhỏ nhất.** `prep_qty = qty_base / base_units_per_prep_unit` (không làm tròn); hàng không chia nhỏ được thì làm tròn lên; `line` = 1.
+25. **Không bí mật trong file.** Không mật khẩu (kể cả mật khẩu demo), khóa API, token hay dữ liệu mật trong mã, README, seed, tài liệu nộp; đọc từ biến môi trường.
 
 ## 5. Quy ước backend (Python)
 
@@ -69,7 +73,7 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - **Tiền và số:** `Decimal` cho tiền, khối lượng, giờ công; không `float` cho tiền. Làm tròn theo hàm tiện ích duy nhất (`core/numbers.py`).
 - **Cấu trúc:** theo `04` mục 4. Router mỏng (validate, quyền, gọi service); service chứa nghiệp vụ và transaction; repository/query nằm trong service hoặc `domain`; engine thuần.
 - **Phụ thuộc:** `api → services → (engine, adapters, providers, domain)`; kiểm bằng import-linter trong CI.
-- **Transaction:** mỗi use case một transaction; ghi `decision_log` trong cùng transaction; khóa theo thứ tự cố định **kho → sản phẩm → ngày công suất → xe → tài xế** (id/ngày tăng dần) để tránh deadlock: hàng và ngày công suất dùng `pg_advisory_xact_lock`, xe/tài xế dùng `SELECT … FOR UPDATE`. Không `FOR UPDATE` trên `ops.stock_snapshot`.
+- **Transaction:** mỗi use case một transaction; ghi `decision_log` trong cùng transaction; khi duyệt, khóa theo thứ tự cố định **kho → sản phẩm → ngày công suất → xe → tài xế** (id/ngày tăng dần) để tránh deadlock: hàng và ngày công suất dùng `pg_advisory_xact_lock`, xe/tài xế dùng `SELECT … FOR UPDATE`. Không `FOR UPDATE` trên `ops.stock_snapshot`.
 - **Idempotency:** `Idempotency-Key` ở các endpoint ghi nêu ở `06` mục 1; lưu `ops.idempotency_key`; cùng key + khác body → `409 IDEMPOTENCY_CONFLICT`.
 - **Lỗi:** dùng lớp lỗi miền (`DomainError(code, message, details)`); middleware chuyển thành định dạng chuẩn `06` mục 1.1 kèm `correlation_id`. Không để lộ stack trace ra client.
 - **Phân trang, lọc, sắp xếp:** theo `06` mục 1; mặc định `page_size = 50`.
@@ -134,9 +138,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - **Mọi AC trong `02` có ít nhất một test**; đặt tên `test_US_<EPIC>_<NN>_AC<k>_<mô_tả>`.
 - **Engine:** unit test thuần (không DB); ca biên theo `08` mục 6.2.
 - **Integration:** DB PostgreSQL thật (Docker service); không mock DB cho ràng buộc, trigger, EXCLUDE.
-- **E2E:** 16 kịch bản ở `08` mục 6.3 bằng Playwright trên Docker Compose.
+- **E2E:** 18 kịch bản ở `08` mục 6.3 bằng Playwright trên Docker Compose.
 - **Quyền:** mỗi hàng ma trận `06` mục 3 có test cho đường cho phép và bị cấm.
-- **Đồng thời:** test hai giao dịch duyệt cùng lúc tranh một xe, tranh cùng SKU ở cùng kho, tranh cùng ngày công suất: mỗi trường hợp đúng một thành công.
+- **Đồng thời:** test lập kế hoạch đồng thời cho phép giữ chỗ vượt; test hai giao dịch duyệt cùng lúc tranh một xe, tranh cùng SKU ở cùng kho, tranh cùng ngày công suất: mỗi trường hợp đúng một thành công.
 - **Vòng đời:** test lập lại sau duyệt rồi duyệt lại; FAILED → xếp lại → giao lại có hai POD; thông báo `CONFIRMED` mới sau lập lại.
 - **Ổn định:** test không phụ thuộc giờ thật (dùng `clock`/`APP_NOW`) hay thứ tự chạy; seed cố định.
 - Không xóa/skip test để CI xanh; test hỏng do yêu cầu đổi thì sửa test **và** tài liệu.
@@ -194,7 +198,8 @@ Không làm: <các mục ở 13 liên quan>
 - [ ] Quyền (vai trò **và** phạm vi) được kiểm ở máy chủ; có test đường bị cấm.
 - [ ] Mọi quyết định ghi `decision_log` đúng mã hành động, kèm lý do khi bắt buộc.
 - [ ] Không PII trong log; không GPS ở nơi không được phép.
-- [ ] Lập lại/hủy/xếp lại đóng kế hoạch cũ; giữ chỗ hàng và giờ công có khóa (bất biến 11, 21).
+- [ ] Lập lại/hủy/xếp lại/duyệt gợi ý đóng kế hoạch cũ; khóa hàng và giờ công khi duyệt (bất biến 11, 21).
+- [ ] Không mật khẩu, khóa API hay thông tin mật trong file commit/nộp (bất biến 25).
 - [ ] Không hard-code số cấu hình; không mã riêng nước; giờ lấy qua `clock`.
 - [ ] Engine vẫn là hàm thuần (không import hạ tầng).
 - [ ] UI khớp `03` (kể cả mục 7); có trạng thái rỗng/tải/lỗi; truy cập được.
@@ -203,10 +208,10 @@ Không làm: <các mục ở 13 liên quan>
 
 ## 17. Bảng tra nhanh tên chuẩn
 
-**Vai trò (`ref.user_role`):** `admin` (IT) · `dispatcher` · `warehouse` · `sales` · `driver` · `customer_service` · `viewer` (Business owner có `app_user.can_view_revenue = true`; Project lead `false`).
-**Trạng thái đơn:** `SUBMITTED`, `BLOCKED_UNMAPPED_SKU`, `PLANNED`, `NO_FEASIBLE_DATE`, `MANUAL_PLANNING`, `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `CANCELLED`, `HANDLED_EXTERNALLY` (cuối; xử lý ngoài CFO).
+**Vai trò (`ref.user_role`):** `admin` (IT) · `dispatcher` · `warehouse` · `sales` · `driver` · `customer_service` · `viewer` (Business owner `kpi_scopes = {revenue_all}`; Project lead `{ops}`; không thêm vai trò mới). **KPI scopes:** `revenue_all`, `ops`.
+**Trạng thái đơn:** `SUBMITTED`, `BLOCKED_UNMAPPED_SKU`, `PLANNED`, `NO_FEASIBLE_DATE`, `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `CANCELLED`.
 **Dạng ngày:** `exact`, `range`, `latest`.
-**Sự kiện:** `START_PREP`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `SHORTAGE`, `BREAKAGE`, `VEHICLE_ISSUE`, `SHIFT_CHANGE`.
+**Sự kiện:** `START_PREP`, `PREP_PAUSED`, `PREP_RESUMED`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `SHORTAGE`, `BREAKAGE`, `VEHICLE_ISSUE`, `SHIFT_CHANGE`.
 **Rủi ro:** `ON_TRACK`, `AT_RISK`, `PREDICTED_LATE`, `OVERDUE`; màu `green`, `yellow`, `orange`, `red`.
 **Giữ chỗ:** `held`, `committed`, `released`, `expired`, `consumed`; kế hoạch: `proposed`, `expired`, `approved`, `superseded`, `rejected`, `manual`.
 **Thông báo:** mẫu `CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `DELAY`; trạng thái `draft`, `queued`, `sent`, `failed`, `suppressed`; kênh `email`, `sms_sim`.
@@ -216,5 +221,6 @@ Không làm: <các mục ở 13 liên quan>
 **Mã lý do xếp hạng:** `LOWEST_SCORE_OF_3`, `LOWEST_SCORE_OF_2`, `ONLY_FEASIBLE`.
 **Mã hành động nhật ký:** xem `04` mục 10.
 **Cấu hình:** `MarketConfig` ở `04` mục 8 (cộng `routing.allow_fallback` ở `06` Phụ lục A).
-**Doanh thu:** Σ `line_total` của đơn DELIVERED trong kỳ, theo kho/cửa hàng, mỗi market một tiền tệ; không phải lợi nhuận.
+**Doanh thu:** recognised = Σ `total_amount` đơn DELIVERED theo ngày giao (múi giờ market); booked = đơn APPROVED…DISPATCHED theo `committed_date`; hai góc nhìn store/warehouse không cộng với nhau; chỉ tiền hàng.
+**Lần chạy kế hoạch:** `kind` = `initial` | `rerun` | `replan_suggestion` (không giữ chỗ). Alert `REPLAN_SUGGESTED`; hành động nhật ký `REPLAN_SUGGESTED`, `REPLAN_KEPT`, `REVENUE_EXPORTED`.
 **Công thức cốt lõi:** giờ công dòng = `(fixed_hours + prep_qty × labour_hours_per_unit) × min(Π cờ, 2.0)`; công suất ngày = `Σ ca (người có mặt × giờ hữu ích) × 0.90 − đã đặt`; điểm = `0.5·n_km + 0.5·n_fill`; tiêu hao = `(forecast_eta − planned_eta) / max(30', promise_end − planned_eta)`; xanh < 33%, vàng 33–66%, cam > 66%, đỏ khi slack âm 2 lần liên tiếp; dự trữ lập kế hoạch an toàn ≥ 2 ngày.

@@ -1,8 +1,9 @@
 """Chuyển trạng thái đơn — điểm DUY NHẤT được đổi customer_order.status (09 bất biến 12).
 
 transition(session, order, to_status, actor, reason) tra ops.order_transition; DB trigger
-trg_check_transition là lớp bảo vệ thứ hai. Khi rời APPROVED/FAILED/PLANNED về SUBMITTED hoặc
-sang CANCELLED, gọi close_active_plan() trong cùng transaction (09 bất biến 21, 05 mục 6).
+trg_check_transition là lớp bảo vệ thứ hai. Khi rời APPROVED/FAILED/PLANNED về SUBMITTED, sang
+CANCELLED, hoặc khi duyệt phương án gợi ý lập lại (… → APPROVED), gọi close_active_plan() trong
+cùng transaction (09 bất biến 21, 05 mục 6). v1.2: không còn MANUAL_PLANNING/HANDLED_EXTERNALLY.
 
 Owner: Dev 1 (luồng A) — M0 (bảng), M5 (đóng kế hoạch).
 """
@@ -14,16 +15,13 @@ ALLOWED: dict[tuple[S, S], tuple[bool, tuple[str, ...]]] = {
     (S.SUBMITTED, S.PLANNED): (False, ("system",)),
     (S.SUBMITTED, S.BLOCKED_UNMAPPED_SKU): (False, ("system",)),
     (S.SUBMITTED, S.NO_FEASIBLE_DATE): (False, ("system",)),
-    (S.SUBMITTED, S.MANUAL_PLANNING): (False, ("system",)),
     (S.BLOCKED_UNMAPPED_SKU, S.SUBMITTED): (False, ("system",)),
-    (S.MANUAL_PLANNING, S.HANDLED_EXTERNALLY): (True, ("dispatcher",)),
     (S.PLANNED, S.APPROVED): (False, ("dispatcher",)),
+    (S.NO_FEASIBLE_DATE, S.APPROVED): (True, ("dispatcher",)),  # kế hoạch tay
     (S.PLANNED, S.SUBMITTED): (True, ("dispatcher",)),
     (S.NO_FEASIBLE_DATE, S.SUBMITTED): (True, ("dispatcher",)),
     (S.NO_FEASIBLE_DATE, S.CANCELLED): (True, ("dispatcher",)),
-    (S.MANUAL_PLANNING, S.CANCELLED): (True, ("dispatcher",)),
     (S.PLANNED, S.CANCELLED): (True, ("dispatcher",)),
-    (S.MANUAL_PLANNING, S.APPROVED): (True, ("dispatcher",)),
     (S.APPROVED, S.PREPARING): (False, ("warehouse",)),
     (S.APPROVED, S.SUBMITTED): (True, ("dispatcher",)),
     (S.PREPARING, S.GOODS_READY): (False, ("warehouse",)),
@@ -32,6 +30,11 @@ ALLOWED: dict[tuple[S, S], tuple[bool, tuple[str, ...]]] = {
     (S.DISPATCHED, S.DELIVERED): (False, ("driver",)),
     (S.DISPATCHED, S.FAILED): (True, ("driver",)),
     (S.FAILED, S.SUBMITTED): (True, ("dispatcher",)),
+    # v1.2: duyệt phương án gợi ý lập lại (đóng kế hoạch cũ, commit kế hoạch mới)
+    (S.FAILED, S.APPROVED): (True, ("dispatcher",)),
+    (S.PREPARING, S.APPROVED): (True, ("dispatcher",)),
+    (S.GOODS_READY, S.APPROVED): (True, ("dispatcher",)),
+    (S.LOADED, S.APPROVED): (True, ("dispatcher",)),
     (S.APPROVED, S.CANCELLED): (True, ("dispatcher",)),
     (S.PREPARING, S.CANCELLED): (True, ("dispatcher",)),
     (S.GOODS_READY, S.CANCELLED): (True, ("dispatcher",)),
@@ -48,6 +51,10 @@ CLOSES_ACTIVE_PLAN: frozenset[tuple[S, S]] = frozenset(
         (S.GOODS_READY, S.CANCELLED),
         (S.LOADED, S.CANCELLED),
         (S.PLANNED, S.CANCELLED),
+        (S.FAILED, S.APPROVED),
+        (S.PREPARING, S.APPROVED),
+        (S.GOODS_READY, S.APPROVED),
+        (S.LOADED, S.APPROVED),
     }
 )
 

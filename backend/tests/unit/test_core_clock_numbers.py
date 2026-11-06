@@ -34,6 +34,20 @@ def test_market_config_defaults_match_doc_04() -> None:
     assert cfg.rank.w_km == 0.5 and cfg.risk.yellow_pct == 33 and cfg.routing.allow_fallback
 
 
-def test_US_APR_04_manual_planning_can_go_external() -> None:
-    assert is_allowed(S.MANUAL_PLANNING, S.HANDLED_EXTERNALLY)
-    assert not is_allowed(S.PLANNED, S.HANDLED_EXTERNALLY)
+def test_market_config_multi_vehicle_spread_default() -> None:
+    assert MarketConfig().multi_vehicle.max_arrival_spread_min == 30
+
+
+def test_v12_order_status_has_no_manual_or_external() -> None:
+    names = {s.value for s in S}
+    assert "MANUAL_PLANNING" not in names and "HANDLED_EXTERNALLY" not in names
+
+
+def test_US_APR_04_suggested_replan_can_be_approved_from_failed_or_prep() -> None:
+    for src in (S.FAILED, S.PREPARING, S.GOODS_READY, S.LOADED):
+        assert is_allowed(src, S.APPROVED)
+    assert not is_allowed(S.DISPATCHED, S.APPROVED)
+
+
+def test_US_APR_02_manual_plan_from_no_feasible_date() -> None:
+    assert is_allowed(S.NO_FEASIBLE_DATE, S.APPROVED)

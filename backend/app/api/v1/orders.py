@@ -54,13 +54,6 @@ async def cancel_order(order_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.post("/orders/{order_id}/external-handoff")
-async def external_handoff(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/external-handoff — dispatcher; MANUAL_PLANNING → HANDLED_EXTERNALLY (06 mục
-    6.6)."""
-    raise NotImplementedError
-
-
 @router.get("/orders/{order_id}/notifications")
 async def order_notifications(order_id: int) -> dict[str, object]:
     """GET /orders/{order_id}/notifications — dispatcher, CS."""

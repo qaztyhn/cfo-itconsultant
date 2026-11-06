@@ -3,7 +3,9 @@
 > Tài liệu giao cho agent code. DDL dưới đây là **nguồn sự thật** của mô hình dữ liệu: agent sinh migration Alembic từ đây, không tự đổi tên bảng/cột/enum. Mọi con số cấu hình nằm trong `ref.market.config` (xem tài liệu 04).
 > Nhãn: **[C]** đã chốt trong trao đổi, **[S]** slide, **[T]** bản thiết kế, **[A]** giả định chỉnh được.
 >
-> **Phiên bản 1.1 (06/11/2026).** Thay đổi so với 1.0: (1) bỏ quản lý thiết bị kho khỏi MVP (bảng `equipment_type`, `location_equipment`, `equipment_adjustment`, các cột thiết bị ở `handling_group` và `warehouse_staff`); năng lực đặc biệt (cẩu, ben) vẫn là thuộc tính của **xe**; (2) POD và `improvement_log` gắn với **từng lần giao** (`trip_stop_id`) thay vì `order_id`; (3) thêm trạng thái đơn `HANDLED_EXTERNALLY` cho đơn cần nhiều xe/xe ngoài đội; (4) quy tắc đóng kế hoạch cũ khi lập lại/hủy/giao thất bại; (5) quy tắc khóa chống giữ chỗ vượt tồn kho và công suất; (6) `alert.dedupe_key` chỉ duy nhất khi cảnh báo đang mở; `notification.dedupe_key` gồm cả kế hoạch; (7) cờ `app_user.can_view_revenue` và định nghĩa doanh thu.
+> Lịch sử: **v1.1** — Thay đổi so với 1.0: (1) bỏ quản lý thiết bị kho khỏi MVP (bảng `equipment_type`, `location_equipment`, `equipment_adjustment`, các cột thiết bị ở `handling_group` và `warehouse_staff`); năng lực đặc biệt (cẩu, ben) vẫn là thuộc tính của **xe**; (2) POD và `improvement_log` gắn với **từng lần giao** (`trip_stop_id`) thay vì `order_id`; (3) thêm trạng thái đơn `HANDLED_EXTERNALLY` cho đơn cần nhiều xe/xe ngoài đội; (4) quy tắc đóng kế hoạch cũ khi lập lại/hủy/giao thất bại; (5) quy tắc khóa chống giữ chỗ vượt tồn kho và công suất; (6) `alert.dedupe_key` chỉ duy nhất khi cảnh báo đang mở; `notification.dedupe_key` gồm cả kế hoạch; (7) cờ `app_user.can_view_revenue` và định nghĩa doanh thu.
+>
+> **Phiên bản 1.2 (06/11/2026).** (1) Một đơn có thể đi **nhiều xe** cùng kho, cùng ngày, đến gần như cùng lúc: bảng mới `plan.plan_vehicle`, `fulfilment_plan` bỏ `vehicle_id`/`driver_employee_id`, mỗi xe một `delivery_trip`; (2) bỏ trạng thái `MANUAL_PLANNING` và `HANDLED_EXTERNALLY`, bỏ `needs_manual`/`manual_reason`/`external_handoff`; (3) `planning_run.kind` gồm `replan_suggestion` (hệ thống tự gợi ý phương án mới, không giữ chỗ); (4) giữ chỗ lúc lập kế hoạch **không khóa**, chỉ khóa và chặn khi duyệt; (5) sự kiện `PREP_PAUSED`/`PREP_RESUMED`, giờ nhân công thực tế theo từng đoạn; (6) doanh thu: bỏ `can_view_revenue`, thêm `kpi_scopes`, hai view doanh thu; (7) giờ công tính theo đơn vị cơ sở nhỏ nhất.
 
 ## 1. Tổng quan
 
@@ -50,11 +52,11 @@ CREATE TYPE hr.manager_level    AS ENUM ('primary','deputy');
 -- ops
 CREATE TYPE ops.date_mode AS ENUM ('exact','range','latest');
 CREATE TYPE ops.order_status AS ENUM (
-  'SUBMITTED','BLOCKED_UNMAPPED_SKU','PLANNED','NO_FEASIBLE_DATE','MANUAL_PLANNING',
-  'APPROVED','PREPARING','GOODS_READY','LOADED','DISPATCHED','DELIVERED','FAILED','CANCELLED',
-  'HANDLED_EXTERNALLY');      -- v1.1: đơn cần nhiều xe/xe ngoài đội, dispatcher ghi nhận xử lý ngoài CFO (trạng thái cuối)
+  'SUBMITTED','BLOCKED_UNMAPPED_SKU','PLANNED','NO_FEASIBLE_DATE',
+  'APPROVED','PREPARING','GOODS_READY','LOADED','DISPATCHED','DELIVERED','FAILED','CANCELLED');
+  -- v1.2: không còn MANUAL_PLANNING (đơn nhiều xe tự lập kế hoạch) và HANDLED_EXTERNALLY
 CREATE TYPE ops.event_type AS ENUM (
-  'START_PREP','GOODS_READY','LOADED','DISPATCHED','DELIVERED','FAILED',
+  'START_PREP','PREP_PAUSED','PREP_RESUMED','GOODS_READY','LOADED','DISPATCHED','DELIVERED','FAILED',
   'SHORTAGE','BREAKAGE','VEHICLE_ISSUE','SHIFT_CHANGE');
 CREATE TYPE ops.risk_status AS ENUM ('ON_TRACK','AT_RISK','PREDICTED_LATE','OVERDUE');
 CREATE TYPE ops.risk_color  AS ENUM ('green','yellow','orange','red');
@@ -220,7 +222,8 @@ CREATE TABLE ref.app_user (
   employee_id bigint UNIQUE,                    -- FK thêm sau; NULL = tài khoản hệ thống
   email text NOT NULL UNIQUE, password_hash text NOT NULL,
   roles ref.user_role[] NOT NULL,
-  can_view_revenue boolean NOT NULL DEFAULT false,  -- v1.1: Business owner (viewer) = true; Project lead (viewer) = false
+  kpi_scopes text[] NOT NULL DEFAULT '{}'
+    CHECK (kpi_scopes <@ ARRAY['revenue_all','ops']),  -- v1.2: revenue_all (Business owner), ops (KPI vận hành); sao chép từ position.default_kpi_scopes khi tạo
   is_active boolean NOT NULL DEFAULT true, last_login_at timestamptz
 );
 
@@ -235,13 +238,14 @@ CREATE TABLE ref.compliance_record (            -- DPIA, tham vấn nhân viên,
 
 ## 4. Schema `hr` — nhân sự **[C]**
 
-Một bảng `employee` + **5 bảng con**: `warehouse_staff`, `sales_staff`, `dispatcher_staff`, `driver_staff`, `cs_staff`. Admin chỉ là quyền (`app_user.roles`), giao cho nhân viên IT. Business owner và Project Lead là nhân viên không có bảng con, chỉ có quyền `viewer`; hai người phân biệt bằng cờ `ref.app_user.can_view_revenue` (Business owner `true`, Project Lead `false`). Công nhân kho không có tài khoản. Mỗi người **chỉ có một phân công đang hiệu lực** (một nơi tại một thời điểm).
+Một bảng `employee` + **5 bảng con**: `warehouse_staff`, `sales_staff`, `dispatcher_staff`, `driver_staff`, `cs_staff`. Admin chỉ là quyền (`app_user.roles`), giao cho nhân viên IT. Business owner và Project Lead là nhân viên không có bảng con, chỉ có quyền `viewer`; hai người phân biệt bằng `ref.app_user.kpi_scopes` (Business owner `{revenue_all}`, Project Lead `{ops}`). Không thêm vai trò mới. Công nhân kho không có tài khoản. Mỗi người **chỉ có một phân công đang hiệu lực** (một nơi tại một thời điểm).
 
 ```sql
 CREATE TABLE hr.position (
   code text PRIMARY KEY, name text NOT NULL,
   grp text NOT NULL CHECK (grp IN ('warehouse','store','transport','central')),
-  default_roles ref.user_role[] NOT NULL DEFAULT '{}'
+  default_roles ref.user_role[] NOT NULL DEFAULT '{}',
+  default_kpi_scopes text[] NOT NULL DEFAULT '{}'      -- v1.2: BUSINESS_OWNER {revenue_all}; PROJECT_LEAD, DISPATCHER, WAREHOUSE_MANAGER, WAREHOUSE_DEPUTY {ops}
 );
 -- Seed: WAREHOUSE_MANAGER, WAREHOUSE_DEPUTY, WAREHOUSE_SUPERVISOR, WAREHOUSE_OPERATOR, FORKLIFT_OPERATOR,
 --       DRIVER, DISPATCHER, STORE_MANAGER, SALES_RETAIL, SALES_TRADE, CUSTOMER_SERVICE,
@@ -433,9 +437,7 @@ CREATE TABLE ops.customer_order (
   block_reason text,
   committed_date date, promise_start timestamptz, promise_end timestamptz,   -- ngày cam kết ≠ ngày yêu cầu [T]
   approved_plan_id bigint,                       -- FK thêm sau
-  needs_manual boolean NOT NULL DEFAULT false, manual_reason text,   -- NEEDS_MULTI_VEHICLE | NO_CAPABLE_VEHICLE
-  external_handoff jsonb,                        -- v1.1: khi HANDLED_EXTERNALLY: {reason_code, partner, expected_date, note, recorded_by, recorded_at}
-  currency char(3) NOT NULL, total_amount numeric(14,2) NOT NULL DEFAULT 0,
+  currency char(3) NOT NULL, total_amount numeric(14,2) NOT NULL DEFAULT 0,   -- total_amount = Σ line_total (đơn giá chụp lúc đặt × số lượng); không đổi sau khi giao
   submitted_at timestamptz NOT NULL, planned_at timestamptz, approved_at timestamptz,
   delivered_at timestamptz, closed_at timestamptz,
   UNIQUE (market_id, external_ref),
@@ -470,8 +472,9 @@ CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khác
   note text, remind_at timestamptz                 -- 'unreachable' => nhắc lại sau 24 giờ
 );
 
-CREATE TABLE ops.delivery_trip (                 -- MVP: một chuyến = một điểm dừng; ghép đơn thêm điểm dừng sau
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE ops.delivery_trip (                 -- MVP: một chuyến = một xe = một điểm dừng (không ghép đơn);
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,   -- v1.2: đơn nhiều xe có nhiều chuyến, mỗi xe một chuyến
+  plan_vehicle_id bigint,                        -- FK tới plan.plan_vehicle (thêm sau)
   warehouse_id bigint NOT NULL REFERENCES ref.location(id),
   vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id),
   driver_employee_id bigint NOT NULL REFERENCES hr.employee(id),
@@ -484,20 +487,25 @@ CREATE TABLE ops.trip_stop (
   seq smallint NOT NULL DEFAULT 1, order_id bigint NOT NULL REFERENCES ops.customer_order(id),
   eta_planned_at timestamptz NOT NULL, arrived_at timestamptz, completed_at timestamptz,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered','failed','cancelled')),
-  UNIQUE (trip_id, seq)
+  UNIQUE (trip_id, seq), UNIQUE (trip_id, order_id)
 );
-CREATE UNIQUE INDEX ux_stop_active_order ON ops.trip_stop (order_id) WHERE status = 'pending';
+-- v1.2: bỏ ux_stop_active_order (một đơn nhiều xe có nhiều trip_stop pending cùng lúc).
+-- Trạng thái đơn tổng hợp từ các chuyến: LOADED khi MỌI xe đã lên hàng; DISPATCHED khi xe ĐẦU TIÊN xuất phát;
+-- DELIVERED khi MỌI trip_stop delivered; FAILED khi mọi chuyến đã kết thúc và có ít nhất một stop failed
+-- (ghi phần đã giao vào payload; dispatcher xếp lại phần còn thiếu).
 
 CREATE TABLE ops.milestone_event (               -- bất biến; nhân viên chỉ nhập sự thật, không có bước duyệt [S]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
-  plan_id bigint, event_type ops.event_type NOT NULL,
+  plan_id bigint, trip_id bigint REFERENCES ops.delivery_trip(id),   -- v1.2: LOADED/DISPATCHED/DELIVERED/FAILED theo từng xe
+  event_type ops.event_type NOT NULL,
   occurred_at timestamptz NOT NULL,              -- giờ thật ở hiện trường (có thể sớm hơn received_at khi offline)
   received_at timestamptz NOT NULL DEFAULT now(),
   actor_user_id bigint NOT NULL REFERENCES ref.app_user(id),
   actor_employee_id bigint REFERENCES hr.employee(id),      -- bản chụp lúc ghi
   payload jsonb NOT NULL DEFAULT '{}',           -- shortage/breakage: sku, qty, note; vehicle_issue: note;
-                                                 -- START_PREP: {crew_size?} (tùy chọn, dữ liệu để học định mức sau này)
+                                                 -- START_PREP, PREP_RESUMED: {crew_size} (bắt buộc, số người làm đoạn này)
+                                                 -- PREP_PAUSED: {note?}; GOODS_READY: {crew_size?} (sửa nếu đổi giữa chừng)
   idempotency_key text NOT NULL UNIQUE
 );
 CREATE TABLE ops.proof_of_delivery (           -- v1.1: MỘT bản ghi cho MỖI LẦN GIAO (trip_stop), không phải mỗi đơn
@@ -529,7 +537,8 @@ CREATE TABLE ops.alert (
   order_id bigint REFERENCES ops.customer_order(id), market_id smallint NOT NULL REFERENCES ref.market(id),
   level text NOT NULL CHECK (level IN ('info','warning','critical')),
   type text NOT NULL,                            -- RISK_ORANGE, PREDICTED_LATE, OVERDUE, GPS_LOST, STALE_DATA, EXCEPTION,
-                                                 -- MAPPING_BLOCK, SYNC_FAILED, ORDER_CHANGED_AFTER_APPROVAL, HOLD_EXPIRING
+                                                 -- MAPPING_BLOCK, SYNC_FAILED, ORDER_CHANGED_AFTER_APPROVAL, HOLD_EXPIRING,
+                                                 -- PLAN_INVALIDATED, REPLAN_SUGGESTED (v1.2: details.run_id của phương án gợi ý)
   message text NOT NULL, target_roles ref.user_role[] NOT NULL,
   dedupe_key text NOT NULL,                      -- v1.1: chỉ duy nhất khi cảnh báo còn mở (xem chỉ mục dưới)
   acknowledged_by bigint REFERENCES hr.employee(id), acknowledged_at timestamptz, resolved_at timestamptz
@@ -578,15 +587,15 @@ CREATE TABLE ops.idempotency_key (
 | Từ | Đến | Cần lý do | Vai trò |
 |---|---|---|---|
 | (tạo mới) | SUBMITTED | | system |
-| SUBMITTED | PLANNED / BLOCKED_UNMAPPED_SKU / NO_FEASIBLE_DATE / MANUAL_PLANNING | | system |
+| SUBMITTED | PLANNED / BLOCKED_UNMAPPED_SKU / NO_FEASIBLE_DATE | | system |
 | BLOCKED_UNMAPPED_SKU | SUBMITTED | | system (khi ánh xạ xong) |
-| MANUAL_PLANNING | HANDLED_EXTERNALLY | có (mã lý do + thông tin bàn giao) | dispatcher (v1.1) |
-| PLANNED | APPROVED | | dispatcher |
+| PLANNED | APPROVED | kế hoạch tay hoặc chọn khác: có | dispatcher |
+| NO_FEASIBLE_DATE | APPROVED | có (kế hoạch tay) | dispatcher (v1.2) |
 | PLANNED | SUBMITTED (chạy lại) | có | dispatcher |
 | NO_FEASIBLE_DATE | SUBMITTED | có (cần bản ghi `agreed`) | dispatcher |
-| NO_FEASIBLE_DATE, MANUAL_PLANNING, PLANNED | CANCELLED | có | dispatcher |
-| MANUAL_PLANNING | APPROVED | có (lý do kế hoạch tay) | dispatcher |
+| NO_FEASIBLE_DATE, PLANNED | CANCELLED | có | dispatcher |
 | APPROVED | PREPARING / SUBMITTED (lập lại) | lập lại: có | warehouse / dispatcher |
+| PREPARING, GOODS_READY, LOADED, FAILED | APPROVED (duyệt phương án gợi ý lập lại) | có | dispatcher (v1.2) |
 | PREPARING | GOODS_READY | | warehouse |
 | GOODS_READY | LOADED | | warehouse |
 | LOADED | DISPATCHED | | driver |
@@ -596,13 +605,15 @@ CREATE TABLE ops.idempotency_key (
 
 Trigger `ops.trg_check_transition` (BEFORE UPDATE OF status ON `ops.customer_order`) từ chối chuyển không có trong bảng.
 
-**Đóng kế hoạch cũ (v1.1, bắt buộc, cùng một transaction với việc đổi trạng thái đơn).** Áp dụng cho `APPROVED → SUBMITTED` (lập lại), `FAILED → SUBMITTED` (xếp lại), `APPROVED/PREPARING/GOODS_READY/LOADED → CANCELLED` và `PLANNED → SUBMITTED` (chạy lại):
+**Đóng kế hoạch cũ (bắt buộc, cùng một transaction với việc đổi trạng thái đơn).** Áp dụng cho `APPROVED → SUBMITTED` (lập lại), `FAILED → SUBMITTED` (xếp lại), `APPROVED/PREPARING/GOODS_READY/LOADED → CANCELLED`, `PLANNED → SUBMITTED` (chạy lại) và **khi duyệt phương án gợi ý lập lại** (v1.2, đơn đang `APPROVED`…`LOADED` hoặc `FAILED`; đơn về `APPROVED` với kế hoạch mới):
 1. Kế hoạch đang `approved`/`manual` của đơn → `superseded` (kế hoạch tay vẫn nhận ra nhờ `manual_reason_code`); kế hoạch `proposed` → `superseded`.
 2. Mọi giữ chỗ `held`/`committed` của đơn (`stock_reservation`, `prep_reservation`, `vehicle_reservation`) → `released`. Riêng sau `FAILED`, giữ chỗ hàng đã `consumed` khi xuất kho thì giữ nguyên `consumed`.
-3. `trip_stop` còn `pending` → `cancelled`; `delivery_trip` chưa `completed` → `cancelled`.
+3. Mọi `trip_stop` còn `pending` → `cancelled`; mọi `delivery_trip` chưa `completed` → `cancelled` (đơn nhiều xe có nhiều chuyến).
 4. `customer_order.approved_plan_id`, `committed_date`, `promise_start`, `promise_end` → `NULL` (giá trị cũ nằm trong `decision_log.before`).
 5. Ghi `decision_log` (`ORDER_REPLAN` / `ORDER_CANCELLED` / `CRITERIA_CHANGED_RERUN`) kèm `before/after`.
 Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt kế hoạch mới. Lần duyệt mới tạo thông báo `CONFIRMED` mới (dedupe theo `plan_id`), nên khách nhận ngày mới qua luồng thông báo thường.
+
+**Gợi ý lập lại tự động (v1.2).** Khi một đơn đã duyệt gặp một trong bốn tín hiệu — (a) nguồn sửa đơn sau khi duyệt, (b) tồn kho đổi làm kế hoạch không còn hợp lệ, (c) `VEHICLE_ISSUE`, (d) giao `FAILED` — hệ thống tạo `planning_run(kind='replan_suggestion', trigger=…)`. Engine chạy **coi như kế hoạch hiện tại của chính đơn này không tồn tại** (giữ chỗ hàng, giờ công, xe, tài xế của nó được cộng lại vào phần khả dụng) để không tính sai nhân công, công suất, tồn kho. Lần chạy này **không tạo giữ chỗ** (tránh trùng chỉ mục với giữ chỗ `committed` của chính đơn). Hệ thống tạo alert `REPLAN_SUGGESTED` cho dispatcher. Dispatcher: **duyệt** (đóng kế hoạch cũ theo 5 bước trên rồi khóa, kiểm tra lại và commit kế hoạch mới trong cùng transaction; `409 RESOURCE_CONFLICT` nếu tài nguyên đã bị chiếm), **giữ kế hoạch cũ** (lý do), hoặc lập lại thủ công. Không bao giờ tự duyệt. Đơn đã `DISPATCHED` chỉ nhận alert.
 
 ## 7. Schema `plan` — kế hoạch và giữ chỗ
 
@@ -611,9 +622,11 @@ CREATE TABLE plan.planning_run (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id), order_version int NOT NULL,
   run_no int NOT NULL, triggered_by bigint REFERENCES ref.app_user(id),
+  kind text NOT NULL DEFAULT 'initial' CHECK (kind IN ('initial','rerun','replan_suggestion')),   -- v1.2
+  trigger text CHECK (trigger IN ('source_change','plan_invalidated','vehicle_issue','delivery_failed')),
   params jsonb NOT NULL DEFAULT '{}',            -- trọng số, kho/xe bị loại, ngày đích dispatcher chọn
   input_snapshot jsonb NOT NULL,                 -- ảnh chụp đầu vào để tái lập quyết định
-  result text NOT NULL CHECK (result IN ('feasible','infeasible','manual')),
+  result text NOT NULL CHECK (result IN ('feasible','infeasible')),   -- v1.2: không còn 'manual'
   failed_check text CHECK (failed_check IN ('stock','preparation','truck','site_date','safety')),
   earliest_feasible_date date,
   planning_reserve_min int, reserve_class text CHECK (reserve_class IN ('safe','tight','infeasible')),
@@ -624,11 +637,14 @@ CREATE TABLE plan.fulfilment_plan (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   run_id bigint NOT NULL REFERENCES plan.planning_run(id), order_id bigint NOT NULL REFERENCES ops.customer_order(id),
   rank smallint NOT NULL, status plan.plan_status NOT NULL DEFAULT 'proposed',
-  warehouse_id bigint NOT NULL REFERENCES ref.location(id), vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id),
-  driver_employee_id bigint REFERENCES hr.employee(id),
+  warehouse_id bigint NOT NULL REFERENCES ref.location(id),
+  vehicle_count smallint NOT NULL CHECK (vehicle_count >= 1),          -- v1.2: số xe; chi tiết ở plan.plan_vehicle
+  total_capacity_kg numeric(10,2) NOT NULL, total_capacity_m3 numeric(8,2) NOT NULL,   -- dùng cho hòa điểm "xe nhỏ hơn"
   target_date date NOT NULL,
-  goods_ready_at timestamptz NOT NULL, loading_start_at timestamptz NOT NULL,
-  depart_at timestamptz NOT NULL, eta_at timestamptz NOT NULL, trip_end_at timestamptz NOT NULL,
+  goods_ready_at timestamptz NOT NULL, loading_start_at timestamptz NOT NULL,   -- loading_start = xe đầu tiên
+  depart_at timestamptz NOT NULL,                -- xe đầu tiên xuất phát
+  eta_at timestamptz NOT NULL,                   -- xe CUỐI CÙNG tới (ETA của đơn)
+  trip_end_at timestamptz NOT NULL,
   distance_km numeric(8,2) NOT NULL, drive_min int NOT NULL,
   prep_hours numeric(8,3) NOT NULL, capacity_fill numeric(5,4) NOT NULL,   -- 0..1 mức đầy công suất kho [C]
   score numeric(6,4) NOT NULL,                  -- 0,5·km + 0,5·mức đầy (min–max), thấp hơn là tốt hơn [C]
@@ -645,6 +661,18 @@ CREATE TABLE plan.fulfilment_plan (
   UNIQUE (run_id, rank)
 );
 CREATE UNIQUE INDEX ux_one_approved_plan ON plan.fulfilment_plan (order_id) WHERE status IN ('approved','manual');
+
+CREATE TABLE plan.plan_vehicle (                 -- v1.2: các xe của một phương án (ít xe nhất có thể), cùng kho, cùng ngày
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  plan_id bigint NOT NULL REFERENCES plan.fulfilment_plan(id), seq smallint NOT NULL,
+  vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id), driver_employee_id bigint NOT NULL REFERENCES hr.employee(id),
+  load_kg numeric(10,2) NOT NULL, load_m3 numeric(8,3) NOT NULL,
+  load_lines jsonb NOT NULL,                     -- [{line_no, qty_base}] — một dòng được tách qua nhiều xe theo tải/thể tích
+  loading_start_at timestamptz NOT NULL, depart_at timestamptz NOT NULL,
+  eta_at timestamptz NOT NULL, trip_end_at timestamptz NOT NULL,
+  UNIQUE (plan_id, seq), UNIQUE (plan_id, vehicle_id)
+);
+ALTER TABLE ops.delivery_trip ADD CONSTRAINT fk_trip_plan_vehicle FOREIGN KEY (plan_vehicle_id) REFERENCES plan.plan_vehicle(id);
 ALTER TABLE ops.customer_order ADD CONSTRAINT fk_order_plan FOREIGN KEY (approved_plan_id) REFERENCES plan.fulfilment_plan(id);
 
 -- Giữ chỗ "như vé xe": held (đang được chọn, hết hạn) / committed (đã chọn) / chưa ai chọn (không có dòng) [C]
@@ -665,9 +693,10 @@ CREATE TABLE plan.prep_reservation (             -- giờ công theo ngày, mộ
 );
 CREATE UNIQUE INDEX ux_prep_res ON plan.prep_reservation (order_id, warehouse_id, work_date, resource)
   WHERE status IN ('held','committed');
-CREATE TABLE plan.vehicle_reservation (          -- mỗi phương án giữ xe + tài xế; hai ĐƠN khác nhau không được trùng
+CREATE TABLE plan.vehicle_reservation (          -- mỗi XE của mỗi phương án giữ xe + tài xế; hai ĐƠN khác nhau không được trùng
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   run_id bigint NOT NULL REFERENCES plan.planning_run(id), plan_id bigint NOT NULL REFERENCES plan.fulfilment_plan(id),
+  plan_vehicle_id bigint NOT NULL REFERENCES plan.plan_vehicle(id),
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
   vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id), driver_employee_id bigint NOT NULL REFERENCES hr.employee(id),
   during tstzrange NOT NULL, status plan.res_status NOT NULL DEFAULT 'held',
@@ -687,11 +716,11 @@ CREATE TABLE plan.route_matrix (                 -- tính trước; engine chỉ
 
 **Quy tắc giữ chỗ:** (1) khi engine đề xuất kế hoạch, tạo `planning_run` với `hold_expires_at = now + 15 phút` và giữ chỗ cả 3 phương án; hàng và giờ công chỉ tính một lần cho mỗi (đơn, kho); (2) gia hạn tối đa 2 lần (+15 phút mỗi lần); (3) job `hold_expiry` chuyển `held` → `expired`, kế hoạch `proposed` → `expired`; (4) khi duyệt: transaction khóa tài nguyên liên quan (bên dưới), kiểm tra lại tồn kho, công suất, xe, tài xế, rồi chuyển phương án được chọn sang `committed` và các giữ chỗ khác sang `released`; (5) tồn kho khả dụng khi tính ATP **trừ cả `held` còn hiệu lực lẫn `committed`** của đơn khác.
 
-**Chống vượt tồn kho và công suất khi nhiều dispatcher thao tác đồng thời (v1.1).** Xe và tài xế đã được ràng buộc EXCLUDE bảo vệ ở DB. Hàng và giờ công **không** có ràng buộc DB (chỉ mục `ux_stock_res`, `ux_prep_res` chỉ chặn trùng trong cùng một đơn), nên service phải tự tuần tự hóa:
+**Chống vượt tồn kho và công suất khi nhiều dispatcher thao tác đồng thời (v1.2).** Xe và tài xế đã được ràng buộc EXCLUDE bảo vệ ở DB. Hàng và giờ công **không** có ràng buộc DB (chỉ mục `ux_stock_res`, `ux_prep_res` chỉ chặn trùng trong cùng một đơn). **Quyết định nhóm:** lúc lập kế hoạch **cho phép** giữ chỗ `held` vượt tồn kho/công suất (không khóa, để lập kế hoạch nhanh); **chỉ chặn khi duyệt**:
 1. **Khóa logic** bằng `pg_advisory_xact_lock(hashtextextended(key, 0))` với key `stock:<warehouse_id>:<global_product_id>` cho từng sản phẩm và `labour:<warehouse_id>:<work_date>` cho từng ngày chuẩn bị. Không dùng `SELECT … FOR UPDATE` trên `ops.stock_snapshot` vì job đồng bộ ghi đè bảng này mỗi 5 phút.
 2. **Thứ tự khóa cố định** để tránh deadlock: kho (id tăng) → sản phẩm (id tăng) → ngày công suất (tăng) → xe → tài xế. Xe/tài xế khóa bằng `SELECT … FOR UPDATE` trên `ref.vehicle` / `hr.driver_staff`.
-3. **Áp dụng ở cả hai thời điểm:** khi tạo giữ chỗ `held` (PlanningService) và khi duyệt (ApprovalService). Sau khi lấy khóa, đọc lại `on_hand − wms_reserved − Σ(held còn hạn + committed của đơn khác)` và tổng giờ đã đặt của ngày; nếu không đủ thì: lúc lập kế hoạch → loại kho (`STOCK_SHORT` / `PREP_NO_CAPACITY`); lúc duyệt → `409 RESOURCE_CONFLICT`, rollback.
-4. Hệ quả có chủ đích: giữ chỗ `held` của đơn B còn hạn làm đơn A thấy ít hàng hơn (giống "vé đang giữ"); hết hạn thì tự trả lại.
+3. **Chỉ áp dụng khi duyệt** (ApprovalService). Sau khi lấy khóa, đọc lại `on_hand − wms_reserved − Σ committed của đơn khác` và tổng giờ `committed` của ngày (giữ chỗ `held` của đơn khác **không** chặn việc duyệt); nếu không đủ → `409 RESOURCE_CONFLICT`, rollback. Lúc lập kế hoạch, engine vẫn trừ `held` còn hạn + `committed` của đơn khác khi tính ATP/công suất (để gợi ý thực tế), nhưng không khóa và không từ chối ghi giữ chỗ.
+4. Hệ quả có chủ đích: hai đơn có thể cùng giữ một lượng hàng; đơn duyệt trước thắng, đơn sau nhận `409` và nút Re-run plan.
 
 ## 8. Schema `audit` — nhật ký và KPI
 
@@ -711,7 +740,10 @@ CREATE TABLE audit.improvement_log (            -- kế hoạch so với thực 
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,           -- v1.1: một dòng cho mỗi lần giao đã đóng
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
   trip_stop_id bigint UNIQUE REFERENCES ops.trip_stop(id),
-  crew_size smallint,                                            -- từ START_PREP (nếu có), để suy ra giờ công thực tế
+  actual_labour_hours numeric(8,3),              -- v1.2: Σ crew_size × độ dài từng đoạn làm việc (START_PREP/PREP_RESUMED → PREP_PAUSED/GOODS_READY)
+  labour_segments jsonb,                         -- [{start, end, crew_size}]
+  group_hours_per_unit jsonb,                    -- {"N3": {"units": 20, "unit": "bag", "hours": 0.081, "hours_per_unit": 0.00405}, …}
+                                                 -- giờ thực tế chia cho từng nhóm theo tỷ lệ giờ kế hoạch, rồi chia số đơn vị cơ sở → dữ liệu train AI
   warehouse_id bigint NOT NULL, handling_groups text[] NOT NULL,
   prep_planned_min int, prep_actual_min int, prep_error_min int,
   eta_first timestamptz, eta_last timestamptz, delivered_at timestamptz, eta_error_min int,
@@ -730,7 +762,7 @@ CREATE TABLE audit.kpi_baseline (               -- baseline thủ công trước
 | Chỉ số | Định nghĩa |
 |---|---|
 | `planning_time_min` | Trung bình `approved_at − submitted_at` của đơn đã duyệt; so với `kpi_baseline.planning_time` |
-| `on_time_rate` | Đơn DELIVERED có `delivered_at ≤ promise_end` và cùng `committed_date` / tổng đơn DELIVERED. **FAILED tính riêng**, không vào mẫu số; `HANDLED_EXTERNALLY` không tính |
+| `on_time_rate` | Đơn DELIVERED có `delivered_at ≤ promise_end` và cùng `committed_date` / tổng đơn DELIVERED. **FAILED tính riêng**, không vào mẫu số |
 | `labour_hours_per_delivery`, `km_per_delivery` | Trung bình `prep_hours` và `distance_km` của kế hoạch đã duyệt (thay "cost per delivery", không quy ra tiền) [C] |
 | `prep_error_min` | Trung bình trị tuyệt đối `prep_actual − prep_planned` (phút làm việc) |
 | `eta_error_min` | Trung bình trị tuyệt đối `delivered_at − eta_first` |
@@ -738,11 +770,46 @@ CREATE TABLE audit.kpi_baseline (               -- baseline thủ công trước
 | `failed_delivery_rate` | FAILED / (DELIVERED + FAILED) [C] |
 | `capacity_utilisation` | Giờ công đã giữ `committed` / giờ công khả dụng theo ngày, theo kho [C] |
 | `manual_plan_count` | Số kế hoạch tay (dữ liệu học cho AI sau này) [C] |
-| `external_handoff_count` | Số đơn `HANDLED_EXTERNALLY` (chẩn đoán, v1.1) |
 
-**Doanh thu và số đơn (v1.1, không thuộc 8 KPI vận hành):** `revenue = Σ order_line.line_total` (= số lượng × đơn giá) của các đơn **DELIVERED** trong kỳ (theo `delivered_at`, ngày theo múi giờ market), nhóm theo kho xuất (`fulfilment_plan.warehouse_id` của kế hoạch đã duyệt) hoặc cửa hàng nhận đơn (`origin_store_id`); không tính đơn `CANCELLED`, `FAILED` chưa giao lại, `HANDLED_EXTERNALLY`. Mỗi market dùng tiền tệ của mình, **không cộng giữa các nước** (không có tỷ giá). Giả định [A]: chi phí giao hàng, lương, ưu đãi khác nhau giữa các nước và nhóm chưa có số liệu, nên doanh thu chỉ là tổng giá trị đơn, không phải lợi nhuận. "Cost per delivery" của slide **không** phải doanh thu: nó được thay bằng `labour_hours_per_delivery` và `km_per_delivery`.
+**Quyền xem KPI vận hành:** `admin` và người có `'ops'` trong `kpi_scopes` (dispatcher, quản lý/phó kho, Project Lead). Business owner (`revenue_all`) **không** xem KPI vận hành. CS không xem KPI.
 
-**Quyền xem KPI [C]:** doanh thu và số đơn của một kho/cửa hàng: owner của nơi đó, `admin`, Business owner của nước (`viewer` có `can_view_revenue = true`). KPI vận hành: thêm `dispatcher`, quản lý kho, Project Lead. CS không xem KPI.
+**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc 8 KPI vận hành).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
+
+| Chỉ số | Định nghĩa |
+|---|---|
+| Doanh thu ghi nhận (`recognised`) | Σ `total_amount` của đơn **DELIVERED**, tính vào ngày giao thực tế (`delivered_at`) theo `ref.market.timezone` |
+| Đã duyệt chưa giao (`booked`) | Σ `total_amount` của đơn `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED`, theo `committed_date` |
+| Số đơn đã giao | Số đơn DELIVERED trong kỳ |
+| Giá trị đơn trung bình | recognised ÷ số đơn đã giao, làm tròn 2 chữ số |
+| Tỷ trọng | Doanh thu một nơi ÷ tổng cùng góc nhìn cùng kỳ, làm tròn 1 chữ số; chỉ Business owner và admin thấy |
+
+Quy tắc: `FAILED`, `CANCELLED`, `SUBMITTED`, `PLANNED`, `NO_FEASIBLE_DATE`, `BLOCKED_UNMAPPED_SKU` không tính; đơn giao thất bại rồi giao lại chỉ tính một lần vào ngày giao thành công; mỗi market một tiền tệ, không gộp; ngày luôn theo múi giờ market, không theo UTC. **Hai góc nhìn không được cộng với nhau:** theo cửa hàng (`origin_store_id`; đơn không có cửa hàng → "Unassigned store") và theo kho (`fulfilment_plan.warehouse_id` của `approved_plan_id`); mỗi truy vấn chỉ GROUP BY một chiều; tổng hai góc nhìn trong cùng kỳ phải bằng nhau (test nhất quán).
+
+```sql
+CREATE VIEW audit.v_revenue_daily AS      -- doanh thu ghi nhận
+SELECT m.id AS market_id, (o.delivered_at AT TIME ZONE m.timezone)::date AS day,
+       o.origin_store_id AS store_id, p.warehouse_id, o.currency,
+       count(*) AS orders_delivered, sum(o.total_amount) AS revenue_recognised
+FROM ops.customer_order o
+JOIN ref.market m ON m.id = o.market_id
+JOIN plan.fulfilment_plan p ON p.id = o.approved_plan_id
+WHERE o.status = 'DELIVERED'
+GROUP BY m.id, m.timezone, (o.delivered_at AT TIME ZONE m.timezone)::date,
+         o.origin_store_id, p.warehouse_id, o.currency;
+
+CREATE VIEW audit.v_revenue_pending AS    -- đã duyệt, chưa giao
+SELECT o.market_id, o.committed_date AS day, o.origin_store_id AS store_id,
+       p.warehouse_id, o.currency,
+       count(*) AS orders_pending, sum(o.total_amount) AS revenue_booked
+FROM ops.customer_order o JOIN plan.fulfilment_plan p ON p.id = o.approved_plan_id
+WHERE o.status IN ('APPROVED','PREPARING','GOODS_READY','LOADED','DISPATCHED')
+GROUP BY o.market_id, o.committed_date, o.origin_store_id, p.warehouse_id, o.currency;
+
+CREATE INDEX ix_order_status_delivered ON ops.customer_order (status, delivered_at);
+CREATE INDEX ix_order_store_status ON ops.customer_order (origin_store_id, status);
+```
+
+**Quyền xem doanh thu (kiểm ở máy chủ, `resolve_revenue_scope(user)`):** `all = true` nếu là `admin` hoặc có `revenue_all` (Business owner: mọi cửa hàng và kho của nước, cả hai góc nhìn); nếu không, danh sách `location_id` có `location.owner_employee_id = user.employee_id` và `is_active` (owner cửa hàng → chỉ góc nhìn store; owner kho → chỉ góc nhìn warehouse). Rỗng và không `all` → `403`. Dispatcher, CS, sales không phải owner, tài xế, Project Lead: không xem. Xuất CSV ghi `decision_log` `REVENUE_EXPORTED`.
 
 ## 9. Trigger, hàm, chỉ mục
 
@@ -791,7 +858,7 @@ Seed dữ liệu mẫu (script `seed/generate_data.py`, cố định random seed
 
 **Định mức mẫu cho `ref.handling_group` (ví dụ minh họa, IT thay bằng số thật) [T][A]:**
 
-Định mức do **IT nhập cứng** trong MVP (quy tắc cứng, chưa có số liệu kho thật); sau pilot, dữ liệu `improvement_log` (thời gian thực tế, `crew_size`, cơ cấu đơn) là cơ sở để AI hiệu chỉnh ở giai đoạn 2. Tên hiển thị tiếng Anh (`name`) dùng ở UI dạng "N3 · Bagged cement & mortar".
+Định mức do **IT nhập cứng** trong MVP (quy tắc cứng, chưa có số liệu kho thật); sau pilot, dữ liệu `improvement_log.group_hours_per_unit` (**giờ nhân công thực tế trên một đơn vị cơ sở** của từng nhóm, không phụ thuộc số người) là cơ sở để AI hiệu chỉnh ở giai đoạn 2. Tên hiển thị tiếng Anh (`name`) dùng ở UI dạng "N3 · Bagged cement & mortar".
 
 | Mã | `name` (UI) | Mô tả | Đơn vị chuẩn bị | Giờ cố định/dòng | Giờ công/đơn vị | ≈ phút/đơn vị | Người tối thiểu | Yêu cầu xe |
 |---|---|---|---|---|---|---|---|---|
@@ -806,6 +873,6 @@ Hệ số cờ mẫu: FRAGILE 1,25 · SPECIAL_STORAGE 1,15 · HAZARDOUS 1,30 · 
 
 Quy tắc và hạn chế đã biết [A]:
 - **N6 không gắn cờ FRAGILE** (độ khó đã nằm trong định mức N6; gắn thêm sẽ nhân hai lần). `POST /mapping/tasks/{id}/confirm` và `PATCH /products/global/{id}` từ chối `422 VALIDATION_ERROR`.
-- **Pallet lẻ bị tính thiếu:** `prep_qty = qty_base / base_units_per_prep_unit` là số thập phân (20 bao xi măng = 0,5 pallet ≈ 4,5 phút), trong khi bốc tay pallet lẻ chậm hơn. Chấp nhận trong MVP; hiệu chỉnh khi có dữ liệu.
+- **Tính theo đơn vị nhỏ nhất (v1.2):** định mức ghi theo đơn vị chuẩn bị (pallet, bó…) nhưng hệ thống quy về **đơn vị cơ sở** để dễ scale: `giờ/đơn vị cơ sở = labour_hours_per_unit / base_units_per_prep_unit` (N3: 0,15 / 40 bao = 0,00375 giờ/bao; 20 bao = 0,075 giờ). Hàng **không chia nhỏ được** (không có `base_units_per_prep_unit`: một kiện cửa, một bó bán nguyên bó) thì số đơn vị **làm tròn lên** số nguyên; `line` luôn là 1. Ghi vào báo cáo như một quyết định của nhóm.
 - Định mức đã bao gồm thời gian dùng thiết bị (xe nâng, máy xúc…) vì MVP không quản lý thiết bị kho.
 - Paint & chemicals trong ảnh thiết kế không là nhóm riêng: sơn lon thuộc N1 kèm cờ `HAZARDOUS` hoặc `SPECIAL_STORAGE` khi cần; "Tiles & heavy" gộp vào N2.

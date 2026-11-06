@@ -1,4 +1,5 @@
-"""Ghi improvement_log cho mỗi lần giao đã đóng (theo trip_stop, kèm crew_size).
+"""Ghi improvement_log cho mỗi lần giao đã đóng (theo trip_stop): actual_labour_hours, labour_segments,
+group_hours_per_unit (engine.actuals).
 
 Owner: Dev 1 (A) — M8.
 """

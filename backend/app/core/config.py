@@ -20,13 +20,13 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://cfo:cfo@localhost:5432/cfo"
-    jwt_secret: str = "change-me"
+    database_url: str = ""  # bắt buộc qua env; không ghi bí mật vào mã (09 bất biến 25)
+    jwt_secret: str = ""
     jwt_ttl_hours: int = 8
     ors_api_key: str | None = None
     source_se_base_url: str = "http://localhost:8100/api/v1"
-    source_se_api_key: str = "dev-key"
-    internal_tick_key: str = "dev-tick"
+    source_se_api_key: str = ""
+    internal_tick_key: str = ""
     app_env: str = "local"
     app_now: str | None = None  # ví dụ "2026-11-04T10:05:00+01:00" (08 mục 1.6)
     cors_origins: list[str] = ["http://localhost:5173"]
@@ -83,6 +83,10 @@ class SyncCfg(BaseModel):
     overlap_min: int = 2
 
 
+class MultiVehicleCfg(BaseModel):
+    max_arrival_spread_min: int = 30  # v1.2: các xe của một đơn tới chênh nhau tối đa
+
+
 class RoutingCfg(BaseModel):
     allow_fallback: bool = True
 
@@ -109,6 +113,7 @@ class MarketConfig(BaseModel):
     after_loaded_min: int = 10
     driver_max_hours_day: float = 9
     receiving_lead_days: int = 1
+    multi_vehicle: MultiVehicleCfg = MultiVehicleCfg()
     transfer_lead_days_default: int = 1
     rank: RankCfg = RankCfg()
     risk: RiskCfg = RiskCfg()

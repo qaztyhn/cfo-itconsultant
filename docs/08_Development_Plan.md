@@ -1,6 +1,8 @@
 # 08 — Development Plan (CFO MVP)
 
-> **Phiên bản 1.1 (06/11/2026):** bỏ thiết bị kho (seed, API, màn, E2E #5 cũ); E2E #5 mới là tranh chấp tồn kho đồng thời; E2E #6 dùng lối xử lý ngoài CFO; E2E #12 kiểm hai POD; thời gian không cố định (lịch 7 ngày chỉ tham khảo).
+> **Phiên bản 1.2 (06/11/2026):** E2E #5 thành "lập kế hoạch cho vượt, duyệt chặn"; E2E #6 thành **đơn nhiều xe**; E2E #12 dùng gợi ý lập lại; thêm E2E #17 (doanh thu) và #18 (tạm dừng chuẩn bị); seed 000144 thành ca thiếu loại xe; không ghi mật khẩu vào file; tài khoản Business owner/Project lead theo `kpi_scopes`.
+>
+> Lịch sử **v1.1:** bỏ thiết bị kho (seed, API, màn, E2E #5 cũ); E2E #5 mới là tranh chấp tồn kho đồng thời; E2E #6 dùng lối xử lý ngoài CFO; E2E #12 kiểm hai POD; thời gian không cố định (lịch 7 ngày chỉ tham khảo).
 >
 > Kế hoạch xây MVP đầy đủ phạm vi đã chốt (`01_PRD.md`), xếp theo **thứ tự phụ thuộc**, phân công cho nhóm 2–3 người, kèm dữ liệu seed, kịch bản kiểm thử E2E, tiêu chí hoàn thành và triển khai. Mục tiêu thời gian của nhóm: **không cố định, làm đến khi xong, càng nhanh càng tốt**; lịch 7 ngày ở mục 9 chỉ là tham chiếu thứ tự (slide proposal ghi 6 tuần cho dự án thật). Tài liệu tham chiếu: `04` (kiến trúc, engine), `05` (DDL), `06` (API), `03` (UI), `02` (story và AC), `07` (luồng), `09` (quy tắc cho AI coding).
 
@@ -58,8 +60,8 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 - **Xong khi:** các AC của US-PLN-01..08 và US-ATP-01 pass; một đơn seed ra đúng 3 phương án với score, checks, giải thích; đơn thiếu hàng ra `NO_FEASIBLE_DATE` kèm ngày sớm nhất; unit test engine ≥ 90% dòng. *Story:* US-PLN-01..08, US-ATP-01.
 
 ### M5 — Giữ chỗ, duyệt, chuyển kho (phụ thuộc M4)
-- **A:** `ReservationService` (hold 15 phút, gia hạn ≤ 2, `hold_expiry`, advisory lock theo (kho, sản phẩm) và (kho, ngày) khi tạo giữ chỗ), `ApprovalService` (transaction, khóa theo `04` mục 7 quy tắc 8, kiểm tra lại, trip/stop, `eta_forecast` v1, thông báo `CONFIRMED`), kế hoạch tay, **xử lý ngoài CFO** (`external-handoff`), lập lại/hủy **đóng kế hoạch cũ** (`superseded`, `released`, trip/stop `cancelled`), thương lượng ngày; `Idempotency-Key`; chuyển kho (`stock_transfer` và API).
-- **C:** nút Approve, `DecisionBar`, modal lý do, bộ đếm hold, Extend, tick "accept tight", kế hoạch tay, form "Handled outside CFO"; **Transfers** (5.A4); danh sách Plan review, Exceptions.
+- **A:** `ReservationService` (hold 15 phút, gia hạn ≤ 2, `hold_expiry`, **không khóa khi tạo giữ chỗ**), `ApprovalService` (transaction, khóa theo `04` mục 7 quy tắc 8 chỉ khi duyệt, kiểm tra lại, mỗi xe một trip/stop, `eta_forecast` v1, thông báo `CONFIRMED`), kế hoạch tay nhiều xe, **gợi ý lập lại tự động** (`replan_suggestion`, `keep-current`), lập lại/hủy **đóng kế hoạch cũ** (`superseded`, `released`, trip/stop `cancelled`), thương lượng ngày; `Idempotency-Key`; chuyển kho (`stock_transfer` và API).
+- **C:** nút Approve, `DecisionBar`, modal lý do, bộ đếm hold, Extend, tick "accept tight", kế hoạch tay nhiều xe, `VehicleList`, banner gợi ý lập lại; **Transfers** (5.A4); danh sách Plan review, Exceptions.
 - **B:** thử tải đồng thời (hai dispatcher tranh xe, tranh cùng SKU, tranh cùng ngày công suất), seed cho kịch bản 5, 6, 9, 14.
 - **Xong khi:** AC của US-RES-01, US-APR-01..04, US-ATP-02/03, US-PLN-07, US-ORD-05 pass; test đồng thời đúng một bên thắng (xe, SKU, ngày công suất); EXCLUDE chặn đơn khác nhưng cho phép cùng đơn; lập lại sau duyệt rồi duyệt lại không bị `ux_one_approved_plan` chặn.
 
@@ -76,7 +78,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 - **Xong khi:** AC US-RSK-01..03, US-NOT-01..03 pass; kịch bản trễ giữa chừng chạy đủ (cam → đỏ → bản nháp → dispatcher gửi); không tính lại ETA khi không có tín hiệu.
 
 ### M8 — KPI, nhật ký, quản trị, CS (phụ thuộc M6, M7)
-- **A:** `audit.v_kpi_daily` (múi giờ market), `kpi_service`, `/kpi/*` (gồm `/kpi/revenue` với `can_view_revenue`), `improvement_log` nightly, `/audit/decisions`.
+- **A:** `audit.v_kpi_daily` (múi giờ market), `kpi_service`, `/kpi/*` (chỉ `admin`/`ops`), **`/revenue/*`** (`resolve_revenue_scope`, hai view `audit.v_revenue_daily`/`v_revenue_pending`, xuất CSV `REVENUE_EXPORTED`), `improvement_log` nightly, `/audit/decisions`.
 - **B:** baseline và chuỗi dữ liệu 48 đơn đã đóng cho "demo week" (khớp thiết kế KPI), `retention` ẩn danh.
 - **C:** **KPIs & decision log** (5.7), **Handling groups & norms** (A8), **Market config & GPS** (A12), **CS Order lookup** (A14), **My store orders** (A15).
 - **Xong khi:** AC US-KPI-01/02, US-LOG-01, US-ADM-01..03, US-CS-01/02 pass; quyền xem KPI đúng ma trận.
@@ -97,7 +99,8 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 | ATP & transfer | ATP theo thời gian, gợi ý và vòng đời chuyển kho | US-ATP-01..03 |
 | Capacity & HR | Điểm danh, ca, phân công, quản lý | US-WH-01/02, US-EMP-01..04 |
 | Engine | Workload, schedule, delivery, gate, scoring, explain | US-PLN-01..08 |
-| Reservation & approval | Hold, extend, approve, manual, external handoff, replan, khóa đồng thời | US-RES-01, US-APR-01..04, US-ORD-05 |
+| Reservation & approval | Hold, extend, approve, manual nhiều xe, gợi ý lập lại, replan, khóa khi duyệt | US-RES-01, US-APR-01..04, US-ORD-05 |
+| Revenue | Năm endpoint, hai view, phạm vi, CSV, màn A16 | US-REV-01 |
 | Execution | Sự kiện, POD, driver, prep queue | US-WH-04/05, US-EXE-01..04 |
 | GPS | Nhận vị trí, bản đồ, mất tín hiệu, xóa | US-GPS-01..03 |
 | Risk | Forecast, trạng thái, alert | US-RSK-01..03 |
@@ -125,7 +128,7 @@ SKU thiết kế dùng làm mẫu: SE-BRD-GYP-13 (Gypsum board 13 × 900 × 2500
 8–10 xe, mã dạng `<KHO>-<tải>-<số>`: Van 3,5 t (1.200–3.500 kg tùy xe, 10 m³; ví dụ GBG-03-02 chở 3.500 kg), Truck 12 t (6.000 kg, 40 m³; GBG-12-03, STO-12-04, MLM-12-02), Truck 18 t (GBG-18-01, MLM-18-01), Truck 26 t (GBG-26-01), Crane truck (STO-CR-01, 8.000 kg, năng lực `crane`), Tipper (MLM, `dump`, N4). Bằng lái yêu cầu B/C/CE theo xe. **10 tài xế** (tài khoản `driver1…`), hạng bằng đa dạng; **một tài xế có bằng hết hạn** để test `LICENCE_EXPIRED`.
 
 ### 5.4 Nhân sự (~150)
-Mỗi kho: 1 quản lý (`wm.got@cfo.demo` cho Göteborg), 1 phó, 1–2 trưởng ca, 10–12 công nhân. 10 tài xế. 3 dispatcher (`dispatcher@cfo.demo`). 2 CS (`cs@cfo.demo`). 1 IT (`admin@cfo.demo`). 1 Business owner (`owner@cfo.demo`, `viewer`, `can_view_revenue = true`). 1 Project lead (`lead@cfo.demo`, `viewer`, `can_view_revenue = false`). Mỗi cửa hàng: 1 quản lý + 3 sales (`sales@cfo.demo` là một sales). Công nhân kho **không có `app_user`**. Mật khẩu demo ghi trong `README` (chỉ môi trường demo).
+Mỗi kho: 1 quản lý (`wm.got@cfo.demo` cho Göteborg), 1 phó, 1–2 trưởng ca, 10–12 công nhân. 10 tài xế. 3 dispatcher (`dispatcher@cfo.demo`). 2 CS (`cs@cfo.demo`). 1 IT (`admin@cfo.demo`). 1 Business owner (`owner@cfo.demo`, `viewer`, `kpi_scopes = {revenue_all}`). 1 Project lead (`projectlead@cfo.demo`, `viewer`, `kpi_scopes = {ops}`). Dispatcher và quản lý/phó kho có `{ops}`. Mỗi cửa hàng: 1 quản lý + 3 sales (`sales@cfo.demo` là một sales). Công nhân kho **không có `app_user`**. **Không ghi mật khẩu vào bất kỳ file nào** (README, seed, tài liệu nộp): seed đọc mật khẩu demo từ biến môi trường `SEED_DEMO_PASSWORD`; nhóm chia sẻ mật khẩu riêng cho ban giám khảo.
 
 ### 5.5 Khách và địa chỉ
 ~40 khách (≈ 30 doanh nghiệp: Nordbygg Entreprenad AB, Uppsala Takservice AB, Mälardalens Golv AB, Öresund Fastighetsservice AB, Skånska Kakel & Klinker AB, Hallands Snickeri AB, Göta Renovering AB, Nordic Ställning AB, Bygg & Montage Väst AB…; ≈ 10 cá nhân), mỗi khách 1–3 địa chỉ có toạ độ, giờ nhận hàng mặc định (T2–T6 07:00–16:00 hoặc khác).
@@ -140,26 +143,27 @@ Mỗi kho: 1 quản lý (`wm.got@cfo.demo` cho Göteborg), 1 phó, 1–2 trưở
 | SE-2026-000138 | Mälardalens Golv AB, Västerås | Cửa sổ 13:00–16:00; chậm lên hàng 25 phút, slack 34 phút | `LOADED`, At risk |
 | SE-2026-000129 | Khách cá nhân, Malmö | Cửa sổ 12:00–18:00; ETA 13:10–13:40 | `DISPATCHED` |
 | SE-2026-000131 | Öresund Fastighetsservice AB, Helsingborg | Thu 5 Nov 07:00–11:00; MLM | `APPROVED` |
-| SE-2026-000144 | Nordic Ställning AB, Södertälje | Fri 6 Nov 06:30–10:00; cần xe cẩu, tổng tải (~11 t giàn giáo) vượt tải xe cẩu duy nhất của STO, nên không xe nào vừa có cẩu vừa đủ tải (`NO_CAPABLE_VEHICLE`); dùng cho kịch bản xử lý ngoài CFO (hãng đối tác có cẩu, khớp nhật ký trong ảnh thiết kế) | `MANUAL_PLANNING` |
+| SE-2026-000144 | Nordic Ställning AB, Södertälje | Fri 6 Nov 06:30–10:00; cần xe cẩu cho cả đơn (~11 t giàn giáo) nhưng xe cẩu duy nhất STO-CR-01 chỉ chở 8 t; không đủ năng lực cẩu ở mọi kho → check `truck` (`NO_TRUCK_FIT`, `detail.reason = capability`); dispatcher lập tay hoặc thương lượng | `NO_FEASIBLE_DATE` |
+| SE-2026-000160 | Göta Renovering AB, Borås | ~20 t (40 pallet xi măng + gạch) vượt một xe; GBG xếp **2 xe** (18 t + 12 t) tới cùng lúc | `PLANNED` (2 xe) |
 | SE-2026-000152 | Hallands Snickeri AB, Varberg | Chỉ có ngày Wed 11 Nov | `SUBMITTED` (000152) |
 | SE-2026-000118 | Göta Renovering AB, Borås | Đã giao 09:12 | `DELIVERED` |
 | SE-2026-000146/149/150/153/155 | Göteborg DC | Hàng đợi chuẩn bị theo thiết kế: 126 / 210 / 45 / 96 / 70 phút; 000155 chuẩn bị xong sau giờ cắt nên lên hàng Thu 06:00 | `APPROVED`/`PREPARING`/`GOODS_READY` |
 | SE-2026-000156 | — | Chứa SKU "Fogbruk grå 5 kg" chưa ánh xạ | `BLOCKED_UNMAPPED_SKU` |
 
-Ngoài ra: ~48 đơn đã đóng trong tuần 3–9/11 cho dashboard KPI (92% đúng hạn, tỷ lệ chấp nhận 81%, sai số chuẩn bị 11 phút, sai số ETA 14 phút, 2 kế hoạch tay, 7 phương án khác được chọn; có `crew_size` ở START_PREP; một đơn FAILED rồi giao lại để có hai POD) và một vài thông báo mẫu cho Notification inbox (CONFIRMED, DISPATCHED, DELIVERED, một bản nháp DELAY, một thông báo suppressed).
+Ngoài ra: ~48 đơn đã đóng trong tuần 3–9/11 cho dashboard KPI (92% đúng hạn, tỷ lệ chấp nhận 81%, sai số chuẩn bị 11 phút, sai số ETA 14 phút, 2 kế hoạch tay, 7 phương án khác được chọn; có đoạn chuẩn bị với `crew_size`, một vài lần tạm dừng; một đơn FAILED rồi giao lại để có hai POD; trải đều cửa hàng và kho cho màn doanh thu; một đơn không có cửa hàng nhận đơn để kiểm "Unassigned store") và một vài thông báo mẫu cho Notification inbox (CONFIRMED, DISPATCHED, DELIVERED, một bản nháp DELAY, một thông báo suppressed).
 Dữ liệu tồn kho, hàng nhập (gồm IN-SE-88213), lịch xe, điểm danh được sinh để các tình huống trên đúng khi chạy engine. **Các con số trong ảnh thiết kế là mục tiêu minh họa**; nếu engine cho kết quả hơi khác (ví dụ điểm số thay cho tiền), chấp nhận miễn đúng quy tắc.
 
 ## 6. Chiến lược kiểm thử
 
 ### 6.1 Cấp độ
 - **Unit (engine):** bảng test cho từng bước; phủ ≥ 90% dòng `engine/`; mypy strict.
-- **Integration (API + DB thật):** ingestion, upsert, reject, giữ chỗ, EXCLUDE, approve đồng thời (xe, SKU, ngày công suất), lập lại đóng kế hoạch cũ, POD nhiều lần giao, dedupe thông báo sau lập lại, dedupe cảnh báo chỉ khi đang mở, trigger chuyển trạng thái, RBAC mọi endpoint (gồm `/kpi/revenue` theo `can_view_revenue`).
+- **Integration (API + DB thật):** ingestion, upsert, reject, giữ chỗ, EXCLUDE, approve đồng thời (xe, SKU, ngày công suất), lập lại đóng kế hoạch cũ, POD nhiều lần giao, dedupe thông báo sau lập lại, dedupe cảnh báo chỉ khi đang mở, trigger chuyển trạng thái, RBAC mọi endpoint (gồm `/revenue/*` theo `kpi_scopes` và owner); nhất quán doanh thu store = warehouse; đơn nhiều xe (trạng thái tổng hợp, POD mỗi xe); gợi ý lập lại không giữ chỗ và không tính kế hoạch cũ.
 - **Contract:** `source_system/openapi.yaml` với instance SE và một instance giả; `openapi diff` chặn thay đổi phá vỡ giữa backend và frontend.
 - **E2E (Playwright):** kịch bản ở 6.3 chạy trên Docker Compose.
 - **Phi chức năng:** thời gian lập kế hoạch một đơn < 2 giây; bảng đơn < 1 giây với 1.000 đơn; kiểm tra truy cập bằng axe.
 
 ### 6.2 Bảng test bắt buộc cho engine (mỗi hàng là một test)
-Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhóm `line`); ATP (đủ ngay, đủ sau hàng nhập, hàng nhập chưa xác nhận, giữ chỗ của đơn khác, 14 ngày không đủ); công suất (điểm danh, 90%, ngày lễ, hết công suất trong 14 ngày); lịch (qua nhiều ngày, giờ cắt); xe (tải/thể tích/nhóm/năng lực/bằng/giờ lái/bận); ngày (exact không sớm, range, latest, ngoài cửa sổ, ngày làm việc kế); dự trữ (an toàn/sát/không khả thi); xếp hạng (ví dụ 0,50/0,50/0,26, vùng bỏ qua, một ứng viên, hòa nhiều tầng, mã `LOWEST_SCORE_OF_3`); tiền kiểm (`NEEDS_MULTI_VEHICLE`, `NO_CAPABLE_VEHICLE`); không khả thi (check xa nhất, ngày sớm nhất); chuyển kho (điều kiện, thứ tự); forecast (hấp thụ chậm, mốc quá hạn, GPS, làm tròn 15); rủi ro (29%, 50%, 75%, slack âm một lần và hai lần, overdue, reserve tối thiểu 30 phút).
+Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhóm `line`); ATP (đủ ngay, đủ sau hàng nhập, hàng nhập chưa xác nhận, giữ chỗ của đơn khác, 14 ngày không đủ); công suất (điểm danh, 90%, ngày lễ, hết công suất trong 14 ngày); lịch (qua nhiều ngày, giờ cắt); xe (tải/thể tích/nhóm/năng lực/bằng/giờ lái/bận); ngày (exact không sớm, range, latest, ngoài cửa sổ, ngày làm việc kế); dự trữ (an toàn/sát/không khả thi); xếp hạng (ví dụ 0,50/0,50/0,26, vùng bỏ qua, một ứng viên, hòa nhiều tầng, mã `LOWEST_SCORE_OF_3`); đơn vị nhỏ nhất (20 bao = 0,5 pallet; hàng nguyên làm tròn lên); nhiều xe (ít xe nhất, chia dòng, đến cùng lúc ±30', thiếu năng lực, kín xe); hòa điểm xe nhỏ hơn; không khả thi (check xa nhất, ngày sớm nhất); chuyển kho (điều kiện, thứ tự); forecast (hấp thụ chậm, mốc quá hạn, GPS, làm tròn 15); rủi ro (29%, 50%, 75%, slack âm một lần và hai lần, overdue, reserve tối thiểu 30 phút).
 
 ### 6.3 Kịch bản E2E bắt buộc
 
@@ -169,18 +173,20 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
 | 3 | Thiếu hàng mọi kho (đơn 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11, gợi ý chuyển kho; thương lượng `agreed` → chạy lại → khả thi |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
-| 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch/duyệt đồng thời: tổng giữ chỗ ≤ 100; một đơn thành công, đơn kia loại kho hoặc `409 RESOURCE_CONFLICT` |
-| 6 | Đơn vượt xe lớn nhất / cần xe ngoài đội (đơn 000144) | `MANUAL_PLANNING`; lập tay một xe bị `422` kèm gợi ý; dispatcher ghi nhận xử lý ngoài CFO có lý do → `HANDLED_EXTERNALLY`, `EXTERNAL_HANDOFF_RECORDED`, không thông báo tự động, KPI đếm riêng |
+| 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
+| 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
 | 7 | Cửa sổ nhận hàng không khớp | `OUTSIDE_RECEIVING_HOURS` / dời ngày làm việc kế |
 | 8 | Trễ giữa chừng (đơn 000141) | xanh → vàng → cam → PREDICTED_LATE sau hai lần; bản nháp DELAY; dispatcher sửa và gửi; không gửi lại khi lệch < 30 phút |
 | 9 | Hai dispatcher duyệt cùng lúc tranh một xe | Một thành công, một `409 RESOURCE_CONFLICT` |
 | 10 | Nạp lại cùng dữ liệu; dòng lỗi | Không nhân đôi; reject; `partial` |
 | 11 | SKU chưa ánh xạ (đơn 000156) | `BLOCKED_UNMAPPED_SKU` → IT xác nhận → mở khóa → lập kế hoạch tự động |
-| 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, replan (kế hoạch cũ `superseded`), duyệt lại (`CONFIRMED` mới), giao thành công; hai POD; tính riêng KPI |
+| 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, **gợi ý lập lại tự động** (không giữ chỗ, không tính kế hoạch cũ), dispatcher duyệt (kế hoạch cũ `superseded`, `CONFIRMED` mới), giao thành công; hai POD; doanh thu tính một lần |
 | 13 | GPS | Simulator → bản đồ dispatcher; CS/khách `403`; mất tín hiệu 60 phút → alert; retention 30 ngày |
 | 14 | Hold hết hạn / gia hạn | Extend 2 lần, lần 3 bị từ chối; Approve sau hết hạn vẫn kiểm tra lại |
 | 15 | Phân quyền | CS không thấy GPS/điểm; sales không duyệt; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
-| 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; Replan (đóng kế hoạch cũ, duyệt lại được)/Keep/Cancel |
+| 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
+| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
+| 18 | Tạm dừng chuẩn bị | Start prep (3 người) → Pause → Resume (2 người) → Goods ready; `improvement_log` có giờ nhân công thực tế và giờ/đơn vị theo nhóm |
 
 ## 7. Definition of Done
 
@@ -215,7 +221,7 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 ## 10. Nghiệm thu MVP
 
 - [ ] `docker compose up` + `make migrate seed` dựng toàn bộ hệ thống từ trống; seed lặp lại cho kết quả giống nhau.
-- [ ] 16 kịch bản E2E (mục 6.3) pass; toàn bộ AC ở `02` pass.
+- [ ] 18 kịch bản E2E (mục 6.3) pass; toàn bộ AC ở `02` pass.
 - [ ] Mọi hàng ma trận quyền `06` mục 3 có test cho đường cho phép và bị cấm; CS/khách/sales không bao giờ nhận GPS.
 - [ ] Không có double-book xe, tài xế, hàng (kiểm bằng test đồng thời); nạp lại idempotent.
 - [ ] Mọi quyết định có `decision_log`; `decision_log`/`milestone_event` bất biến; log kỹ thuật không PII.
@@ -246,11 +252,14 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 | 2 | Dịch vụ email online | Mailpit khi local; Brevo hoặc Resend free khi staging |
 | 3 | Tên miền và CORS | Chỉ origin của Vercel và localhost |
 | 4 | Đồng hồ demo | `APP_NOW` = 2026-11-04 10:05 (Europe/Stockholm) khi quay demo |
-| 5 | Mật khẩu demo | Ghi trong README, chỉ ở môi trường demo |
+| 5 | Mật khẩu demo | Không ghi trong file; đọc từ `SEED_DEMO_PASSWORD`, chia sẻ riêng |
 | 6 | Định mức, hệ số cờ, giờ hữu ích | Số minh họa ở `05` mục 11 (IT nhập cứng); IT thay bằng số thật khi có |
 | 7 | Thiết bị kho | Không quản lý trong MVP; giả định mọi kho đủ thiết bị |
-| 8 | Đơn cần nhiều xe | Không có thuật toán; ghi nhận `HANDLED_EXTERNALLY` |
-| 9 | Doanh thu | Σ số lượng × đơn giá của đơn DELIVERED; mỗi nước một tiền tệ; xem bởi owner, admin, Business owner |
-| 10 | Ngày demo | `APP_NOW` = Thứ Tư 2026-11-04 10:05; ví dụ trong `02` dùng cùng ngày |
+| 8 | Đơn lớn hơn một xe | Xếp lịch nhiều xe cùng kho, ít xe nhất, không giới hạn số xe, không ghép đơn |
+| 9 | Doanh thu | Theo `05` mục 8 và `06` mục 14.1: tiền hàng của đơn DELIVERED, hai góc nhìn, `kpi_scopes` + owner |
+| 10 | Đồng hồ | `APP_NOW` chỉ để test/demo lặp lại được; thời gian thực hiện không cố định |
 | 11 | Gợi ý chuyển kho | Giữ trong MVP (quy tắc, không AI) |
-| 12 | Hòa điểm cuối cùng | Giữ "mã xe nhỏ hơn"; "xe nhỏ hơn" là cải tiến sau pilot |
+| 12 | Hòa điểm cuối cùng | Xe nhỏ hơn mà vẫn đủ chứa (tổng tải nhỏ hơn), rồi mới tới mã xe |
+| 13 | Giữ chỗ đồng thời | Cho vượt lúc lập kế hoạch, chỉ chặn khi duyệt |
+| 14 | Lập lại sau duyệt | Hệ thống tự gợi ý; dispatcher duyệt |
+| 15 | Giờ công | Theo đơn vị cơ sở nhỏ nhất; hàng nguyên làm tròn lên |

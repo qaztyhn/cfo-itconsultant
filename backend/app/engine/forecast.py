@@ -1,5 +1,6 @@
 """Dự báo ETA và rủi ro (04 mục 6.3; BR-RSK-01; US-RSK-01/02).
 
+Đơn nhiều xe: tính từng xe, forecast của đơn = xe tới muộn nhất. Đang PREP_PAUSED: cận dưới now.
 forecast_eta theo mốc: trước GOODS_READY (cận dưới now nếu quá giờ), sau LOADED (+after_loaded_min),
 sau DISPATCHED (depart thực + drive), có GPS (recorded_at + thời gian còn lại). Làm tròn lên 15'.
 reserve_total = max(min_reserve_min, promise_end − planned_eta); consumption% → green/yellow/orange;

@@ -23,15 +23,9 @@ async def kpi_daily() -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/kpi/revenue")
-async def kpi_revenue() -> dict[str, object]:
-    """GET /kpi/revenue — owner nơi đó, admin, viewer có can_view_revenue; khác 403."""
-    raise NotImplementedError
-
-
 @router.get("/kpi/diagnostics")
 async def kpi_diagnostics() -> dict[str, object]:
-    """GET /kpi/diagnostics — hard_constraint_violations, latency, external_handoff_count."""
+    """GET /kpi/diagnostics — hard_constraint_violations, event_to_alert_latency_s_median."""
     raise NotImplementedError
 
 

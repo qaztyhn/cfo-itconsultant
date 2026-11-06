@@ -19,7 +19,7 @@ async def login() -> dict[str, object]:
 
 @router.get("/auth/me")
 async def me() -> dict[str, object]:
-    """GET /auth/me — Thông tin người dùng, vai trò, địa điểm, can_view_revenue."""
+    """GET /auth/me — Thông tin người dùng, vai trò, địa điểm, kpi_scopes."""
     raise NotImplementedError
 
 

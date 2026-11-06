@@ -1,6 +1,8 @@
 # 06 — API Specification (CFO MVP)
 
-> **Phiên bản 1.1 (06/11/2026):** bỏ endpoint thiết bị kho; thêm `POST /orders/{id}/external-handoff`; đặc tả đóng kế hoạch khi lập lại/hủy; POD theo từng lần giao; quyền xem doanh thu qua `can_view_revenue`; mã lý do `LOWEST_SCORE_OF_3`; tách số đếm "unmapped" khỏi dòng bị loại ở Data integration.
+> **Phiên bản 1.2 (06/11/2026):** phương án có **nhiều xe** (`vehicles[]`); bỏ `MANUAL_PLANNING`, `result = manual`, `external-handoff`; kế hoạch tay nhận nhiều xe; gợi ý lập lại tự động (mục 6.6); sự kiện `PREP_PAUSED`/`PREP_RESUMED` và sự kiện theo từng xe (`trip_id`); doanh thu thành nhóm endpoint `/revenue/*` với `kpi_scopes` (mục 14.1); giữ chỗ chỉ khóa khi duyệt.
+>
+> Lịch sử **v1.1:** bỏ endpoint thiết bị kho; thêm `POST /orders/{id}/external-handoff`; đặc tả đóng kế hoạch khi lập lại/hủy; POD theo từng lần giao; quyền xem doanh thu qua `can_view_revenue`; mã lý do `LOWEST_SCORE_OF_3`; tách số đếm "unmapped" khỏi dòng bị loại ở Data integration.
 >
 > Hợp đồng REST giữa frontend/driver PWA và backend, kèm hợp đồng của hệ thống nguồn giả lập. Backend FastAPI sinh OpenAPI từ model Pydantic đúng theo tài liệu này; frontend sinh client bằng `openapi-typescript`. Tên bảng và cột tham chiếu `05_Database_Design.md`. Quy tắc nghiệp vụ tham chiếu `01_PRD.md` (mã BR-xxx).
 
@@ -40,7 +42,7 @@
 
 ## 2. Vai trò (`roles` trong JWT)
 
-`admin` (IT) · `dispatcher` · `warehouse` (quản lý, phó, trưởng ca) · `sales` (nhân viên bán, quản lý cửa hàng) · `driver` · `customer_service` · `viewer` (Business owner, Project Lead).
+`admin` (IT) · `dispatcher` · `warehouse` (quản lý, phó, trưởng ca) · `sales` (nhân viên bán, quản lý cửa hàng) · `driver` · `customer_service` · `viewer` (Business owner, Project Lead — phân biệt bằng `kpi_scopes`: `revenue_all` / `ops`).
 
 ## 3. Ma trận quyền (R = đọc, W = ghi, — = cấm; phạm vi ghi chú)
 
@@ -51,7 +53,7 @@
 | Thương lượng ngày | — | **W** | — | — | — | — | — |
 | Chuyển kho: duyệt / hủy | — | **W** | — | — | — | — | — |
 | Chuyển kho: xác nhận kho nguồn / nhận | — | — | **W** (kho nguồn / kho đích, cần `can_approve`) | — | — | — | — |
-| Sự kiện kho (START_PREP, GOODS_READY, LOADED, ngoại lệ, SHIFT_CHANGE) | — | — | **W** | — | — | — | — |
+| Sự kiện kho (START_PREP, PREP_PAUSED, PREP_RESUMED, GOODS_READY, LOADED, ngoại lệ, SHIFT_CHANGE) | — | — | **W** | — | — | — | — |
 | Sự kiện tài xế (DISPATCHED, DELIVERED, FAILED) | — | — | — | — | **W** (chuyến mình) | — | — |
 | GPS: gửi | — | — | — | — | **W** (chuyến mình) | — | — |
 | GPS: xem | — | **R** | — | — | — | **cấm** | — |
@@ -63,13 +65,13 @@
 | Nhân sự: nhân viên, phân công, quản lý | **W** | R | R (kho mình) | — | — | — | — |
 | Điểm danh, ca mẫu, nghỉ phép | R | R | **W** (kho mình) | — | — | — | — |
 | Xe, tài xế (hồ sơ) | **W** | R | R (kho mình) | — | — | — | — |
-| KPI vận hành | R (tất cả) | R | R (kho mình) | — | — | — | R |
-| Doanh thu, số đơn theo địa điểm | R | — | R (chỉ owner kho mình) | R (chỉ owner cửa hàng mình) | — | — | R (chỉ khi `can_view_revenue`) |
+| KPI vận hành | R (tất cả) | R (`ops`) | R (kho mình, `ops`) | — | — | — | R (chỉ `ops`: Project Lead) |
+| Doanh thu (`/revenue/*`) | R (tất cả) | — | R (chỉ owner kho, góc nhìn warehouse) | R (chỉ owner cửa hàng, góc nhìn store) | — | — | R (chỉ `revenue_all`: Business owner) |
 | Cấu hình market, đồng bộ, DPIA/GPS flag | **W** | — | — | — | — | — | — |
-| Nhật ký quyết định (audit) | R | R | — | — | — | — | R |
+| Nhật ký quyết định (audit) | R | R | — | — | — | — | R (chỉ `ops`) |
 
-### 3.1 Quyền xem KPI [C]
-Doanh thu và số đơn của một kho/cửa hàng: owner của nơi đó (`location.owner_employee_id`), `admin`, Business owner của nước. Business owner và Project Lead cùng vai trò `viewer`; chỉ người có `app_user.can_view_revenue = true` (Business owner) xem được doanh thu, Project Lead nhận `403`. KPI vận hành (đúng hạn, thời gian lập kế hoạch, sai số ETA…): thêm `dispatcher`, quản lý kho, Project Lead. `customer_service` không xem KPI. "Cost per delivery" của slide được thay bằng giờ công và km mỗi lần giao (KPI vận hành), **không** phải doanh thu.
+### 3.1 Quyền xem KPI và doanh thu [C]
+Không thêm vai trò mới. `kpi_scopes` trong token phân biệt: `revenue_all` (Business owner) và `ops` (Project Lead, dispatcher, quản lý/phó kho; sao chép từ `position.default_kpi_scopes`). **KPI vận hành** (`/kpi/*`, `/audit/decisions`): `admin` hoặc có `ops`. **Doanh thu** (`/revenue/*`): `resolve_revenue_scope(user)` — `admin` hoặc `revenue_all` → tất cả; nếu không, các nơi mà `location.owner_employee_id = user.employee_id` (owner cửa hàng → góc nhìn store, owner kho → góc nhìn warehouse); rỗng → `403`. Business owner gọi `/kpi/summary`, `/audit/decisions`, `/orders/{id}` nhận `403`. `customer_service` không xem KPI/doanh thu. "Cost per delivery" của slide được thay bằng giờ công và km mỗi lần giao (KPI vận hành), **không** phải doanh thu.
 
 ## 4. Xác thực
 
@@ -85,7 +87,7 @@ Doanh thu và số đơn của một kho/cửa hàng: owner của nơi đó (`lo
 // 200
 { "access_token": "eyJ…", "token_type": "bearer", "expires_in": 28800,
   "user": { "id": 12, "employee_id": 55, "name": "Anna Lind", "roles": ["dispatcher"],
-            "market": "SE", "location_ids": [7], "locale": "en", "can_view_revenue": false } }
+            "market": "SE", "location_ids": [7], "locale": "en", "kpi_scopes": ["ops"] } }
 ```
 Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
@@ -93,13 +95,12 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
 | Phương thức | Đường dẫn | Vai trò | Ghi chú |
 |---|---|---|---|
-| GET | `/orders` | theo ma trận | Lọc: `status`, `risk_color`, `committed_date_from/to`, `warehouse_id`, `store_id`, `date_mode`, `q`, `needs_manual`, `blocked` |
+| GET | `/orders` | theo ma trận | Lọc: `status`, `risk_color`, `committed_date_from/to`, `warehouse_id`, `store_id`, `date_mode`, `q`, `blocked` |
 | GET | `/orders/{id}` | theo ma trận | Chi tiết (mục 5.1) |
 | GET | `/orders/{id}/timeline` | dispatcher, warehouse, CS, admin | Gộp sự kiện, quyết định, thông báo, ETA theo thời gian |
 | GET | `/orders/{id}/eta-forecasts` | dispatcher, warehouse, CS | Các phiên bản ETA và rủi ro |
 | POST | `/orders/{id}/replan` | dispatcher | `{ "reason_code": "customer_change", "reason_text": "…" }`. Từ `APPROVED` hoặc `FAILED`. Một transaction: kế hoạch cũ → `superseded`, giữ chỗ → `released`, `trip_stop`/`delivery_trip` chưa xong → `cancelled`, xóa `approved_plan_id`/`committed_date`/`promise_*`, đơn → `SUBMITTED`, ghi `ORDER_REPLAN` (trước/sau) |
 | POST | `/orders/{id}/cancel` | dispatcher | `{ "reason_text": "…" }` (bắt buộc), chỉ trước `DISPATCHED`; đóng kế hoạch như `replan`; ghi `ORDER_CANCELLED` |
-| POST | `/orders/{id}/external-handoff` | dispatcher | v1.1, chỉ từ `MANUAL_PLANNING` (mục 6.6) |
 
 ### 5.1 `GET /orders/{id}` — phản hồi
 
@@ -118,7 +119,7 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
                "qty_sale": 20, "sale_unit": "pallet", "qty_base": 800, "unit_price": "950.00", "line_total": "19000.00",
                "handling_group": "N3", "flags": [] } ],
   "totals": { "weight_kg": 21450.0, "volume_m3": 18.2, "amount": "48300.00", "currency": "SEK" },
-  "needs_manual": false, "block_reason": null,
+  "block_reason": null,
   "approved_plan_id": null, "latest_run_id": 812,
   "risk": null, "version": 1, "submitted_at": "2026-11-05T07:12:00Z"
 }
@@ -161,8 +162,12 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
   "workload": { "labour_hours": 10.15, "lines": [ … ] },
   "plans": [
     { "id": 2001, "rank": 1, "status": "proposed",
-      "warehouse": { "id": 3, "name": "Malmö DC" }, "vehicle": { "id": 15, "code": "TRK-12T-02", "name": "Truck 12t" },
-      "driver": { "employee_id": 71, "name": "Johan Ek" },
+      "warehouse": { "id": 3, "name": "Malmö DC" },
+      "vehicle_count": 1, "total_capacity_kg": 6000, "total_capacity_m3": 40,
+      "vehicles": [ { "seq": 1, "vehicle": { "id": 15, "code": "MLM-12-02", "name": "Truck 12 t", "capacity_kg": 6000, "capacity_m3": 40 },
+                      "driver": { "employee_id": 71, "name": "Johan Ek" }, "load_kg": 4120, "load_m3": 9.6,
+                      "load_lines": [ { "line_no": 1, "qty_base": 800 } ],
+                      "loading_start_at": "2026-11-12T11:20:00Z", "depart_at": "2026-11-13T05:10:00Z", "eta_at": "2026-11-13T07:00:00Z" } ],
       "target_date": "2026-11-13",
       "goods_ready_at": "2026-11-12T11:20:00Z", "loading_start_at": "2026-11-12T11:20:00Z",
       "depart_at": "2026-11-13T05:10:00Z", "eta_at": "2026-11-13T07:00:00Z", "trip_end_at": "2026-11-13T09:30:00Z",
@@ -180,28 +185,31 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
   "transfer_suggestions": []
 }
 ```
-Khi `result = "infeasible"`: `plans = []`, có `failed_check`, `earliest_feasible_date`, `transfer_suggestions` (nếu do thiếu hàng); đơn → `NO_FEASIBLE_DATE`. Khi `result = "manual"`: đơn → `MANUAL_PLANNING`, kèm `manual_reason` (`NEEDS_MULTI_VEHICLE`, `NO_CAPABLE_VEHICLE`). Dispatcher xử lý bằng kế hoạch tay (6.4) nếu một xe trong đội qua gate, hoặc ghi nhận xử lý ngoài CFO (6.6).
+Khi `result = "infeasible"`: `plans = []`, có `failed_check`, `earliest_feasible_date`, `transfer_suggestions` (nếu do thiếu hàng); đơn → `NO_FEASIBLE_DATE`. Đơn lớn hơn một xe: phương án có nhiều phần tử trong `vehicles` (ít xe nhất trước, mọi xe cùng kho, tới gần như cùng lúc, `eta_at` của phương án = xe tới cuối). Không còn `result = "manual"` (v1.2). Thiếu loại xe hoặc kín xe → `infeasible` với `failed_check = truck`. `kind` của lần chạy: `initial` | `rerun` | `replan_suggestion`.
 
 ### 6.3 `POST /plans/{id}/approve`
 
 ```json
-{ "driver_employee_id": 71,                       // tùy chọn: đổi tài xế được gợi ý (phải hợp lệ)
+{ "drivers": [ { "seq": 1, "driver_employee_id": 71 } ],   // tùy chọn: đổi tài xế được gợi ý cho từng xe (phải hợp lệ)
   "date_negotiation_id": 55,                      // bắt buộc nếu ngày giao khác ngày khách đã đồng ý
   "reason_code": "closest_to_customer", "reason_text": "…",   // bắt buộc nếu plan.rank > 1 (chọn phương án khác)
   "note": "Called customer, ok" }
 ```
-Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "2026-11-13", "promise_start": "…", "promise_end": "…" } }, "plan": { … "status": "approved" }, "trip_id": 930, "notifications": [ { "id": 77, "template": "CONFIRMED", "status": "queued" } ] }`.
-Khóa: theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi xe → tài xế), kiểm tra lại sau khi có khóa.
+Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "2026-11-13", "promise_start": "…", "promise_end": "…" } }, "plan": { … "status": "approved" }, "trip_ids": [930, 931], "notifications": [ { "id": 77, "template": "CONFIRMED", "status": "queued" } ] }`.
+Khóa: chỉ khi duyệt, theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi mọi xe → mọi tài xế của phương án), kiểm tra lại sau khi có khóa. Lúc lập kế hoạch giữ chỗ không khóa và có thể vượt; đơn duyệt trước thắng.
 Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `409 RESOURCE_CONFLICT` (xe/tài xế/hàng/công suất đã bị đơn khác chiếm, kèm `details.conflict` và gợi ý chạy lại), `422 REASON_REQUIRED`, `409 DATE_AGREEMENT_REQUIRED`, `409 ILLEGAL_TRANSITION`.
 
 ### 6.4 `POST /orders/{id}/manual-plan`
 
 ```json
-{ "warehouse_id": 3, "vehicle_id": 15, "driver_employee_id": 71,
-  "target_date": "2026-11-13", "goods_ready_at": "…", "depart_at": "…", "eta_at": "…",
+{ "warehouse_id": 3, "target_date": "2026-11-13", "goods_ready_at": "…",
+  "vehicles": [ { "vehicle_id": 15, "driver_employee_id": 71, "load_lines": [ { "line_no": 1, "qty_base": 400 } ],
+                  "depart_at": "…", "eta_at": "…" },
+                { "vehicle_id": 16, "driver_employee_id": 72, "load_lines": [ { "line_no": 1, "qty_base": 400 } ],
+                  "depart_at": "…", "eta_at": "…" } ],
   "manual_reason_code": "special_vehicle", "manual_reason_text": "Customer needs crane truck" }
 ```
-Engine vẫn kiểm gate; fail → `422` kèm mã check (ví dụ `NO_TRUCK_FIT`, `OVER_LOAD`). Nếu đơn ở `MANUAL_PLANNING` vì `NEEDS_MULTI_VEHICLE`/`NO_CAPABLE_VEHICLE` và không xe nào trong đội qua gate, phản hồi lỗi có `details.hint = "EXTERNAL_HANDOFF"` để UI gợi ý mục 6.6. Thành công tạo plan `status = manual`, duyệt luôn, ghi snapshot đầy đủ gồm phương án hệ thống đã đề xuất (dữ liệu học cho AI sau này), `decision_log MANUAL_PLAN_CREATED`.
+Dùng cho đơn `PLANNED` hoặc `NO_FEASIBLE_DATE` (v1.2). Engine vẫn kiểm gate cho từng xe và cho tổng hàng (mọi dòng phải được chia hết cho các xe); fail → `422` kèm mã check (ví dụ `NO_TRUCK_FIT`, `OVER_LOAD`). Thành công tạo plan `status = manual`, duyệt luôn, ghi snapshot đầy đủ gồm phương án hệ thống đã đề xuất (dữ liệu học cho AI sau này), `decision_log MANUAL_PLAN_CREATED`.
 
 ### 6.5 Thương lượng ngày
 
@@ -213,16 +221,16 @@ Engine vẫn kiểm gate; fail → `422` kèm mã check (ví dụ `NO_TRUCK_FIT`
 // outcome = "declined": đơn có thể bị hủy; outcome = "unreachable": remind_at = now + 24h, tạo nhắc
 ```
 
-### 6.6 `POST /orders/{id}/external-handoff` (v1.1)
+### 6.6 Gợi ý lập lại tự động (v1.2)
 
-Dùng khi đơn cần nhiều xe hoặc xe không có trong đội (ví dụ xe cẩu của hãng đối tác). MVP **không** có thuật toán nhiều xe.
-```json
-{ "reason_code": "multi_vehicle",            // multi_vehicle | special_vehicle | partner_haulier | other
-  "reason_text": "20 t order, split over two partner trucks",
-  "partner": "Nordic Haulage AB", "expected_date": "2026-11-13",
-  "note": "Customer informed by phone" }
-```
-Điều kiện: đơn `MANUAL_PLANNING`; thiếu `reason_code` hoặc `reason_text` → `422 REASON_REQUIRED`; trạng thái khác → `409 ILLEGAL_TRANSITION`. Hiệu ứng (một transaction): đơn → `HANDLED_EXTERNALLY` (trạng thái cuối), lưu `customer_order.external_handoff`, không giữ chỗ, không tạo chuyến, không GPS, **không** thông báo tự động cho khách; ghi `decision_log EXTERNAL_HANDOFF_RECORDED`. Không tính vào `on_time_rate`; đếm ở `external_handoff_count`.
+Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn sau duyệt, `PLAN_INVALIDATED`, `VEHICLE_ISSUE`, giao `FAILED`), hệ thống tạo `planning_run(kind='replan_suggestion')` (coi như kế hoạch hiện tại của chính đơn không tồn tại, **không giữ chỗ**) và alert `REPLAN_SUGGESTED` với `details.run_id`. Dispatcher xem bằng `GET /planning-runs/{id}` như lần chạy thường.
+
+| Phương thức | Đường dẫn | Mô tả |
+|---|---|---|
+| POST | `/plans/{id}/approve` | Duyệt phương án gợi ý (Idempotency-Key). Một transaction: đóng kế hoạch cũ (`05` mục 6), khóa, kiểm tra lại, commit kế hoạch mới, đơn → `APPROVED`, `CONFIRMED` mới. Tài nguyên đã bị chiếm → `409 RESOURCE_CONFLICT` |
+| POST | `/planning-runs/{id}/keep-current` | Giữ kế hoạch hiện tại: `{ "reason_text": "…" }` (bắt buộc), đóng alert, ghi `REPLAN_KEPT` |
+
+Đơn đã `DISPATCHED` không có gợi ý, chỉ alert. Không có đường tự duyệt.
 
 ## 7. Chuyển kho
 
@@ -245,18 +253,20 @@ Dùng khi đơn cần nhiều xe hoặc xe không có trong đội (ví dụ xe 
 
 | `event_type` | Ai | Điều kiện | `payload` |
 |---|---|---|---|
-| `START_PREP` | warehouse | đơn `APPROVED` → `PREPARING` | `{ "crew_size": 3 }` (tùy chọn; dữ liệu để học định mức sau này) |
-| `GOODS_READY` | warehouse | `PREPARING` → `GOODS_READY` | `{}` |
-| `LOADED` | warehouse | `GOODS_READY` → `LOADED` | `{}` |
-| `DISPATCHED` | driver | `LOADED` → `DISPATCHED`, chuyến → `on_road` | `{}` |
-| `DELIVERED` | driver | `DISPATCHED` → `DELIVERED`; tạo một `proof_of_delivery` cho `trip_stop` hiện tại | `{ "recipient_name": "Erik Berg", "note": "…" }` |
-| `FAILED` | driver | `DISPATCHED` → `FAILED`; tạo một `proof_of_delivery(result=failed)` cho `trip_stop` hiện tại (lần giao lại sau đó có POD riêng) | `{ "failure_reason": "customer_absent", "note": "…" }` (bắt buộc `failure_reason` thuộc danh sách chuẩn) |
+| `START_PREP` | warehouse | đơn `APPROVED` → `PREPARING` | `{ "crew_size": 3 }` (bắt buộc) |
+| `PREP_PAUSED` | warehouse | đơn `PREPARING`, đang làm | `{ "note": "…" }` (tùy chọn); không đổi trạng thái đơn |
+| `PREP_RESUMED` | warehouse | đơn `PREPARING`, đang tạm dừng | `{ "crew_size": 2 }` (bắt buộc) |
+| `GOODS_READY` | warehouse | `PREPARING` (đang làm) → `GOODS_READY` | `{ "crew_size": 3 }` (tùy chọn, sửa đoạn cuối). Hệ thống tính `actual_labour_hours = Σ crew_size × độ dài từng đoạn` |
+| `LOADED` | warehouse | theo **từng xe** (`trip_id` bắt buộc); đơn → `LOADED` khi mọi xe đã lên hàng | `{ "trip_id": 930 }` |
+| `DISPATCHED` | driver | theo từng xe (chuyến của mình → `on_road`); đơn → `DISPATCHED` ở xe đầu tiên | `{ "trip_id": 930 }` |
+| `DELIVERED` | driver | theo từng xe; tạo một `proof_of_delivery` cho `trip_stop` của xe đó; đơn → `DELIVERED` khi mọi xe giao xong | `{ "trip_id": 930, "recipient_name": "Erik Berg", "note": "…" }` |
+| `FAILED` | driver | theo từng xe; tạo `proof_of_delivery(result=failed)`; đơn → `FAILED` khi mọi chuyến kết thúc và có xe thất bại (lần giao lại sau đó có POD riêng) | `{ "failure_reason": "customer_absent", "note": "…" }` (bắt buộc `failure_reason` thuộc danh sách chuẩn) |
 | `SHORTAGE` | warehouse | mọi trạng thái đang chuẩn bị | `{ "sku": "SE-CEM-25", "qty_missing": 3, "note": "…" }` |
 | `BREAKAGE` | warehouse | — | `{ "sku": "…", "qty": 2, "note": "…" }` |
 | `VEHICLE_ISSUE` | warehouse | — | `{ "vehicle_id": 15, "note": "Flat tyre" }` |
 | `SHIFT_CHANGE` | warehouse | — | `{ "date": "2026-11-12", "staff_present": 7, "note": "…" }` |
 
-Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` ≤ `now + 5 phút` và không trước sự kiện trước đó của cùng đơn; sai thứ tự → `409 ILLEGAL_TRANSITION`; trùng `Idempotency-Key` → trả kết quả cũ. Sau khi ghi: chạy `RiskService.recalculate`, trả `{ "event_id": 9001, "order_status": "GOODS_READY", "risk": { "status": "ON_TRACK", "color": "green", "forecast_eta": "…" } }`. `SHORTAGE`/`BREAKAGE`/`VEHICLE_ISSUE` còn tạo alert `EXCEPTION` cho dispatcher. `FAILED` tạo thông báo `FAILED` và alert; dispatcher dùng `/orders/{id}/replan` để xếp lại.
+Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` ≤ `now + 5 phút` và không trước sự kiện trước đó của cùng đơn; sai thứ tự → `409 ILLEGAL_TRANSITION`; trùng `Idempotency-Key` → trả kết quả cũ. Sau khi ghi: chạy `RiskService.recalculate`, trả `{ "event_id": 9001, "order_status": "GOODS_READY", "risk": { "status": "ON_TRACK", "color": "green", "forecast_eta": "…" } }`. `SHORTAGE`/`BREAKAGE`/`VEHICLE_ISSUE` còn tạo alert `EXCEPTION` cho dispatcher. `FAILED` (cấp đơn) tạo thông báo `FAILED`, alert và **gợi ý lập lại tự động** (mục 6.6); dispatcher duyệt gợi ý hoặc dùng `/orders/{id}/replan`. `VEHICLE_ISSUE` cũng tạo gợi ý lập lại cho đơn đã duyệt dùng xe đó.
 
 ### 8.2 Quản lý kho
 
@@ -378,14 +388,36 @@ Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ m�
                "plan_acceptance_rate": { "value": 0.78 }, "failed_delivery_rate": { "value": 0.03 },
                "capacity_utilisation": { "value": 0.71 }, "manual_plan_count": { "value": 6 } } }
 ```
-Doanh thu và số đơn của kho/cửa hàng: `GET /kpi/revenue?location_id=&from=&to=` (chỉ owner của nơi đó, admin, `viewer` có `can_view_revenue`; người khác `403`).
+`/kpi/*` chỉ cho `admin` hoặc người có `ops` trong `kpi_scopes`; Business owner nhận `403`.
+
+### 14.1 Doanh thu `/revenue/*` (v1.2)
+
+Báo cáo chỉ đọc. Doanh thu = tiền hàng (đơn giá × số lượng, `total_amount`); không có phí giao, phí đóng gói, nhân công, giá vốn, lợi nhuận. Định nghĩa đầy đủ ở `05` mục 8. Tham số chung: `from`, `to` (`YYYY-MM-DD`, mặc định 30 ngày gần nhất, tối đa 366 ngày, `from ≤ to`, ngày theo múi giờ market), `view` (`store` | `warehouse`), `location_id` (tùy chọn). Phạm vi theo `resolve_revenue_scope` (mục 3.1). Lỗi: `403 FORBIDDEN` (không có quyền doanh thu nào), `404` (nơi ngoài phạm vi), `422` (`view` không khớp loại nơi, ví dụ `view=store` với `location_id` của kho).
+
+| Phương thức | Đường dẫn | Mô tả |
+|---|---|---|
+| GET | `/revenue/summary` | Thẻ số liệu của kỳ |
+| GET | `/revenue/daily` | Chuỗi theo ngày cho biểu đồ |
+| GET | `/revenue/by-location` | Bảng theo cửa hàng hoặc theo kho (owner chỉ nhận dòng của mình; đơn không có cửa hàng → dòng "Unassigned store") |
+| GET | `/revenue/orders` | Danh sách đơn của một nơi (`location_id` bắt buộc), phân trang: `{ order_no, delivered_at, amount, currency, status }`; chỉ owner và admin có thêm `customer_name`; Business owner không có trường này |
+| GET | `/revenue/export.csv` | Chỉ owner, Business owner, admin. Cột `day, view, location_code, location_name, orders_delivered, revenue_recognised, revenue_booked, currency`; dấu chấm thập phân; UTF-8 có BOM; mỗi lần ghi `decision_log REVENUE_EXPORTED` (snapshot: bộ lọc, số dòng) |
+
 ```json
-// GET /kpi/revenue?location_id=21&from=2026-11-01&to=2026-11-30 → 200
-{ "location": { "id": 21, "name": "Store Göteborg Väst", "type": "store" }, "currency": "SEK",
-  "revenue": "1284300.00", "delivered_orders": 37,
-  "definition": "Sum of quantity × unit price of DELIVERED orders in the period; excludes CANCELLED, unresolved FAILED and HANDLED_EXTERNALLY. Not profit." }
+// GET /revenue/summary?view=store&location_id=21&from=2026-11-01&to=2026-11-30
+{ "period": { "from": "2026-11-01", "to": "2026-11-30" }, "view": "store", "location_id": 21,
+  "currency": "SEK", "recognised": "1284500.00", "booked_not_delivered": "214300.00",
+  "orders_delivered": 41, "avg_order_value": "31329.27", "share_of_market_pct": 8.4 }
+// share_of_market_pct = null nếu người gọi không phải Business owner hoặc admin
+
+// GET /revenue/daily
+{ "currency": "SEK", "points": [ { "day": "2026-11-03", "recognised": "98200.00", "booked": "40100.00" } ] }
+
+// GET /revenue/by-location?view=warehouse
+{ "view": "warehouse", "currency": "SEK",
+  "rows": [ { "location_id": 3, "code": "MLM", "name": "Malmö DC", "orders_delivered": 118,
+              "recognised": "3410250.00", "booked_not_delivered": "402300.00", "share_pct": 31.2 } ] }
 ```
-Không cộng doanh thu giữa các market (mỗi market một tiền tệ).
+Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ; không ghi thông tin khách vào log hay file xuất của Business owner.
 
 ## 15. Cấu hình, đồng bộ, nhật ký, nội bộ
 
@@ -395,7 +427,7 @@ Không cộng doanh thu giữa các market (mỗi market một tiền tệ).
 | GET | `/sync-runs?entity=&status=` | admin | Lịch sử đồng bộ, độ tươi |
 | POST | `/sync/{entity}/run` | admin | Chạy tay; trùng lượt đang chạy → `409 SYNC_IN_PROGRESS` |
 | GET | `/sync-runs/{id}/rejects` | admin | Dòng bị loại và lý do |
-| GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer | Nhật ký quyết định (chỉ đọc) |
+| GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer có `ops` | Nhật ký quyết định (chỉ đọc) |
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
 | POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
 
@@ -438,11 +470,11 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "manual": 2, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
+| GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
 | GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
-| GET | `/prep-queue?warehouse_id=&date=` | `capacity { booked_min, total_min, free_min, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading{at, vehicle_code, after_cutoff}, status, next_action}]` |
+| GET | `/prep-queue?warehouse_id=&date=` | `capacity { booked_min, total_min, free_min, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id, at, vehicle_code, after_cutoff, loaded}], prep_state ('running'|'paused'|null), status, next_action}]` (một đơn nhiều xe có nhiều dòng loading) |
 | GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ template, channel, status, recipient_masked, subject, body_html, body_text, eta_window, suppressed_reason }` (người nhận đã che) |
-| GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median, external_handoff_count }` |
+| GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
 
 **Bổ sung vào phản hồi `PlanningRun` (mục 6.2):**
 ```json

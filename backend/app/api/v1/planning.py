@@ -35,6 +35,13 @@ async def extend_hold(run_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
+@router.post("/planning-runs/{run_id}/keep-current")
+async def keep_current(run_id: int) -> dict[str, object]:
+    """POST /planning-runs/{run_id}/keep-current — Giữ kế hoạch hiện tại khi có gợi ý lập lại; lý do bắt
+    buộc (06 mục 6.6)."""
+    raise NotImplementedError
+
+
 @router.get("/plans/{plan_id}")
 async def get_plan(plan_id: int) -> dict[str, object]:
     """GET /plans/{plan_id} — Chi tiết một phương án."""
@@ -49,7 +56,8 @@ async def approve_plan(plan_id: int) -> dict[str, object]:
 
 @router.post("/orders/{order_id}/manual-plan")
 async def manual_plan(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/manual-plan — Idempotency-Key; gate vẫn chạy; hint EXTERNAL_HANDOFF."""
+    """POST /orders/{order_id}/manual-plan — Idempotency-Key; từ PLANNED/NO_FEASIBLE_DATE; một hoặc nhiều
+    xe; gate vẫn chạy."""
     raise NotImplementedError
 
 

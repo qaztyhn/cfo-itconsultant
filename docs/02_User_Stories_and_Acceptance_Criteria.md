@@ -2,7 +2,9 @@
 
 > Mỗi story có mã `US-…`, vai trò, giá trị, tham chiếu yêu cầu (`FR-…`, `BR-…` ở `01_PRD.md`) và tiêu chí chấp nhận theo dạng **Given / When / Then**. Mỗi AC phải kiểm thử được (unit/integration/E2E) và dùng làm tên test (`test_US_PLN_03_AC2_…`). Mọi story đều **M** (bắt buộc MVP) trừ khi ghi khác. Các endpoint nêu theo `06_API_Specification.md`.
 > Quy ước: "hôm nay" trong ví dụ là 2026-11-04 (Thứ Tư) 10:05, giờ địa phương Europe/Stockholm, trùng đồng hồ demo `APP_NOW` ở `08`.
-> **Phiên bản 1.1 (06/11/2026):** bỏ US-WH-03 và US-PLN-02 AC3 (thiết bị kho ngoài MVP); thêm US-APR-04 (xử lý ngoài CFO); bổ sung AC cho lập lại sau duyệt, giao lại sau thất bại, giữ chỗ đồng thời, dedupe thông báo/cảnh báo, doanh thu.
+> **Phiên bản 1.2 (06/11/2026):** US-ORD-05 thành xếp lịch nhiều xe; US-APR-04 thành gợi ý lập lại tự động; bỏ mọi AC về `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`; thêm AC đơn vị nhỏ nhất, hòa điểm xe nhỏ hơn, giữ chỗ chỉ chặn khi duyệt, tạm dừng chuẩn bị, giao nhiều xe; thêm US-REV-01 (doanh thu).
+>
+> Lịch sử **v1.1:** bỏ US-WH-03 và US-PLN-02 AC3 (thiết bị kho ngoài MVP); thêm US-APR-04 (xử lý ngoài CFO); bổ sung AC cho lập lại sau duyệt, giao lại sau thất bại, giữ chỗ đồng thời, dedupe thông báo/cảnh báo, doanh thu.
 
 ---
 
@@ -18,6 +20,7 @@
 **US-INT-02 — Đơn đã duyệt bị sửa/hủy ở nguồn** · Là *dispatcher*, tôi muốn được cảnh báo thay vì bị ghi đè kế hoạch. · FR-INT-05
 - AC1. *Given* đơn `APPROVED` và nguồn gửi `version = 2` đổi số lượng, *When* ingestion chạy, *Then* dữ liệu đơn trong CFO không đổi, có alert `ORDER_CHANGED_AFTER_APPROVAL` cho dispatcher kèm khác biệt.
 - AC2. *Given* nguồn hủy đơn đã `DISPATCHED`, *When* ingestion chạy, *Then* chỉ tạo alert, không đổi trạng thái.
+- AC3. *Given* AC1, *Then* hệ thống tạo gợi ý lập lại theo bản mới của đơn (US-APR-04).
 
 **US-INT-03 — Đồng bộ tồn kho, hàng nhập, lịch xe** · Là *hệ thống*, tôi muốn dữ liệu tồn kho là ảnh chụp mới nhất và cờ khi quá cũ. · FR-INT-06
 - AC1. *Given* tồn kho SKU X ở kho Malmö đổi từ 800 → 750, *When* đồng bộ, *Then* `stock_snapshot.on_hand = 750`, `as_of` mới, giữ chỗ của CFO không bị ghi đè.
@@ -88,10 +91,13 @@
 - AC2. *Given* đơn `DISPATCHED`, *When* cancel, *Then* `409 ILLEGAL_TRANSITION`.
 - AC3. *Given* đơn `APPROVED`, *When* `replan` có lý do, *Then* giữ chỗ `committed` → `released`, đơn `SUBMITTED`, ghi `ORDER_REPLAN`.
 
-**US-ORD-05 — Đơn cần nhiều xe/nguồn** · Là *dispatcher*, tôi muốn đơn quá lớn được đánh dấu để tự lập. · FR-ORD-05
-- AC1. *Given* tổng khối lượng 28.000 kg > xe lớn nhất (9.000 kg), *Then* `needs_manual = true`, đơn `MANUAL_PLANNING`, `manual_reason = NEEDS_MULTI_VEHICLE`.
-- AC2. *Given* đơn đó, *When* dispatcher gọi `manual-plan` với một xe 9.000 kg, *Then* `422 NO_TRUCK_FIT` kèm `details.hint = "EXTERNAL_HANDOFF"`.
-- AC3. *When* dispatcher gọi `external-handoff` có lý do, *Then* đơn `HANDLED_EXTERNALLY` (xem US-APR-04).
+**US-ORD-05 — Đơn lớn hơn một xe** · Là *dispatcher*, tôi muốn hệ thống tự gợi ý số xe, loại xe và xếp lịch nhiều xe. · FR-ORD-05, BR-DEL-05
+- AC1. *Given* đơn 20.000 kg, kho có xe 18 t (18.000 kg), 12 t (6.000 kg), 26 t (26.000 kg) đều rảnh, *Then* phương án đầu dùng **1 xe 26 t** (ít xe nhất); *Given* xe 26 t bận, *Then* dùng **2 xe** (18 t + 6 t) thay vì 3 xe 12 t.
+- AC2. *Then* mỗi phương án có `vehicle_count`, danh sách `vehicles` (xe, loại, tài xế, `load_kg`, `load_m3`, phần hàng) và tổng phần hàng bằng đúng đơn; một dòng được tách qua nhiều xe khi cần.
+- AC3. *Then* mọi xe cùng một kho, cùng ngày, ETA trong cửa sổ và chênh nhau ≤ `multi_vehicle.max_arrival_spread_min` (30'); ETA của phương án = xe tới cuối.
+- AC4. *Then* không giới hạn số xe; *Given* kho không đủ xe/tài xế rảnh cho cả đơn, *Then* kho đó bị loại `NO_TRUCK_FIT` (`detail.reason = combined_capacity`) hoặc `TRUCK_BUSY`/`NO_DRIVER`.
+- AC5. *Given* đơn cần năng lực `crane` mà không xe nào có, *Then* mọi kho bị loại ở check `truck`, đơn `NO_FEASIBLE_DATE` (không có trạng thái `MANUAL_PLANNING`).
+- AC6. *Then* không xe nào chở hai đơn trong cùng chuyến (không ghép đơn).
 
 ---
 
@@ -134,7 +140,10 @@
 
 **US-WH-04 — Ghi mốc chuẩn bị** · Là *quản lý/trưởng ca*, tôi ghi `START_PREP`, `GOODS_READY`, `LOADED` thay cho công nhân. · FR-EXE-01
 - AC1. *Given* đơn `APPROVED`, *When* tôi ghi `START_PREP`, *Then* đơn `PREPARING`, `occurred_at` lưu giờ tôi nhập.
-- AC5. *When* `START_PREP` có `crew_size = 3`, *Then* giá trị được lưu trong payload và chép vào `improvement_log.crew_size` khi đơn đóng (dữ liệu để học định mức sau này); thiếu `crew_size` vẫn hợp lệ.
+- AC5. *When* `START_PREP` thiếu `crew_size`, *Then* `422`; `PREP_RESUMED` cũng bắt buộc `crew_size`.
+- AC6. *Given* START_PREP 07:00 (3 người), PREP_PAUSED 09:00, PREP_RESUMED 13:00 (2 người), GOODS_READY 14:30, *Then* `actual_labour_hours = 3×2 + 2×1,5 = 9,0`; đơn ở `PREPARING` suốt lúc tạm dừng.
+- AC7. *Given* đơn có giờ kế hoạch N3 6 giờ và N1 3 giờ (tổng 9) và AC6, *Then* N3 nhận 6,0 giờ thực tế; với 800 bao N3, `group_hours_per_unit.N3.hours_per_unit = 0,0075` giờ/bao (không phụ thuộc số người).
+- AC8. *When* `PREP_PAUSED` khi đang tạm dừng hoặc `PREP_RESUMED` khi đang làm, *Then* `409 ILLEGAL_TRANSITION`.
 - AC2. *When* ghi `LOADED` trước `GOODS_READY`, *Then* `409 ILLEGAL_TRANSITION`.
 - AC3. *When* gửi lại cùng `Idempotency-Key`, *Then* không tạo sự kiện thứ hai.
 - AC4. *Then* sau mỗi mốc, ETA được tính lại (một dòng `eta_forecast` mới).
@@ -152,6 +161,8 @@
 - AC1. *Given* 20 pallet xi măng (N3: 0,25 + 20×0,15), 15 pallet gạch (N2: 0,25 + 15×0,40), 3 dòng keo N1 (0,05 mỗi dòng), *Then* `labour_hours = 3,25 + 6,25 + 0,15 + 0,5 = 10,15`; không có giờ thiết bị trong kết quả.
 - AC2. *Given* một dòng có cờ FRAGILE (×1,25) và HAZARDOUS (×1,30), *Then* hệ số = 1,625 (tối đa theo `flag_multiplier_cap = 2,0`).
 - AC3. *Then* kết quả giống nhau với mọi kho (hệ số hiệu suất mặc định 1,0).
+- AC4. *Given* 20 bao xi măng (N3, pallet 40 bao), *Then* `prep_qty = 0,5` và giờ dòng = 0,25 + 0,5×0,15 = 0,325 (tính theo đơn vị cơ sở, không làm tròn lên pallet).
+- AC5. *Given* hàng không chia nhỏ được (không có `base_units_per_prep_unit`) với số lượng 2,4, *Then* `prep_qty = 3` (làm tròn lên).
 
 **US-PLN-02 — Lịch chuẩn bị và giờ cắt** · Là *hệ thống*, tôi xếp việc theo công suất và giờ cắt. · BR-PRP-04
 - AC1. *Given* công suất ngày D còn 4 giờ, việc 10,15 giờ, *Then* xếp 4 giờ ngày D, phần còn lại sang ngày làm việc kế, `goods_ready_at` ở ngày cuối.
@@ -182,7 +193,8 @@
 - AC1. *Given* ba ứng viên (km 10/40/12; mức đầy 85%/40%/60%), *Then* score 0,50/0,50/0,26 → rank 1 là phương án thứ ba (Malmö).
 - AC2. *Given* chênh km chỉ 1 km (nhỏ hơn 2 km), *Then* `n_km` đều 0 (vùng bỏ qua).
 - AC3. *Given* chỉ một ứng viên, *Then* score 0 và vẫn trả 1 phương án.
-- AC4. *Given* hòa điểm, *Then* ưu tiên `planning_reserve` lớn hơn, rồi `complexity_points` thấp hơn, ETA sớm hơn, mã xe nhỏ hơn.
+- AC4. *Given* hòa điểm, *Then* ưu tiên `planning_reserve` lớn hơn, rồi `complexity_points` thấp hơn, ETA sớm hơn, **tổng tải xe nhỏ hơn** (xe nhỏ hơn mà vẫn đủ chứa), rồi mã xe nhỏ hơn.
+- AC7. *Given* phương án 1 xe và phương án 2 xe, *Then* phương án 1 xe xếp trước bất kể điểm.
 - AC5. *Then* mỗi phương án có `checks` 5 mục, `reason_codes`, `explanation` sinh từ mẫu câu; không phương án nào quá 2 cái cùng một kho; phương án hạng 1 có mã `LOWEST_SCORE_OF_3` (không có mã/chữ "cheapest"/"cost").
 - AC6. *Then* giờ công đơn không được dùng làm tiêu chí so sánh giữa các kho.
 
@@ -204,13 +216,13 @@
 ## Epic 7 — Giữ chỗ và duyệt
 
 **US-RES-01 — Giữ chỗ cả 3 phương án** · Là *hệ thống*, tôi khóa tạm tài nguyên. · BR-RES-01..03
-- AC1. *When* engine trả 3 phương án, *Then* tạo `planning_run.hold_expires_at = now + 15'`; `stock_reservation` và `prep_reservation` một lần cho mỗi (đơn, kho); `vehicle_reservation` cho từng phương án.
+- AC1. *When* engine trả 3 phương án, *Then* tạo `planning_run.hold_expires_at = now + 15'`; `stock_reservation` và `prep_reservation` một lần cho mỗi (đơn, kho); `vehicle_reservation` cho từng xe của từng phương án.
 - AC2. *Given* hai phương án cùng đơn dùng cùng xe, *Then* ghi được (cùng `order_id`); *Given* đơn khác cố giữ cùng xe trùng giờ, *Then* ràng buộc EXCLUDE từ chối.
 - AC3. *When* gia hạn 2 lần thành công, *Then* lần thứ ba `409 HOLD_EXTENSION_LIMIT`.
 - AC4. *When* quá `hold_expires_at`, *Then* job `hold_expiry` chuyển `held → expired`, plan `proposed → expired`.
 - AC5. *Then* tồn kho khả dụng của đơn khác trừ cả `held` còn hạn lẫn `committed`.
-- AC6. *Given* kho A còn 100 bao SKU X khả dụng, đơn 1 cần 80 và đơn 2 cần 70, *When* hai dispatcher lập kế hoạch hoặc duyệt **đồng thời**, *Then* tổng `held + committed` của X tại A không vượt 100; đúng một đơn có giữ chỗ/duyệt tại A, đơn kia bị loại kho A (`STOCK_SHORT`) hoặc nhận `409 RESOURCE_CONFLICT`.
-- AC7. *Given* kho A ngày D còn 6 giờ công trống, hai đơn mỗi đơn cần 5 giờ trong ngày D, *When* duyệt đồng thời, *Then* tổng giờ đã đặt ngày D không vượt công suất; đúng một đơn thành công.
+- AC6. *Given* kho A còn 100 bao SKU X khả dụng, đơn 1 cần 80 và đơn 2 cần 70, *When* hai dispatcher **lập kế hoạch** đồng thời, *Then* cả hai đều được giữ chỗ `held` tại A (cho phép vượt); *When* hai dispatcher **duyệt** đồng thời, *Then* tổng `committed` của X tại A không vượt 100, đúng một đơn thành công, đơn kia nhận `409 RESOURCE_CONFLICT`.
+- AC7. *Given* kho A ngày D còn 6 giờ công trống, hai đơn mỗi đơn cần 5 giờ trong ngày D, *When* duyệt đồng thời, *Then* tổng giờ `committed` ngày D không vượt công suất; đúng một đơn thành công.
 
 **US-APR-01 — Duyệt kế hoạch** · Là *dispatcher*, tôi duyệt để thành cam kết. · BR-APR-01, FR-APR-03
 - AC1. *When* `POST /plans/{id}/approve` hợp lệ, *Then* plan `approved`, giữ chỗ → `committed`, phương án khác `superseded`/`released`, tạo `delivery_trip` + `trip_stop`, đơn `APPROVED`, đặt `committed_date`, `promise_start/end`, tạo thông báo `CONFIRMED`, ghi `PLAN_APPROVED`.
@@ -224,6 +236,7 @@
 
 **US-APR-02 — Kế hoạch tay** · Là *dispatcher*, tôi tự lập khi hệ thống không phù hợp. · BR-APR-02
 - AC1. *Given* thiếu `manual_reason_code`, *Then* `422`.
+- AC4. *Given* đơn `PLANNED` hoặc `NO_FEASIBLE_DATE`, *When* kế hoạch tay với 2 xe chia đủ hàng, *Then* hợp lệ; tổng phần hàng các xe khác đơn → `422`.
 - AC2. *Given* tôi chọn xe thiếu tải, *Then* engine kiểm gate và từ chối `422 NO_TRUCK_FIT`.
 - AC3. *When* hợp lệ, *Then* plan `manual` được duyệt, lưu snapshot gồm phương án hệ thống đã đề xuất, tính vào `manual_plan_count`.
 
@@ -233,12 +246,14 @@
 - AC3. *When* dispatcher duyệt kế hoạch mới, *Then* không bị chỉ mục `ux_one_approved_plan` chặn, và một thông báo `CONFIRMED` **mới** được tạo (dedupe theo `plan_id`) với ngày mới.
 - AC4. *Given* đơn `APPROVED`, *When* `cancel` có lý do, *Then* kế hoạch, giữ chỗ, chuyến được đóng như AC2 và đơn `CANCELLED`.
 
-**US-APR-04 — Ghi nhận xử lý ngoài CFO** · Là *dispatcher*, tôi đóng đơn cần nhiều xe hoặc xe ngoài đội mà CFO không lập được. · FR-ORD-05, BR-DEL-05
-- AC1. *Given* đơn `MANUAL_PLANNING`, *When* `POST /orders/{id}/external-handoff` có `reason_code`, `reason_text`, *Then* đơn `HANDLED_EXTERNALLY`, lưu `external_handoff` (đối tác, ngày dự kiến, ghi chú), ghi `EXTERNAL_HANDOFF_RECORDED`.
-- AC2. *When* thiếu `reason_code` hoặc `reason_text`, *Then* `422 REASON_REQUIRED`; *Given* đơn không ở `MANUAL_PLANNING`, *Then* `409 ILLEGAL_TRANSITION`.
-- AC3. *Then* không tạo giữ chỗ, chuyến, GPS hay thông báo tự động cho khách.
-- AC4. *Then* đơn không nằm trong mẫu số `on_time_rate`, được đếm ở `external_handoff_count`.
-- AC5. *Given* vai trò khác `dispatcher`, *Then* `403`.
+**US-APR-04 — Gợi ý lập lại tự động** · Là *dispatcher*, tôi muốn hệ thống tự đưa phương án mới khi đơn đã duyệt có thay đổi, để tôi chỉ cần duyệt. · FR-APR-05, BR-APR-04
+- AC1. *Given* đơn `APPROVED` và một trong bốn tín hiệu (nguồn sửa đơn sau duyệt, `PLAN_INVALIDATED`, `VEHICLE_ISSUE`, giao `FAILED`), *Then* có `planning_run(kind='replan_suggestion')` và alert `REPLAN_SUGGESTED` kèm `run_id`; đơn giữ nguyên trạng thái.
+- AC2. *Given* kho A còn 0 bao trống nhưng đơn này đang giữ `committed` 80 bao tại A, *When* tạo gợi ý, *Then* engine coi 80 bao đó là khả dụng cho chính đơn này (kế hoạch cũ coi như không tồn tại); tương tự cho giờ công, xe, tài xế.
+- AC3. *Then* lần chạy gợi ý **không** tạo dòng giữ chỗ nào.
+- AC4. *When* dispatcher duyệt phương án gợi ý, *Then* trong một transaction: kế hoạch cũ `superseded`, giữ chỗ cũ `released`, chuyến cũ `cancelled`, kế hoạch mới `approved`, giữ chỗ mới `committed`, đơn `APPROVED`, thông báo `CONFIRMED` mới; tài nguyên đã bị chiếm → `409 RESOURCE_CONFLICT`, không thay đổi gì.
+- AC5. *When* dispatcher chọn giữ kế hoạch cũ mà không có lý do, *Then* `422 REASON_REQUIRED`; có lý do → alert đóng, ghi `REPLAN_KEPT`.
+- AC6. *Then* không có job hay đường code nào tự duyệt phương án gợi ý.
+- AC7. *Given* đơn đã `DISPATCHED`, *Then* chỉ tạo alert, không tạo gợi ý.
 
 ---
 
@@ -250,6 +265,9 @@
 
 **US-EXE-02 — Xuất phát, giao, thất bại** · Là *tài xế*, tôi ghi sự kiện. · BR-EXE-01/02
 - AC1. *Given* đơn `LOADED`, *When* tôi ghi `DISPATCHED`, *Then* chuyến `on_road`, đơn `DISPATCHED`, thông báo `DISPATCHED` được tạo.
+- AC5. *Given* đơn 2 xe, *When* xe 1 `DISPATCHED`, *Then* đơn `DISPATCHED` và một thông báo `DISPATCHED`; xe 2 `DISPATCHED` không tạo thông báo thứ hai.
+- AC6. *Given* đơn 2 xe, *When* xe 1 `DELIVERED`, *Then* đơn vẫn `DISPATCHED`; *When* xe 2 `DELIVERED`, *Then* đơn `DELIVERED`, hai POD, một thông báo `DELIVERED`.
+- AC7. *Given* đơn 2 xe, xe 1 `DELIVERED`, xe 2 `FAILED`, *Then* đơn `FAILED` có ghi phần đã giao, có gợi ý lập lại (US-APR-04).
 - AC2. *When* `DELIVERED {recipient_name}`, *Then* đơn `DELIVERED`, `proof_of_delivery`, `delivered_at`, thông báo `DELIVERED`, trip `completed`.
 - AC3. *When* `FAILED` thiếu `failure_reason`, *Then* `422`; hợp lệ → đơn `FAILED`, thông báo `FAILED` cho khách, alert dispatcher.
 - AC4. *Given* tài xế khác cố ghi cho chuyến này, *Then* `403`.
@@ -376,9 +394,20 @@
 - AC1. *Then* hiện 8 chỉ số kèm baseline và thay đổi so với baseline; có biểu đồ chuỗi theo ngày (ngày tính theo múi giờ market).
 - AC2. *Given* đơn FAILED, *Then* không nằm trong mẫu số `on_time_rate`.
 - AC3. *Then* "cost per delivery" hiển thị là giờ công và km trung bình mỗi lần giao, không quy ra tiền.
-- AC4. *Given* một owner cửa hàng, *Then* thấy doanh thu và số đơn của cửa hàng mình, không thấy của cửa hàng khác.
-- AC5. *Given* hai đơn DELIVERED trong kỳ (tổng `line_total` 10.000 và 5.500 SEK), một đơn CANCELLED và một đơn `HANDLED_EXTERNALLY`, *Then* `revenue = "15500.00"`, `delivered_orders = 2`, `currency = SEK`.
-- AC6. *Given* Business owner (`viewer`, `can_view_revenue = true`), *Then* `GET /kpi/revenue` trả `200`; *Given* Project Lead (`viewer`, `can_view_revenue = false`), *Then* `403`.
+- AC4. *Then* `/kpi/*` chỉ cho `admin` hoặc người có `ops`; Business owner (`revenue_all`) nhận `403`.
+
+**US-REV-01 — Doanh thu** · Là *Business owner / owner kho, cửa hàng*, tôi xem doanh thu chỉ đọc. · FR-KPI-02, BR-KPI-01 (mỗi AC thành một test)
+- AC1. *Given* Business owner, *Then* thấy doanh thu mọi cửa hàng và kho; `/kpi/summary`, `/audit/decisions`, `/orders/{id}` trả `403`.
+- AC2. *Given* store manager là owner của ST-021, *Then* chỉ thấy ST-021; yêu cầu ST-022 trả `404`.
+- AC3. *Given* quản lý kho Göteborg là owner của GBG, *Then* chỉ thấy kho GBG ở góc nhìn warehouse; `view=store` với GBG → `422`.
+- AC4. *Given* dispatcher, CS, sales không phải owner, tài xế, Project lead, *Then* `403`; admin thấy tất cả.
+- AC5. *Then* doanh thu ghi nhận chỉ gồm đơn DELIVERED, theo ngày giao ở múi giờ market; FAILED và CANCELLED không tính; đơn APPROVED đến DISPATCHED hiện ở "Booked".
+- AC6. *Then* doanh thu bằng tổng `line_total`; không có phí giao hay đóng gói.
+- AC7. *Then* tổng theo cửa hàng bằng tổng theo kho trong cùng kỳ (đơn không có cửa hàng nhóm vào "Unassigned store"); UI không có tổng gộp hai góc nhìn.
+- AC8. *Then* xuất CSV chỉ cho owner, Business owner, admin; mỗi lần ghi `REVENUE_EXPORTED`; người khác `403`.
+- AC9. *Then* danh sách đơn của Business owner không chứa tên, điện thoại, địa chỉ khách.
+- AC10. *Given* đơn giao 23:50 giờ Stockholm, *Then* tính vào ngày đó, không lệch sang UTC.
+- AC11. *Given* đơn giao thất bại rồi giao lại thành công, *Then* chỉ tính một lần, vào ngày giao thành công.
 
 **US-KPI-02 — Baseline** · Là *admin*, tôi nhập baseline thủ công.
 - AC1. *When* `PUT /kpi/baseline/planning_time_min {value:15}`, *Then* dashboard so sánh với 15 phút.
@@ -411,7 +440,7 @@
 
 **US-SRC-01 — Dữ liệu seed hợp lệ** · 
 - AC1. *When* chạy seed, *Then* có 3 kho, 25 cửa hàng, ~100 SKU phủ N1–N6, 8–10 xe, ~40 khách (DN và cá nhân), địa chỉ kèm toạ độ, tồn kho và hàng nhập, lịch xe, ~150 nhân viên, ngày lễ Thụy Điển; seed lặp lại cho kết quả giống nhau.
-- AC2. *Then* seed có các tình huống cho kịch bản kiểm thử 1–16 (xem `08`).
+- AC2. *Then* seed có các tình huống cho kịch bản kiểm thử 1–18 (xem `08`).
 
 **US-SRC-02 — Hợp đồng nguồn dùng chung** · BR-GEN-02
 - AC1. *Then* mọi nước dùng cùng `openapi.yaml`; contract test chạy với instance SE và một instance giả khác.
@@ -427,17 +456,17 @@
 |---|---|---|
 | 1 | US-INT-01..05 | FR-INT-01..07, BR-GEN-01/02/05, BR-ORD-01 |
 | 2 | US-PRD-01..05 | FR-PRD-01..05, BR-PRD-01..05 |
-| 3 | US-ORD-01..05 | FR-ORD-01..05, BR-ORD-01..04 |
+| 3 | US-ORD-01..05 | FR-ORD-01..05, BR-ORD-01..04, BR-DEL-05 |
 | 4 | US-ATP-01..03 | FR-ATP-01..03, BR-ATP-01..05 |
 | 5 | US-WH-01..05 (US-WH-03 đã bỏ) | FR-PRP-02, FR-PRP-04, FR-PRP-05, FR-EXE-01, BR-PRP-02, BR-PRP-04, BR-PRP-05, BR-EMP-03 |
 | 6 | US-PLN-01..08 | FR-PRP-01, FR-DEL-01..04, FR-RNK-01..03, BR-PRP-01, BR-DEL-01..05, BR-GATE-01, BR-RNK-01..05 |
-| 7 | US-RES-01, US-APR-01..04 | FR-APR-01..04, FR-ORD-05, BR-RES-01..04, BR-APR-01..03, BR-DEL-05 |
-| 8 | US-EXE-01..04 | FR-EXE-01..03, BR-EXE-01..03 |
+| 7 | US-RES-01, US-APR-01..04 | FR-APR-01..05, BR-RES-01..04, BR-APR-01..04 |
+| 8 | US-EXE-01..04, US-WH-04 | FR-EXE-01..04, BR-EXE-01..03, BR-DEL-05 |
 | 9 | US-GPS-01..03 | FR-GPS-01, BR-GPS-01 |
 | 10 | US-RSK-01..03 | FR-RSK-01/02, BR-RSK-01/02 |
 | 11 | US-NOT-01..03 | FR-NOT-01..04, BR-NOT-01..03 |
 | 12 | US-EMP-01..04 | FR-EMP-01..03, BR-EMP-01..04 |
 | 13 | US-CS-01/02 | FR-ORD-04, BR-GPS-01 |
-| 14 | US-KPI-01/02, US-LOG-01 | FR-KPI-01/02, FR-LOG-01, BR-KPI-01, BR-GEN-04 |
+| 14 | US-KPI-01/02, US-REV-01, US-LOG-01 | FR-KPI-01/02, FR-LOG-01, BR-KPI-01, BR-GEN-04 |
 | 15 | US-ADM-01..03 | FR-ADM-01, BR-GPS-01 |
 | 16 | US-SRC-01..03 | FR-INT-01, BR-GEN-02 |

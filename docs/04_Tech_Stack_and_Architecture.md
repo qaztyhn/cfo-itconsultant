@@ -2,7 +2,9 @@
 
 > Tài liệu giao cho agent code. Kết hợp với `05_Database_Design.md` (DDL), `06_API_Specification.md` (hợp đồng API), `09_AI_Coding_Rules.md` (quy tắc viết code). Nhãn: **[C]** đã chốt, **[S]** slide, **[T]** bản thiết kế, **[A]** giả định chỉnh được qua cấu hình.
 >
-> **Phiên bản 1.1 (06/11/2026):** bỏ thiết bị kho khỏi engine (không còn `eq_cap`, `PREP_NO_EQUIPMENT`); quy tắc khóa đồng thời cho hàng và giờ công (mục 7); đóng kế hoạch cũ khi lập lại/hủy/giao thất bại; lối "xử lý ngoài CFO" cho đơn cần nhiều xe; mã lý do `LOWEST_SCORE_OF_3`; cơ sở pháp lý GPS (mục 9).
+> **Phiên bản 1.2 (06/11/2026):** một đơn có thể đi **nhiều xe** cùng kho (bước 2d mới, ít xe nhất trước); bỏ bước 0 "manual" và lối xử lý ngoài CFO; hòa điểm "xe nhỏ hơn mà vẫn đủ chứa"; giờ công theo đơn vị cơ sở nhỏ nhất; giữ chỗ lúc lập kế hoạch không khóa, chỉ chặn khi duyệt; **gợi ý lập lại tự động** khi đơn đã duyệt có thay đổi (mục 7.10); tạm dừng/tiếp tục chuẩn bị và dữ liệu giờ nhân công thực tế; cơ sở pháp lý GPS chốt là lợi ích hợp pháp.
+>
+> Lịch sử **v1.1:** bỏ thiết bị kho khỏi engine (không còn `eq_cap`, `PREP_NO_EQUIPMENT`); quy tắc khóa đồng thời cho hàng và giờ công (mục 7); đóng kế hoạch cũ khi lập lại/hủy/giao thất bại; lối "xử lý ngoài CFO" cho đơn cần nhiều xe; mã lý do `LOWEST_SCORE_OF_3`; cơ sở pháp lý GPS (mục 9).
 
 ## 1. Nguyên tắc kiến trúc
 
@@ -111,7 +113,7 @@ class MarketAdapter(Protocol):
 2. Gọi adapter theo trang; mỗi bản ghi qua Pydantic DTO. Lỗi → `stg.sync_reject` (mã: `BAD_QTY`, `UNKNOWN_WAREHOUSE`, `BAD_DATE`, `MISSING_COORDS`, `UNKNOWN_SKU`…), **không dừng cả lượt**.
 3. **Upsert theo khóa tự nhiên** `(market_id, external_ref)`; dùng `source_version` để bỏ qua bản cũ hơn.
 4. Cuối lượt: `status = ok | partial | failed`; chỉ khi `ok/partial` mới ghi `sync_checkpoint = max(updated_at)`. Thất bại → alert `SYNC_FAILED` cho IT.
-5. **Đơn:** chỉ nhận đơn `SUBMITTED_FOR_PLANNING`. Đơn mới → `SUBMITTED` (rồi `OrderService.prepare_for_planning`: kiểm ánh xạ SKU, nếu thiếu → `BLOCKED_UNMAPPED_SKU` + `mapping_task`; ngược lại gọi `PlanningService.plan(order)`). Đơn đã APPROVED mà nguồn gửi bản mới (sửa/hủy) → **không ghi đè**, tạo alert `ORDER_CHANGED_AFTER_APPROVAL`; dispatcher quyết định lập lại.
+5. **Đơn:** chỉ nhận đơn `SUBMITTED_FOR_PLANNING`. Đơn mới → `SUBMITTED` (rồi `OrderService.prepare_for_planning`: kiểm ánh xạ SKU, nếu thiếu → `BLOCKED_UNMAPPED_SKU` + `mapping_task`; ngược lại gọi `PlanningService.plan(order)`). Đơn đã APPROVED mà nguồn gửi bản mới (sửa/hủy) → **không ghi đè**, tạo alert `ORDER_CHANGED_AFTER_APPROVAL` và **tự gợi ý phương án mới** theo bản mới (mục 7.10); dispatcher quyết định.
 6. **Tồn kho:** ghi đè `ops.stock_snapshot` bằng ảnh chụp mới và `as_of`; không đụng giữ chỗ của CFO. Nếu `now − as_of > 15 phút` → cờ vàng và alert `STALE_DATA`.
 7. **Hàng nhập:** chỉ hàng chưa về; hàng `received` hoặc biến mất khỏi nguồn thì đặt `received = true`. Hàng chuyển kho tạo bởi CFO (`source='transfer'`) không bị nguồn ghi đè.
 8. **Sau mỗi lượt tồn kho/hàng nhập/lịch xe thay đổi:** tìm các đơn đã duyệt bị ảnh hưởng và gọi `RiskService.recalculate(order, trigger='source_change')`.
@@ -151,16 +153,19 @@ Hàm vào chính: `plan_order(order: OrderCtx, warehouses: list[WarehouseCtx], c
 
 ### 6.2 Quy trình
 
-**Bước 0, tiền kiểm.** Mọi dòng phải có `global_product_id` (nếu không, dừng ở service, không vào engine). Tổng khối lượng/thể tích > xe lớn nhất của mọi kho, hoặc nhóm cần `vehicle_requirement` mà không kho nào có xe phù hợp → `result = manual`, `reason = NEEDS_MULTI_VEHICLE | NO_CAPABLE_VEHICLE`.
+**Bước 0, tiền kiểm.** Mọi dòng phải có `global_product_id` (nếu không, dừng ở service, không vào engine). (v1.2: không còn kết quả `manual`; đơn lớn được chia cho nhiều xe ở bước 2d.)
 
 **Bước 1, khối lượng việc (độc lập kho) [C]: giờ công giống nhau ở mọi kho.**
 ```
-prep_qty(line)   = qty_base / base_units_per_prep_unit        # prep_unit='line' → 1
+prep_qty(line)   = qty_base / base_units_per_prep_unit        # tính theo ĐƠN VỊ CƠ SỞ nhỏ nhất (bao, tấm…), không làm tròn
+                 = ceil(qty_base)                              # hàng không chia nhỏ được (không có base_units_per_prep_unit)
+                 = 1                                           # prep_unit='line'
 flag_mult(line)  = min(Π multiplier(flag), cfg.flag_multiplier_cap)
 line_hours(line) = (group.fixed_hours + prep_qty × group.labour_hours_per_unit) × flag_mult   # fixed_hours tính MỖI DÒNG
 labour_hours     = Σ line_hours + cfg.final_inspection_hours (0.5)
 per warehouse    : labour_hours × location.efficiency_factor   (mặc định 1.0)
 ```
+Ví dụ đơn vị nhỏ nhất: 20 bao xi măng (pallet 40 bao) = 0,5 pallet → 0,25 + 0,5×0,15 = 0,325 h (tương đương 0,00375 giờ/bao).
 Ví dụ: 20 pallet xi măng (N3): 0,25 + 20×0,15 = 3,25 h; 15 pallet gạch (N2): 0,25 + 15×0,40 = 6,25 h; 3 dòng keo (N1): 3×0,05 = 0,15 h; kiểm cuối 0,5 → **10,15 giờ công**. MVP không tính giờ thiết bị: giả định mọi kho có đủ thiết bị và định mức giờ công đã bao gồm thời gian dùng thiết bị [C].
 
 **Bước 2, từng kho `w` (loại kho không qua được thì ghi mã lỗi đầu tiên).**
@@ -182,7 +187,7 @@ Thuật toán xếp việc, **tiến tới sớm nhất có thể**:
 
 *2c. Lên hàng.* `loading_start_at = goods_ready_at` nếu ≤ `cutoff` của ngày đó, nếu không dời sang đầu ca ngày làm việc kế (`complexity_points += 1`, mã `PREP_AFTER_CUTOFF`). `loading_min = base + per_ton × tấn` (mặc định 20 + 6/tấn) [A].
 
-*2d. Xe và tài xế.* Xe ứng viên: cùng kho, `status='available'`, `capacity_kg ≥ Σ`, `capacity_m3 ≥ Σ`, `allowed_group_ids` chứa nhóm các dòng (hoặc rỗng), `capabilities` thỏa `vehicle_requirement`. Tài xế ứng viên: `home_warehouse_id = w`, điểm danh `present/planned` ngày đó, hạng bằng `≥ required_licence` (CE ≥ C ≥ B), `licence_expires_on ≥` ngày chuyến, tổng giờ trong ngày (kể cả chuyến đã giữ) + chuyến này ≤ `driver_max_hours_day` (9), không trùng khoảng thời gian trong `vehicle_reservation` của đơn khác (kiểm trên cả xe lẫn tài xế). Tìm khoảng `[loading_start, trip_end]` không đụng bận: nếu đụng, dời `loading_start` tới hết khoảng bận (tối đa 10 lần).
+*2d. Xe và tài xế (v1.2: một hoặc nhiều xe).* Xe hợp lệ: cùng kho, `status='available'`, `allowed_group_ids` chứa nhóm các dòng nó chở (hoặc rỗng), `capabilities` thỏa `vehicle_requirement` của các dòng nó chở. **Chọn bộ xe:** tìm bộ xe hợp lệ, rảnh trong cùng ngày, có `Σ capacity_kg ≥ tổng kg` và `Σ capacity_m3 ≥ tổng m³` với **số xe ít nhất**; trong các bộ cùng số xe, ưu tiên tổng tải nhỏ hơn (xe nhỏ hơn mà vẫn đủ chứa). Không giới hạn số xe; bị chặn bởi số xe và tài xế rảnh của kho. **Chia hàng:** các dòng được tách qua nhiều xe theo tải và thể tích (một dòng có thể tách, ví dụ 40 pallet chia 2 xe), lưu `plan_vehicle.load_lines`. Mỗi kho sinh tối đa 2 bộ xe ứng viên (bộ ít xe nhất và bộ thay thế). Không ghép đơn: một xe chỉ chở một đơn trong một chuyến. Mỗi xe cần một tài xế: Tài xế ứng viên: `home_warehouse_id = w`, điểm danh `present/planned` ngày đó, hạng bằng `≥ required_licence` (CE ≥ C ≥ B), `licence_expires_on ≥` ngày chuyến, tổng giờ trong ngày (kể cả chuyến đã giữ) + chuyến này ≤ `driver_max_hours_day` (9), không trùng khoảng thời gian trong `vehicle_reservation` của đơn khác (kiểm trên cả xe lẫn tài xế). Tìm khoảng `[loading_start, trip_end]` không đụng bận cho từng xe: nếu đụng, dời `loading_start` tới hết khoảng bận (tối đa 10 lần). Các xe lên hàng lần lượt từ `goods_ready_at` (mỗi xe `loading_min` theo tải của nó). **Đến gần như cùng lúc:** mọi xe tới trong cùng cửa sổ nhận hàng và chênh nhau không quá `multi_vehicle.max_arrival_spread_min` (mặc định 30 phút); xe lên hàng xong sớm chờ để xuất phát sao cho tới cùng lúc. Không có bộ xe nào đủ (thiếu loại xe như cẩu/ben, hoặc cả đội xe kho đó không đủ tải trong ngày) → loại kho với `NO_TRUCK_FIT` (`detail.reason = capability | combined_capacity`) hoặc `TRUCK_BUSY`/`NO_DRIVER`.
 
 *2e. Giao hàng và cửa sổ nhận.*
 ```
@@ -194,7 +199,7 @@ Chọn ngày giao `T` theo `date_mode`:
 - `exact`: chỉ `T = date_to`; không bao giờ giao sớm hơn ngày khách chọn. Nếu `arrive_min < window(T).open` → `arrive = open` (xuất phát muộn lại); nếu `arrive_min > window(T).close` → fail `DATE_AFTER_DEADLINE`.
 - `range`: `T` = ngày làm việc sớm nhất trong `[date_from, date_to]` thỏa (không giao sớm hơn `date_from`).
 - `latest`: `T` = ngày làm việc sớm nhất `≤ date_to`.
-Nếu `arrive` rơi ngoài cửa sổ thì chuyển sang ngày làm việc kế tiếp thuộc tập ngày cho phép. `eta_at = arrive` (làm tròn lên 15 phút). `unload_min = base + per_ton × tấn`; `trip_end_at = eta + unload + drive về (đối xứng)`.
+Nếu `arrive` rơi ngoài cửa sổ thì chuyển sang ngày làm việc kế tiếp thuộc tập ngày cho phép. `eta_at = arrive` (làm tròn lên 15 phút); với nhiều xe, ETA của phương án = ETA của **xe tới cuối cùng**. `unload_min = base + per_ton × tấn`; `trip_end_at = eta + unload + drive về (đối xứng)`.
 
 *2f. Dự trữ lập kế hoạch [C].* `earliest_feasible_eta(w,v)` = như trên nhưng **bỏ cận dưới của ngày** (không bị `date_from`/ngày `exact` kéo muộn). `planning_reserve = close(window(date_to)) − min earliest_feasible_eta` (phút). `reserve_class`: `safe` nếu `≥ reserve_safe_days × 1440`, `tight` nếu `0 ≤ … <`, `infeasible` nếu `< 0` hoặc không có ứng viên.
 
@@ -210,13 +215,13 @@ Nếu `arrive` rơi ngoài cửa sổ thì chuyển sang ngày làm việc kế 
 
 Khi không còn ứng viên: `failed_check` = check **xa nhất trong thứ tự** (`stock → preparation → truck → site_date → safety`) mà ít nhất một kho đã đạt tới trước khi hỏng (nếu hòa, check đứng sớm hơn).
 
-**Bước 4, xếp hạng [C].** Trên tập ứng viên khả thi (mỗi cặp kho–xe tối đa một ứng viên):
+**Bước 4, xếp hạng [C].** Trên tập ứng viên khả thi (mỗi cặp kho–bộ xe tối đa một ứng viên). **Trước tiên ưu tiên số xe ít hơn** (v1.2), rồi mới tới điểm:
 ```
 n_km   = minmax(distance_km)      ; nếu (max−min) < max(2 km, 5% × min) thì mọi n_km = 0   (vùng bỏ qua)
 n_fill = minmax(capacity_fill)    ; nếu (max−min) < 0.05 thì mọi n_fill = 0
 score  = w_km × n_km + w_fill × n_fill            # mặc định 0.5 / 0.5; thấp hơn là tốt hơn
 ```
-Chỉ một ứng viên → score 0. Hòa (`|Δscore| < 0,001`) xét lần lượt: `planning_reserve` lớn hơn → `complexity_points` thấp hơn → `eta` sớm hơn → `vehicle.code` nhỏ hơn. `complexity_points` = +1 mỗi lần: dùng hàng nhập chưa về, lên hàng dời sang ca sau, cần chuyển kho (+ điểm dừng thêm sau này khi có ghép đơn). Lấy **top 3** (tối đa 2 phương án mỗi kho). Giờ công đơn như nhau ở mọi kho nên **không** là tiêu chí xếp hạng.
+Chỉ một ứng viên → score 0. Thứ tự sắp: `vehicle_count` tăng → `score` tăng; hòa (`|Δscore| < 0,001`) xét lần lượt: `planning_reserve` lớn hơn → `complexity_points` thấp hơn → `eta` sớm hơn → **tổng tải xe nhỏ hơn** (`total_capacity_kg`, rồi `total_capacity_m3`; xe nhỏ hơn mà vẫn đủ chứa) → mã xe nhỏ hơn (để kết quả luôn xác định). `complexity_points` = +1 mỗi lần: dùng hàng nhập chưa về, lên hàng dời sang ca sau, cần chuyển kho (+ điểm dừng thêm sau này khi có ghép đơn). Lấy **top 3** (tối đa 2 phương án mỗi kho). Giờ công đơn như nhau ở mọi kho nên **không** là tiêu chí xếp hạng.
 
 Ví dụ: ba phương án khả thi, đơn 12 giờ công ở mọi kho.
 
@@ -230,20 +235,24 @@ C thắng; A và B hòa thì xét `planning_reserve`, rồi `complexity_points`�
 
 **Bước 5, giải thích.** Sinh chuỗi từ `reason_codes` bằng mẫu câu cố định (không dùng AI trong MVP). Mã lý do của phương án hạng 1 là `LOWEST_SCORE_OF_3` (hoặc `LOWEST_SCORE_OF_2`, `ONLY_FEASIBLE`); **không** dùng mã hay chữ có nghĩa "rẻ nhất/cost", vì điểm là chỉ số thay thế, không phải tiền.
 
-**Hạn chế đã biết của xếp hạng [A]:** điểm là tương đối trong cùng một đơn (min–max); điểm không xét cỡ xe (xe 26 t và 12 t cùng quãng đường cùng điểm); khi hai phương án cùng kho thì `capacity_fill` bằng nhau nên thứ tự do tie-break quyết định. Ghi nhận để hiệu chỉnh sau pilot. Ví dụ: *"Điểm thấp nhất trong 3 phương án khả thi. Kho Malmö đủ hàng, mức đầy công suất 60%, xe 12t rảnh, giao cách 12 km, dự trữ 3 ngày (an toàn)."*
+**Hạn chế đã biết của xếp hạng [A]:** điểm là tương đối trong cùng một đơn (min–max); cỡ xe chỉ dùng khi hòa điểm, chưa quy ra chi phí; khi hai phương án cùng kho thì `capacity_fill` bằng nhau nên thứ tự do tie-break quyết định. Ghép đơn ngoài MVP: đơn đã dùng gần hết tải xe thì không cần ghép. Ghi nhận để hiệu chỉnh sau pilot. Ví dụ: *"Điểm thấp nhất trong 3 phương án khả thi. Kho Malmö đủ hàng, mức đầy công suất 60%, xe 12t rảnh, giao cách 12 km, dự trữ 3 ngày (an toàn)."*
 
-**Bước 6, không có ứng viên.** (a) `result = infeasible`, `failed_check` như trên. (b) `earliest_feasible_date`: chạy lại bước 2 **bỏ cận trên** của ngày yêu cầu, quét tối đa 14 ngày. (c) Nếu `failed_check = stock` ở mọi kho, sinh gợi ý chuyển kho (mục 6.4). (d) Service chuyển đơn sang `NO_FEASIBLE_DATE` (hoặc `MANUAL_PLANNING` nếu bước 0 báo).
+**Bước 6, không có ứng viên.** (a) `result = infeasible`, `failed_check` như trên. (b) `earliest_feasible_date`: chạy lại bước 2 **bỏ cận trên** của ngày yêu cầu, quét tối đa 14 ngày. (c) Nếu `failed_check = stock` ở mọi kho, sinh gợi ý chuyển kho (mục 6.4). (d) Service chuyển đơn sang `NO_FEASIBLE_DATE`. Gồm cả trường hợp đội xe không có loại xe cần (cẩu, ben) hoặc mọi kho đã kín xe trong các ngày khách chấp nhận (`failed_check = truck`); dispatcher thương lượng ngày mới, lập kế hoạch tay, hoặc hủy có lý do.
 
 ### 6.3 Theo dõi, ETA và rủi ro (`engine/forecast.py` + `RiskService`)
 
 **Khi nào tính lại ETA (không quét định kỳ vô ích):** (1) có sự kiện mốc/ngoại lệ; (2) có điểm GPS mới; (3) dữ liệu nguồn đổi (hàng nhập, tồn, công suất/điểm danh, lịch xe, đơn); (4) mốc kế hoạch quá hạn 30 phút mà chưa có sự kiện (job 5 phút, truy vấn nhẹ); (5) 07:00 mỗi sáng với đơn nhiều ngày; (6) lúc duyệt. Không có thay đổi thì không tính lại.
 
 **Công thức dự báo** (`forecast_eta`):
+- Đơn nhiều xe: tính cho từng xe, `forecast_eta` của đơn = xe tới muộn nhất.
+- Đang tạm dừng chuẩn bị (`PREP_PAUSED`): như dòng dưới, cận dưới `now`.
 - Trước `GOODS_READY`: `goods_ready_f = planned_goods_ready + max(0, START_PREP_thực − START_PREP_kế_hoạch)`, nếu quá giờ kế hoạch mà chưa xong thì `max(…, now)` (MVP không theo dõi tiến độ bên trong bước chuẩn bị nên đây là cận dưới; hộp "Why it is late" ở UI chỉ diễn giải theo công thức này); `loading_start_f` theo `cutoff`; `depart_f = max(depart_kế_hoạch, loading_start_f + loading_min)`; `eta_f = depart_f + drive_min`. (Dự trữ giữa giờ có thể xuất phát sớm nhất và `depart_kế_hoạch` tự hấp thụ chậm trễ.)
 - Sau `LOADED`: `depart_f = max(depart_kế_hoạch, loaded_at + 10 phút)`.
 - Sau `DISPATCHED` không có GPS: `eta_f = depart_thực + drive_min`.
 - Có GPS (điểm không quá `gps.lost_min` phút): `eta_f = recorded_at + thời gian đường còn lại` (ORS directions, fallback Haversine).
 - Làm tròn lên 15 phút. Mỗi lần ghi một dòng `ops.eta_forecast` (phiên bản ETA).
+
+**Giờ nhân công thực tế cho AI (v1.2).** Kho bấm `START_PREP` (nhập `crew_size`), có thể `PREP_PAUSED` / `PREP_RESUMED` (mỗi lần tiếp tục nhập lại `crew_size`), xong thì `GOODS_READY` (sửa `crew_size` nếu cần). Hệ thống cộng các đoạn làm việc: `actual_labour_hours = Σ crew_size × (kết thúc đoạn − bắt đầu đoạn)`. Chia giờ thực tế cho từng nhóm N1–N6 theo **tỷ lệ giờ kế hoạch** của nhóm trong đơn, rồi chia cho **số đơn vị cơ sở** của nhóm → `improvement_log.group_hours_per_unit` (giờ nhân công/đơn vị, không phụ thuộc số người). Đây là dữ liệu duy nhất AI giai đoạn 2 cần để hiệu chỉnh định mức (cần ≥ 30 đơn/nhóm).
 
 **Trạng thái rủi ro [C]:**
 ```
@@ -272,15 +281,16 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 
 ## 7. Giữ chỗ và duyệt (`ReservationService`, `ApprovalService`)
 
-1. **Đề xuất:** `PlanningService` gọi engine, rồi trong **một transaction**: tạo `planning_run` (+ `input_snapshot`), `fulfilment_plan` (3 phương án), `plan.stock_reservation` và `prep_reservation` **một lần cho mỗi (đơn, kho)**, `vehicle_reservation` cho từng phương án; `hold_expires_at = now + 15 phút`; ghi `decision_log` (`PLAN_PROPOSED`, `RESERVATION_HELD`); chuyển đơn `PLANNED`.
+1. **Đề xuất:** `PlanningService` gọi engine, rồi trong **một transaction**: tạo `planning_run` (+ `input_snapshot`), `fulfilment_plan` (3 phương án) + `plan_vehicle` (các xe của mỗi phương án), `plan.stock_reservation` và `prep_reservation` **một lần cho mỗi (đơn, kho)**, `vehicle_reservation` cho từng xe của từng phương án (**không khóa**, cho phép vượt, quy tắc 8); `hold_expires_at = now + 15 phút`; ghi `decision_log` (`PLAN_PROPOSED`, `RESERVATION_HELD`); chuyển đơn `PLANNED`.
 2. **Gia hạn:** `POST /planning-runs/{id}/extend` cộng 15 phút, tối đa 2 lần.
 3. **Hết hạn:** job `hold_expiry` đặt `held → expired`, kế hoạch `proposed → expired`; dispatcher phải chạy lại hoặc, nếu tài nguyên còn trống, nút Approve vẫn thành công vì bước kiểm tra lại (dưới đây).
-4. **Duyệt** (`Idempotency-Key` bắt buộc): transaction lấy khóa theo quy tắc 8 bên dưới; **kiểm tra lại** tồn kho, công suất, xe, tài xế bằng chính engine với dữ liệu mới; nếu đổi `committed_date` so với ngày khách đã đồng ý thì cần bản ghi `date_negotiation.agreed`; phương án chọn → `approved`, giữ chỗ → `committed`, phương án khác → `superseded`/`released`; tạo `delivery_trip` + `trip_stop`; đặt `committed_date`, `promise_start/end`; `order → APPROVED`; tạo thông báo `CONFIRMED`; `decision_log (PLAN_APPROVED hoặc ALT_SELECTED, snapshot)`; `eta_forecast` v1.
+4. **Duyệt** (`Idempotency-Key` bắt buộc): transaction lấy khóa theo quy tắc 8 bên dưới; **kiểm tra lại** tồn kho, công suất, xe, tài xế bằng chính engine với dữ liệu mới; nếu đổi `committed_date` so với ngày khách đã đồng ý thì cần bản ghi `date_negotiation.agreed`; phương án chọn → `approved`, giữ chỗ → `committed`, phương án khác → `superseded`/`released`; tạo mỗi xe một `delivery_trip` + `trip_stop`; đặt `committed_date`, `promise_start/end`; `order → APPROVED`; tạo thông báo `CONFIRMED`; `decision_log (PLAN_APPROVED hoặc ALT_SELECTED, snapshot)`; `eta_forecast` v1.
 5. **Đổi tiêu chí/chạy lại:** tạo `planning_run` mới, giữ chỗ cũ → `released`; bắt buộc lý do; `CRITERIA_CHANGED_RERUN`.
-6. **Kế hoạch tay:** dispatcher nhập kho, xe, tài xế, giờ; engine vẫn kiểm gate; bắt buộc `manual_reason_code` (+ text); lưu snapshot đầy đủ; cờ `manual` vào KPI.
+6. **Kế hoạch tay:** từ đơn `PLANNED` hoặc `NO_FEASIBLE_DATE`, dispatcher nhập kho, một hoặc nhiều xe (mỗi xe một tài xế, phần hàng), giờ; engine vẫn kiểm gate; bắt buộc `manual_reason_code` (+ text); lưu snapshot đầy đủ; cờ `manual` vào KPI.
 7. **Lập lại sau khi đã duyệt / xếp lại sau giao thất bại / hủy:** trong **một transaction**: kế hoạch cũ `approved`/`manual` → `superseded`; giữ chỗ `held`/`committed` → `released`; `trip_stop` `pending` → `cancelled`, `delivery_trip` chưa xong → `cancelled`; xóa `approved_plan_id`, `committed_date`, `promise_start/end` (giá trị cũ ghi vào `decision_log.before`); đơn → `SUBMITTED` (hoặc `CANCELLED`); bắt buộc lý do (`ORDER_REPLAN` / `ORDER_CANCELLED`). Lần duyệt mới tạo `CONFIRMED` mới (dedupe theo `plan_id`), không tự gửi gì khác cho khách. Lịch sử giao (POD theo `trip_stop`) được giữ nguyên.
-8. **Khóa đồng thời cho hàng và giờ công:** xe/tài xế đã có EXCLUDE ở DB; hàng và giờ công thì không. Khi **tạo giữ chỗ** và khi **duyệt**, service lấy `pg_advisory_xact_lock` theo key `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>`, theo thứ tự cố định **kho → sản phẩm → ngày → xe → tài xế** (id tăng dần), rồi đọc lại phần còn trống (đã trừ `held` còn hạn và `committed` của đơn khác). Thiếu khi lập kế hoạch → loại kho; thiếu khi duyệt → `409 RESOURCE_CONFLICT` và rollback. Không `FOR UPDATE` trên `ops.stock_snapshot` (job đồng bộ ghi đè bảng này).
-9. **Đơn cần nhiều xe hoặc xe ngoài đội (`MANUAL_PLANNING`, `NEEDS_MULTI_VEHICLE`/`NO_CAPABLE_VEHICLE`):** MVP không có thuật toán nhiều xe. Dispatcher có hai lối: (a) kế hoạch tay với **một** xe trong đội nếu qua gate; (b) **ghi nhận xử lý ngoài CFO** (`POST /orders/{id}/external-handoff`, mã lý do + thông tin bàn giao, ví dụ hãng vận tải đối tác) → đơn `HANDLED_EXTERNALLY` (trạng thái cuối), không giữ chỗ, không tạo chuyến, không GPS, không thông báo tự động; CS/dispatcher liên hệ khách ngoài hệ thống; `decision_log EXTERNAL_HANDOFF_RECORDED`; không tính vào `on_time_rate`, đếm ở `external_handoff_count`.
+8. **Khóa đồng thời cho hàng và giờ công (quyết định nhóm):** xe/tài xế đã có EXCLUDE ở DB; hàng và giờ công thì không. **Lúc lập kế hoạch không khóa**, cho phép giữ chỗ `held` vượt tồn kho/công suất. **Chỉ khi duyệt**, service lấy `pg_advisory_xact_lock` theo key `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>`, theo thứ tự cố định **kho → sản phẩm → ngày → xe → tài xế** (id tăng dần), rồi đọc lại phần còn trống (trừ `committed` của đơn khác). Thiếu → `409 RESOURCE_CONFLICT` và rollback; đơn duyệt trước thắng. Không `FOR UPDATE` trên `ops.stock_snapshot` (job đồng bộ ghi đè bảng này).
+9. **Đơn nhiều xe khi thực thi:** mỗi xe một chuyến, một tài xế, một POD. Kho ghi `LOADED` theo từng xe; đơn `LOADED` khi mọi xe đã lên hàng; `DISPATCHED` khi xe đầu tiên xuất phát (thông báo `DISPATCHED` gửi một lần); `DELIVERED` khi mọi xe giao xong (thông báo `DELIVERED` một lần); nếu mọi chuyến đã kết thúc mà có xe thất bại → đơn `FAILED` (ghi phần đã giao), dispatcher xếp lại phần còn thiếu. Khách nhận một `CONFIRMED` cho cả đơn.
+10. **Gợi ý lập lại tự động:** khi đơn đã duyệt gặp một trong bốn tín hiệu — nguồn sửa đơn sau khi duyệt, tồn kho đổi làm kế hoạch không còn hợp lệ (`PLAN_INVALIDATED`), `VEHICLE_ISSUE`, giao `FAILED` — `PlanningService` chạy `planning_run(kind='replan_suggestion')`, **coi như kế hoạch hiện tại của chính đơn không tồn tại** (cộng lại hàng, giờ công, xe, tài xế của nó vào phần khả dụng) và **không tạo giữ chỗ**; tạo alert `REPLAN_SUGGESTED` cho dispatcher kèm `run_id`. Dispatcher duyệt phương án gợi ý → trong một transaction: đóng kế hoạch cũ (quy tắc 7) rồi khóa, kiểm tra lại, commit kế hoạch mới, đơn → `APPROVED`, gửi `CONFIRMED` mới; hoặc giữ kế hoạch cũ (lý do, đóng alert). Không bao giờ tự duyệt (09 bất biến 1). Đơn đã `DISPATCHED` chỉ nhận alert.
 
 ## 8. Cấu hình `MarketConfig` (JSON trong `ref.market.config`, mặc định [A])
 
@@ -300,6 +310,7 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
   "after_loaded_min": 10,
   "driver_max_hours_day": 9,
   "receiving_lead_days": 1,
+  "multi_vehicle": {"max_arrival_spread_min": 30},
   "transfer_lead_days_default": 1,
   "rank": {"w_km": 0.5, "w_fill": 0.5, "dz_km_abs": 2, "dz_km_pct": 0.05, "dz_fill": 0.05, "tie_eps": 0.001},
   "risk": {"yellow_pct": 33, "orange_pct": 66, "consecutive_negative": 2, "min_reserve_min": 30,
@@ -317,7 +328,7 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 
 - **Xác thực:** `POST /auth/login` → access JWT (8 giờ) kèm `roles`, `employee_id`, `location_ids`. Mật khẩu argon2. Tài khoản kho: công nhân kho **không** có tài khoản; chỉ quản lý/trưởng ca đăng nhập.
 - **Phân quyền (RBAC + phạm vi):** kiểm ở phía máy chủ mỗi endpoint. Phạm vi: `warehouse` thấy dữ liệu kho của mình; `sales` (cửa hàng) thấy đơn của cửa hàng mình (chỉ xem); `dispatcher` thấy cả market; `driver` chỉ thấy chuyến của mình; `customer_service` xem đơn, ETA, lịch sử thông báo, ghi nhật ký liên hệ; `admin` (IT) quản trị; `viewer` chỉ xem KPI. Ma trận đầy đủ ở `06_API_Specification.md` mục 3.
-- **Cơ sở pháp lý GPS (giả định cho MVP) [C][A]:** dữ liệu vị trí tài xế là dữ liệu cá nhân của người lao động. Nhóm giả định: tài xế được thông báo rõ khi ký hợp đồng lao động và trong app về mục đích (điều phối giao hàng), ai xem (chỉ dispatcher), khi nào gửi (chỉ khi chuyến `on_road`, không theo dõi ngoài giờ làm/ngoài chuyến) và thời gian lưu (30 ngày). Vì sự đồng ý trong quan hệ lao động thường không được coi là tự nguyện theo GDPR, cơ sở pháp lý dự kiến là **lợi ích hợp pháp/thực hiện hợp đồng**, kèm DPIA và tham vấn nhân viên **trước khi dùng thật**; bản demo hiện biểu ngữ "chưa có DPIA". Cần kiểm tra lại với bộ phận pháp lý khi pilot.
+- **Cơ sở pháp lý GPS (chốt v1.2) [C][A]:** **lợi ích hợp pháp** kèm **thông báo minh bạch** và **DPIA**. Dữ liệu vị trí tài xế là dữ liệu cá nhân của người lao động. Nhóm giả định: tài xế được thông báo rõ khi ký hợp đồng lao động và trong app về mục đích (điều phối giao hàng), ai xem (chỉ dispatcher), khi nào gửi (chỉ khi chuyến `on_road`, không theo dõi ngoài giờ làm/ngoài chuyến) và thời gian lưu (30 ngày). Vì sự đồng ý trong quan hệ lao động thường không được coi là tự nguyện theo GDPR, cơ sở pháp lý dự kiến là **lợi ích hợp pháp/thực hiện hợp đồng**, kèm DPIA và tham vấn nhân viên **trước khi dùng thật**; bản demo hiện biểu ngữ "chưa có DPIA". Cần kiểm tra lại với bộ phận pháp lý khi pilot.
 - **GPS [C][S]:** chỉ `dispatcher` đọc được `vehicle_position` (kiểm ở API, không trả cho vai trò khác dưới mọi hình thức); khách và CS không bao giờ thấy; cờ `gps_enabled` theo nước và `compliance_record(DPIA)`; PWA hiện thông báo quyền riêng tư (mục đích, ai xem, 30 ngày); bản demo hiện biểu ngữ "chưa có DPIA, chỉ demo"; không có báo cáo năng suất theo tài xế; job xóa điểm GPS sau `retention_days` kể từ khi chuyến kết thúc; mất tín hiệu quá 60 phút → alert `GPS_LOST`.
 - **Dữ liệu cá nhân:** log kỹ thuật không chứa tên/điện thoại/email/địa chỉ; ẩn danh khách và nhân viên sau thời gian lưu giữ; email/SMS chỉ chứa trạng thái và ETA, không toạ độ.
 - **API:** CORS giới hạn origin của web; giới hạn tần suất cơ bản trên `/auth/login`; `Idempotency-Key`; xác thực endpoint `/internal/*` bằng khóa riêng.
@@ -326,7 +337,7 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 
 Hai lớp (chi tiết cột ở `05_Database_Design.md`): **nhật ký quyết định** (`audit.decision_log` qua `record_decision()` cùng transaction nghiệp vụ) và **log kỹ thuật JSONL** (`logs/<service>/<YYYY-MM-DD>.jsonl`, `service ∈ api|engine|integration|scheduler|notify`; trường `ts, level, service, correlation_id, order_id, market, event, duration_ms, extra`; online ghi stdout). `correlation_id` sinh ở middleware (`X-Correlation-ID`) và truyền xuống mọi lớp, mọi job. `GET /health` kiểm DB, độ tươi lượt đồng bộ, hàng đợi thông báo.
 
-**Mã hành động chuẩn của `decision_log`** (dùng đúng các mã này ở backend và hiển thị ở UI): `PLAN_PROPOSED`, `PLAN_APPROVED`, `ALT_SELECTED` (duyệt phương án rank > 1, bắt buộc lý do), `CRITERIA_CHANGED_RERUN` (bắt buộc lý do), `MANUAL_PLAN_CREATED` (bắt buộc mã lý do), `EXTERNAL_HANDOFF_RECORDED` (bắt buộc mã lý do, v1.1), `DATE_NEGOTIATION_RECORDED`, `ORDER_REPLAN`, `ORDER_CANCELLED`, `MAPPING_CONFIRMED`, `MAPPING_REJECTED`, `HANDLING_GROUP_CHANGED` (IT đổi định mức/hệ số/quy tắc), `SHIFT_CHANGED`, `ATTENDANCE_CHANGED`, `EXCEPTION_REPORTED`, `TRANSFER_SUGGESTED`, `TRANSFER_APPROVED`, `TRANSFER_CONFIRMED`, `NOTIFICATION_SENT`, `NOTIFICATION_SUPPRESSED` (kèm lý do), `RESERVATION_HELD`, `RESERVATION_COMMITTED`, `RESERVATION_RELEASED`, `HOLD_EXTENDED`, `HOLD_EXPIRED`, `GPS_SETTING_CHANGED`, `CONFIG_CHANGED`, `EMPLOYEE_ASSIGNMENT_CHANGED`, `USER_ROLE_CHANGED`.
+**Mã hành động chuẩn của `decision_log`** (dùng đúng các mã này ở backend và hiển thị ở UI): `PLAN_PROPOSED`, `PLAN_APPROVED`, `ALT_SELECTED` (duyệt phương án rank > 1, bắt buộc lý do), `CRITERIA_CHANGED_RERUN` (bắt buộc lý do), `MANUAL_PLAN_CREATED` (bắt buộc mã lý do), `REPLAN_SUGGESTED` (v1.2, hệ thống), `REPLAN_KEPT` (v1.2, dispatcher giữ kế hoạch cũ, bắt buộc lý do), `DATE_NEGOTIATION_RECORDED`, `ORDER_REPLAN`, `ORDER_CANCELLED`, `MAPPING_CONFIRMED`, `MAPPING_REJECTED`, `HANDLING_GROUP_CHANGED` (IT đổi định mức/hệ số/quy tắc), `SHIFT_CHANGED`, `ATTENDANCE_CHANGED`, `EXCEPTION_REPORTED`, `TRANSFER_SUGGESTED`, `TRANSFER_APPROVED`, `TRANSFER_CONFIRMED`, `NOTIFICATION_SENT`, `NOTIFICATION_SUPPRESSED` (kèm lý do), `RESERVATION_HELD`, `RESERVATION_COMMITTED`, `RESERVATION_RELEASED`, `HOLD_EXTENDED`, `HOLD_EXPIRED`, `GPS_SETTING_CHANGED`, `CONFIG_CHANGED`, `EMPLOYEE_ASSIGNMENT_CHANGED`, `USER_ROLE_CHANGED`, `REVENUE_EXPORTED` (v1.2, snapshot gồm bộ lọc và số dòng).
 
 ## 11. Kiến trúc frontend
 
@@ -339,8 +350,8 @@ Hai lớp (chi tiết cột ở `05_Database_Design.md`): **nhật ký quyết �
 ## 12. Kiểm thử
 
 - **Unit (engine, bắt buộc):** mỗi bước ở mục 6 có bộ test bảng (parametrized) gồm ca biên: thiếu hàng/có hàng nhập, hàng nhập chưa xác nhận, quá giờ cắt, thiếu công suất, không xe vừa, xe/tài xế bận, ngoài giờ nhận hàng, ba dạng ngày, vùng bỏ qua khi xếp hạng, một ứng viên, hòa điểm.
-- **Integration:** ingestion idempotent, upsert theo version, checkpoint; giữ chỗ cả 3 phương án và EXCLUDE chặn đơn khác nhưng cho phép cùng đơn; duyệt đồng thời hai dispatcher (tranh **xe**, tranh **cùng SKU**, tranh **cùng ngày công suất**: đúng một bên thắng); lập lại sau duyệt đóng kế hoạch cũ và duyệt được kế hoạch mới; giao thất bại rồi giao lại tạo hai POD; chuyển trạng thái trái phép bị trigger chặn; hold hết hạn.
-- **E2E (Playwright):** kịch bản 1–16 ở `08_Development_Plan.md`.
+- **Integration:** ingestion idempotent, upsert theo version, checkpoint; giữ chỗ cả 3 phương án và EXCLUDE chặn đơn khác nhưng cho phép cùng đơn; lập kế hoạch đồng thời cho phép giữ chỗ vượt; duyệt đồng thời hai dispatcher (tranh **xe**, tranh **cùng SKU**, tranh **cùng ngày công suất**: đúng một bên thắng); đơn nhiều xe (chia hàng, ít xe nhất, đến cùng lúc, trạng thái tổng hợp); gợi ý lập lại không tính kế hoạch cũ của chính đơn; lập lại sau duyệt đóng kế hoạch cũ và duyệt được kế hoạch mới; giao thất bại rồi giao lại tạo hai POD; chuyển trạng thái trái phép bị trigger chặn; hold hết hạn.
+- **E2E (Playwright):** kịch bản 1–18 ở `08_Development_Plan.md`.
 - **Phủ:** engine ≥ 90% dòng; service quan trọng (approval, reservation, risk) ≥ 80%.
 
 ## 13. Triển khai
@@ -362,4 +373,4 @@ Hai lớp (chi tiết cột ở `05_Database_Design.md`): **nhật ký quyết �
 
 ## 15. Điểm mở rộng đã chừa sẵn
 
-`evaluate_rules()` / `rank_candidates()` (Drools, OR-Tools) · quản lý và xếp lịch thiết bị kho (bỏ khỏi MVP v1.1) · lập kế hoạch nhiều xe cho một đơn (MVP: `HANDLED_EXTERNALLY`) · `delivery_trip`/`trip_stop` nhiều điểm dừng (ghép đơn) · `HandlingGroupSuggester` và `TransferSuggester` (AI) · `location.efficiency_factor` (học định mức) · `SmsProvider` thật · `PodStorage` (ảnh) · `status page` · `MarketAdapter` thật cho WMS/ERP/POS · cửa hàng làm nguồn hàng (`location.type = 'store'` đã có, kèm xe riêng qua `vehicle.home_warehouse_id` mở rộng thành `home_location_id`).
+`evaluate_rules()` / `rank_candidates()` (Drools, OR-Tools) · quản lý và xếp lịch thiết bị kho (bỏ khỏi MVP v1.1) · ghép nhiều đơn trên một xe · `delivery_trip`/`trip_stop` nhiều điểm dừng (ghép đơn) · `HandlingGroupSuggester` và `TransferSuggester` (AI) · `location.efficiency_factor` (học định mức) · `SmsProvider` thật · `PodStorage` (ảnh) · `status page` · `MarketAdapter` thật cho WMS/ERP/POS · cửa hàng làm nguồn hàng (`location.type = 'store'` đã có, kèm xe riêng qua `vehicle.home_warehouse_id` mở rộng thành `home_location_id`).

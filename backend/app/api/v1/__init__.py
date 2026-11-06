@@ -15,6 +15,7 @@ from app.api.v1 import (
     notifications,
     orders,
     planning,
+    revenue,
     transfers,
 )
 
@@ -30,5 +31,6 @@ router.include_router(notifications.router)
 router.include_router(mapping.router)
 router.include_router(hr.router)
 router.include_router(kpi.router)
+router.include_router(revenue.router)
 router.include_router(admin.router)
 router.include_router(internal.router)

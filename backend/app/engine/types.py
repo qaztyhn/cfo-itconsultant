@@ -13,7 +13,7 @@ from typing import Literal
 
 DateModeT = Literal["exact", "range", "latest"]
 CheckNameT = Literal["stock", "preparation", "truck", "site_date", "safety"]
-ResultT = Literal["feasible", "infeasible", "manual"]
+ResultT = Literal["feasible", "infeasible"]  # v1.2: không còn "manual"
 ReserveClassT = Literal["safe", "tight", "infeasible"]
 PrepUnitT = Literal["line", "pallet", "m3", "bundle", "package"]
 
@@ -37,6 +37,7 @@ class EngineConfig:
     unloading_min_per_ton: int
     driver_max_hours_day: Decimal
     receiving_lead_days: int
+    max_arrival_spread_min: int  # v1.2: các xe của một đơn tới chênh nhau tối đa
     w_km: Decimal
     w_fill: Decimal
     dz_km_abs: Decimal
@@ -59,6 +60,8 @@ class HandlingGroupCtx:
 
 @dataclass(frozen=True)
 class ProductCtx:
+    """base_units_per_prep_unit = None nghĩa là hàng KHÔNG chia nhỏ được → số đơn vị làm tròn lên."""
+
     global_product_id: int
     group: HandlingGroupCtx
     base_units_per_prep_unit: Decimal | None
@@ -144,6 +147,9 @@ class RouteInfo:
 
 @dataclass(frozen=True)
 class WarehouseCtx:
+    """Ngữ cảnh một kho. Với lần chạy `replan_suggestion`, service đã CỘNG LẠI giữ chỗ hàng, giờ công,
+    xe, tài xế của chính đơn đang lập lại (coi kế hoạch cũ như không tồn tại) trước khi truyền vào."""
+
     id: int
     name: str
     cutoff: time
@@ -177,13 +183,33 @@ class Workload:
 
 
 @dataclass(frozen=True)
-class PlanCandidate:
-    """Một phương án khả thi — ánh xạ sang plan.fulfilment_plan (05 mục 7)."""
+class VehicleAssignment:
+    """Một xe trong phương án — ánh xạ sang plan.plan_vehicle (v1.2)."""
 
-    warehouse_id: int
+    seq: int
     vehicle_id: int
     vehicle_code: str
+    capacity_kg: Decimal
+    capacity_m3: Decimal
     driver_employee_id: int
+    load_kg: Decimal
+    load_m3: Decimal
+    load_lines: tuple[tuple[int, Decimal], ...]  # (line_no, qty_base) — một dòng có thể tách qua nhiều xe
+    loading_start_at: datetime
+    depart_at: datetime
+    eta_at: datetime
+    trip_end_at: datetime
+
+
+@dataclass(frozen=True)
+class PlanCandidate:
+    """Một phương án khả thi — ánh xạ sang plan.fulfilment_plan + plan.plan_vehicle (05 mục 7).
+
+    eta_at = xe tới CUỐI CÙNG; depart_at = xe xuất phát đầu tiên.
+    """
+
+    warehouse_id: int
+    vehicles: tuple[VehicleAssignment, ...]
     target_date: date
     goods_ready_at: datetime
     loading_start_at: datetime
@@ -200,6 +226,17 @@ class PlanCandidate:
     checks: tuple[CheckResult, ...]
     prep_by_day: dict[date, Decimal]
     score: Decimal = Decimal(0)
+
+    @property
+    def vehicle_count(self) -> int:
+        """Số xe của phương án (xếp hạng: ít xe trước)."""
+        return len(self.vehicles)
+
+    @property
+    def total_capacity_kg(self) -> Decimal:
+        """Tổng tải các xe (hòa điểm: nhỏ hơn thắng)."""
+        return sum((v.capacity_kg for v in self.vehicles), Decimal(0))
+
     rank: int = 0
     reason_codes: tuple[str, ...] = ()
     explanation: str = ""
@@ -233,4 +270,3 @@ class PlanningResult:
     reserve_class: ReserveClassT | None
     planning_reserve_min: int | None
     transfer_suggestions: tuple[TransferSuggestion, ...]
-    manual_reason: Literal["NEEDS_MULTI_VEHICLE", "NO_CAPABLE_VEHICLE"] | None = None

@@ -21,7 +21,6 @@ class OrderStatus(StrEnum):
     BLOCKED_UNMAPPED_SKU = "BLOCKED_UNMAPPED_SKU"
     PLANNED = "PLANNED"
     NO_FEASIBLE_DATE = "NO_FEASIBLE_DATE"
-    MANUAL_PLANNING = "MANUAL_PLANNING"
     APPROVED = "APPROVED"
     PREPARING = "PREPARING"
     GOODS_READY = "GOODS_READY"
@@ -30,7 +29,6 @@ class OrderStatus(StrEnum):
     DELIVERED = "DELIVERED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
-    HANDLED_EXTERNALLY = "HANDLED_EXTERNALLY"
 
 
 class DateMode(StrEnum):
@@ -41,6 +39,8 @@ class DateMode(StrEnum):
 
 class EventType(StrEnum):
     START_PREP = "START_PREP"
+    PREP_PAUSED = "PREP_PAUSED"
+    PREP_RESUMED = "PREP_RESUMED"
     GOODS_READY = "GOODS_READY"
     LOADED = "LOADED"
     DISPATCHED = "DISPATCHED"
@@ -50,6 +50,19 @@ class EventType(StrEnum):
     BREAKAGE = "BREAKAGE"
     VEHICLE_ISSUE = "VEHICLE_ISSUE"
     SHIFT_CHANGE = "SHIFT_CHANGE"
+
+
+class KpiScope(StrEnum):
+    """v1.2: phân biệt Business owner và Project lead (cùng vai trò viewer)."""
+
+    REVENUE_ALL = "revenue_all"
+    OPS = "ops"
+
+
+class RunKind(StrEnum):
+    INITIAL = "initial"
+    RERUN = "rerun"
+    REPLAN_SUGGESTION = "replan_suggestion"  # không giữ chỗ, coi kế hoạch cũ như không tồn tại
 
 
 class RiskStatus(StrEnum):

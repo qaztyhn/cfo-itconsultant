@@ -1,9 +1,12 @@
 """Sự kiện thực thi (06 mục 8.1; BR-EXE-01..03; US-WH-04/05, US-EXE-01..04).
 
 Sự kiện bất biến, đúng thứ tự (ILLEGAL_TRANSITION), Idempotency-Key, occurred_at ≤ now+5' và không trước
-sự kiện trước. DELIVERED/FAILED tạo proof_of_delivery cho trip_stop hiện tại (không ghi đè POD cũ).
-START_PREP lưu crew_size tùy chọn. SHORTAGE/BREAKAGE/VEHICLE_ISSUE → alert EXCEPTION (không tự sửa tồn
-kho). Sau mỗi sự kiện gọi RiskService.recalculate. Chuyển trạng thái chỉ qua domain.transitions.
+sự kiện trước. START_PREP/PREP_RESUMED bắt buộc crew_size; PREP_PAUSED không đổi trạng thái; GOODS_READY
+tính actual_labour_hours (engine.actuals). LOADED/DISPATCHED/DELIVERED/FAILED theo từng xe (trip_id);
+trạng thái đơn tổng hợp (LOADED khi mọi xe, DISPATCHED ở xe đầu, DELIVERED khi mọi xe, FAILED khi có xe
+thất bại). Mỗi trip_stop một POD. VEHICLE_ISSUE và FAILED gọi PlanningService.suggest_replan.
+SHORTAGE/BREAKAGE/VEHICLE_ISSUE → alert EXCEPTION. Sau mỗi sự kiện gọi RiskService.recalculate. Chuyển
+trạng thái chỉ qua domain.transitions.
 
 Owner: Dev 1 (A) — M6.
 """

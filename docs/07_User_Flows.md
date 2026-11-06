@@ -1,13 +1,15 @@
 # 07 — User Flows (CFO MVP)
 
-> **Phiên bản 1.1 (06/11/2026):** bỏ thiết bị kho; thêm luồng xử lý ngoài CFO (12a); làm rõ đóng kế hoạch khi lập lại/hủy/xếp lại; khóa đồng thời khi giữ chỗ và duyệt; POD theo từng lần giao.
+> **Phiên bản 1.2 (06/11/2026):** bỏ `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`; luồng 12a thành **đơn nhiều xe**; thêm luồng 12b **gợi ý lập lại tự động**; tạm dừng/tiếp tục chuẩn bị; giữ chỗ chỉ khóa khi duyệt.
+>
+> Lịch sử **v1.1:** bỏ thiết bị kho; thêm luồng xử lý ngoài CFO (12a); làm rõ đóng kế hoạch khi lập lại/hủy/xếp lại; khóa đồng thời khi giữ chỗ và duyệt; POD theo từng lần giao.
 >
 > Luồng người dùng và luồng hệ thống, mô tả bằng bước đánh số và sơ đồ Mermaid. Mỗi luồng có tác nhân, điều kiện đầu, các bước chính, nhánh ngoại lệ, kết quả và màn hình liên quan (`03_UI_UX_Specification.md`), endpoint (`06`), quy tắc (`BR-…` ở `01`). Trạng thái đơn theo `05`. Agent code dùng tài liệu này để dựng điều hướng, kiểm tra thứ tự thao tác và viết test E2E.
 
 ## 0. Quy ước
 
 - **Tác nhân:** SALES (POS giả lập), SYS (hệ thống/job), IT, DISP (dispatcher), WH (quản lý/trưởng ca kho), DRV (tài xế), CS (chăm sóc khách hàng), CUS (khách, nhận email/SMS).
-- Trạng thái đơn: `SUBMITTED`, `BLOCKED_UNMAPPED_SKU`, `PLANNED`, `NO_FEASIBLE_DATE`, `MANUAL_PLANNING`, `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `CANCELLED`, `HANDLED_EXTERNALLY`.
+- Trạng thái đơn: `SUBMITTED`, `BLOCKED_UNMAPPED_SKU`, `PLANNED`, `NO_FEASIBLE_DATE`, `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `CANCELLED`.
 - Mọi nút ghi có `Idempotency-Key`; mọi quyết định ghi `decision_log`.
 
 ## 1. Bản đồ tổng thể: từ nhập đơn đến nhận hàng
@@ -22,19 +24,17 @@ flowchart LR
   F --> G["IT ánh xạ"] --> D2["Đơn tự mở khóa"] --> H
   E -- "Rồi" --> H["Engine lập kế hoạch"]
   H --> I{"Có phương án khả thi?"}
-  I -- "Có" --> J["PLANNED: 3 phương án, giữ chỗ 15 phút"]
+  I -- "Có (một hoặc nhiều xe)" --> J["PLANNED: 3 phương án, giữ chỗ 15 phút"]
   I -- "Không" --> K["NO_FEASIBLE_DATE"]
-  I -- "Cần nhiều xe" --> L["MANUAL_PLANNING"]
   J --> M["DISP duyệt"]
   K --> N["DISP thương lượng ngày với khách"] --> H
-  L --> O["DISP lập kế hoạch tay (một xe qua gate)"] --> M
-  L --> X["Không xe nào vừa: DISP ghi nhận xử lý ngoài CFO"] --> XE["HANDLED_EXTERNALLY"]
+  K --> O["DISP lập kế hoạch tay (một hoặc nhiều xe)"] --> M
   M --> P["APPROVED: cam kết và thông báo CONFIRMED"]
   P --> Q["WH chuẩn bị, ghi mốc"]
   Q --> R["DRV xuất phát và giao"]
   R --> S{"Kết quả"}
   S -- "Giao được" --> T["DELIVERED"]
-  S -- "Thất bại" --> U["FAILED và DISP xếp lại"] --> H
+  S -- "Thất bại" --> U["FAILED: SYS gợi ý phương án mới, DISP duyệt"] --> M
 ```
 
 ## 2. Luồng nhập đơn và kéo về CFO
@@ -47,7 +47,7 @@ flowchart LR
 4. SYS tạo `customer_order` `SUBMITTED`, chụp địa chỉ và toạ độ, kiểm tra ánh xạ SKU (luồng 3), tính ma trận lộ trình còn thiếu, gọi planning (luồng 4).
 5. Nếu nguồn sửa đơn **trước khi duyệt**: đơn được cập nhật, `version + 1`, lập kế hoạch lại tự động; **sau khi duyệt**: chỉ tạo alert (luồng 13).
 
-**Nhánh:** POS cảnh báo vàng nếu SKU chưa được IT ánh xạ (không chặn nộp). **Kết quả:** đơn `SUBMITTED` hoặc `BLOCKED_UNMAPPED_SKU` hoặc đã sang `PLANNED`/`NO_FEASIBLE_DATE`/`MANUAL_PLANNING`.
+**Nhánh:** POS cảnh báo vàng nếu SKU chưa được IT ánh xạ (không chặn nộp). **Kết quả:** đơn `SUBMITTED` hoặc `BLOCKED_UNMAPPED_SKU` hoặc đã sang `PLANNED`/`NO_FEASIBLE_DATE`.
 
 ## 3. Luồng ánh xạ SKU (IT)
 
@@ -78,15 +78,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  A["Đơn SUBMITTED"] --> B["Tiền kiểm: đủ ánh xạ, tải tối đa"]
-  B -- "Quá lớn" --> M["MANUAL_PLANNING"]
+  A["Đơn SUBMITTED"] --> B["Tiền kiểm: đủ ánh xạ"]
   B --> C["Tính khối lượng việc giống nhau mọi kho"]
   C --> D["Với mỗi kho: ATP theo ngày"]
   D -- "Không đủ 14 ngày" --> X1["Loại: STOCK_SHORT"]
   D --> E["Xếp việc theo công suất giờ công"]
   E -- "Thiếu công suất" --> X2["Loại: PREP_NO_CAPACITY"]
   E --> F["Giờ cắt: dời lên hàng ca sau nếu quá"]
-  F --> G["Chọn xe và tài xế hợp lệ"]
+  F --> G["Chọn bộ xe ít nhất và tài xế hợp lệ"]
   G -- "Không có" --> X3["Loại: NO_TRUCK_FIT, TRUCK_BUSY, NO_DRIVER"]
   G --> H["Ngày giao theo dạng ngày, cửa sổ nhận hàng"]
   H -- "Ngoài cửa sổ hoặc ngày" --> X4["Loại: OUTSIDE_RECEIVING_HOURS, DATE_AFTER_DEADLINE"]
@@ -94,7 +93,7 @@ flowchart TD
   I -- "Vi phạm" --> X5["Loại: OVER_LOAD, DRIVER_HOURS_EXCEEDED, LICENCE_EXPIRED"]
   I --> J["Ứng viên khả thi"]
   J --> K["Xếp hạng min-max 0.5 km + 0.5 mức đầy"]
-  K --> L["Top 3, giải thích, khóa theo kho/sản phẩm/ngày rồi giữ chỗ 15 phút"]
+  K --> L["Top 3 (ít xe trước), giải thích, giữ chỗ 15 phút (không khóa, cho phép vượt)"]
   L --> P["Đơn PLANNED"]
   X1 --> Z{"Còn ứng viên?"}
   X2 --> Z
@@ -131,7 +130,7 @@ sequenceDiagram
     D->>UI: Plan manually và mã lý do
   end
   UI->>API: POST approve với Idempotency-Key
-  API->>DB: BEGIN, advisory lock kho → sản phẩm → ngày, rồi khóa xe → tài xế
+  API->>DB: BEGIN, advisory lock kho → sản phẩm → ngày, rồi khóa mọi xe → mọi tài xế (chỉ khóa khi duyệt)
   API->>API: Kiểm tra lại bằng engine
   alt Còn hợp lệ
     API->>DB: Giữ chỗ thành committed, tạo trip, đơn APPROVED
@@ -191,11 +190,12 @@ flowchart TD
 ```mermaid
 flowchart TD
   A["Đơn APPROVED trong hàng đợi"] --> B["WH bấm Start prep"]
-  B --> C["Sự kiện START_PREP, đơn PREPARING"]
+  B --> C["Sự kiện START_PREP (crew_size), đơn PREPARING"]
+  C --> P1["WH bấm Pause khi dừng giữa chừng"] --> P2["WH bấm Resume (crew_size)"] --> C
   C --> D["WH bấm Goods ready"]
   D --> E["Sự kiện GOODS_READY"]
-  E --> F["WH bấm Mark loaded"]
-  F --> G["Sự kiện LOADED, đơn LOADED"]
+  E --> F["WH bấm Mark loaded cho từng xe"]
+  F --> G["Mọi xe đã LOADED → đơn LOADED"]
   C -.-> X["Ngoại lệ: Shortage, Breakage, Vehicle issue, Shift change"]
   D -.-> X
   X --> Y["Alert cho DISP, tính lại ETA"]
@@ -204,7 +204,7 @@ flowchart TD
   F --> H
 ```
 
-**Quy tắc:** không có bước duyệt; `START_PREP` có thể kèm số người làm (`crew_size`, tùy chọn) để làm dữ liệu học định mức; mỗi sự kiện nhận `occurred_at` (mặc định giờ bấm, sửa được bằng popover "Happened at"); sai thứ tự → lỗi `ILLEGAL_TRANSITION`; `SHORTAGE` không tự sửa tồn kho (chỉ cảnh báo); `VEHICLE_ISSUE` gắn cờ xe để DISP cân nhắc lập lại.
+**Quy tắc:** không có bước duyệt; `START_PREP` và `PREP_RESUMED` bắt buộc nhập số người làm (`crew_size`); `PREP_PAUSED` khi dừng giữa chừng (đơn vẫn `PREPARING`); khi `GOODS_READY`, hệ thống cộng các đoạn làm việc thành giờ nhân công thực tế, chia theo nhóm hàng và đơn vị cơ sở để làm dữ liệu cho AI; mỗi sự kiện nhận `occurred_at` (mặc định giờ bấm, sửa được bằng popover "Happened at"); sai thứ tự → lỗi `ILLEGAL_TRANSITION`; `SHORTAGE` không tự sửa tồn kho (chỉ cảnh báo); `VEHICLE_ISSUE` gắn cờ xe để DISP cân nhắc lập lại.
 
 ## 9. Luồng giao hàng của tài xế (PWA) và GPS
 
@@ -286,33 +286,56 @@ Mỗi thông báo có `dedupe_key` theo (đơn, mẫu, trạng thái). Nội dun
 
 **Tác nhân:** DRV, SYS, DISP · **Quy tắc:** BR-EXE-02
 
-1. DRV ghi `FAILED` + lý do chuẩn; đơn `FAILED`; chuyến `completed`; thông báo `FAILED` cho khách; alert cho DISP.
-2. DISP mở đơn, liên hệ khách (CS có thể hỗ trợ và ghi nhật ký), bấm **Replan this order** (lý do bắt buộc). Trong **một transaction**: kế hoạch cũ → `superseded`, giữ chỗ còn lại → `released`, ngày cam kết xóa (ghi vào nhật ký) → đơn `SUBMITTED` → luồng 4. POD của lần giao thất bại được giữ nguyên; lần giao sau có POD riêng.
+1. DRV ghi `FAILED` + lý do chuẩn; chuyến `completed`; đơn `FAILED` khi mọi chuyến của đơn đã kết thúc và có xe thất bại; thông báo `FAILED` cho khách; alert cho DISP; **SYS gợi ý phương án mới** (luồng 12b).
+2. DISP liên hệ khách (CS có thể hỗ trợ và ghi nhật ký), rồi duyệt phương án gợi ý, hoặc bấm **Replan this order** (lý do bắt buộc). Trong **một transaction**: kế hoạch cũ → `superseded`, giữ chỗ còn lại → `released`, ngày cam kết xóa (ghi vào nhật ký) → đơn `SUBMITTED` → luồng 4. POD của lần giao thất bại được giữ nguyên; lần giao sau có POD riêng.
 3. Đơn FAILED không nằm trong mẫu số "đúng hạn", được đếm ở "tỷ lệ giao thất bại".
 4. Lập lại một đơn **đã duyệt** vì thay đổi lớn (xe hỏng, khách đổi): cùng thao tác; kế hoạch cũ → `superseded`, giữ chỗ `committed` → `released`, `trip_stop`/`delivery_trip` → `cancelled` trước khi chạy lại. Khi duyệt kế hoạch mới, khách nhận `CONFIRMED` mới với ngày mới.
 5. Hủy đơn (trước `DISPATCHED`) đóng kế hoạch, giữ chỗ, chuyến giống bước 4; đơn → `CANCELLED`.
 
-## 12a. Luồng đơn cần nhiều xe hoặc xe ngoài đội (xử lý ngoài CFO)
+## 12a. Luồng đơn lớn hơn một xe (nhiều xe, một kho)
 
-**Tác nhân:** SYS, DISP · **Màn:** Exceptions (5.A2, tab Manual planning), màn kế hoạch tay · **Quy tắc:** FR-ORD-05, BR-DEL-05
+**Tác nhân:** SYS, DISP, WH, DRV · **Màn:** Plan review (5.2), Prep queue (5.6), Driver (5.10) · **Quy tắc:** FR-ORD-05, BR-DEL-05, BR-RNK-02
 
 ```mermaid
 flowchart TD
-  A["Engine: tổng tải vượt xe lớn nhất hoặc không có xe đủ năng lực"] --> B["MANUAL_PLANNING, manual_reason"]
-  B --> C{"Một xe trong đội qua gate?"}
-  C -- "Có" --> D["Kế hoạch tay (lý do bắt buộc) → APPROVED"]
-  C -- "Không (422, hint EXTERNAL_HANDOFF)" --> E["DISP sắp xếp ngoài CFO: chia xe, hãng đối tác"]
-  E --> F["Ghi nhận xử lý ngoài CFO: mã lý do, đối tác, ngày dự kiến, ghi chú"]
-  F --> G["HANDLED_EXTERNALLY (trạng thái cuối), EXTERNAL_HANDOFF_RECORDED"]
+  A["Đơn vượt tải một xe"] --> B["Mỗi kho: tìm bộ xe rảnh cùng ngày, đủ kg và m³, đủ năng lực"]
+  B --> C["Ít xe nhất trước; cùng số xe thì tổng tải nhỏ hơn"]
+  C --> D["Chia hàng theo tải và thể tích (một dòng có thể tách)"]
+  D --> E["Mỗi xe một tài xế; xếp giờ để mọi xe tới trong cửa sổ, chênh ≤ 30 phút"]
+  E --> F["Phương án hiện số xe, loại xe, phần hàng từng xe"]
+  F --> G["DISP duyệt: giữ mọi xe trong một transaction"]
+  G --> H["Mỗi xe một chuyến: WH Mark loaded từng xe; DRV giao từng xe"]
+  H --> I{"Mọi xe giao xong?"}
+  I -- "Có" --> J["DELIVERED, một thông báo"]
+  I -- "Có xe thất bại" --> K["FAILED, ghi phần đã giao, gợi ý lập lại"]
+  B -- "Thiếu loại xe hoặc kín xe ở mọi kho" --> L["NO_FEASIBLE_DATE, check truck"]
 ```
 
-Không giữ chỗ, không chuyến, không GPS, không thông báo tự động; DISP/CS báo khách ngoài hệ thống. Không tính vào tỷ lệ đúng hạn; đếm riêng ở KPI. Ví dụ seed: đơn SE-2026-000144 (cần xe cẩu của hãng đối tác, không có trong lịch xe).
+Không ghép đơn: một xe chỉ chở một đơn trong một chuyến. Không giới hạn số xe (chỉ bị giới hạn bởi xe và tài xế rảnh). Thông báo: một `CONFIRMED`, `DISPATCHED` khi xe đầu tiên xuất phát, `DELIVERED` khi xe cuối giao xong.
+
+## 12b. Luồng gợi ý lập lại tự động
+
+**Tác nhân:** SYS, DISP · **Màn:** Order queue (alert), Plan review (5.2) · **Quy tắc:** FR-APR-05, BR-APR-04
+
+```mermaid
+flowchart TD
+  A["Đơn đã duyệt + tín hiệu: nguồn sửa đơn, PLAN_INVALIDATED, VEHICLE_ISSUE, giao FAILED"] --> B["SYS chạy replan_suggestion"]
+  B --> C["Coi kế hoạch hiện tại của chính đơn như không tồn tại: cộng lại hàng, giờ công, xe, tài xế"]
+  C --> D["Không tạo giữ chỗ; alert REPLAN_SUGGESTED cho DISP"]
+  D --> E{"DISP quyết định"}
+  E -- "Duyệt phương án gợi ý" --> F["Một transaction: đóng kế hoạch cũ, khóa, kiểm tra lại, commit kế hoạch mới, APPROVED, CONFIRMED mới"]
+  F -- "Tài nguyên đã bị chiếm" --> G["409 RESOURCE_CONFLICT, không đổi gì"]
+  E -- "Giữ kế hoạch cũ (lý do)" --> H["REPLAN_KEPT, đóng alert"]
+  E -- "Lập lại tay" --> I["Replan this order hoặc Plan manually"]
+```
+
+Không bao giờ tự duyệt. Đơn đã `DISPATCHED` chỉ nhận alert.
 
 ## 13. Luồng đơn thay đổi sau khi duyệt
 
 1. SYS nhận phiên bản mới của đơn đã `APPROVED` từ nguồn (sửa số lượng, ngày, địa chỉ, hủy).
-2. SYS **không ghi đè**; tạo alert `ORDER_CHANGED_AFTER_APPROVAL` kèm khác biệt.
-3. DISP xem khác biệt và chọn: **Replan** (áp dụng bản mới, giải phóng giữ chỗ, chạy lại) hoặc **Keep current plan** (ghi lý do, đóng alert) hoặc **Cancel** (nếu nguồn hủy).
+2. SYS **không ghi đè**; tạo alert `ORDER_CHANGED_AFTER_APPROVAL` kèm khác biệt và **tự gợi ý phương án mới** theo bản mới (luồng 12b).
+3. DISP xem khác biệt và chọn: **duyệt phương án gợi ý**, **Keep current plan** (ghi lý do, đóng alert) hoặc **Cancel** (nếu nguồn hủy).
 4. Đơn đã `DISPATCHED`: chỉ alert, không đổi trạng thái; DISP xử lý ngoài hệ thống.
 
 ## 14. Luồng đồng bộ dữ liệu và dữ liệu cũ
@@ -364,12 +387,10 @@ stateDiagram-v2
   BLOCKED_UNMAPPED_SKU --> SUBMITTED: IT ánh xạ xong
   SUBMITTED --> PLANNED: có phương án khả thi
   SUBMITTED --> NO_FEASIBLE_DATE: không khả thi
-  SUBMITTED --> MANUAL_PLANNING: cần nhiều xe hoặc nguồn
   PLANNED --> APPROVED: dispatcher duyệt
   PLANNED --> SUBMITTED: đổi tiêu chí và chạy lại
   NO_FEASIBLE_DATE --> SUBMITTED: khách đồng ý ngày mới
-  MANUAL_PLANNING --> APPROVED: kế hoạch tay
-  MANUAL_PLANNING --> HANDLED_EXTERNALLY: xử lý ngoài CFO
+  NO_FEASIBLE_DATE --> APPROVED: kế hoạch tay
   APPROVED --> PREPARING: START_PREP
   PREPARING --> GOODS_READY: GOODS_READY
   GOODS_READY --> LOADED: LOADED
@@ -377,17 +398,19 @@ stateDiagram-v2
   DISPATCHED --> DELIVERED: DELIVERED
   DISPATCHED --> FAILED: FAILED
   FAILED --> SUBMITTED: xếp lại
+  FAILED --> APPROVED: duyệt gợi ý lập lại
+  PREPARING --> APPROVED: duyệt gợi ý lập lại
+  GOODS_READY --> APPROVED: duyệt gợi ý lập lại
+  LOADED --> APPROVED: duyệt gợi ý lập lại
   APPROVED --> SUBMITTED: lập lại
   PLANNED --> CANCELLED
   NO_FEASIBLE_DATE --> CANCELLED
-  MANUAL_PLANNING --> CANCELLED
   APPROVED --> CANCELLED
   PREPARING --> CANCELLED
   GOODS_READY --> CANCELLED
   LOADED --> CANCELLED
   DELIVERED --> [*]
   CANCELLED --> [*]
-  HANDLED_EXTERNALLY --> [*]
 ```
 
 ## 18. Ma trận điều hướng theo vai trò (điểm vào mặc định và bước tiếp)
@@ -398,21 +421,23 @@ stateDiagram-v2
 | Warehouse | Prep queue | Điểm danh → bấm mốc chuẩn bị → báo ngoại lệ | Attendance & shifts, Transfers |
 | Driver | Today's trips | Mark dispatched → Delivered/Failed | — |
 | Sales | POS: New order | Nhập đơn, theo dõi đơn của cửa hàng | My store orders |
-| Store manager | My store orders | Theo dõi đơn, KPI cửa hàng | — |
+| Store manager | My store orders | Theo dõi đơn; xem doanh thu cửa hàng mình nếu là owner | Revenue · my location |
 | Customer service | Order lookup | Tra cứu, ghi liên hệ | — |
 | IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi, nhân sự | Product mapping, Market config & GPS |
-| Business owner / Project lead | KPIs & decision log | Xem KPI và nhật ký | — |
+| Business owner (`revenue_all`) | Revenue | Xem doanh thu mọi cửa hàng và kho, xuất CSV | — |
+| Project lead (`ops`) | KPIs & decision log | Xem KPI vận hành và nhật ký | — |
 
 ## 19. Tình huống ngoại lệ thường gặp và cách hệ thống phản ứng
 
 | Tình huống | Phản ứng |
 |---|---|
 | Hai dispatcher duyệt cùng lúc hai đơn tranh một xe | Một thành công; người còn lại nhận `409 RESOURCE_CONFLICT` và nút Re-run plan |
-| Hai đơn cùng tranh một lượng hàng (cùng kho, cùng SKU) hoặc cùng giờ công một ngày | Khóa theo (kho, sản phẩm) / (kho, ngày): tổng giữ chỗ không vượt khả dụng; đơn sau bị loại kho khi lập kế hoạch hoặc nhận `409 RESOURCE_CONFLICT` khi duyệt |
-| Đơn quá lớn cho mọi xe trong đội | `MANUAL_PLANNING` → ghi nhận xử lý ngoài CFO (luồng 12a) |
+| Hai đơn cùng tranh một lượng hàng (cùng kho, cùng SKU) hoặc cùng giờ công một ngày | Lúc lập kế hoạch cả hai được giữ chỗ (cho phép vượt); khi duyệt khóa theo (kho, sản phẩm) / (kho, ngày): đơn duyệt trước thắng, đơn sau nhận `409 RESOURCE_CONFLICT` |
+| Đơn lớn hơn một xe | Tự xếp nhiều xe cùng kho, ít xe nhất (luồng 12a) |
+| Thiếu loại xe cần (cẩu, ben) hoặc kín xe | `NO_FEASIBLE_DATE` (check `truck`); DISP thương lượng ngày, lập tay hoặc hủy |
 | Hold hết hạn trong lúc dispatcher đang xem | Chip đỏ; Approve vẫn kiểm tra lại và thành công nếu tài nguyên còn trống |
-| Tồn kho nguồn đổi sau khi duyệt | Kiểm tra lại các đơn đã duyệt bị ảnh hưởng; nếu kế hoạch không còn hợp lệ → alert `PLAN_INVALIDATED` cho DISP |
-| Xe hỏng sau khi duyệt | `VEHICLE_ISSUE` → alert; DISP lập lại |
+| Tồn kho nguồn đổi sau khi duyệt | Kiểm tra lại các đơn đã duyệt bị ảnh hưởng; nếu kế hoạch không còn hợp lệ → alert `PLAN_INVALIDATED` + gợi ý phương án mới (luồng 12b) |
+| Xe hỏng sau khi duyệt | `VEHICLE_ISSUE` → alert + gợi ý phương án mới (luồng 12b) |
 | Tài xế mất mạng | Sự kiện xếp hàng, gửi lại một lần |
 | ORS lỗi hoặc hết quota | Dùng ước lượng fallback có nhãn "Estimated route" (hoặc loại cặp nếu `routing.allow_fallback = false`) |
 | Nguồn lỗi | `sync_run failed`, giữ checkpoint, alert IT; dispatcher thấy cờ dữ liệu cũ sau 15 phút |

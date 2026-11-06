@@ -1,8 +1,7 @@
-"""KPI và doanh thu (05 mục 8; US-KPI-01/02).
+"""KPI vận hành (05 mục 8; US-KPI-01/02).
 
-8 KPI + 2 chẩn đoán + external_handoff_count, ngày theo múi giờ market, so baseline. revenue(): Σ
-line_total đơn DELIVERED, theo kho/cửa hàng, một tiền tệ; chỉ owner nơi đó, admin, viewer có
-can_view_revenue (khác → 403).
+8 KPI + 2 chẩn đoán, ngày theo múi giờ market, so baseline. Chỉ admin hoặc kpi_scopes chứa 'ops'; Business
+owner (revenue_all) nhận 403.
 
 Owner: Dev 1 (A) — M8.
 """
@@ -17,11 +16,6 @@ async def summary(
 
 async def daily(user: object, metric: str, date_from: object, date_to: object) -> list[dict[str, object]]:
     """TODO(#kpi-daily)."""
-    raise NotImplementedError
-
-
-async def revenue(user: object, location_id: int, date_from: object, date_to: object) -> dict[str, object]:
-    """TODO(#kpi-revenue)."""
     raise NotImplementedError
 
 

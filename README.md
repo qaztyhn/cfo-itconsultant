@@ -6,7 +6,7 @@ và xe, đề xuất **3 phương án**, **dispatcher duyệt**, theo dõi thự
 
 > Trạng thái: **khung dự án** — mọi file có docstring mô tả việc cần làm, hàm nghiệp vụ còn `NotImplementedError`/`TODO`.
 
-## Tài liệu (nguồn sự thật, v1.1)
+## Tài liệu (nguồn sự thật, v1.2)
 `docs/01`…`09` — thứ tự ưu tiên khi mâu thuẫn ở `docs/09_AI_Coding_Rules.md` mục 2.
 Phân công nhóm: `docs/10_Team_Assignment.md`.
 
@@ -21,7 +21,7 @@ docs/           01..10
 
 ## Chạy local
 ```bash
-cp .env.example .env
+cp .env.example .env   # điền bí mật và SEED_DEMO_PASSWORD; không commit .env
 docker compose up -d && make migrate seed
 # web http://localhost:5173 · API http://localhost:8000/docs · Mailpit :8025 · POS :8100
 ```
