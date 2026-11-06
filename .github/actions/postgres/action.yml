@@ -10,6 +10,7 @@ runs:
         db_url="postgresql+asyncpg://cfo:${POSTGRES_PASSWORD}@localhost:5432/cfo_test"
         echo "::add-mask::$db_url"
         echo "DATABASE_URL=$db_url" >> "$GITHUB_ENV"
+        echo "TEST_DATABASE_URL=$db_url" >> "$GITHUB_ENV"
         echo "SOURCE_TEST_DATABASE_URL=$db_url" >> "$GITHUB_ENV"
         docker run -d --name cfo-ci-postgres \
           -e POSTGRES_USER=cfo -e POSTGRES_DB=cfo_test -e POSTGRES_PASSWORD \
