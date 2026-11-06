@@ -8,8 +8,10 @@ import json
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import timedelta
+from typing import Annotated
 
 import pytest
+from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -189,3 +191,27 @@ def test_health_503_when_database_unavailable() -> None:
     assert response.status_code == 503
     assert response.json()["status"] == "error" and response.json()["db"] == "unavailable"
     assert "127.0.0.1" not in response.text
+
+
+def test_invalid_correlation_header_does_not_break_decision_log(head_db: str) -> None:
+    """Header 'request-123' không được làm INSERT decision_log lỗi và rollback nghiệp vụ."""
+    maker = async_sessionmaker(create_async_engine(to_async_url(head_db), poolclass=NullPool))
+
+    async def test_db() -> AsyncIterator[AsyncSession]:
+        async for session in session_scope(maker):
+            yield session
+
+    probe = APIRouter()
+
+    @probe.post("/_probe/decide")
+    async def decide(db: Annotated[AsyncSession, Depends(get_db)]) -> dict[str, int]:
+        return {"id": await record_decision(db, Action.PLAN_PROPOSED, "order", "1", order_id=1)}
+
+    app = create_app()
+    app.include_router(probe, prefix="/api/v1")
+    app.dependency_overrides[get_db] = test_db
+    with TestClient(app) as client:
+        response = client.post("/api/v1/_probe/decide", headers={"X-Correlation-ID": "request-123"})
+    assert response.status_code == 200, response.text
+    (row,) = fetch(head_db, "SELECT correlation_id FROM audit.decision_log")
+    assert str(row["correlation_id"]) == response.headers["X-Correlation-ID"]

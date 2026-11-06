@@ -40,6 +40,8 @@
 
 **Mã lỗi nghiệp vụ:** `AUTH_INVALID`, `FORBIDDEN`, `VALIDATION_ERROR`, `ILLEGAL_TRANSITION`, `REASON_REQUIRED`, `SKU_UNMAPPED`, `HOLD_EXPIRED`, `HOLD_EXTENSION_LIMIT`, `RESOURCE_CONFLICT` (xe, tài xế, tồn kho, công suất đã đổi khi duyệt), `PLAN_NOT_APPROVABLE`, `DATE_AGREEMENT_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `GPS_DISABLED`, `NOT_ON_TRIP`, `LICENCE_EXPIRED`, `ORDER_LOCKED_AFTER_DISPATCH`, `DUPLICATE_EVENT`, `SYNC_IN_PROGRESS`.
 
+**Mã lỗi kỹ thuật (v1.2.1 — đề xuất, chờ nhóm duyệt; xem `CHANGELOG`):** `NOT_FOUND` (404: không tồn tại, ngoài phạm vi hoặc route không có), `INTERNAL_ERROR` (500: lỗi không bắt; thông báo cố định "Internal server error.", không stack trace, không thông điệp gốc). Lỗi kiểm tra dữ liệu của framework (422) và 4xx kỹ thuật khác (400, 405…) dùng `VALIDATION_ERROR`; `details.errors` chỉ gồm `loc`, `type`, `msg`, không trả lại giá trị đầu vào. `GET /health` khi phụ thuộc lỗi trả `503` với chính thân health (`status = "error"`), không dùng định dạng lỗi. Header `X-Correlation-ID` không phải UUID hợp lệ thì server thay bằng UUID mới và trả lại giá trị đó.
+
 ## 2. Vai trò (`roles` trong JWT)
 
 `admin` (IT) · `dispatcher` · `warehouse` (quản lý, phó, trưởng ca) · `sales` (nhân viên bán, quản lý cửa hàng) · `driver` · `customer_service` · `viewer` (Business owner, Project Lead — phân biệt bằng `kpi_scopes`: `revenue_all` / `ops`).

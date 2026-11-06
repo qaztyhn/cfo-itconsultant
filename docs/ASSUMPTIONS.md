@@ -80,7 +80,8 @@
 ## ASM-004 — Mã lỗi cho lỗi kỹ thuật ngoài danh sách `06` mục 1.1
 
 - **Ngày:** 2026-11-06
-- **Trạng thái:** đề xuất của Dev 1, **cần nhóm duyệt** (chạm hợp đồng lỗi `06`). Không sửa `06`.
+- **Trạng thái:** đã chuyển thành **đề xuất thay đổi hợp đồng** `06` v1.2.1 + `CHANGELOG` trong PR #8, **chờ nhóm
+  duyệt**. Mục ASM này chỉ ghi bối cảnh; không thay thế phê duyệt. PR #8 không được merge trước khi duyệt.
 - **Bối cảnh:** `06` mục 1.1 bắt buộc mọi lỗi theo định dạng `{error: {code, message, details, correlation_id}}`
   nhưng danh sách mã chỉ gồm mã nghiệp vụ; HTTP 500/503 và một số 4xx kỹ thuật không có mã.
 - **Diễn giải đang triển khai:**

@@ -6,7 +6,8 @@ Mã lỗi hợp lệ: ERROR_CODES (06 mục 1.1).
 
 Ngoài DomainError, handler còn chuẩn hóa: lỗi Pydantic → 422 VALIDATION_ERROR (không trả lại giá trị đầu vào,
 vì có thể chứa mật khẩu/PII); HTTPException (404 route, 405…) → mã tương ứng; lỗi không bắt → 500
-INTERNAL_ERROR không kèm stack trace (ASM-004). Mọi phản hồi lỗi có correlation_id và header X-Correlation-ID.
+INTERNAL_ERROR không kèm stack trace (06 v1.2.1, chờ duyệt).
+Mọi phản hồi lỗi có correlation_id và header X-Correlation-ID.
 
 Owner: Dev 1 (luồng A) — M0.
 """
@@ -40,6 +41,7 @@ ERROR_CODES: dict[str, int] = {
     "ORDER_LOCKED_AFTER_DISPATCH": 409,
     "DUPLICATE_EVENT": 409,
     "SYNC_IN_PROGRESS": 409,
+    "INTERNAL_ERROR": 500,  # 06 v1.2.1 — chờ duyệt (CHANGELOG)
 }
 
 
@@ -56,7 +58,7 @@ class DomainError(Exception):
         self.http_status = http_status or ERROR_CODES.get(code, 400)
 
 
-# ASM-004: lỗi kỹ thuật không có mã nghiệp vụ trong 06 → mã dự phòng cho định dạng chuẩn.
+# 06 v1.2.1 (chờ duyệt, CHANGELOG): mã kỹ thuật cho lỗi không bắt.
 INTERNAL_ERROR = "INTERNAL_ERROR"
 _HTTP_STATUS_CODES = {401: "AUTH_INVALID", 403: "FORBIDDEN", 404: "NOT_FOUND", 422: "VALIDATION_ERROR"}
 
@@ -114,7 +116,13 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        # contextvar đã bị middleware reset khi exception thoát ra; lấy ID trực tiếp từ request.state.
         log_event(
-            "api", "request.unhandled_error", level="error", path=request.url.path, error=type(exc).__name__
+            "api",
+            "request.unhandled_error",
+            level="error",
+            correlation_id=getattr(request.state, "correlation_id", None),
+            path=request.url.path,
+            error=type(exc).__name__,
         )
         return error_response(request, 500, INTERNAL_ERROR, "Internal server error.")

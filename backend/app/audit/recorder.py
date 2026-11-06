@@ -6,20 +6,20 @@ correlation_id lấy từ core.correlation (US-LOG-01 AC4).
 - Chỉ INSERT (bảng chỉ thêm; trigger forbid_mutation chặn UPDATE/DELETE — 09 bất biến 13).
 - Không tự commit: dùng session/transaction của use case; rollback nghiệp vụ thì dòng nhật ký cũng mất.
 - `ts` = clock.now() (thời điểm quyết định theo đồng hồ hệ thống/APP_NOW); `created_at` là lúc ghi bản ghi.
-- Ngoài request (job), nếu chưa có correlation_id thì sinh uuid4 mới để cột NOT NULL vẫn truy vết được.
+- Ngoài request (job) hoặc giá trị không phải UUID: sinh uuid4 mới để cột uuid NOT NULL không làm hỏng
+  INSERT.
 
 Owner: Dev 1 (luồng A) — M0.
 """
 
 import json
-import uuid
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import REASON_REQUIRED, Action
 from app.core import clock
-from app.core.correlation import correlation_id_var
+from app.core.correlation import correlation_id_var, normalize_correlation_id
 from app.core.errors import DomainError
 
 _INSERT = text("""
@@ -66,7 +66,7 @@ async def record_decision(
         _INSERT,
         {
             "ts": clock.now(),
-            "correlation_id": correlation_id_var.get() or str(uuid.uuid4()),
+            "correlation_id": normalize_correlation_id(correlation_id_var.get()),
             "actor_user_id": actor_user_id,
             "actor_employee_id": actor_employee_id,
             "actor_role": actor_role,
