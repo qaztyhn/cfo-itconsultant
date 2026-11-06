@@ -57,3 +57,22 @@
      `seed/generate_data.py`, Dev 2; `09` bất biến 25).
 - **Ảnh hưởng:** `0008_seed_reference`; test `test_migration_0006_0008.py` đối chiếu seed `order_transition` với
   `transitions.ALLOWED` và `MarketConfig()`.
+
+## ASM-003 — Chi tiết xác thực chưa có trong `06` mục 4
+
+- **Ngày:** 2026-11-06
+- **Trạng thái:** đề xuất của Dev 1, chờ nhóm xác nhận trong review PR T5. Không sửa `06`.
+- **Diễn giải:**
+  1. **Giới hạn tần suất login:** tính **mọi lần thử** (đúng hoặc sai) theo **IP client**, cửa sổ trượt 60 giây,
+     tối đa 5 lần; lần thứ 6 → `429`. Bộ đếm in-memory theo tiến trình (MVP một instance), dùng đồng hồ đơn điệu
+     nên không bị ảnh hưởng bởi `APP_NOW`.
+  2. **Mã lỗi khi `429`:** `06` chỉ quy định HTTP 429, không có mã nghiệp vụ riêng; dùng mã có sẵn `AUTH_INVALID`
+     với thông báo "Too many login attempts. Try again in a minute." (không thêm mã lỗi mới — `09` mục 13).
+     Frontend phân biệt theo HTTP status (`03` màn Sign in).
+  3. **`POST /auth/logout`:** cần token hợp lệ; trả `204 No Content` (06 không quy định thân phản hồi).
+  4. **Email đăng nhập** so khớp không phân biệt hoa thường; sai email, sai mật khẩu, tài khoản khóa hoặc nhân viên
+     `terminated` đều trả cùng `401 AUTH_INVALID` "Invalid email or password." (không lộ tài khoản tồn tại).
+  5. **Tài khoản hệ thống** (không có `employee_id`): `name`, `market` = `null`, `location_ids` = `[]`, `locale` = `en`.
+  6. **`location_ids`** = địa điểm của các phân công đang hiệu lực hôm nay theo múi giờ market.
+  7. **Hồ sơ đọc lại từ DB mỗi request** (vai trò, `kpi_scopes`, `is_active`, trạng thái nhân viên) để thỏa
+     US-EMP-03 AC4; claims trong token chỉ để client hiển thị.

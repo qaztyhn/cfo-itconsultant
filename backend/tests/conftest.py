@@ -1,6 +1,10 @@
 """Fixture dùng chung. Test không phụ thuộc giờ thật: đặt clock cố định ở APP_NOW demo (09 mục 11)."""
 
+import os
 from collections.abc import Iterator
+
+# Trước mọi import app.*: không ghi file log, không khởi động scheduler khi test (main.py).
+os.environ.setdefault("APP_ENV", "test")
 from datetime import datetime
 
 import pytest
