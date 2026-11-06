@@ -2,13 +2,21 @@
 
 Owner: Dev 2 (luồng B) — M1.
 """
-from fastapi import APIRouter
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+
+from app.db import database_ready
 
 router = APIRouter()
 
 
 @router.get("/orders")
-async def list_orders(updated_since: str | None = None, status: str = "SUBMITTED_FOR_PLANNING") -> dict[str, object]:
+async def list_orders(
+    updated_since: str | None = None, status: str = "SUBMITTED_FOR_PLANNING"
+) -> dict[str, object]:
     """Đơn kèm dòng, bản chụp địa chỉ + tọa độ, version, updated_at."""
     raise NotImplementedError
 
@@ -57,7 +65,7 @@ async def update_order(order_id: str) -> dict[str, object]:
 
 @router.post("/orders/{order_id}/validate")
 async def validate_order(order_id: str) -> dict[str, object]:
-    """Sales Validation: khách, địa chỉ/tọa độ, dòng > 0, dạng ngày hợp lệ, ngày làm việc, khung giờ (US-SRC-03)."""
+    """Sales Validation: khách, địa chỉ/tọa độ, dòng hàng, ngày và khung giờ (US-SRC-03)."""
     raise NotImplementedError
 
 
@@ -80,6 +88,12 @@ async def addresses(q: str = "") -> dict[str, object]:
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    """Kiểm tra sống."""
-    return {"status": "ok"}
+async def health(ready: Annotated[bool, Depends(database_ready)]) -> JSONResponse:
+    """Public health probe; do not report healthy when the database is unavailable."""
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ok" if ready else "error",
+            "db": "ok" if ready else "unavailable",
+        },
+    )
