@@ -52,8 +52,8 @@ def check_atp(order: OrderCtx, wh: WarehouseCtx, cfg: EngineConfig) -> AtpResult
     """ATP của một kho cho mọi dòng.
 
     `wh.stock_available` đã trừ wms_reserved và giữ chỗ của ĐƠN KHÁC; `wh.inbound` chỉ gồm hàng nhập
-    confirmed, chưa received (service lọc — 09 bất biến 6). "Hôm nay" = ngày của `order.now` (service truyền giờ theo
-    múi giờ market). Quét `search_days_max` ngày lịch kể từ hôm nay.
+    confirmed, chưa received (service lọc — 09 bất biến 6). "Hôm nay" = ngày của `order.now`
+    (service truyền giờ theo múi giờ market). Quét `search_days_max` ngày lịch kể từ hôm nay.
     """
     needed = required_quantities(order)
     today = order.now.date()
