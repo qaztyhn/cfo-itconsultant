@@ -123,7 +123,7 @@ async def route_info(
     return {w: found.get(w) for w in warehouse_ids}
 
 
-def _active_reservations(now: datetime, exclude_order_id: int | None) -> Select[tuple[VehicleReservation]]:
+def _active_reservations(now: datetime, exclude_order_id: int | None) -> Select[VehicleReservation]:
     query = (
         select(VehicleReservation)
         .join(PlanningRun, PlanningRun.id == VehicleReservation.run_id)
