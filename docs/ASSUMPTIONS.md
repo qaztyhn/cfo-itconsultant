@@ -76,3 +76,19 @@
   6. **`location_ids`** = địa điểm của các phân công đang hiệu lực hôm nay theo múi giờ market.
   7. **Hồ sơ đọc lại từ DB mỗi request** (vai trò, `kpi_scopes`, `is_active`, trạng thái nhân viên) để thỏa
      US-EMP-03 AC4; claims trong token chỉ để client hiển thị.
+
+## ASM-004 — Mã lỗi cho lỗi kỹ thuật ngoài danh sách `06` mục 1.1
+
+- **Ngày:** 2026-11-06
+- **Trạng thái:** đề xuất của Dev 1, **cần nhóm duyệt** (chạm hợp đồng lỗi `06`). Không sửa `06`.
+- **Bối cảnh:** `06` mục 1.1 bắt buộc mọi lỗi theo định dạng `{error: {code, message, details, correlation_id}}`
+  nhưng danh sách mã chỉ gồm mã nghiệp vụ; HTTP 500/503 và một số 4xx kỹ thuật không có mã.
+- **Diễn giải đang triển khai:**
+  1. Lỗi không bắt (500) → `code = "INTERNAL_ERROR"`, thông báo cố định "Internal server error.", không stack
+     trace, không thông điệp gốc (có thể chứa chuỗi kết nối hoặc PII). Đây là **mã mới** chưa có trong `06`; nếu
+     nhóm đồng ý cần bổ sung vào `06` mục 1.1 + `CHANGELOG`, nếu không thì chọn mã khác.
+  2. Lỗi Pydantic → `422 VALIDATION_ERROR`, `details.errors` chỉ gồm `loc`, `type`, `msg` (không trả lại giá trị
+     đầu vào). HTTPException: 401 → `AUTH_INVALID`, 403 → `FORBIDDEN`, 404 → `NOT_FOUND`, 4xx khác (400, 405…)
+     → `VALIDATION_ERROR`.
+  3. `GET /health` khi DB lỗi trả `503` với thân health (`status = "error"`, `db = "unavailable"`), không dùng
+     định dạng lỗi, để công cụ uptime/smoke đọc được (06 mục 15).
