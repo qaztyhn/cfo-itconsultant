@@ -9,6 +9,7 @@ Usage:
     python tools/harness.py doctor
     python tools/harness.py backend
     python tools/harness.py frontend
+    python tools/harness.py source
     python tools/harness.py verify
     python tools/harness.py smoke
 """
@@ -80,14 +81,24 @@ def run_step(label: str, command: list[str], *, cwd: Path) -> bool:
         print(f"[FAIL] Command not installed: {exc.filename}", flush=True)
         return False
     success = result.returncode == 0
-    print(f"[{'PASS' if success else 'FAIL'}] {label} (exit={result.returncode})", flush=True)
+    print(
+        f"[{'PASS' if success else 'FAIL'}] {label} (exit={result.returncode})",
+        flush=True,
+    )
     return success
 
 
 def doctor() -> bool:
     banner("Repository and toolchain doctor (read-only)")
     valid = True
-    for relative in ["AGENTS.md", "Makefile", "docker-compose.yml", "backend/pyproject.toml", "frontend/package.json", ".github/workflows/ci.yml"]:
+    for relative in [
+        "AGENTS.md",
+        "Makefile",
+        "docker-compose.yml",
+        "backend/pyproject.toml",
+        "frontend/package.json",
+        ".github/workflows/ci.yml",
+    ]:
         exists = (ROOT / relative).is_file()
         print(f"[{'OK' if exists else 'MISSING'}] {relative}")
         valid = valid and exists
@@ -95,10 +106,14 @@ def doctor() -> bool:
         exists = (ROOT / "docs" / name).is_file()
         print(f"[{'OK' if exists else 'MISSING'}] docs/{name}")
         valid = valid and exists
-    print(f"[{'OK' if sys.version_info[:2] == (3, 12) else 'WARN'}] Host Python {sys.version.split()[0]} (project targets Python 3.12)")
+    print(
+        f"[{'OK' if sys.version_info[:2] == (3, 12) else 'WARN'}] Host Python {sys.version.split()[0]} (project targets Python 3.12)"
+    )
     for exe in ("node", "npm", "docker", "git"):
         print(f"[{'FOUND' if tool_exists(exe) else 'NOT INSTALLED'}] {exe}")
-    print(f"[{'PRESENT' if (ROOT / '.env').exists() else 'NOT PRESENT'}] .env (contents are NEVER read)")
+    print(
+        f"[{'PRESENT' if (ROOT / '.env').exists() else 'NOT PRESENT'}] .env (contents are NEVER read)"
+    )
     if not valid:
         print("[FAIL] Missing required repository/context files")
     else:
@@ -117,7 +132,9 @@ def backend() -> bool:
     ]
     import_linter = bin_for_backend("lint-imports")
     if import_linter is None:
-        print("[FAIL] import-linter executable not found (install backend dev dependencies)")
+        print(
+            "[FAIL] import-linter executable not found (install backend dev dependencies)"
+        )
         results.append(False)
     else:
         results.append(run_step("import-linter", [import_linter], cwd=workdir))
@@ -137,12 +154,36 @@ def frontend() -> bool:
     return all(results)
 
 
+def source() -> bool:
+    """Source checks include real PostgreSQL tests; require SOURCE_TEST_DATABASE_URL."""
+    banner("Source system quality gates")
+    workdir = ROOT / "source_system"
+    candidates = (
+        workdir / ".venv" / "Scripts" / "python.exe",
+        workdir / ".venv" / "bin" / "python",
+    )
+    python = str(next((p for p in candidates if p.is_file()), Path(sys.executable)))
+    results = [
+        run_step("source ruff", [python, "-m", "ruff", "check", "."], cwd=workdir),
+        run_step("source black", [python, "-m", "black", "--check", "."], cwd=workdir),
+        run_step("source mypy", [python, "-m", "mypy", "app"], cwd=workdir),
+        run_step(
+            "source tests (PostgreSQL required)",
+            [python, "-m", "pytest", "tests/unit", "tests/integration"],
+            cwd=workdir,
+        ),
+    ]
+    return all(results)
+
+
 def smoke() -> bool:
     """Only GET health; never query/write real business data or inspect secrets."""
     banner("Local running-stack health checks")
     urls = {
         "CFO API": os.getenv("CFO_HEALTH_URL", "http://localhost:8000/api/v1/health"),
-        "Simulated SE source": os.getenv("SOURCE_HEALTH_URL", "http://localhost:8100/api/v1/health"),
+        "Simulated SE source": os.getenv(
+            "SOURCE_HEALTH_URL", "http://localhost:8100/api/v1/health"
+        ),
     }
     outcomes = []
     for name, url in urls.items():
@@ -152,7 +193,12 @@ def smoke() -> bool:
                 status = response.status
                 # JSON parse helps catch plain-text error pages claiming HTTP 200.
                 parsed = json.loads(data)
-                valid = status == 200 and isinstance(parsed, dict)
+                valid = (
+                    status == 200
+                    and isinstance(parsed, dict)
+                    and parsed.get("status") == "ok"
+                    and parsed.get("db") == "ok"
+                )
                 print(f"[{'PASS' if valid else 'FAIL'}] {name}: HTTP {status} ({url})")
                 outcomes.append(valid)
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
@@ -162,8 +208,13 @@ def smoke() -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="CFO repository context and quality gates")
-    parser.add_argument("command", choices=("doctor", "backend", "frontend", "verify", "smoke"))
+    parser = argparse.ArgumentParser(
+        description="CFO repository context and quality gates"
+    )
+    parser.add_argument(
+        "command",
+        choices=("doctor", "backend", "frontend", "source", "verify", "smoke"),
+    )
     args = parser.parse_args()
     if args.command == "doctor":
         passed = doctor()
@@ -171,14 +222,17 @@ def main() -> int:
         passed = backend()
     elif args.command == "frontend":
         passed = frontend()
+    elif args.command == "source":
+        passed = source()
     elif args.command == "smoke":
         passed = smoke()
     else:
         context = doctor()
-        # Still run both suites to report all failures; no short-circuit.
+        # Run every suite to report all failures; no short-circuit.
         backend_ok = backend()
         frontend_ok = frontend()
-        passed = all((context, backend_ok, frontend_ok))
+        source_ok = source()
+        passed = all((context, backend_ok, frontend_ok, source_ok))
     print(f"\n{'HARNESS PASS' if passed else 'HARNESS FAIL'}", flush=True)
     return 0 if passed else 1
 
