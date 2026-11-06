@@ -58,9 +58,13 @@ def _columns(dsn: str) -> dict[str, dict[str, asyncpg.Record]]:
     return out
 
 
-def _rejects(dsn: str, *statements: str) -> None:
-    with pytest.raises(asyncpg.PostgresError):
+def _rejects(
+    dsn: str, error: type[asyncpg.IntegrityConstraintViolationError], constraint: str, *statements: str
+) -> None:
+    """Lệnh phải bị từ chối bởi ĐÚNG loại vi phạm và ĐÚNG ràng buộc (không chấp nhận lỗi cú pháp/kiểu)."""
+    with pytest.raises(error) as caught:
         execute(dsn, *statements)
+    assert caught.value.constraint_name == constraint
 
 
 def test_migration_0002_0003_tables_and_columns_match_spec(db: str) -> None:
@@ -94,11 +98,16 @@ def test_v_product_local_view_exists(db: str) -> None:
 def test_location_checks_ck_wh_cutoff_and_ck_geo(seeded: str) -> None:
     _rejects(  # kho phải có giờ chốt lên hàng
         seeded,
+        asyncpg.CheckViolationError,
+        "ck_wh_cutoff",
         "INSERT INTO ref.location (market_id, type, code, name, lat, lon) "
         "VALUES (1, 'warehouse', 'WH-X', 'X', 59.0, 18.0)",
     )
     _rejects(  # kho/cửa hàng phải có tọa độ
-        seeded, "INSERT INTO ref.location (market_id, type, code, name) VALUES (1, 'store', 'ST-X', 'X')"
+        seeded,
+        asyncpg.CheckViolationError,
+        "ck_geo",
+        "INSERT INTO ref.location (market_id, type, code, name) VALUES (1, 'store', 'ST-X', 'X')",
     )
     execute(  # dispatch_center không bắt buộc tọa độ / giờ chốt
         seeded,
@@ -119,14 +128,21 @@ def test_app_user_kpi_scopes_v12(seeded: str) -> None:
     ]
     _rejects(  # chỉ revenue_all / ops (không thêm scope mới)
         seeded,
+        asyncpg.CheckViolationError,
+        "app_user_kpi_scopes_check",
         "INSERT INTO ref.app_user (email, password_hash, roles, kpi_scopes) "
         "VALUES ('c@cfo.test', 'x', '{viewer}', '{finance}')",
     )
-    _rejects(  # vai trò ngoài enum ref.user_role
-        seeded, "INSERT INTO ref.app_user (email, password_hash, roles) VALUES ('d@cfo.test', 'x', '{owner}')"
-    )
+    with pytest.raises(asyncpg.InvalidTextRepresentationError) as caught:  # vai trò ngoài enum ref.user_role
+        execute(
+            seeded,
+            "INSERT INTO ref.app_user (email, password_hash, roles) VALUES ('d@cfo.test', 'x', '{owner}')",
+        )
+    assert "ref.user_role" in str(caught.value)
     _rejects(  # khóa ngoài chéo fk_user_emp (0003)
         seeded,
+        asyncpg.ForeignKeyViolationError,
+        "fk_user_emp",
         "INSERT INTO ref.app_user (email, password_hash, roles, employee_id) "
         "VALUES ('e@cfo.test', 'x', '{warehouse}', 999)",
     )
@@ -138,8 +154,7 @@ def test_US_EMP_01_AC1_second_active_assignment_rejected(seeded: str) -> None:
         ASSIGN + "(1, 1, '2026-01-01')",
     )
     _rejects(
-        seeded,
-        ASSIGN + "(1, 2, '2026-02-01')",
+        seeded, asyncpg.UniqueViolationError, "ux_one_active_assignment", ASSIGN + "(1, 2, '2026-02-01')"
     )
     # đóng phân công cũ rồi mở phân công mới thì hợp lệ (AC2 ở mức DB)
     execute(
@@ -159,6 +174,8 @@ def test_US_EMP_01_AC3_second_primary_manager_rejected(seeded: str) -> None:
     )
     _rejects(
         seeded,
+        asyncpg.UniqueViolationError,
+        "ux_one_primary_manager",
         "INSERT INTO hr.location_manager (location_id, employee_id, level, valid_from) "
         "VALUES (1, 2, 'primary', '2026-01-01')",
     )
@@ -174,6 +191,8 @@ def test_vehicle_availability_overlap_rejected(seeded: str) -> None:
     )
     _rejects(
         seeded,
+        asyncpg.ExclusionViolationError,
+        "ex_vehicle_avail",
         "INSERT INTO ref.vehicle_availability (vehicle_id, during, kind) "
         "VALUES (1, '[2026-11-10 11:00+00, 2026-11-10 13:00+00)', 'unavailable')",
     )
@@ -182,6 +201,8 @@ def test_vehicle_availability_overlap_rejected(seeded: str) -> None:
 def test_product_se_confirmed_requires_mapping(seeded: str) -> None:
     _rejects(
         seeded,
+        asyncpg.CheckViolationError,
+        "ck_se_confirmed",
         "INSERT INTO ref.product_se (local_sku, name, category, sale_unit, unit_price, mapping_status) "
         "VALUES ('SE-1', 'Item', 'Cement', 'bag', 10, 'confirmed')",
     )
