@@ -63,6 +63,7 @@ strict = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = ["integration: needs a real PostgreSQL 16 via TEST_DATABASE_URL (09 muc 11)"]
 
 # Quy tắc phụ thuộc (04 mục 4): api -> services -> (engine, adapters, providers, domain)
 [tool.importlinter]
