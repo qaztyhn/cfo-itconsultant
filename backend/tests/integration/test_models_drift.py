@@ -5,7 +5,8 @@ So sánh trên PostgreSQL đã `upgrade head`:
 2. `alembic.autogenerate.compare_metadata`: không thiếu/thừa bảng, cột; kiểu, nullable, khóa ngoài khớp.
    Chỉ mục và UNIQUE/CHECK/EXCLUDE không khai báo ở model (DB thực thi; đã có test migration riêng).
 3. Nhãn enum của model == enum trong DB.
-MODEL_SCHEMAS mở rộng theo từng PR M1 (A: ref, hr → B: stg, ops → C: plan, audit).
+MODEL_SCHEMAS = cả 6 schema (57 bảng) từ M1-C; khóa ngoài ops → plan đã được khai báo.
+View chỉ đọc (VIEW_METADATA) so cột với information_schema của view.
 """
 
 import asyncio
@@ -23,6 +24,7 @@ from sqlalchemy.pool import NullPool
 
 from alembic import command
 from app.domain.models import Base
+from app.domain.models.views import VIEW_METADATA
 from tests.integration.conftest import (
     _admin_exec,
     _with_database,
@@ -35,7 +37,7 @@ from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_in
 
 pytestmark = pytest.mark.integration
 
-MODEL_SCHEMAS: tuple[str, ...] = ("ref", "hr", "stg", "ops")
+MODEL_SCHEMAS: tuple[str, ...] = ("ref", "hr", "stg", "ops", "plan", "audit")
 
 
 @pytest.fixture(scope="module")
@@ -144,3 +146,21 @@ def test_drift_check_detects_a_missing_column(empty_db: str) -> None:
     execute(empty_db, f"ALTER TABLE {table.fullname} DROP COLUMN efficiency_factor")
     diff = _diff(empty_db)
     assert any(d[0] == "add_column" and d[3].name == "efficiency_factor" for d in diff), diff
+
+
+def test_all_57_tables_are_modelled() -> None:
+    assert len(_model_tables()) == 57
+
+
+def test_read_only_views_match_database(head_db: str) -> None:
+    rows_ = fetch(
+        head_db,
+        "SELECT table_schema || '.' || table_name AS name, "
+        "array_agg(column_name::text ORDER BY ordinal_position) AS columns "
+        "FROM information_schema.columns WHERE table_schema IN ('ref', 'audit') "
+        "AND table_name LIKE 'v\\_%' GROUP BY 1",
+    )
+    db_views = {r["name"]: list(r["columns"]) for r in rows_}
+    model_views = {t.fullname: [c.name for c in t.columns] for t in VIEW_METADATA.sorted_tables}
+    assert model_views == db_views
+    assert not set(model_views) & set(Base.metadata.tables)  # view không nằm trong metadata của bảng

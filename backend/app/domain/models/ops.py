@@ -150,8 +150,10 @@ class CustomerOrder(TimestampMixin, Base):
     committed_date: Mapped[date | None] = mapped_column(Date)
     promise_start: Mapped[datetime | None] = mapped_column(TSTZ)
     promise_end: Mapped[datetime | None] = mapped_column(TSTZ)
-    # Khóa ngoài fk_order_plan tới plan.fulfilment_plan được khai báo ở model plan (M1-C).
-    approved_plan_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Phụ thuộc vòng với plan.fulfilment_plan.order_id → use_alter (khóa ngoài thêm sau, như 0006).
+    approved_plan_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plan.fulfilment_plan.id", name="fk_order_plan", use_alter=True)
+    )
     currency: Mapped[str] = mapped_column(CHAR(3))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
     submitted_at: Mapped[datetime] = mapped_column(TSTZ)
@@ -208,8 +210,9 @@ class DeliveryTrip(TimestampMixin, Base):
     __table_args__ = SCHEMA
 
     id: Mapped[int] = bigint_pk()
-    # Khóa ngoài fk_trip_plan_vehicle tới plan.plan_vehicle được khai báo ở model plan (M1-C).
-    plan_vehicle_id: Mapped[int | None] = mapped_column(BigInteger)
+    plan_vehicle_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plan.plan_vehicle.id", name="fk_trip_plan_vehicle", use_alter=True)
+    )
     warehouse_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.location.id"))
     vehicle_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.vehicle.id"))
     driver_employee_id: Mapped[int] = mapped_column(BigInteger, _fk("hr.employee.id"))
