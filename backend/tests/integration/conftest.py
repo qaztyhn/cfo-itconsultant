@@ -100,3 +100,31 @@ def execute(dsn: str, *statements: str) -> None:
             await conn.close()
 
     asyncio.run(_run())
+
+
+COLUMNS_SQL = """
+SELECT table_schema || '.' || table_name AS name, column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = ANY($1::text[])
+  AND table_name IN (SELECT table_name FROM information_schema.tables
+                     WHERE table_schema = ANY($1::text[]) AND table_type = 'BASE TABLE')
+"""
+
+
+def table_columns(dsn: str, *schemas: str) -> dict[str, dict[str, asyncpg.Record]]:
+    """{'schema.table': {cột: thông tin}} cho các bảng thật (không gồm view)."""
+    out: dict[str, dict[str, asyncpg.Record]] = {}
+    for row in fetch(dsn, COLUMNS_SQL, list(schemas)):
+        out.setdefault(row["name"], {})[row["column_name"]] = row
+    return out
+
+
+def rejects(
+    dsn: str, error: type[asyncpg.PostgresError], constraint: str | None, *statements: str
+) -> asyncpg.PostgresError:
+    """Lệnh phải bị từ chối bởi ĐÚNG loại lỗi và (nếu có) ĐÚNG ràng buộc; lỗi cú pháp/kiểu không tính."""
+    with pytest.raises(error) as caught:
+        execute(dsn, *statements)
+    if constraint is not None:
+        assert caught.value.constraint_name == constraint
+    return caught.value
