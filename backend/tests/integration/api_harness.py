@@ -33,6 +33,12 @@ class Api:
         response: Response = self.client.get(f"/api/v1{path}", headers=headers, params=params)
         return response
 
+    def send(self, method: str, path: str, user_id: int | None, body: object = None) -> Response:
+        """POST/PUT/PATCH với thân JSON (body None → không gửi thân)."""
+        headers = {"Authorization": f"Bearer {issue_token(user_id, {})}"} if user_id is not None else {}
+        response: Response = self.client.request(method, f"/api/v1{path}", headers=headers, json=body)
+        return response
+
 
 @pytest.fixture
 def api(empty_db: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Api]:
