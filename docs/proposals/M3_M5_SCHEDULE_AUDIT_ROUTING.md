@@ -19,6 +19,7 @@
 | Q12d | Thiếu lịch chính thức → `schedule_verified = false`, công suất 0 |
 | Q13 | `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`. Chỉnh hồi tố phân công dùng `EMPLOYEE_ASSIGNMENT_CHANGED`, `reason_code = retroactive`, lý do bắt buộc |
 | Q14 | Mỗi đơn nguồn có một quyết định luồng `cfo` / `legacy`, đã lưu thì **không đổi**. Đơn legacy không có plan/hold/approve trong CFO; IT mapping về sau không chuyển nó vào CFO. Sales phải kiểm đơn trong CFO **trước khi** điều phối tay. Fail closed khi dữ liệu nguồn hoặc quyền sở hữu luồng chưa chắc chắn |
+| **Mới (2)** | Chính sách lái/nghỉ Bắc Âu cho MVP: nghỉ hằng ngày 11 giờ; tắt nghỉ rút gọn 9 giờ; tách thời gian lái khỏi tổng giờ làm; áp 561/2006 theo market/xe/loại vận hành; fail closed (mục Q12b) |
 | **Mới** | Phương án giao chỉ hợp lệ khi thỏa cả hai: (1) lên hàng/chuẩn bị nằm trong **ca chính thức có người** của kho; (2) **toàn bộ khoảng làm việc** của từng tài xế nằm trong **ca thực tế** của tài xế đó, gồm lên hàng, chờ, chạy, dỡ và quay về, có tôn trọng giờ nghỉ và lịch đã nhận. Không mặc định 24/7; không biết ca thì không có phương án duyệt được |
 
 ## Q12 — Lịch phân ca chính thức cho nhân viên kho **và tài xế**
@@ -89,6 +90,82 @@ CREATE UNIQUE INDEX ux_shift_one_per_day ON hr.employee_shift_schedule (employee
   - `OUTSIDE_DRIVER_SHIFT` (safety): có tài xế đủ bằng nhưng không ai có ca phủ trọn chuyến;
   - `NO_DRIVER` thêm `detail.reason` = `no_schedule` | `licence` | `busy`.
 - **Ghép tài xế–xe:** ghép đúng bằng bipartite/backtracking. Tồn tại cách ghép hợp lệ thì không được báo `NO_DRIVER`.
+
+## Q12b — Thời gian lái, làm việc và nghỉ của tài xế (chính sách Bắc Âu cho MVP)
+
+(đã duyệt hướng chính sách 07/11/2026 trên PR qaztyhn/cfo-itconsultant#53/#54 — **không phải xác nhận pháp lý**; phạm vi áp dụng từng nước/xe/loại vận hành phải được pháp chế và vận hành xác minh trước triển khai thật)
+
+**Chính sách mặc định** — áp dụng cho SE trước; DK, NO, FI, IS là chính sách riêng theo market, bật khi cần.
+
+1. **Nghỉ hằng ngày 11 giờ liên tục** trước kỳ làm việc tiếp theo.
+   - Kiểm trên khoảng làm việc thực tế (ca chính thức + chuyến đã nhận), không theo ngày điểm danh.
+   - Nhân viên kho cũng dùng 11 giờ làm mặc định thận trọng của MVP.
+2. **Nghỉ rút gọn 9 giờ: TẮT** trong lập kế hoạch tự động.
+   - Chỉ bật sau này khi đủ cả các điều kiện: đủ điều kiện theo market/vận hành, đã rà soát pháp lý, có lịch sử đếm đủ (tối đa 3 lần giữa hai kỳ nghỉ tuần khi 561/2006 áp dụng), và phê duyệt có audit.
+   - **Không** có nút ghi đè thủ công vượt cổng an toàn/pháp lý.
+3. **Trong phạm vi Quy định (EC) 561/2006**, kiểm **thời gian lái** tách khỏi **tổng thời gian làm việc**:
+   - Lái tối đa 9 giờ/ngày. Mức 10 giờ (tối đa 2 lần/tuần) cần theo dõi đủ điều kiện; MVP **tắt**, luôn dùng 9 giờ.
+   - Sau tối đa 4 giờ 30 lái phải nghỉ ≥ 45 phút, hoặc 15 phút rồi 30 phút (đúng thứ tự).
+   - Giới hạn lái tuần (56 giờ), hai tuần (90 giờ) và nghỉ tuần đều cần lịch sử.
+   - `driver_max_hours_day` (9) là **tổng giờ làm việc**: lên/dỡ hàng, chờ, chạy, quay về. Đây **không** phải giới hạn 9 giờ lái.
+4. **Phạm vi xét theo market, xe và loại vận hành**, không áp chung cho mọi tài xế.
+   - Các yếu tố: nội địa / quốc tế / cabotage; khối lượng tối đa cho phép (gồm rơ-moóc); miễn trừ; loại vận hành.
+   - Từ 01/07/2026 phạm vi mở rộng cho một số xe trên 2,5 t đến 3,5 t chạy vận tải quốc tế/cabotage thuê. Phải xác minh cho từng nước Bắc Âu, kể cả cách triển khai trong EEA.
+5. **Fail closed:** thiếu một trong các dữ liệu sau thì **không** khẳng định tuân thủ và **không** có phương án duyệt được tự động:
+   - giờ ca chính thức;
+   - lịch sử làm việc/lái/nghỉ trước đó;
+   - thông tin phạm vi xe/vận hành;
+   - bằng chứng nghỉ bắt buộc.
+
+   UI phải phân biệt "thiếu dữ liệu" với "không có tài xế khả thi".
+
+**Dữ liệu và cấu hình đề xuất** (chờ PR migration/API)
+
+- **`MarketConfig.driver_rules`** (theo market), validate ở `PUT /markets/{code}/config`:
+
+  | Tham số | Mặc định |
+  |---|---|
+  | `daily_rest_hours` | 11 |
+  | `reduced_rest_enabled` | false |
+  | `driving_max_min_day` | 540 |
+  | `driving_extended_enabled` | false |
+  | `driving_break_after_min` | 270 |
+  | `driving_break_min` | 45 |
+  | `weekly_driving_max_min` | 3360 |
+  | `fortnight_driving_max_min` | 5400 |
+
+- **`ref.vehicle`**:
+  - `max_permissible_mass_kg`;
+  - `regulation_561_scope`: `in_scope` | `out_of_scope` | `unknown`, mặc định `unknown`. `unknown` → fail closed.
+- **Lịch sử tài xế:**
+  - Nguồn: chuyến đã thực hiện hoặc đã cam kết (`ops.delivery_trip`, `plan.vehicle_reservation` committed) và ca chính thức.
+  - Bảng đề xuất `hr.driver_duty_log` (`employee_id`, `duty_start`, `duty_end`, `driving_min`, `source`).
+  - Thiếu lịch sử cho khoảng thời gian cần xét → `history_complete = false`.
+- **Seed demo (Dev 2):** xe có phạm vi rõ ràng, tài xế có đủ lịch sử 14 ngày, lịch ca do quản lý xác nhận.
+
+**Đầu vào engine** (`04` mục 6.7):
+- `DriverCtx.duty_history` (các kỳ làm việc đã có và sắp tới), `driving_min_by_day`, `driving_min_week`, `driving_min_fortnight`, `history_complete`.
+- `VehicleCtx.regulation_561`: `True` / `False` / `None` (chưa biết).
+- Các tham số `driver_rules` trong `EngineConfig`.
+
+**Quy tắc engine** (hạn chế theo giai đoạn của MVP; mọi lỗi dưới đây là check `safety`, và nếu có tài xế khác hợp lệ thì engine chọn tài xế đó):
+
+- **Nghỉ 11 giờ:** khoảng làm việc của chuyến phải cách mọi kỳ làm việc khác (trước và sau) ≥ 11 giờ, trừ khi nằm trong **cùng** một ca. Vi phạm → `DRIVER_REST_INSUFFICIENT`.
+- **Xe trong phạm vi 561:**
+  - Thiếu lịch sử → `DRIVER_HISTORY_MISSING`.
+  - Thời gian lái của chuyến = lái đi + lái về. Vượt 540 phút/ngày, 3360 phút/tuần hoặc 5400 phút/hai tuần → `DRIVING_TIME_EXCEEDED`.
+  - Chặng lái liên tục > 270 phút → `DRIVING_BREAK_REQUIRED`. MVP chưa tự chèn giờ nghỉ vào chuyến; việc này để giai đoạn sau.
+- **Xe chưa rõ phạm vi** → `VEHICLE_SCOPE_UNKNOWN`.
+- **Tổng giờ làm việc/ngày** ≤ `driver_max_hours_day`.
+
+**Test bắt buộc:**
+- ca qua nửa đêm; đổi ngày, ngày lễ;
+- về muộn rồi vào ca sớm hôm sau;
+- ngưỡng 4h30 lái; giới hạn lái trong ngày;
+- trùng chuyến đã nhận;
+- hai tài xế khác hạng bằng;
+- tài xế đang trong ca nhưng ca không phủ giờ lấy hàng;
+- thiếu lịch sử; xe chưa rõ phạm vi.
 
 ## Q13 — Mã audit nhân sự
 

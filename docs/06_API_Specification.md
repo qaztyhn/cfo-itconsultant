@@ -420,6 +420,11 @@ Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ m�
 - Một bảng lịch cho **nhân viên kho và tài xế** (tài xế theo kho gốc). Người cập nhật: quản lý chính/phó `can_approve` của kho (Q12b); 1 ca/người/ngày (Q12a); sửa quá khứ cần lý do (Q12c); giờ riêng, ca qua nửa đêm, giờ nghỉ; kiểm nghỉ giữa ca `driver_min_rest_hours`.
 - `GET /warehouses/{id}/shift-schedule?from=&to=&kind=staff|driver|all`, `PUT /warehouses/{id}/shift-schedule` (`entries[{employee_id, date, shift_template_id|null, start_time?, end_time?, break_start?, break_end?}]`, `reason_text?`); ghi `SHIFT_CHANGED`. Công suất trả `schedule_verified` (Q12d).
 - Engine chỉ đề xuất phương án khi lên hàng nằm trong ca kho chính thức có người và khoảng làm việc của từng tài xế nằm trọn trong ca thực tế của tài xế; mã mới `NO_WAREHOUSE_SHIFT`, `OUTSIDE_DRIVER_SHIFT` (Phụ lục A).
+- **Thời gian lái/nghỉ của tài xế (Q12b, chính sách Bắc Âu cho MVP, không phải xác nhận pháp lý):**
+  - `MarketConfig.driver_rules` (nghỉ hằng ngày 11 giờ, tắt nghỉ rút gọn, lái 540 phút/ngày, nghỉ 45 phút sau 270 phút lái, giới hạn tuần/hai tuần) được validate ở `PUT /markets/{code}/config`.
+  - `ref.vehicle` thêm `regulation_561_scope` (`in_scope|out_of_scope|unknown`) và `max_permissible_mass_kg`.
+  - Mã safety mới (Phụ lục A): `DRIVER_REST_INSUFFICIENT`, `DRIVING_TIME_EXCEEDED`, `DRIVING_BREAK_REQUIRED`, `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`.
+  - UI phân biệt thiếu dữ liệu với không có tài xế khả thi.
 - Mã audit mới (Q13): `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`; chỉnh hồi tố phân công `EMPLOYEE_ASSIGNMENT_CHANGED` + `reason_code=retroactive` + lý do; `ROUTING_LEGACY_ACKNOWLEDGED` (Q14).
 
 ### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
