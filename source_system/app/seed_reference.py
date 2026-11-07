@@ -1,4 +1,4 @@
-"""Additive synthetic customers/addresses from 08 section 5.5, independent of order contracts.
+"""Additive synthetic catalogue/customers/addresses from 08 sections 5.2/5.5.
 
 Owner: Dev 2 (M1). Requires explicit source-init first; never resets source data.
 Receiving calendars and order snapshots remain pending SRC-Q1/SRC-Q8.
@@ -6,6 +6,7 @@ Receiving calendars and order snapshots remain pending SRC-Q1/SRC-Q8.
 
 import asyncio
 import os
+from dataclasses import asdict
 from datetime import datetime
 from decimal import Decimal
 from random import Random
@@ -16,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Customer
+from app.models import Address, Customer, Product
+from seed.se.catalog import catalog_products
 
 BUSINESSES = (
     "Nordbygg Entreprenad AB",
@@ -73,6 +75,17 @@ async def seed_customers(connection: AsyncConnection, *, now: datetime) -> None:
             )
 
 
+async def seed_catalog(connection: AsyncConnection, *, now: datetime) -> None:
+    """Add missing SKUs only, preserving prices, metadata and timestamps of existing rows."""
+    if now.tzinfo is None:
+        raise ValueError("Seed timestamp must be timezone-aware")
+    await connection.execute(text("SELECT pg_advisory_xact_lock(20261104)"))
+    values = [asdict(product) | {"created_at": now, "updated_at": now} for product in catalog_products()]
+    await connection.execute(
+        insert(Product).values(values).on_conflict_do_nothing(index_elements=[Product.sku])
+    )
+
+
 async def run() -> None:
     settings = Settings.from_env()
     now = datetime.fromisoformat(os.environ.get("APP_NOW") or "2026-11-04T10:05:00+01:00")
@@ -80,6 +93,7 @@ async def run() -> None:
     try:
         async with engine.begin() as connection:
             await seed_customers(connection, now=now)
+            await seed_catalog(connection, now=now)
     finally:
         await engine.dispose()
 
@@ -90,7 +104,7 @@ def main() -> int:
     except Exception:
         print("Source reference seed failed; check source-init, database configuration and APP_NOW.")
         return 1
-    print("Source customers/addresses seeded; full orders/scenario seed remains pending.")
+    print("Source catalogue/customers/addresses seeded; full orders/scenario seed remains pending.")
     return 0
 
 

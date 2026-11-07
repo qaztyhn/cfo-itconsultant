@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert, inspect, select, text, update
+from sqlalchemy import func, insert, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.schema import DropSchema
@@ -21,7 +21,7 @@ from app.db import create_engine
 from app.init_db import initialize
 from app.main import create_app
 from app.models import Address, Customer, Order, Product
-from app.seed_reference import seed_customers
+from app.seed_reference import seed_catalog, seed_customers
 
 
 @pytest.fixture
@@ -87,6 +87,39 @@ async def test_US_SRC_01_AC1_customer_reference_seed_preserves_existing_data(
                 await connection.execute(select(Address.id, Address.lat, Address.lon).order_by(Address.id))
             ).all()
         )
+
+
+async def test_US_SRC_01_AC1_product_seed_preserves_edits_timestamps_and_unrelated_rows(
+    database: tuple[AsyncEngine, str],
+) -> None:
+    engine, _ = database
+    now = datetime(2026, 11, 4, 9, 5, tzinfo=UTC)
+    async with engine.begin() as connection:
+        await seed_catalog(connection, now=now)
+        assert await connection.scalar(select(func.count()).select_from(Product)) == 100
+        assert await connection.scalar(select(Product.created_at).where(Product.sku == "88412")) == now
+        await connection.execute(
+            update(Product)
+            .where(Product.sku == "88412")
+            .values(name="Operator edit", unit_price=Decimal("12.34"))
+        )
+        await connection.execute(
+            insert(Product).values(
+                sku="EXTERNAL",
+                name="Unrelated",
+                sale_unit="piece",
+                units_to_base=1,
+                unit_price=Decimal("9.99"),
+                weight_kg=1,
+                volume_m3=Decimal("0.01"),
+            )
+        )
+        fields = (Product.sku, Product.name, Product.unit_price, Product.created_at, Product.updated_at)
+        before = (await connection.execute(select(*fields).order_by(Product.sku))).all()
+        await seed_catalog(connection, now=now)
+        assert (await connection.execute(select(*fields).order_by(Product.sku))).all() == before
+        assert len(before) == 101
+        assert await connection.scalar(select(func.count()).select_from(Order)) == 0
 
 
 async def test_bootstrap_preserves_data_and_database_updates_timestamp(
