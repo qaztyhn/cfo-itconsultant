@@ -309,12 +309,40 @@ Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "
 Khóa: chỉ khi duyệt, theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi mọi xe → mọi tài xế của phương án), kiểm tra lại sau khi có khóa. Lúc lập kế hoạch giữ chỗ không khóa và có thể vượt; đơn duyệt trước thắng.
 Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `409 RESOURCE_CONFLICT` (xe/tài xế/hàng/công suất đã bị đơn khác chiếm, kèm `details.conflict` và gợi ý chạy lại), `422 REASON_REQUIRED`, `409 DATE_AGREEMENT_REQUIRED`, `409 ILLEGAL_TRANSITION`.
 
-### 5.0.2 Phân luồng đơn khi Sales kiểm trên CFO (Q14, đã duyệt phương án A)
+### 5.0.2 Phân luồng đơn khi Sales kiểm trên CFO (Q14 phương án A; DEC-ROUTING-002)
 
-(chi tiết: `docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md`; lựa chọn nghiệp vụ đã duyệt ở PR qaztyhn/cfo-itconsultant#53; DDL/API/engine cuối cùng review ở PR triển khai)
-- Sales submit trên POS rồi **kiểm trên CFO trước mọi điều phối tay**. `sync-now` trả `routing_status`: `cfo` (đủ dữ liệu, 100% SKU confirmed — CFO điều phối, không điều phối tay), `legacy` (có SKU chưa confirmed — quy trình tay, CFO không plan/hold/approve, mapping sau không kéo vào CFO), `unresolved` (nguồn/CFO không sẵn sàng hoặc dữ liệu thiếu — **không** coi là legacy, không lưu quyết định, trả `retry_after_s`). Lỗi kỹ thuật nguồn vẫn `503`.
-- `POST /integration/orders/{external_ref}/routing-ack` (sales, đúng cửa hàng): `{ "choice": "legacy_acknowledged" | "manual_started", "reason_text"? }`; `manual_started` (đơn đã điều phối tay trước khi kiểm) bắt buộc lý do, lưu `legacy/manual_started`, chỉ khi chưa có hold/approve. Ghi `ROUTING_LEGACY_ACKNOWLEDGED`.
-- Bảng định tuyến nội bộ **không bảo đảm** chặn điều phối tay ngoài CFO (CFO chỉ đọc POS); chống trùng dựa vào quy trình kiểm trước, xác nhận bàn giao có audit và lựa chọn `manual_started`.
+(chi tiết: `docs/ASSUMPTIONS.md` DEC-ROUTING-001/002; `05` `ops.order_routing` (migration 0009–0011))
+
+**Ai được ghi quyết định**
+- **Polling chỉ đồng bộ dữ liệu nguồn, không ghi quyết định phân luồng.**
+  - Không ghi `ops.order_routing`.
+  - Không tạo `customer_order` cho đơn chưa có quyết định.
+  - Không tạo plan/hold.
+  - Chỉ cập nhật theo version các đơn đã có `route = cfo`.
+- Quyết định `cfo` / `legacy` chỉ được lưu khi **Sales chạy "Sync & check routing"** hoặc **Dispatcher kiểm tra được ủy quyền**.
+  - CFO đọc lại nguồn **ngay lúc đó** và đánh giá trạng thái mapping **tại thời điểm đó**.
+  - Lưu kèm `decided_by_user_id` và `decided_by_role` ∈ `sales` | `dispatcher`, ghi `ROUTING_DECIDED`.
+  - Đã ghi thì **không bao giờ tự chuyển luồng**: không do mapping về sau, không do version nguồn đổi, không do báo cáo của Sales.
+
+**`POST /integration/orders/sync-now`** (sales, đúng cửa hàng; dispatcher trong market). Trả `routing_status`:
+- `cfo`: đủ dữ liệu, 100% SKU confirmed. CFO điều phối; không điều phối tay.
+- `legacy`: có SKU chưa confirmed. Quy trình tay; CFO không plan/hold/approve; mapping sau không kéo đơn vào CFO.
+- `unresolved`: nguồn/CFO không sẵn sàng hoặc dữ liệu thiếu. **Không** coi là legacy, không lưu quyết định, trả `retry_after_s`.
+- Gọi lại khi đã có quyết định → trả lại đúng quyết định đã lưu (`already_decided: true`).
+- Lỗi kỹ thuật của nguồn vẫn là `503`.
+
+**`POST /integration/orders/{external_ref}/routing-ack`** (sales, đúng cửa hàng). Thân request: `{ "choice": "legacy_acknowledged" | "manual_started", "reason_text"? }`.
+- `legacy_acknowledged`: chỉ khi đã có quyết định `legacy`. Ghi riêng cặp `acknowledged_by_user_id` / `acknowledged_at`, đúng một lần. Ghi `ROUTING_LEGACY_ACKNOWLEDGED`.
+- `manual_started`, `reason_text` bắt buộc (thiếu → `422 REASON_REQUIRED`):
+  - **Chưa có quyết định** → lưu `legacy` / `manual_started` kèm lý do, ghi `ROUTING_MANUAL_START_RECORDED`.
+  - **Đã có `legacy`** → chỉ ghi audit `ROUTING_MANUAL_START_RECORDED`; quyết định không đổi.
+  - **Đã có `cfo`** → **không đổi luồng**. Trả `409 RESOURCE_CONFLICT` với `details.escalated = true`. Ghi `ROUTING_MANUAL_CONFLICT_ESCALATED` và tạo alert `ROUTING_MANUAL_CONFLICT` (critical, target dispatcher). Dispatcher xử lý để tránh giao trùng.
+
+**Giới hạn:** bảng định tuyến nội bộ **không bảo đảm** chặn được điều phối tay ngoài CFO, vì CFO chỉ đọc POS. Chống trùng dựa vào:
+1. quy trình kiểm trước;
+2. xác nhận bàn giao có audit;
+3. ngoại lệ `manual_started` có lý do;
+4. escalation sang Dispatcher.
 
 ### 6.3a Sales approve (mở rộng endpoint đã có)
 

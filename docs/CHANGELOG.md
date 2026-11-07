@@ -27,6 +27,16 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [DEC-ROUTING-002 — 05/06 + migration 0011] — 2026-11-07 — quyết định của chủ dự án, chờ review PR
+
+- **Quyết định:** polling chỉ đồng bộ dữ liệu nguồn. Quyết định `cfo`/`legacy` chỉ ghi khi Sales Sync & check hoặc Dispatcher kiểm tra được ủy quyền, trên dữ liệu nguồn và mapping lúc đó. Đã ghi không tự đổi. Điều phối tay trước khi kiểm là ngoại lệ có lý do + audit; đơn đã `cfo` thì không đổi sang `legacy` mà chuyển Dispatcher. Thay thế phần "polling được quyết định" của Q14/DEC-ROUTING-001.
+- **`05`:** `ops.order_routing.decided_by_user_id` NOT NULL, `decided_by_role` (`sales|dispatcher`) NOT NULL, `reason_text`, `ck_routing_manual_reason`. Trigger bất biến bao cả hai cột mới. Thêm loại alert `ROUTING_MANUAL_CONFLICT`. Migration `0011` thất bại nếu bảng đã có dữ liệu cũ (fail closed).
+- **`06` §5.0.2:**
+  - `sync-now` trả lại quyết định đã lưu (`already_decided`);
+  - `routing-ack` `manual_started` có ba nhánh: chưa quyết định → `legacy/manual_started`; đã `legacy` → chỉ audit; đã `cfo` → `409 RESOURCE_CONFLICT` + escalation.
+- **`04` §10:** mã hành động `ROUTING_DECIDED`, `ROUTING_LEGACY_ACKNOWLEDGED`, `ROUTING_MANUAL_START_RECORDED`, `ROUTING_MANUAL_CONFLICT_ESCALATED`.
+- Service/API (`sync-now`, `routing-ack`, escalation) và ingestion **chưa code**. Dev 2 làm phần ingestion/sync-now, Dev 1 làm guard/routing-ack.
+
 ## [05 — migration 0010] — 2026-11-07 — quyết định phân luồng bất biến (Q14), chờ review
 
 - `ops.order_routing`: trigger `trg_guard_order_routing` (hàm `ops.guard_order_routing`) chặn UPDATE khóa, `route`, `reason_code`, `unmapped_skus`, `decided_at`, `decided_source_version`, `decided_by_user_id`, `created_at` và mọi DELETE; chỉ cho ghi riêng `acknowledged_by_user_id`/`acknowledged_at` **một lần** (NULL → giá trị). `ck_routing_ack`: hai trường xác nhận cùng có hoặc cùng NULL.

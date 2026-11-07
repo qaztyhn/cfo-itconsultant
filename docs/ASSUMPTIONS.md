@@ -16,6 +16,7 @@
 | [ASM-007](#asm-007--quy-tắc-điểm-danh-chưa-ghi-trong-06-mục-13) | Warehouse Manager quyết định lịch người–ca; `expected_staff` **chỉ để so sánh** | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Cần lịch chính thức, migration/API |
 | [DEC-SALES-001](#dec-sales-001--sales-xác-nhận-có-điều-kiện-và-sync-now) | Sales dùng CFO riêng, sync-now; chỉ confirm phương án chuẩn an toàn | 07/11 | [PR #43](https://github.com/qaztyhn/cfo-itconsultant/pull/43) | Docs đã merge, code theo milestone |
 | [DEC-ROUTING-001](#dec-routing-001--sales-kiểm-cfo-trước-khi-điều-phối-thủ-công) | Sales phải kiểm CFO trước khi điều phối tay; luồng CFO/legacy không tự đảo | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; chi tiết Q14 vẫn chờ migration/API |
+| [DEC-ROUTING-002](#dec-routing-002--chỉ-người-kiểm-tra-mới-ghi-quyết-định-phân-luồng) | Polling chỉ đồng bộ dữ liệu nguồn; quyết định `cfo/legacy` chỉ ghi khi Sales Sync & check hoặc Dispatcher kiểm tra được ủy quyền; đã ghi không tự đổi; điều phối tay trước khi kiểm = ngoại lệ có lý do + audit; đã `cfo` thì chuyển Dispatcher | 07/11 | Chủ dự án chốt trong phiên làm việc 07/11 (trả lời câu hỏi ở [PR #59](https://github.com/qaztyhn/cfo-itconsultant/pull/59)) | DB ràng buộc ở migration 0011; ingestion/sync-now do Dev 2 |
 | [DEC-SHIFTS-001](#dec-shifts-001--q12-lịch-làm-chính-thức-của-kho-và-tài-xế) | Q12a–d: 1 ca/người/ngày, manager chính/phó có quyền, hồi tố có lý do, thiếu lịch thì 0 công suất | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; bảng/API đề xuất cần review |
 | [DEC-AUDIT-001](#dec-audit-001--q13-mã-nhật-ký-nhân-sự) | Q13 chấp thuận 3 mã audit mới và quy tắc hồi tố | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Chờ cập nhật contract/code |
 | [DEC-DRIVER-001](#dec-driver-001--khung-giờ-làm-nghỉ-và-giới-hạn-lái-xe) | Kiểm ca tài xế và nhân viên kho; nghỉ mặc định 11h; lái xe/nghỉ theo phạm vi pháp luật | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54) | Quy tắc MVP đã duyệt; engine/schema cần nghiệm thu |
@@ -227,6 +228,40 @@
 - Quy tắc được duyệt của **Q14 = phương án A**: mỗi đơn nguồn chỉ có một quyết định phân luồng đã lưu (`cfo` hoặc `legacy`), không tự chuyển luồng theo bản cập nhật mapping về sau. `legacy` không có plan, hold, approve trong CFO. Dữ liệu chưa đủ/CFO hoặc nguồn không truy cập được = **unresolved**, **không được mặc định thành legacy hoặc xác nhận giao**.
 - Quy trình cũ được nhân viên **điều phối thủ công**, không có hệ thống tự động điều phối cạnh tranh. Vì CFO không ghi ngược POS, bảng routing nội bộ **không tự ngăn** nhân viên đã thực hiện thủ công; cần bước xác nhận bàn giao/audit và cơ chế chống xử lý trùng trước rollout.
 - **Thiết kế Dev đề xuất, chưa được xem là DDL/API đã duyệt:** bảng `ops.order_routing`, `routing-ack` với lựa chọn `legacy_acknowledged` / `manual_started`, routing từ polling, cách xử lý đơn cũ. Xem [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) và yêu cầu review implementation. **Chưa có quyết định cho phép tự động chuyển sang quy trình cũ khi CFO lỗi**; phải hỏi owner nếu muốn làm ngoại lệ.
+
+## DEC-ROUTING-002 — Chỉ người kiểm tra mới ghi quyết định phân luồng
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án, trong phiên làm việc. Đây là câu trả lời cho câu hỏi "manual_started và quyết định bất biến" nêu ở [PR #59](https://github.com/qaztyhn/cfo-itconsultant/pull/59): **chọn phương án A, có điều chỉnh**.
+- **Câu chốt (nguyên nghĩa):**
+  > Polling chỉ đồng bộ dữ liệu nguồn, không được ghi quyết định phân luồng cuối cùng cfo/legacy. Quyết định chỉ được lưu khi Sales thực hiện Sync & check routing trên CFO hoặc Dispatcher thực hiện kiểm tra được ủy quyền, dựa trên dữ liệu nguồn mới nhất và trạng thái mapping tại thời điểm đó. Một khi đã ghi quyết định thì không tự chuyển luồng. Nếu Sales đã bắt đầu điều phối thủ công trước khi kiểm CFO, phải ghi nhận ngoại lệ có lý do và audit; nếu đã có quyết định cfo thì không được tự đổi sang legacy, phải chuyển Dispatcher xử lý để tránh double fulfilment.
+- **Trường hợp biên:**
+  1. **Polling** (job 5 phút):
+     - chỉ đồng bộ và lưu dữ liệu nguồn;
+     - cập nhật theo version các đơn **đã** có quyết định `cfo`;
+     - **không** ghi `ops.order_routing`;
+     - **không** tạo `customer_order` cho đơn chưa có quyết định;
+     - không tạo plan/hold.
+  2. **Sales Sync & check** hoặc **Dispatcher kiểm tra được ủy quyền**:
+     - CFO đọc lại nguồn ngay lúc đó và đánh giá mapping tại thời điểm đó.
+     - Đủ dữ liệu → ghi một quyết định duy nhất kèm người và vai trò (`decided_by_user_id`, `decided_by_role` ∈ sales/dispatcher) và ghi `ROUTING_DECIDED`.
+     - Thiếu dữ liệu → `unresolved`, không ghi gì.
+  3. **Sales đã điều phối tay trước khi kiểm, chưa có quyết định:**
+     - ghi `legacy` với `reason_code = manual_started`, `reason_text` bắt buộc;
+     - ghi audit `ROUTING_MANUAL_START_RECORDED`.
+  4. **Sales báo đã điều phối tay nhưng đơn đã có quyết định `cfo`:**
+     - **không** đổi luồng;
+     - ghi audit `ROUTING_MANUAL_CONFLICT_ESCALATED` (lý do bắt buộc);
+     - tạo alert `ROUTING_MANUAL_CONFLICT` cho Dispatcher.
+     - Dispatcher xử lý bằng các luồng có sẵn (hủy/giữ kế hoạch CFO, liên hệ cửa hàng), để tránh giao trùng.
+  5. **Đơn đã có `legacy`:** mapping về sau không kéo đơn vào CFO.
+- **Thay thế (superseded):** phần "polling được phép quyết định cfo/legacy, nhưng không tự tạo hold" trong [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) / DEC-ROUTING-001 và câu "`manual_started` … kể cả khi đủ SKU" của `06` §5.0.2 cũ, khi đơn đã có quyết định `cfo`.
+- **Ảnh hưởng:**
+  - `06` §5.0.2, `05` (`ops.order_routing`), `04` §10 (mã hành động), `CHANGELOG`;
+  - migration `0011_routing_decided_by_check` và test PostgreSQL;
+  - Dev 2: ingestion/polling và `sync-now`; Dev 3: màn Sync & check và nút báo điều phối tay.
+- **Tình trạng triển khai:**
+  - Đã có ràng buộc DB (0011): không có quyết định thiếu người/vai trò; `manual_started` cần lý do; quyết định bất biến.
+  - Service/API của `sync-now`, `routing-ack` và escalation **chưa code**.
 
 ## DEC-SHIFTS-001 — Q12 lịch làm chính thức của kho và tài xế
 
