@@ -28,7 +28,7 @@ Theo `09` mục 14.3–14.4, đây là quyết định về hợp đồng và ph
 | **Q7** | Schema `GET /orders` và bucket của `/orders/counts` | Mục 4 | Sửa tên trường / cách chia bucket |
 | **Q8** | Schema `/mapping/tasks*`, `/products/local`, phản hồi confirm/reject | Mục 5 | — |
 | **Q9** | Schema timeline; CS thấy gì | Mục 6 | **B.** CS không xem timeline (ma trận §5 chỉ ghi "dispatcher, warehouse, CS, admin") |
-| **Q10** | Phản hồi `GET/PUT /warehouses/{id}/attendance`, `GET /warehouses/{id}/capacity` (M3) | Mục 8 | Sửa tên trường |
+| **Q10** | Phản hồi `GET/PUT /warehouses/{id}/attendance`, `GET /warehouses/{id}/capacity` (M3) | Mục 7 | Sửa tên trường |
 | **Q11** | `attendance_gen`: kho có nhiều ca/ngày thì nhân viên vào ca nào (`05` không có bảng gán người–ca) | **A.** Mọi người vào ca sớm nhất của ngày. **B.** Chia đều theo `expected_staff` của từng ca, theo `employee_no`. **C.** Thêm cột/bảng gán ca (thay đổi `05`) | Ảnh hưởng công suất theo ca; Dev 1 không tự chốt |
 
 Quy tắc chung (giống `06` v1.3 mục 13.1 đã duyệt):
@@ -158,7 +158,7 @@ Không phân trang; sắp xếp theo `at` tăng dần, cùng thời điểm thì
 Không có điểm số, GPS hay `snapshot`/`before`/`after` của decision log trong timeline. Ai cần các trường đó dùng
 `/audit/decisions` theo quyền riêng.
 
-## 8. Q10 — Điểm danh và công suất (M3)
+## 7. Q10 — Điểm danh và công suất (M3)
 
 Service đã có: qaztyhn/cfo-itconsultant#39 (`set_attendance`, quy tắc ASM-007).
 
@@ -181,7 +181,7 @@ Phản hồi của `PUT` dùng cùng schema này:
 `labour_cap_hours` = Σ người × giờ hữu ích × `delivery_share` (US-WH-02 AC1). Ngày lễ trả `0` (AC3).
 `booked_hours` gồm giờ của mọi đơn (AC2).
 
-## 7. Thứ tự triển khai sau khi chốt
+## 8. Thứ tự triển khai sau khi chốt
 1. `06` mục 5 và 12 + `CHANGELOG` (một PR docs, giống `06` v1.3).
 2. M2-C: `/mapping/tasks*`, `/products/local`. Ứng viên ánh xạ cần `engine.mapping_candidates`, đã có trên `main`
    nhưng chưa có trên `feat/m0-db-ref-hr`, nên cần qaztyhn/cfo-itconsultant#28.
