@@ -72,6 +72,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 26. **Sales chỉ duyệt có điều kiện.** Cùng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, không transfer/manual/replan/date change, dữ liệu mới, hold còn hạn; dùng chung ApprovalService, lock và audit. Nếu đơn cũ chưa duyệt tranh công suất chưa chứng minh đủ nguồn lực, Sales phải chuyển Dispatcher.
 27. **FIFO hiển thị, không FIFO thực thi bắt buộc.** Danh sách theo `submitted_at,id` tăng dần; chèn đơn giao sớm vào lịch nếu không lấn `committed` của đơn cũ. `held` stock/labour có thể vượt, không được hứa cam kết trước khi duyệt.
 
+28. **ASM-006:** mọi thay đổi phân công, owner, quản lý, nghỉ việc ghi actor + before/after và `decision_log` cùng transaction. Sửa hồi tố chỉ admin đủ quyền, phải có lý do; quản lý chỉ rời vị trí sau khi có người thay thế. Chưa có action code phải đề xuất cập nhật hợp đồng trước, không bỏ audit.
+29. **ASM-007/Q11:** Warehouse Manager lập lịch ca chính thức từng người/ngày; `expected_staff` chỉ dùng so sánh, không tự chia/dồn nhân viên theo ca. `attendance_gen` chỉ tạo `planned` từ lịch xác nhận. `all_present` không tạo ca hoặc thay đổi phân công. Sửa lịch và điểm danh có audit; hồi tố cần lý do. Thiếu lịch không tính công suất như đã đủ người.
+
 ## 5. Quy ước backend (Python)
 
 - **Phiên bản/công cụ:** Python 3.12; FastAPI; SQLAlchemy 2.0 async; Alembic; Pydantic v2; httpx; APScheduler; pytest, pytest-asyncio; ruff, black, mypy.
