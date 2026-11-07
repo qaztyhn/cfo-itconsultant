@@ -409,74 +409,13 @@ async def capacity(
 
 
 async def generate_attendance(session: AsyncSession, *, days: int = GEN_DAYS) -> int:
-    """Job attendance_gen (06 v1.4 mục 13.2, Q11 = B): sinh dòng `planned` cho 14 ngày tới.
+    """Job attendance_gen (ASM-007 / Q11 đã chốt, PR #50; 06 mục 13.0a, 13.2).
 
-    Mỗi kho đang hoạt động, mỗi ngày (từ hôm nay theo múi giờ market): nhân viên `counts_in_capacity`, chưa
-    nghỉ việc, có phân công hiệu lực tại kho hôm đó, chưa có dòng attendance ngày đó → chia lần lượt vào các
-    ca mẫu theo `start_time`, tối đa `expected_staff` mỗi ca (đã tính người có sẵn dòng), theo `employee_no`;
-    dư vào ca cuối. Không ghi đè dòng có sẵn. Trả số dòng tạo mới. Không commit.
+    Chỉ được chép dòng `planned` từ **lịch phân ca chính thức do Warehouse Manager xác nhận** cho từng
+    nhân viên/ngày/ca. `shift_template.expected_staff` chỉ là số dự kiến để so sánh: KHÔNG tự chia người vào
+    ca, KHÔNG dồn người dư vào ca cuối, KHÔNG tự dựng lịch. Bảng lịch chính thức (`hr.employee_shift_schedule`
+    theo đề xuất `05`) chưa được migrate, nên job hiện **không tạo dòng nào** và trả 0; thiếu lịch được thể
+    hiện là công suất chưa xác minh, không phải số người giả định. Không commit.
     """
-    created = 0
-    now = clock.now()
-    warehouses = (
-        await session.execute(
-            select(Location, Market.timezone)
-            .join(Market, Market.id == Location.market_id)
-            .where(Location.type == "warehouse", Location.is_active.is_(True))
-            .order_by(Location.id)
-        )
-    ).all()
-    for warehouse, tz in warehouses:
-        start = now.astimezone(ZoneInfo(tz)).date()
-        templates = (
-            await session.scalars(select(ShiftTemplate).where(ShiftTemplate.warehouse_id == warehouse.id))
-        ).all()
-        for offset in range(days):
-            day = start + timedelta(days=offset)
-            shifts = sorted(
-                (t for t in templates if t.weekday == day.isoweekday()), key=lambda t: t.start_time
-            )
-            if not shifts:
-                continue
-            existing = dict(
-                (
-                    await session.execute(
-                        select(Attendance.shift_template_id, func.count())
-                        .where(
-                            Attendance.work_date == day,
-                            Attendance.shift_template_id.in_([t.id for t in shifts]),
-                        )
-                        .group_by(Attendance.shift_template_id)
-                    )
-                ).all()
-            )
-            staff = (
-                await session.scalars(
-                    select(Employee.id)
-                    .join(WarehouseStaff, WarehouseStaff.employee_id == Employee.id)
-                    .join(EmployeeAssignment, EmployeeAssignment.employee_id == Employee.id)
-                    .where(
-                        WarehouseStaff.counts_in_capacity.is_(True),
-                        Employee.status != "terminated",
-                        EmployeeAssignment.location_id == warehouse.id,
-                        EmployeeAssignment.start_date <= day,
-                        or_(EmployeeAssignment.end_date.is_(None), EmployeeAssignment.end_date >= day),
-                        ~select(Attendance.id)
-                        .where(Attendance.employee_id == Employee.id, Attendance.work_date == day)
-                        .exists(),
-                    )
-                    .order_by(Employee.employee_no, Employee.id)
-                )
-            ).all()
-            filled = {t.id: int(existing.get(t.id, 0)) for t in shifts}
-            for employee_id in staff:
-                target = next((t for t in shifts if filled[t.id] < t.expected_staff), shifts[-1])
-                filled[target.id] += 1
-                session.add(
-                    Attendance(
-                        employee_id=employee_id, work_date=day, shift_template_id=target.id, status="planned"
-                    )
-                )
-                created += 1
-    await session.flush()
-    return created
+    del session, days  # sẽ đọc lịch chính thức sau khi có migration được duyệt
+    return 0

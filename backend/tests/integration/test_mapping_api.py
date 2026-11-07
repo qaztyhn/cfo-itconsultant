@@ -103,15 +103,13 @@ def test_US_PRD_01_AC3_AC4_task_lists_gtin_and_name_candidates(mp: Api) -> None:
     assert "blocked_orders" not in task and "suggested_handling_group" not in task
 
 
-def test_US_PRD_04_AC2_detail_has_suggested_group_and_blocked_orders(mp: Api) -> None:
+def test_US_PRD_04_AC2_detail_has_suggested_group_and_no_customer_orders(mp: Api) -> None:
     r = mp.get("/mapping/tasks/1", ADMIN)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["suggested_handling_group"] == "N3"
-    assert body["blocked_orders"] == [{"id": 1, "order_no": "SE-000001"}, {"id": 2, "order_no": "SE-000002"}]
-    # warehouse: đơn chưa có kế hoạch từ kho mình → không liệt kê, tổng vẫn giữ
-    w = mp.get("/mapping/tasks/1", WAREHOUSE).json()
-    assert w["blocked_orders"] == [] and w["blocked_order_count"] == 2
+    assert "blocked_orders" not in body  # ASM-005: không liệt kê đơn khách chờ mapping
+    assert mp.get("/mapping/tasks/1", WAREHOUSE).json()["blocked_order_count"] == 2  # trường legacy
 
 
 @pytest.mark.parametrize("user_id", [ADMIN, SYSTEM_ADMIN, DISPATCHER, WAREHOUSE])
@@ -133,7 +131,7 @@ def test_other_market_cannot_see_task(mp: Api) -> None:
     assert mp.get("/products/local", ZZ_WAREHOUSE).json()["total"] == 0
 
 
-def test_US_PRD_02_AC1_confirm_unblocks_orders(mp: Api) -> None:
+def test_US_PRD_02_AC1_confirm_does_not_move_orders(mp: Api) -> None:
     r = mp.send("POST", "/mapping/tasks/1/confirm", ADMIN, {"global_product_id": 1, "units_to_base": 1})
     assert r.status_code == 200, r.text
     assert r.json() == {
@@ -141,13 +139,11 @@ def test_US_PRD_02_AC1_confirm_unblocks_orders(mp: Api) -> None:
         "local_sku": "SE-NEW-77",
         "global_product_id": 1,
         "mapping_status": "confirmed",
-        "ready_order_ids": [1, 2],
-        "still_blocked_order_ids": [],
     }
     statuses = [
         row["status"] for row in fetch(mp.dsn, "SELECT status::text AS status FROM ops.customer_order")
     ]
-    assert statuses == ["SUBMITTED", "SUBMITTED"]
+    assert statuses == ["BLOCKED_UNMAPPED_SKU", "BLOCKED_UNMAPPED_SKU"]  # ASM-005: không quay lại CFO
     assert fetch(mp.dsn, "SELECT action FROM audit.decision_log")[0]["action"] == "MAPPING_CONFIRMED"
 
 
@@ -192,7 +188,7 @@ def test_confirm_body_is_strict(mp: Api) -> None:
     assert_error(missing, 404, "NOT_FOUND")
 
 
-def test_US_PRD_03_reject_requires_reason_then_keeps_orders_blocked(mp: Api) -> None:
+def test_US_PRD_03_reject_requires_reason_and_keeps_reason_for_it(mp: Api) -> None:
     assert_error(mp.send("POST", "/mapping/tasks/1/reject", ADMIN, {}), 422, "REASON_REQUIRED")
     assert_error(
         mp.send("POST", "/mapping/tasks/1/reject", ADMIN, {"reason_text": "  "}), 422, "REASON_REQUIRED"
@@ -204,7 +200,9 @@ def test_US_PRD_03_reject_requires_reason_then_keeps_orders_blocked(mp: Api) -> 
         mp.get("/mapping/tasks", DISPATCHER, status="done").json()["items"][0]["mapping_status"] == "rejected"
     )
     rows = fetch(mp.dsn, "SELECT status::text AS s, block_reason FROM ops.customer_order ORDER BY id")
-    assert all(r["s"] == "BLOCKED_UNMAPPED_SKU" and "Discontinued" in r["block_reason"] for r in rows)
+    assert all("Discontinued" not in r["block_reason"] for r in rows)  # lý do cho IT, không gắn vào đơn
+    log = fetch(mp.dsn, "SELECT reason_text FROM audit.decision_log WHERE action = 'MAPPING_REJECTED'")
+    assert log[0]["reason_text"] == "Discontinued"
 
 
 def test_US_PRD_05_AC1_local_products_filter_and_paginate(mp: Api) -> None:

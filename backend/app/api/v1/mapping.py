@@ -32,11 +32,6 @@ class CandidateOut(BaseModel):
     score: float
 
 
-class OrderRef(BaseModel):
-    id: int
-    order_no: str
-
-
 class MappingTaskOut(BaseModel):
     id: int
     market: str
@@ -52,7 +47,6 @@ class MappingTaskOut(BaseModel):
     resolved_by: int | None
     resolved_at: datetime | None
     suggested_handling_group: str | None = None
-    blocked_orders: list[OrderRef] | None = None
 
 
 class NewGlobalIn(BaseModel):
@@ -83,8 +77,6 @@ class ConfirmOut(BaseModel):
     local_sku: str
     global_product_id: int
     mapping_status: Literal["confirmed"] = "confirmed"
-    ready_order_ids: list[int]
-    still_blocked_order_ids: list[int]
 
 
 class RejectIn(BaseModel):
@@ -152,7 +144,7 @@ async def list_tasks(
 
 @router.get("/mapping/tasks/{task_id}", response_model=MappingTaskOut, responses=_ERRORS)
 async def get_task(task_id: int, user: AuthUser, db: DbSession) -> MappingTaskOut:
-    """GET /mapping/tasks/{id} — kèm nhóm gợi ý và đơn bị chặn (warehouse: đơn trong phạm vi)."""
+    """GET /mapping/tasks/{id} — kèm nhóm gợi ý; không liệt kê đơn khách (ASM-005)."""
     scope = await resolve_hr_scope(db, user)
     return MappingTaskOut.model_validate(await mapping_read_service.get_task(db, scope, task_id))
 
@@ -177,8 +169,6 @@ async def confirm_task(task_id: int, body: ConfirmIn, user: AuthUser, db: DbSess
         task_id=task_id,
         local_sku=str(sku),
         global_product_id=result.global_product_id,
-        ready_order_ids=list(result.ready_order_ids),
-        still_blocked_order_ids=list(result.still_blocked_order_ids),
     )
 
 

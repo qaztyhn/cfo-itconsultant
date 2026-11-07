@@ -486,7 +486,10 @@ def _start_of_day(scope: OrderScope) -> datetime:
 
 
 async def counts(session: AsyncSession, scope: OrderScope) -> dict[str, object]:
-    """GET /orders/counts (Phụ lục A; bucket theo 06 mục 5.4)."""
+    """GET /orders/counts (Phụ lục A; bucket theo 06 mục 5.4).
+
+    BLOCKED_UNMAPPED_SKU là bản ghi legacy (ASM-005): không thuộc `all`, `needs_plan` hay hàng đợi Dispatcher.
+    """
     start = _start_of_day(scope)
     latest = _latest_risk().subquery()
     pending_suggestion = (
@@ -511,8 +514,8 @@ async def counts(session: AsyncSession, scope: OrderScope) -> dict[str, object]:
     row = (
         await session.execute(
             select(
-                bucket(~closed_before_today),
-                bucket(CustomerOrder.status.in_((S.SUBMITTED.value, S.BLOCKED_UNMAPPED_SKU.value))),
+                bucket(and_(~closed_before_today, CustomerOrder.status != S.BLOCKED_UNMAPPED_SKU.value)),
+                bucket(CustomerOrder.status == S.SUBMITTED.value),
                 bucket(CustomerOrder.status == S.PLANNED.value),
                 bucket(CustomerOrder.status == S.NO_FEASIBLE_DATE.value),
                 bucket(CustomerOrder.status.in_([s.value for s in IN_EXECUTION])),
