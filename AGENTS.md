@@ -4,13 +4,15 @@
 
 ## Mission and current state
 
-CFO is a real, synthetic-data MVP for delivery orchestration over existing POS/WMS/ERP systems. It proposes fulfilment plans; **only the dispatcher decides**. Core stack: FastAPI / Python 3.12, PostgreSQL 16 / SQLAlchemy / Alembic, React 18 / Vite / TypeScript, and a separate simulated source system.
+**Product decision (2026-11-07):** Sales may confirm eligible standard plans in CFO; POS remains unchanged. Read `docs/DECISION_SALES_CONFIRMATION.md` before related work.
+
+CFO is a real, synthetic-data MVP for delivery orchestration over existing POS/WMS/ERP systems. It proposes fulfilment plans; **dispatcher decides exceptions/full plans; Sales may explicitly confirm eligible rank-1 standard plans for their store**. Core stack: FastAPI / Python 3.12, PostgreSQL 16 / SQLAlchemy / Alembic, React 18 / Vite / TypeScript, and a separate simulated source system.
 
 The repository contains scaffolding; **do not treat declared endpoints, stub screens, or TODOs as completed features**. Verify behavior by running checks. Implement in dependency order M0 → M9 (`docs/08_Development_Plan.md`), using `docs/10_Team_Assignment.md` for ownership.
 
 ## Mandatory reading and source of truth
 
-Before **any code change**, read `docs/09_AI_Coding_Rules.md` in full, especially §4 (all **25** invariants), §13 (prohibited changes), §14 (ambiguity), and §16 (definition of done). Before each PR, recheck §4 and §16.
+Before **any code change**, read `docs/09_AI_Coding_Rules.md` in full, especially §4 (all **27** invariants), §13 (prohibited changes), §14 (ambiguity), and §16 (definition of done). Before each PR, recheck §4 and §16.
 
 When documents disagree, apply the precedence specified by `docs/09_AI_Coding_Rules.md` §2:
 
@@ -42,9 +44,9 @@ Read targeted sections, not all ten specifications every turn; `09` is the expli
 
 ## Non-negotiable safety and product rules (summary; `09` controls)
 
-- **No automatic approval**, date changes without agreed negotiation, or automatic sending of DELAY notices.
+- **No automatic approval**. Sales may explicitly confirm only an eligible, scoped standard plan via the same approval transaction; dispatcher retains all exception/replan authority. No unagreed dates or automatic DELAY notices.
 - **GPS access is enforced server-side for dispatcher only**. Never expose GPS or customer PII in logs or unauthorized responses.
-- **CFO reads source systems; never write back** to POS/WMS/ERP.
+- **CFO reads source systems; never write back** to POS/WMS/ERP. Sales may request an immediate read from CFO via existing adapter, with 5-minute polling as fallback.
 - **Engine is pure**: no DB, network, clock, filesystem, environment, or I/O. Use injected inputs and clock.
 - **One warehouse per order; no combining orders in one trip; one order may require multiple vehicles.**
 - **Planning holds may overlap; only approval acquires prescribed locks and rejects overcommit**. Close superseded plans in the same transaction.
