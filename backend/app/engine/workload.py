@@ -26,10 +26,26 @@ def prep_quantity(line: LineCtx) -> Decimal:
 
 
 def flag_multiplier(line: LineCtx, cap: Decimal) -> Decimal:
-    """Tích hệ số cờ, kẹp tối đa `cap`. TODO(#M4-workload)."""
-    raise NotImplementedError
+    """Tích hệ số cờ, kẹp tối đa `cap` (không cờ → 1)."""
+    product = Decimal(1)
+    for multiplier in line.product.flag_multipliers:
+        product *= multiplier
+    return min(product, cap)
+
+
+def line_hours(line: LineCtx, cfg: EngineConfig) -> Decimal:
+    """(fixed_hours + prep_qty × labour_hours_per_unit) × hệ số cờ — fixed_hours tính MỖI DÒNG."""
+    group = line.product.group
+    base = group.fixed_hours + prep_quantity(line) * group.labour_hours_per_unit
+    return base * flag_multiplier(line, cfg.flag_multiplier_cap)
 
 
 def compute_workload(lines: tuple[LineCtx, ...], cfg: EngineConfig) -> Workload:
-    """Tổng giờ công của đơn (độc lập kho). TODO(#M4-workload)."""
-    raise NotImplementedError
+    """Tổng giờ công của đơn (độc lập kho): Σ giờ dòng + final_inspection_hours. Không làm tròn ở engine."""
+    per_line = tuple(line_hours(line, cfg) for line in lines)
+    return Workload(labour_hours=sum(per_line, Decimal(0)) + cfg.final_inspection_hours, line_hours=per_line)
+
+
+def warehouse_labour_hours(workload: Workload, efficiency: Decimal) -> Decimal:
+    """Giờ công tại một kho = labour_hours × efficiency_factor (mặc định 1,0 — 09 bất biến 7)."""
+    return workload.labour_hours * efficiency
