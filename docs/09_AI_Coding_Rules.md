@@ -179,6 +179,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 
 ## 14. Khi mơ hồ hoặc thiếu thông tin
 
+**Bắt buộc ghi sổ quyết định:** trước khi bắt đầu task/PR, đọc các mục liên quan trong `docs/ASSUMPTIONS.md`. Khi owner/nhóm có thẩm quyền chốt thêm hoặc thay đổi assumption/quy tắc nghiệp vụ, Dev/agent phải bổ sung hoặc cập nhật trong file đó **cùng PR**; ghi mã duy nhất, ngày, ai chốt, quy tắc, trường hợp biên, nguồn PR/comment, ảnh hưởng và trạng thái triển khai. Quyết định cũ bị thay thì ghi `superseded by`, không xóa. Đề xuất chưa được duyệt không được ghi thành đã chốt. Thay đổi DB/API vẫn tuân thủ quy trình contract ở `05`/`06`, migration/test và `CHANGELOG`; ghi trong sổ **không phải bằng chứng code đã chạy**.
+
+
 1. Tìm trong `01–08` (dùng thứ tự ưu tiên mục 2). Nhiều chỗ đã có số cụ thể (ví dụ giờ hữu ích 7,0, 90%, 15 phút, 2 lần gia hạn, 33/66%, 14 ngày, 9 giờ lái).
 2. Nếu vẫn thiếu: **chọn phương án đơn giản, an toàn, tuân thủ bất biến**, ghi **giả định** vào mô tả PR và `docs/ASSUMPTIONS.md` (mã `ASM-xxx`, ngày, bối cảnh, phương án chọn, ảnh hưởng).
 3. Nếu quyết định ảnh hưởng hợp đồng (DB/API), **dừng và hỏi** (mở issue/`docs/QUESTIONS.md`) trước khi viết mã.
@@ -206,6 +209,7 @@ Không làm: <các mục ở 13 liên quan>
 - [ ] Hợp đồng `05/06` không đổi, hoặc đã cập nhật tài liệu + migration + `CHANGELOG`.
 - [ ] Quyền (vai trò **và** phạm vi) được kiểm ở máy chủ; có test đường bị cấm.
 - [ ] Mọi quyết định ghi `decision_log` đúng mã hành động, kèm lý do khi bắt buộc.
+- [ ] Đã đối chiếu `docs/ASSUMPTIONS.md`; quyết định mới được owner duyệt đã ghi trong sổ (mã/ngày/nguồn/impact/trạng thái), đồng bộ spec/CHANGELOG; nếu không có, PR ghi `Assumptions: reviewed — none`.
 - [ ] Không PII trong log; không GPS ở nơi không được phép.
 - [ ] Lập lại/hủy/xếp lại/duyệt gợi ý đóng kế hoạch cũ; khóa hàng và giờ công khi duyệt (bất biến 11, 21).
 - [ ] Không mật khẩu, khóa API hay thông tin mật trong file commit/nộp (bất biến 25).

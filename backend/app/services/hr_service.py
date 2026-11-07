@@ -10,9 +10,10 @@ Owner: Dev 1 (A) — M3.
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
+from app.core.config import MarketConfig
 from app.core.errors import DomainError
 from app.domain.models.hr import (
     Absence,
@@ -30,8 +32,11 @@ from app.domain.models.hr import (
     WarehouseStaff,
 )
 from app.domain.models.plan import PlanningRun, PrepReservation
-from app.domain.models.ref import Location
+from app.domain.models.ref import Location, Market, MarketHoliday
+from app.engine.capacity import free_hours, labour_capacity
 from app.engine.types import DayCapacity, ShiftCapacity
+from app.services.hr_scope import HrReadScope
+from app.services.planning_service import engine_config
 
 
 async def day_capacities(
@@ -259,6 +264,219 @@ async def set_attendance(
     return AttendanceResult(work_date, counts, changed)
 
 
-async def capacity(warehouse_id: int, date_from: object, date_to: object) -> list[dict[str, object]]:
-    """TODO(#hr-capacity)."""
-    raise NotImplementedError
+MAX_CAPACITY_DAYS = 31  # 06 v1.4 mục 13.2
+GEN_DAYS = 14  # attendance_gen: 14 ngày tới (04 mục 4, jobs/attendance_gen.py)
+
+
+async def _warehouse_in_scope(session: AsyncSession, scope: HrReadScope, warehouse_id: int) -> Location:
+    """Kho trong phạm vi đọc (warehouse: kho được phân công; admin/dispatcher: market); khác → 404."""
+    location = await session.get(Location, warehouse_id)
+    if (
+        location is None
+        or location.type != "warehouse"
+        or (scope.market_id is not None and location.market_id != scope.market_id)
+        or (scope.role == "warehouse" and warehouse_id not in scope.location_ids)
+    ):
+        raise DomainError("NOT_FOUND", "Warehouse not found.")
+    return location
+
+
+async def get_attendance(
+    session: AsyncSession, scope: HrReadScope, warehouse_id: int, work_date: date
+) -> dict[str, object]:
+    """GET /warehouses/{id}/attendance?date= (06 v1.4 mục 13.2): số đếm + từng người trong roster."""
+    await _warehouse_in_scope(session, scope, warehouse_id)
+    approved_leave = (
+        select(Absence.id)
+        .where(
+            Absence.employee_id == Attendance.employee_id,
+            Absence.approved.is_(True),
+            Absence.start_date <= work_date,
+            Absence.end_date >= work_date,
+        )
+        .exists()
+    )
+    rows = (
+        await session.execute(
+            select(
+                Attendance,
+                Employee,
+                WarehouseStaff.counts_in_capacity,
+                ShiftTemplate,
+                approved_leave.label("on_leave"),
+            )
+            .join(Employee, Employee.id == Attendance.employee_id)
+            .outerjoin(WarehouseStaff, WarehouseStaff.employee_id == Attendance.employee_id)
+            .outerjoin(ShiftTemplate, ShiftTemplate.id == Attendance.shift_template_id)
+            .where(
+                Attendance.work_date == work_date,
+                _assigned_on(warehouse_id, work_date),
+                Employee.status != "terminated",
+            )
+            .order_by(Employee.last_name, Employee.first_name, Employee.id)
+        )
+    ).all()
+    counts = {k: 0 for k in ("planned", "present", "absent", "leave")}
+    items: list[dict[str, object]] = []
+    for att, emp, counts_flag, shift, on_leave in rows:
+        counts[att.status] = counts.get(att.status, 0) + 1
+        items.append(
+            {
+                "employee_id": emp.id,
+                "name": f"{emp.first_name} {emp.last_name}",
+                "position": emp.position_code,
+                "counts_in_capacity": bool(counts_flag),
+                "shift": (
+                    None
+                    if shift is None
+                    else {
+                        "id": shift.id,
+                        "start": f"{shift.start_time:%H:%M}",
+                        "end": f"{shift.end_time:%H:%M}",
+                    }
+                ),
+                "status": att.status,
+                "on_approved_leave": bool(on_leave),
+            }
+        )
+    return {"warehouse_id": warehouse_id, "date": work_date, "counts": counts, "items": items}
+
+
+async def capacity(
+    session: AsyncSession, scope: HrReadScope, warehouse_id: int, date_from: date, date_to: date
+) -> dict[str, object]:
+    """GET /warehouses/{id}/capacity?from=&to= (06 v1.4 mục 13.2; US-WH-02 AC1–AC3).
+
+    labour_cap_hours dùng đúng engine.capacity (người × giờ hữu ích × delivery_share; ngày nghỉ/lễ = 0);
+    booked_hours tách committed/held của MỌI đơn (held còn hạn); free_hours = engine.free_hours (không âm).
+    """
+    location = await _warehouse_in_scope(session, scope, warehouse_id)
+    if date_to < date_from or (date_to - date_from).days + 1 > MAX_CAPACITY_DAYS:
+        raise DomainError("VALIDATION_ERROR", f"Range must be 1–{MAX_CAPACITY_DAYS} days.", {"field": "to"})
+    market = await session.get(Market, location.market_id)
+    assert market is not None
+    holidays = set(
+        (
+            await session.scalars(
+                select(MarketHoliday.holiday_date).where(
+                    MarketHoliday.market_id == market.id,
+                    MarketHoliday.holiday_date.between(date_from, date_to),
+                )
+            )
+        ).all()
+    )
+    cfg = engine_config(MarketConfig.model_validate(market.config or {}), holidays)
+    now = clock.now()
+    today = now.astimezone(ZoneInfo(market.timezone)).date()
+    days = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+    caps = await day_capacities(session, warehouse_id, days, now=now, today=today)
+    booked_rows = await session.execute(
+        select(PrepReservation.work_date, PrepReservation.status, func.sum(PrepReservation.hours))
+        .join(PlanningRun, PlanningRun.id == PrepReservation.run_id)
+        .where(
+            PrepReservation.warehouse_id == warehouse_id,
+            PrepReservation.work_date.between(date_from, date_to),
+            or_(
+                PrepReservation.status == "committed",
+                and_(PrepReservation.status == "held", PlanningRun.hold_expires_at > now),
+            ),
+        )
+        .group_by(PrepReservation.work_date, PrepReservation.status)
+    )
+    booked: dict[date, dict[str, Decimal]] = defaultdict(
+        lambda: {"committed": Decimal(0), "held": Decimal(0)}
+    )
+    for d, status, hours in booked_rows.all():
+        booked[d][status] = Decimal(hours)
+    out = []
+    for d in days:
+        cap = caps[d]
+        out.append(
+            {
+                "date": d,
+                "holiday": d in holidays,
+                "shifts": [
+                    {"start": f"{s.start:%H:%M}", "end": f"{s.end:%H:%M}", "present": s.present_staff,
+                     "useful_hours": float(s.useful_hours_per_staff)}  # fmt: skip
+                    for s in cap.shifts
+                ],
+                "labour_cap_hours": float(labour_capacity(cap, cfg)),
+                "booked_hours": {k: float(v) for k, v in booked[d].items()},
+                "free_hours": float(free_hours(cap, cfg)),
+            }
+        )
+    return {"warehouse_id": warehouse_id, "days": out}
+
+
+async def generate_attendance(session: AsyncSession, *, days: int = GEN_DAYS) -> int:
+    """Job attendance_gen (06 v1.4 mục 13.2, Q11 = B): sinh dòng `planned` cho 14 ngày tới.
+
+    Mỗi kho đang hoạt động, mỗi ngày (từ hôm nay theo múi giờ market): nhân viên `counts_in_capacity`, chưa
+    nghỉ việc, có phân công hiệu lực tại kho hôm đó, chưa có dòng attendance ngày đó → chia lần lượt vào các
+    ca mẫu theo `start_time`, tối đa `expected_staff` mỗi ca (đã tính người có sẵn dòng), theo `employee_no`;
+    dư vào ca cuối. Không ghi đè dòng có sẵn. Trả số dòng tạo mới. Không commit.
+    """
+    created = 0
+    now = clock.now()
+    warehouses = (
+        await session.execute(
+            select(Location, Market.timezone)
+            .join(Market, Market.id == Location.market_id)
+            .where(Location.type == "warehouse", Location.is_active.is_(True))
+            .order_by(Location.id)
+        )
+    ).all()
+    for warehouse, tz in warehouses:
+        start = now.astimezone(ZoneInfo(tz)).date()
+        templates = (
+            await session.scalars(select(ShiftTemplate).where(ShiftTemplate.warehouse_id == warehouse.id))
+        ).all()
+        for offset in range(days):
+            day = start + timedelta(days=offset)
+            shifts = sorted(
+                (t for t in templates if t.weekday == day.isoweekday()), key=lambda t: t.start_time
+            )
+            if not shifts:
+                continue
+            existing = dict(
+                (
+                    await session.execute(
+                        select(Attendance.shift_template_id, func.count())
+                        .where(
+                            Attendance.work_date == day,
+                            Attendance.shift_template_id.in_([t.id for t in shifts]),
+                        )
+                        .group_by(Attendance.shift_template_id)
+                    )
+                ).all()
+            )
+            staff = (
+                await session.scalars(
+                    select(Employee.id)
+                    .join(WarehouseStaff, WarehouseStaff.employee_id == Employee.id)
+                    .join(EmployeeAssignment, EmployeeAssignment.employee_id == Employee.id)
+                    .where(
+                        WarehouseStaff.counts_in_capacity.is_(True),
+                        Employee.status != "terminated",
+                        EmployeeAssignment.location_id == warehouse.id,
+                        EmployeeAssignment.start_date <= day,
+                        or_(EmployeeAssignment.end_date.is_(None), EmployeeAssignment.end_date >= day),
+                        ~select(Attendance.id)
+                        .where(Attendance.employee_id == Employee.id, Attendance.work_date == day)
+                        .exists(),
+                    )
+                    .order_by(Employee.employee_no, Employee.id)
+                )
+            ).all()
+            filled = {t.id: int(existing.get(t.id, 0)) for t in shifts}
+            for employee_id in staff:
+                target = next((t for t in shifts if filled[t.id] < t.expected_staff), shifts[-1])
+                filled[target.id] += 1
+                session.add(
+                    Attendance(
+                        employee_id=employee_id, work_date=day, shift_template_id=target.id, status="planned"
+                    )
+                )
+                created += 1
+    await session.flush()
+    return created
