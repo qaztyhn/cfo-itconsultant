@@ -3,7 +3,11 @@
 Owner: Dev 2 (B) — M7.
 """
 
+from app.core.logging import log_event
+from app.services.notification_delivery import process_outbox
+
 
 async def run() -> int:
-    """Chạy một lượt; trả số bản ghi xử lý. TODO(#outbox)."""
-    raise NotImplementedError
+    count = await process_outbox()
+    log_event("notify", "outbox_processed", rows_processed=count)
+    return count

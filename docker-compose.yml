@@ -25,6 +25,7 @@ services:
       DATABASE_URL: "${SOURCE_SE_DATABASE_URL:?set in environment or .env}"
       SOURCE_SCHEMA: "${SOURCE_SCHEMA:-src_se}"
       API_KEY: "${SOURCE_SE_API_KEY:?set in environment or .env}"
+      APP_NOW: "${APP_NOW:-}"
     ports: ["127.0.0.1:${SOURCE_PORT:-8100}:8100"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -42,6 +43,7 @@ services:
       INTERNAL_TICK_KEY: "${INTERNAL_TICK_KEY:?set in environment or .env}"
       SOURCE_SE_BASE_URL: http://source-se:8100/api/v1
       SOURCE_SE_API_KEY: "${SOURCE_SE_API_KEY:?set in environment or .env}"
+      ORS_API_KEY: "${ORS_API_KEY:-}"
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       APP_ENV: "${APP_ENV:-local}"
