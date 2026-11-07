@@ -50,10 +50,10 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 **M2-S — Sales sync-now (US-INT-06):** Dev 2 làm API sync-now bằng GET adapter nguồn và ingestion idempotent với polling; Dev 1 review contract/scope cửa hàng; Dev 3 màn My store orders → Sync & confirm trong CFO. Không sửa POS/database nguồn. Phụ thuộc M1/M2 core.
 
 ### M3 — Nhân sự, công suất kho (phụ thuộc M0, song song M2)
-- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; `attendance_gen`; `GET /warehouses/{id}/capacity`.
+- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
 - **B:** seed nhân viên, ca mẫu, ngày lễ (thư viện `holidays`), bằng lái.
-- **C:** **Attendance & shifts** (5.A5); **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
-- **Xong khi:** "All present" ghi một lần; vắng giảm công suất đúng công thức; chuyển công tác đóng phân công cũ. *Story:* US-WH-01/02, US-EMP-01/02/04.
+- **C:** **Attendance & shifts** (5.A5) có màn Warehouse Manager lập lịch từng nhân viên/ngày/ca, xem chênh lệch dự kiến–thực tế, xem lịch sử, yêu cầu lý do khi chỉnh hồi tố; **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
+- **Xong khi:** Warehouse Manager lập lịch chính thức từng người; không tự chia theo `expected_staff`; "All present" chỉ trên người có lịch; vắng giảm công suất; thiếu lịch không tự dựng nhân viên; đổi quản lý, chuyển/nghỉ việc và chỉnh hồi tố có audit. *Story:* US-WH-01/02/03, US-EMP-01/02/04/05.
 
 ### M4 — Engine lập kế hoạch (phụ thuộc M2, M3) — **đường găng**
 - **A:** `engine/workload.py`, `atp.py`, `capacity.py`, `schedule.py`, `delivery.py`, `gate.py`, `scoring.py`, `explain.py`, `planner.py`, `transfer.py` đúng `04` mục 6; bộ test bảng đầy đủ (mục 6.2 của tài liệu này); `PlanningService` nạp ngữ cảnh → engine → lưu `planning_run`, `fulfilment_plan`, giữ chỗ; `POST /orders/{id}/plan`; `GET /planning-runs/{id}` (gồm `rejected_candidates`, `stock_matrix`, `dates_searched`).
