@@ -12,7 +12,7 @@ from decimal import Decimal
 import pytest
 
 from app.domain.enums import OrderStatus as S
-from app.domain.transitions import transition
+from app.domain.transitions import Transitioned, transition
 from app.services import mapping_service
 from app.services.order_service import prepare_for_planning
 from tests.integration.conftest import execute, fetch
@@ -87,8 +87,8 @@ def test_prepare_unknown_order_is_not_found(db: str) -> None:
 
 def test_transition_allowed_pair_and_role_updates_status(db: str) -> None:
     execute(db, *order_sql(1, "PLANNED", ()))
-    previous = run(db, lambda s: transition(s, 1, S.APPROVED, "dispatcher"))
-    assert previous == S.PLANNED and status_of(db, 1)[0] == "APPROVED"
+    result = run(db, lambda s: transition(s, 1, S.APPROVED, "dispatcher"))
+    assert (result.from_status, result.closed) == (S.PLANNED, None) and status_of(db, 1)[0] == "APPROVED"
 
 
 def test_transition_pair_not_in_table_is_illegal(db: str) -> None:
@@ -109,7 +109,7 @@ def test_transition_wrong_role_is_forbidden(db: str) -> None:
     assert (status_of(db, 1)[0], status_of(db, 2)[0]) == ("SUBMITTED", "PLANNED")
 
 
-def _cancel(dsn: str, order_id: int, reason: str | None) -> Callable[[], S]:
+def _cancel(dsn: str, order_id: int, reason: str | None) -> Callable[[], Transitioned]:
     return lambda: run(dsn, lambda s: transition(s, order_id, S.CANCELLED, "dispatcher", reason))
 
 
@@ -125,14 +125,6 @@ def test_transition_with_reason_succeeds(db: str) -> None:
     execute(db, *order_sql(1, "NO_FEASIBLE_DATE", ()))
     run(db, lambda s: transition(s, 1, S.CANCELLED, "dispatcher", "Customer withdrew"))
     assert status_of(db, 1)[0] == "CANCELLED"
-
-
-def test_transition_that_closes_plan_does_not_update_before_m5(db: str) -> None:
-    """Đóng kế hoạch cũ (M5) chưa có: không được đổi trạng thái mà bỏ qua bước đóng (09 bất biến 21)."""
-    execute(db, *order_sql(1, "PLANNED", ()))
-    with pytest.raises(NotImplementedError):
-        run(db, lambda s: transition(s, 1, S.CANCELLED, "dispatcher", "Customer withdrew"))
-    assert status_of(db, 1)[0] == "PLANNED"
 
 
 def test_transition_unknown_order_is_not_found(db: str) -> None:
