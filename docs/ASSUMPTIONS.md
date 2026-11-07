@@ -93,3 +93,25 @@
      → `VALIDATION_ERROR`.
   3. `GET /health` khi DB lỗi trả `503` với thân health (`status = "error"`, `db = "unavailable"`), không dùng
      định dạng lỗi, để công cụ uptime/smoke đọc được (06 mục 15).
+
+## ASM-005 — Quy tắc xác nhận / từ chối ánh xạ chưa ghi trong `06` mục 12
+
+- **Ngày:** 2026-11-07
+- **Trạng thái:** đề xuất của Dev 1 (M2-B), chờ nhóm xác nhận trong review PR. Không sửa `05`/`06`.
+- **Bối cảnh:** `06` mục 12/12.1 và US-PRD-02/03 không nói rõ trạng thái task cho phép xác nhận/từ chối, ai
+  được ghi `mapped_by`, và dispatcher "thấy lý do từ chối" ở đâu.
+- **Diễn giải:**
+  1. Chỉ `admin` **có hồ sơ nhân viên** được xác nhận/từ chối: `ck_se_confirmed` bắt buộc `mapped_by`
+     (FK `hr.employee`). Admin hệ thống không có nhân viên → `403 FORBIDDEN`.
+  2. Sau xác nhận hoặc từ chối, `mapping_task.status = done`, `resolved_by` = nhân viên, `resolved_at` = clock.
+  3. Task đã `done` **không từ chối lại** được (`422 VALIDATION_ERROR`, `details.field = status`). SKU đã
+     `confirmed` không từ chối được (`details.field = mapping_status`), vì đơn đã lập kế hoạch đang dùng ánh xạ đó.
+  4. Task đã từ chối **vẫn xác nhận được** (nguồn có thể bổ sung dữ liệu sản phẩm); thay đổi được ghi
+     `MAPPING_CONFIRMED` với trước/sau.
+  5. Từ chối nối ` | REJECTED <sku>: <lý do>` vào `block_reason` của các đơn đang bị chặn bởi SKU đó, để
+     dispatcher thấy lý do (US-PRD-03 AC2); lý do đầy đủ nằm trong `decision_log MAPPING_REJECTED`.
+  6. `blocked_order_count` = số đơn `BLOCKED_UNMAPPED_SKU` có dòng chứa SKU **chưa ánh xạ**, tính lại mỗi lần
+     (không cộng dồn).
+  7. SKU chưa có trong `product_<cc>` không xác nhận được (`details.field = local_sku`): cần đồng bộ sản phẩm
+     trước, vì các cột tên/đơn vị bán là NOT NULL.
+- **Cần nhóm xác nhận:** các mục 1, 3, 4, 5.
