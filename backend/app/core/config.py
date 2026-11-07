@@ -89,6 +89,9 @@ class MultiVehicleCfg(BaseModel):
 
 class RoutingCfg(BaseModel):
     allow_fallback: bool = True
+    # Route đã lưu bằng fallback (đường chim bay) chỉ được dùng lại trong khoảng này; quá hạn thì thử ORS lại
+    # để không dùng fallback vô thời hạn khi ORS đã khả dụng (review PR #65).
+    fallback_retry_min: int = Field(default=60, gt=0)
 
 
 class RetentionCfg(BaseModel):
