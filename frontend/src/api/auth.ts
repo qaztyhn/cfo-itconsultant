@@ -1,6 +1,6 @@
 /**
  * Lời gọi xác thực (docs/06 mục 4). Owner: Dev 3 (luồng C) — M0.
- * GIẢ ĐỊNH (cần Dev 1 xác nhận): GET /auth/me trả cùng object `user` như trong login; 06 chưa định nghĩa schema.
+ * Đã xác nhận với backend thật: GET /auth/me trả cùng object `user` như trong login.
  */
 import { apiGet, apiPost } from "./client";
 import type { AuthUser, LoginRequest, LoginResponse } from "./contracts/auth";

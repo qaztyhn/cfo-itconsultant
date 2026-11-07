@@ -3,8 +3,12 @@
  * không phải chờ backend. Owner: Dev 3 (luồng C) — M0..M4.
  */
 import { http, HttpResponse } from "msw";
+import { API_BASE_URL } from "../config";
 
-const BASE = "http://localhost:8000";
+// Dùng chung API_BASE_URL (đã gồm /api/v1) để dev:mock hoạt động với mọi cấu hình VITE_API_URL.
+const BASE = API_BASE_URL;
+// /health nằm ở gốc host, không thuộc /api/v1.
+const ORIGIN = API_BASE_URL.replace(/\/api\/v1$/, "");
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
@@ -225,12 +229,13 @@ const ORDERS = [
 
 const needsPlan = ORDERS.filter((o) => o.status === "SUBMITTED").length;
 const noFeasibleDate = ORDERS.filter((o) => o.status === "NO_FEASIBLE_DATE").length;
-const blockedUnmapped = ORDERS.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU").length;
+// ASM-005: BLOCKED_UNMAPPED_SKU là dữ liệu legacy, chỉ để tra cứu; không thuộc bucket nào của /orders/counts.
+const COUNTED_ORDERS = ORDERS.filter((o) => o.status !== "BLOCKED_UNMAPPED_SKU");
 const replanSuggested = 0;
 
 // Hình dạng theo docs/06 mục 5 (`all` + `nav`); số liệu suy ra từ ORDERS để nhất quán với danh sách.
 const COUNTS = {
-  all: ORDERS.length,
+  all: COUNTED_ORDERS.length,
   needs_plan: needsPlan,
   awaiting_approval: ORDERS.filter((o) => o.status === "PLANNED").length,
   no_feasible_date: noFeasibleDate,
@@ -239,7 +244,7 @@ const COUNTS = {
   delivered_today: ORDERS.filter((o) => o.status === "DELIVERED").length,
   nav: {
     order_queue: needsPlan,
-    exceptions: noFeasibleDate + blockedUnmapped + replanSuggested,
+    exceptions: noFeasibleDate + replanSuggested,
     tracking_risk: ORDERS.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length,
   },
 };
@@ -712,7 +717,7 @@ import { authHandlers } from "./authHandlers"
 export const handlers = [
   ...authHandlers,
   // Orders
-  http.get(`${BASE}/api/v1/orders`, ({ request }) => {
+  http.get(`${BASE}/orders`, ({ request }) => {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
     const q = url.searchParams.get("q")?.toLowerCase();
@@ -727,18 +732,18 @@ export const handlers = [
     return HttpResponse.json({ items: orders, total: orders.length, page: 1, page_size: 50 });
   }),
 
-  http.get(`${BASE}/api/v1/orders/counts`, () => {
+  http.get(`${BASE}/orders/counts`, () => {
     return HttpResponse.json(COUNTS);
   }),
 
-  http.get(`${BASE}/api/v1/orders/:id`, ({ params }) => {
+  http.get(`${BASE}/orders/:id`, ({ params }) => {
     const order = ORDERS.find((o) => o.id === Number(params.id));
     if (!order) return HttpResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
     return HttpResponse.json(order);
   }),
 
   // Planning
-  http.get(`${BASE}/api/v1/planning-runs/:id`, () => {
+  http.get(`${BASE}/planning-runs/:id`, () => {
     return HttpResponse.json({
       id: 412,
       order_id: 123,
@@ -751,72 +756,72 @@ export const handlers = [
     });
   }),
 
-  http.post(`${BASE}/api/v1/orders/:id/plan`, () => {
+  http.post(`${BASE}/orders/:id/plan`, () => {
     return HttpResponse.json({ run_id: 412, status: "planned" });
   }),
 
   // Approve
-  http.post(`${BASE}/api/v1/planning-runs/:runId/approve`, () => {
+  http.post(`${BASE}/planning-runs/:runId/approve`, () => {
     return HttpResponse.json({ plan_id: 1, order_status: "APPROVED" });
   }),
 
   // Alerts
-  http.get(`${BASE}/api/v1/alerts`, () => {
+  http.get(`${BASE}/alerts`, () => {
     return HttpResponse.json({ items: ALERTS, total: ALERTS.length });
   }),
 
   // Integration
-  http.get(`${BASE}/api/v1/integration/overview`, () => {
+  http.get(`${BASE}/integration/overview`, () => {
     return HttpResponse.json(INTEGRATION_OVERVIEW);
   }),
 
   // Prep queue
-  http.get(`${BASE}/api/v1/warehouses/:id/prep-queue`, () => {
+  http.get(`${BASE}/warehouses/:id/prep-queue`, () => {
     return HttpResponse.json({ items: PREP_QUEUE, capacity: CAPACITY_TODAY });
   }),
 
-  http.get(`${BASE}/api/v1/warehouses/:id/capacity`, () => {
+  http.get(`${BASE}/warehouses/:id/capacity`, () => {
     return HttpResponse.json(CAPACITY_TODAY);
   }),
 
   // Execution events
-  http.post(`${BASE}/api/v1/orders/:id/events`, () => {
+  http.post(`${BASE}/orders/:id/events`, () => {
     return HttpResponse.json({ event_id: 999, status: "recorded" });
   }),
 
   // KPI
-  http.get(`${BASE}/api/v1/kpi/summary`, () => {
+  http.get(`${BASE}/kpi/summary`, () => {
     return HttpResponse.json(KPI_SUMMARY);
   }),
 
-  http.get(`${BASE}/api/v1/audit/decisions`, () => {
+  http.get(`${BASE}/audit/decisions`, () => {
     return HttpResponse.json({ items: DECISION_LOG, total: DECISION_LOG.length });
   }),
 
   // Notifications
-  http.get(`${BASE}/api/v1/notifications`, () => {
+  http.get(`${BASE}/notifications`, () => {
     return HttpResponse.json({ items: NOTIFICATIONS, total: NOTIFICATIONS.length });
   }),
 
-  http.post(`${BASE}/api/v1/notifications/:id/send`, () => {
+  http.post(`${BASE}/notifications/:id/send`, () => {
     return HttpResponse.json({ status: "sent" });
   }),
 
-  http.delete(`${BASE}/api/v1/notifications/:id`, () => {
+  http.delete(`${BASE}/notifications/:id`, () => {
     return HttpResponse.json({ status: "discarded" });
   }),
 
   // Driver
-  http.get(`${BASE}/api/v1/driver/trips`, () => {
+  http.get(`${BASE}/driver/trips`, () => {
     return HttpResponse.json({ items: DRIVER_TRIPS });
   }),
 
-  http.post(`${BASE}/api/v1/driver/trips/:id/events`, () => {
+  http.post(`${BASE}/driver/trips/:id/events`, () => {
     return HttpResponse.json({ event_id: 998, status: "recorded" });
   }),
 
   // GPS
-  http.get(`${BASE}/api/v1/gps/live`, () => {
+  http.get(`${BASE}/gps/live`, () => {
     return HttpResponse.json({
       positions: [
         {
@@ -833,15 +838,15 @@ export const handlers = [
   }),
 
   // Revenue
-  http.get(`${BASE}/api/v1/revenue/summary`, () => {
+  http.get(`${BASE}/revenue/summary`, () => {
     return HttpResponse.json(REVENUE_SUMMARY);
   }),
 
-  http.get(`${BASE}/api/v1/revenue/daily`, () => {
+  http.get(`${BASE}/revenue/daily`, () => {
     return HttpResponse.json({ items: REVENUE_DAILY });
   }),
 
-  http.get(`${BASE}/api/v1/revenue/by-location`, () => {
+  http.get(`${BASE}/revenue/by-location`, () => {
     return HttpResponse.json({
       view: "store",
       items: [
@@ -855,7 +860,7 @@ export const handlers = [
   }),
 
   // Mapping
-  http.get(`${BASE}/api/v1/mapping/tasks`, () => {
+  http.get(`${BASE}/mapping/tasks`, () => {
     return HttpResponse.json({
       items: [
         {
@@ -896,40 +901,41 @@ export const handlers = [
     });
   }),
 
-  http.post(`${BASE}/api/v1/mapping/tasks/:id/confirm`, () => {
+  http.post(`${BASE}/mapping/tasks/:id/confirm`, () => {
     return HttpResponse.json({ status: "confirmed" });
   }),
 
-  http.post(`${BASE}/api/v1/mapping/tasks/:id/reject`, () => {
+  http.post(`${BASE}/mapping/tasks/:id/reject`, () => {
     return HttpResponse.json({ status: "rejected" });
   }),
 
   // Transfers
-  http.get(`${BASE}/api/v1/transfers`, () => {
+  http.get(`${BASE}/transfers`, () => {
     return HttpResponse.json({ items: [], total: 0 });
   }),
 
   // Employees (HR)
-  http.get(`${BASE}/api/v1/employees`, () => {
+  http.get(`${BASE}/employees`, () => {
     return HttpResponse.json({ items: [], total: 0 });
   }),
 
-  http.get(`${BASE}/api/v1/locations`, () => {
+  http.get(`${BASE}/locations`, () => {
     return HttpResponse.json({
       items: [
         { id: 1, code: "GBG", name: "Göteborg DC", type: "warehouse", timezone: "Europe/Stockholm", cutoff: "15:00" },
         { id: 2, code: "STO", name: "Stockholm DC", type: "warehouse", timezone: "Europe/Stockholm", cutoff: "15:00" },
         { id: 3, code: "MLM", name: "Malmö DC", type: "warehouse", timezone: "Europe/Stockholm", cutoff: "15:00" },
+        { id: 4, code: "DC", name: "Dispatch Center", type: "dispatch_center", timezone: "Europe/Stockholm", cutoff: "15:00" },
       ],
     });
   }),
 
-  http.get(`${BASE}/api/v1/vehicles`, () => {
+  http.get(`${BASE}/vehicles`, () => {
     return HttpResponse.json({ items: [], total: 0 });
   }),
 
   // Health
-  http.get(`${BASE}/health`, () => {
+  http.get(`${ORIGIN}/health`, () => {
     return HttpResponse.json({ status: "ok", env: "demo" });
   }),
 ];

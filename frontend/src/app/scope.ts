@@ -10,13 +10,21 @@ import { useAuthStore } from "./store";
 
 export const usesWarehouseScope = anyRole("dispatcher", "warehouse");
 
-/** Kho user được chọn: đúng loại warehouse, và nằm trong location_ids (rỗng = không giới hạn). */
+/**
+ * Kho user được chọn.
+ * - Dispatcher: backend đã lọc /locations theo market, nên dùng nguyên danh sách kho trả về.
+ *   location_ids của dispatcher là nơi được phân công (vd DC), KHÔNG phải danh sách kho được điều phối.
+ * - Warehouse Manager: chỉ các kho trong location_ids.
+ */
 export function selectableWarehouses(user: AuthUser, locations: WorkLocation[]): WorkLocation[] {
   if (!usesWarehouseScope(user)) {
     return [];
   }
   const warehouses = locations.filter((l) => l.type === "warehouse");
-  return user.location_ids.length === 0 ? warehouses : warehouses.filter((l) => user.location_ids.includes(l.id));
+  if (user.roles.includes("dispatcher")) {
+    return warehouses;
+  }
+  return warehouses.filter((l) => user.location_ids.includes(l.id));
 }
 
 interface ScopeState {

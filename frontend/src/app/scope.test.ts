@@ -8,18 +8,28 @@ const locations: WorkLocation[] = [
   { id: 1, code: "GBG", name: "Göteborg DC", type: "warehouse" },
   { id: 2, code: "STO", name: "Stockholm DC", type: "warehouse" },
   { id: 3, code: "MLM", name: "Malmö DC", type: "warehouse" },
+  { id: 4, code: "DC", name: "Dispatch Center", type: "dispatch_center" },
   { id: 101, code: "S-GV", name: "Store Göteborg Väst", type: "store" },
 ];
 
 beforeEach(() => useScopeStore.setState({ warehouseId: null }));
 
 describe("selectableWarehouses", () => {
-  it("dispatcher gets the warehouses in location_ids, never stores", () => {
-    expect(selectableWarehouses(userByEmail("dispatcher@cfo.demo"), locations).map((l) => l.code)).toEqual(["GBG", "STO", "MLM"]);
+  it("dispatcher (seed M0: assigned to DC only) still gets every warehouse the backend returned", () => {
+    const dispatcher = userByEmail("dispatcher@cfo.demo");
+    expect(dispatcher.location_ids).toEqual([4]); // đúng seed M0: chỉ DC
+    expect(selectableWarehouses(dispatcher, locations).map((l) => l.code)).toEqual(["GBG", "STO", "MLM"]);
   });
 
-  it("warehouse manager is limited to their own warehouse", () => {
-    expect(selectableWarehouses(userByEmail("wm.got@cfo.demo"), locations).map((l) => l.code)).toEqual(["GBG"]);
+  it("dispatcher never gets non-warehouse locations (DC, stores)", () => {
+    const codes = selectableWarehouses(userByEmail("dispatcher@cfo.demo"), locations).map((l) => l.code);
+    expect(codes).not.toContain("DC");
+    expect(codes).not.toContain("S-GV");
+  });
+
+  it("warehouse manager with no assignment sees no warehouse", () => {
+    const unassigned = { ...userByEmail("wm.got@cfo.demo"), location_ids: [] };
+    expect(selectableWarehouses(unassigned, locations)).toEqual([]);
   });
 
   it("returns nothing for roles that do not use a warehouse scope", () => {

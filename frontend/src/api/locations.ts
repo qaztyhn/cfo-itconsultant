@@ -1,6 +1,6 @@
 /**
  * Lời gọi danh sách địa điểm (kho, cửa hàng). Owner: Dev 3 (luồng C) — M0.
- * GIẢ ĐỊNH (cần Dev 1 xác nhận): GET /locations trả { items: [{ id, code, name, type }] } như MSW handler; 06 chưa định nghĩa.
+ * Đã xác nhận với backend thật: GET /locations trả { items: [{ id, code, name, type }] }, phân trang theo market.
  * DEPENDENCY: thay kiểu viết tay bằng kiểu sinh từ OpenAPI khi có schema.d.ts.
  */
 import { apiGet } from "./client";

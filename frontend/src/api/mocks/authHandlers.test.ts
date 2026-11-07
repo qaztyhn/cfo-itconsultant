@@ -9,6 +9,7 @@ import { fetchMe, login, logout } from "../auth";
 import { apiGet } from "../client";
 import { MOCK_ACCOUNTS, resetLoginRateLimit } from "./authHandlers";
 import { handlers } from "./handlers";
+import { API_BASE_URL } from "../config";
 
 const server = setupServer(...handlers);
 
@@ -31,7 +32,7 @@ describe("login (US-EMP-03)", () => {
     expect(result.access_token).toEqual(expect.any(String));
     expect(result.expires_in).toBe(28_800);
     expect(result.user.roles).toEqual(["dispatcher"]);
-    expect(result.user.location_ids).toEqual([1, 2, 3]);
+    expect(result.user.location_ids).toEqual([4]);
     expect(result.user.kpi_scopes).toEqual(["ops"]);
   });
 
@@ -106,7 +107,7 @@ describe("session endpoints", () => {
   });
 
   it("echoes X-Correlation-ID like the real API (docs/06 mục 1)", async () => {
-    const res = await fetch("http://localhost:8000/api/v1/auth/me", { headers: { "X-Correlation-ID": "abc-123" } });
+    const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: { "X-Correlation-ID": "abc-123" } });
     expect(res.headers.get("X-Correlation-ID")).toBe("abc-123");
   });
 });
@@ -143,12 +144,23 @@ describe("GET /orders/counts follows docs/06 mục 5", () => {
       }),
     );
     expect(counts).not.toHaveProperty("total");
-    expect(counts.all).toBe(orders.total);
+    const legacy = orders.items.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU");
+    expect(counts.all).toBe(orders.total - legacy.length);
     expect(counts.nav.order_queue).toBe(counts.needs_plan);
-    expect(counts.nav.exceptions).toBe(
-      orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE" || o.status === "BLOCKED_UNMAPPED_SKU").length + counts.replan_suggested,
-    );
+    expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
     expect(counts.nav.tracking_risk).toBe(orders.items.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length);
+  });
+
+  it("does not count legacy BLOCKED_UNMAPPED_SKU orders as waiting for CFO (ASM-005)", async () => {
+    const counts = await apiGet<Counts>("/orders/counts");
+    const orders = await apiGet<OrderList>("/orders");
+    const legacy = orders.items.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU");
+
+    // Mock phải còn ít nhất một đơn legacy, nếu không test này không chứng minh gì.
+    expect(legacy.length).toBeGreaterThan(0);
+    expect(counts.all).toBe(orders.total - legacy.length);
+    expect(counts.needs_plan).toBe(orders.items.filter((o) => o.status === "SUBMITTED").length);
+    expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
   });
 });
 
@@ -157,5 +169,13 @@ describe("no password literals in mock sources (docs/09 bất biến 25)", () =>
 
   it.each(Object.entries(sources).filter(([path]) => !path.includes(".test.")))("%s", (_path, source) => {
     expect(source).not.toMatch(/\bpassword\s*:\s*["'`][^"'`]+["'`]/i);
+  });
+});
+
+describe("mock sources use the shared API_BASE_URL", () => {
+  const sources = import.meta.glob("./*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+
+  it.each(Object.entries(sources).filter(([path]) => !path.includes(".test.")))("%s has no hardcoded host", (_path, source) => {
+    expect(source).not.toMatch(/localhost:\d+/);
   });
 });

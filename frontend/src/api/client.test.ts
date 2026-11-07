@@ -157,4 +157,35 @@ describe("session expiry on 401", () => {
     await expect(apiPost("/auth/login", { email: "a@b.c", password: "x" })).rejects.toMatchObject({ code: "AUTH_INVALID" });
     expect(useAuthStore.getState().token).toBe("still-valid");
   });
+
+  it("ignores a late 401 for an old token after another user signed in", async () => {
+    // Phiên A gửi request; response chưa về.
+    useAuthStore.setState({ token: "token-A" });
+    let resolveA!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (resolveA = resolve)));
+    const pendingA = apiGet("/orders").catch((e: unknown) => e);
+
+    // A đăng xuất, B đăng nhập.
+    useAuthStore.getState().clearAuth();
+    useAuthStore.setState({ token: "token-B" });
+    window.localStorage.setItem("cfo_token", "token-B");
+
+    // Response 401 cũ của A mới về.
+    resolveA(jsonResponse({ error: { code: "AUTH_INVALID", message: "Token expired" } }, { status: 401 }));
+    await expect(pendingA).resolves.toMatchObject({ code: "AUTH_INVALID", status: 401 });
+
+    // Phiên của B không bị xóa.
+    expect(useAuthStore.getState().token).toBe("token-B");
+    expect(window.localStorage.getItem("cfo_token")).toBe("token-B");
+  });
+
+  it("still clears the session when the 401 belongs to the current token", async () => {
+    useAuthStore.setState({ token: "token-B" });
+    window.localStorage.setItem("cfo_token", "token-B");
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: "AUTH_INVALID", message: "Token expired" } }, { status: 401 }));
+
+    await expect(apiGet("/orders")).rejects.toMatchObject({ status: 401 });
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(window.localStorage.getItem("cfo_token")).toBeNull();
+  });
 });

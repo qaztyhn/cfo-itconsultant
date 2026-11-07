@@ -22,7 +22,7 @@ const common = { market: "SE", locale: "en" };
 
 /** Email theo docs/08 mục 5 (driver1@ chưa được xác nhận — chờ Dev 2). id/employee_id/location_ids chỉ là giá trị mock. */
 export const MOCK_ACCOUNTS: MockAccount[] = [
-  { email: "dispatcher@cfo.demo", user: { id: 1, employee_id: 101, name: "Anna Lindqvist", roles: ["dispatcher"], kpi_scopes: ["ops"], location_ids: [1, 2, 3], ...common } },
+  { email: "dispatcher@cfo.demo", user: { id: 1, employee_id: 101, name: "Anna Lindqvist", roles: ["dispatcher"], kpi_scopes: ["ops"], location_ids: [4], ...common } },
   { email: "wm.got@cfo.demo", user: { id: 2, employee_id: 102, name: "Lars Johansson", roles: ["warehouse"], kpi_scopes: ["ops"], location_ids: [1], ...common } },
   { email: "sales@cfo.demo", user: { id: 3, employee_id: 103, name: "Maria Nilsson", roles: ["sales"], kpi_scopes: [], location_ids: [101], ...common } },
   { email: "driver1@cfo.demo", user: { id: 4, employee_id: 104, name: "Björn Eriksson", roles: ["driver"], kpi_scopes: [], location_ids: [1], ...common } },

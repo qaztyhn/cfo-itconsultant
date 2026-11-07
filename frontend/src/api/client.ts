@@ -113,7 +113,9 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
   if (!response.ok) {
     const apiError = await toApiError(response, cid);
     // Token hết hạn/bị thu hồi (8 giờ, 06 mục 4). Sai mật khẩu ở /auth/login KHÔNG làm mất phiên.
-    if (response.status === 401 && token && !path.startsWith(LOGIN_PATH)) {
+    // Chỉ xóa phiên nếu token hiện tại vẫn là token đã dùng để gửi request này: một 401 muộn của
+    // phiên cũ (đã đăng xuất, người khác đăng nhập) không được xóa phiên mới.
+    if (response.status === 401 && token && !path.startsWith(LOGIN_PATH) && useAuthStore.getState().token === token) {
       useAuthStore.getState().clearAuth();
     }
     throw apiError;
