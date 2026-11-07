@@ -85,3 +85,18 @@ def fetch(dsn: str, sql: str, *args: Any) -> list[asyncpg.Record]:
             await conn.close()
 
     return asyncio.run(_run())
+
+
+def execute(dsn: str, *statements: str) -> None:
+    """Chạy các lệnh ghi trong MỘT transaction (lỗi ràng buộc → asyncpg exception, rollback)."""
+
+    async def _run() -> None:
+        conn = await asyncpg.connect(dsn)
+        try:
+            async with conn.transaction():
+                for statement in statements:
+                    await conn.execute(statement)
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
