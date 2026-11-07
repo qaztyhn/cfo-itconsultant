@@ -1,68 +1,100 @@
 /**
- * Auth store (Zustand). Lưu JWT token + user info.
+ * Auth store (Zustand): JWT + user theo docs/06 mục 4, lưu localStorage.
+ * Phiên hết hạn sau expires_in (8 giờ); dữ liệu cũ sai hình dạng (vd. scaffold trước dùng `role` đơn) bị xóa khi nạp lại.
+ * `email` lấy từ form đăng nhập vì `user` của 06 không có email (xem ghi chú T3).
  * Owner: Dev 3 (luồng C) — M0.
  */
 import { create } from "zustand";
+import { USER_ROLES, type AuthUser, type LoginResponse } from "../api/contracts/auth";
 
-export type Role = "admin" | "dispatcher" | "warehouse" | "sales" | "driver" | "customer_service" | "viewer";
-
-export interface CurrentUser {
-  employee_id: number;
-  email: string;
-  display_name: string;
-  role: Role;
-  kpi_scopes: string[];
-  location_ids: number[];
-  market_code: string;
-  market_timezone: string;
-  currency: string;
+export interface SessionState {
+  token: string | null;
+  user: AuthUser | null;
+  email: string | null;
+  /** Mốc hết hạn (epoch ms). */
+  expiresAt: number | null;
 }
 
-interface AuthState {
-  token: string | null;
-  user: CurrentUser | null;
-  setAuth: (token: string, user: CurrentUser) => void;
+interface AuthState extends SessionState {
+  setAuth: (login: LoginResponse, email: string) => void;
   clearAuth: () => void;
 }
 
-const getStoredToken = (): string | null => {
-  if (typeof window === "undefined") {
-    return null;
+const KEYS = { token: "cfo_token", user: "cfo_user", email: "cfo_email", expiresAt: "cfo_expires_at" } as const;
+const EMPTY: SessionState = { token: null, user: null, email: null, expiresAt: null };
+const KPI_SCOPES = ["revenue_all", "ops"];
+
+export function isAuthUser(value: unknown): value is AuthUser {
+  if (typeof value !== "object" || value === null) {
+    return false;
   }
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.id === "number" &&
+    typeof v.employee_id === "number" &&
+    typeof v.name === "string" &&
+    Array.isArray(v.roles) &&
+    v.roles.every((role) => (USER_ROLES as readonly string[]).includes(role)) &&
+    typeof v.market === "string" &&
+    typeof v.locale === "string" &&
+    Array.isArray(v.location_ids) &&
+    v.location_ids.every((id) => typeof id === "number") &&
+    Array.isArray(v.kpi_scopes) &&
+    v.kpi_scopes.every((scope) => KPI_SCOPES.includes(scope))
+  );
+}
 
-  return window.localStorage.getItem("cfo_token");
-};
+export function isSessionValid(session: SessionState, now: number = Date.now()): boolean {
+  return session.token !== null && session.user !== null && session.expiresAt !== null && session.expiresAt > now;
+}
 
-const getStoredUser = (): CurrentUser | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
+function removeStored(): void {
   try {
-    const user = window.localStorage.getItem("cfo_user");
-    return user ? (JSON.parse(user) as CurrentUser) : null;
+    Object.values(KEYS).forEach((key) => window.localStorage.removeItem(key));
   } catch {
-    return null;
+    /* localStorage không khả dụng (vd. chế độ riêng tư): bỏ qua */
   }
-};
+}
+
+export function readStoredSession(now: number = Date.now()): SessionState {
+  try {
+    const token = window.localStorage.getItem(KEYS.token);
+    const rawUser = window.localStorage.getItem(KEYS.user);
+    const email = window.localStorage.getItem(KEYS.email);
+    const expiresAt = Number(window.localStorage.getItem(KEYS.expiresAt));
+    const user: unknown = rawUser ? JSON.parse(rawUser) : null;
+
+    if (token && email && isAuthUser(user) && Number.isFinite(expiresAt) && expiresAt > now) {
+      return { token, user, email, expiresAt };
+    }
+  } catch {
+    /* JSON hỏng hoặc không có storage: coi như chưa đăng nhập */
+  }
+  removeStored();
+  return EMPTY;
+}
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: getStoredToken(),
-  user: getStoredUser(),
-  setAuth: (token, user) => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("cfo_token", token);
-      window.localStorage.setItem("cfo_user", JSON.stringify(user));
+  ...readStoredSession(),
+  setAuth: (login, email) => {
+    const session: SessionState = {
+      token: login.access_token,
+      user: login.user,
+      email,
+      expiresAt: Date.now() + login.expires_in * 1000,
+    };
+    try {
+      window.localStorage.setItem(KEYS.token, session.token ?? "");
+      window.localStorage.setItem(KEYS.user, JSON.stringify(login.user));
+      window.localStorage.setItem(KEYS.email, email);
+      window.localStorage.setItem(KEYS.expiresAt, String(session.expiresAt));
+    } catch {
+      /* phiên vẫn hoạt động trong bộ nhớ */
     }
-
-    set({ token, user });
+    set(session);
   },
   clearAuth: () => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem("cfo_token");
-      window.localStorage.removeItem("cfo_user");
-    }
-
-    set({ token: null, user: null });
+    removeStored();
+    set(EMPTY);
   },
 }));
