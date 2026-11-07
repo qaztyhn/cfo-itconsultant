@@ -1,5 +1,21 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [ASM-002, ASM-003, ASM-006, ASM-007/Q11 — quyết định chủ dự án] — 2026-11-07 — docs-only
+
+- ASM-002: chấp thuận seed tham chiếu (market, N1–N6, position, transitions) riêng dữ liệu demo; GPS mặc định tắt ở migration, tài khoản/mật khẩu demo không nằm trong migration.
+- ASM-003: chấp thuận giới hạn đăng nhập MVP 5 lượt/60 giây/IP và HTTP 429; logout 204; email không phân biệt hoa thường; khóa user ngay khi nghỉ việc. Hệ thống nhiều instance cần rate limiter chung trong lần mở rộng.
+- ASM-006: chấp thuận bảo đảm quản lý thay thế trước chuyển công tác/nghỉ việc, khóa account người nghỉ, giữ owner gán riêng, audit mọi thay đổi nhân sự/quản lý/owner; chỉnh hồi tố phải có quyền và lý do. Không chấp thuận bỏ `decision_log`; action code chưa có cần PR hợp đồng.
+- ASM-007/Q11: Warehouse Manager lập và xác nhận lịch phân ca **từng người/ngày/ca**. `expected_staff` chỉ để so sánh; không chia tự động, không dồn người dư vào ca cuối. Job chỉ sinh điểm danh planned từ lịch do quản lý xác nhận; warehouse ghi thực tế; thay đổi lịch/điểm danh có audit, hồi tố cần lý do.
+- Mục tiêu docs, chưa có code/migration/test xác minh. Cần thiết kế bảng lịch ca chính thức mới, API và UI. PR #37 còn Q11=B phải cập nhật/rebase trước merge.
+
+## [ASM-005 — quyết định phân luồng SKU] — 2026-11-07 — docs-only, chưa triển khai
+
+- Khởi đầu khoảng 100 SKU mapping confirmed do IT quản lý, mở rộng danh mục từng giai đoạn.
+- Chỉ đơn có **100% SKU confirmed** mới đi CFO. Đơn thiếu SKU tiếp tục quy trình cũ, không bị CFO chặn chờ mapping/không lập plan/hold.
+- Mapping về sau không tự động chuyển các đơn đã đi quy trình cũ sang CFO. Bắt buộc ngăn xử lý trùng bằng xác minh luồng thực hiện tại đầu vào; CFO vẫn read-only với POS/WMS/ERP.
+- API response, trạng thái theo dõi luồng cũ và bất biến tránh double fulfilment cần được Dev đề xuất trước triển khai. Không tự phục hồi trạng thái `HANDLED_EXTERNALLY` đã bỏ ở v1.2; không có migration/code trong PR này.
+
+
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 

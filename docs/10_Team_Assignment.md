@@ -46,9 +46,9 @@
 
 | Người | Việc | File | Story |
 |---|---|---|---|
-| Dev 1 | `hr_service` (một phân công hiệu lực, một quản lý chính, terminate); điểm danh All present; `capacity()` = người × giờ hữu ích × 90% (không thiết bị); job `attendance_gen` | `services/hr_service.py`, `api/v1/hr.py`, `jobs/attendance_gen.py` | US-WH-01/02, US-EMP-01..04 |
-| Dev 2 | Seed nhân viên, ca mẫu, ngày lễ (`holidays`), bằng lái (1 bằng hết hạn) | `seed/generate_data.py` | — |
-| Dev 3 | Attendance & shifts (không tab Equipment); Employees & locations; Vehicles & drivers; Users (`kpi_scopes`) | `features/warehouse/Attendance.tsx`, `features/it/{Employees,Vehicles,Users}.tsx` | — |
+| Dev 1 | `hr_service` (một phân công hiệu lực, một quản lý chính, terminate + audit ASM-006); đề xuất migration và guard **lịch người/ngày/ca do Warehouse Manager nhập**; điểm danh All present chỉ trên lịch chính thức; `capacity()` theo người có lịch và điểm danh × giờ hữu ích × 90%; `attendance_gen` chỉ chép lịch đã xác nhận | `services/hr_service.py`, `api/v1/hr.py`, `jobs/attendance_gen.py` | US-WH-01/02, US-EMP-01..04 |
+| Dev 2 | Seed nhân viên, ca mẫu, **lịch nhân viên–ca demo do Warehouse Manager xác nhận** (không tự chia theo `expected_staff`), ngày lễ (`holidays`), bằng lái (1 bằng hết hạn) | `seed/generate_data.py` | — |
+| Dev 3 | Attendance & shifts (Warehouse Manager lập lịch từng người, điểm danh thực tế, lịch sử và lý do sửa hồi tố; không tab Equipment); Employees & locations; Vehicles & drivers; Users (`kpi_scopes`) | `features/warehouse/Attendance.tsx`, `features/it/{Employees,Vehicles,Users}.tsx` | — |
 
 ### M4 — Engine lập kế hoạch (đường găng)
 

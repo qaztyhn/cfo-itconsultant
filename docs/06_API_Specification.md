@@ -98,6 +98,12 @@ Không thêm vai trò mới. `kpi_scopes` trong token phân biệt: `revenue_all
 ```
 Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
+### ASM-002/003 — Giải thích hợp đồng seed và auth đã chốt
+
+- **ASM-002:** seed tham chiếu migration chỉ chứa market, nhóm xử lý, cấu hình mặc định và position; không seed tài khoản/mật khẩu/dữ liệu demo; GPS mặc định tắt, bật cho demo ở seed riêng.
+- **ASM-003:** giới hạn login **5 yêu cầu/60 giây/IP** trên MVP một instance, yêu cầu thứ 6 trả HTTP 429 (mã hiện tại `AUTH_INVALID`); email không phân biệt hoa thường; logout token hợp lệ → 204; người thôi việc/bị vô hiệu phải bị từ chối ở request tiếp theo. Multi-instance cần shared rate limiter, **chưa** thuộc MVP.
+
+
 ## 5. Đơn hàng
 
 **Cách B:** POS/WMS/ERP giữ DB riêng; CFO chỉ GET nguồn. Sales có thể yêu cầu đồng bộ theo mã đơn từ giao diện CFO, không cần chờ polling 5 phút; polling vẫn dự phòng.
@@ -253,7 +259,7 @@ Không có điểm số, GPS, `snapshot`/`before`/`after` của decision log tro
   "weights": { "w_km": 0.5, "w_fill": 0.5 },   // mặc định theo cấu hình
   "reason_code": "criteria_change", "reason_text": "Prefer nearest" }   // bắt buộc nếu đây là lần chạy lại (run_no > 1)
 ```
-Điều kiện: đơn `SUBMITTED` (tự động khi vừa nhập) hoặc `PLANNED`/`NO_FEASIBLE_DATE` khi chạy lại. Đơn `BLOCKED_UNMAPPED_SKU` → `409 SKU_UNMAPPED`.
+Điều kiện: đơn thuộc luồng CFO và **100% SKU đã được IT mapping confirmed**, trạng thái `SUBMITTED` hoặc các trạng thái lập lại được phép. Đơn chưa mapping **không được vào luồng điều phối CFO**, phải xử lý theo quy trình cũ; không dùng `409 SKU_UNMAPPED` như cách giữ đơn khách chờ IT trong CFO.
 
 ### 6.2 Phản hồi `PlanningRun`
 
@@ -430,6 +436,9 @@ Thông báo tự động (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) do h
 
 ## 12. Sản phẩm, ánh xạ, nhóm xử lý (IT)
 
+**ASM-005 — Chính sách phạm vi CFO:** Khoảng 100 SKU mapping confirmed ban đầu (pilot) và mở rộng dần. CFO chỉ điều phối đơn có toàn bộ SKU đã xác nhận. Đơn thiếu SKU đi theo quy trình cũ; API đồng bộ đơn của CFO phải đánh giá điều kiện trước khi tạo planning run/hold, trả kết quả **không đủ điều kiện CFO / tiếp tục quy trình cũ**, không gọi Dispatcher để giữ đơn chờ IT. Không được tự chuyển đơn cũ vào CFO sau mapping. Mã phản hồi, dữ liệu định danh luồng, cách ngăn hai luồng cùng xử lý và xử lý đơn đã nhập ở CFO trước thay đổi là **thiết kế cần chốt khi triển khai**, không tự coi API hiện tại đã hỗ trợ.
+
+
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
 | GET | `/mapping/tasks` | Hàng đợi: lọc `status`, `market`; kèm `blocked_order_count` và `candidates` |
@@ -455,7 +464,7 @@ Thông báo tự động (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) do h
   "units_to_base": 40 }
 ```
 Kiểm tra: sản phẩm nhóm `N6` không được có cờ `FRAGILE` (đã tính trong định mức) → `422 VALIDATION_ERROR`.
-Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`; các đơn `BLOCKED_UNMAPPED_SKU` chứa SKU này tự được kiểm tra lại và chuyển `SUBMITTED` → lập kế hoạch; `decision_log MAPPING_CONFIRMED`.
+Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`, ghi `decision_log MAPPING_CONFIRMED`; **không tự chuyển** các đơn đã đi quy trình cũ thành `SUBMITTED`, **không tự lập kế hoạch/giữ chỗ** khi IT mapping xong. Các đơn mới sau đó có thể được CFO điều phối nếu 100% SKU confirmed.
 
 ### 12.2 Đọc ánh xạ và phản hồi (v1.4, Q8)
 
@@ -497,6 +506,15 @@ Lỗi: `403`; `404`; `422 VALIDATION_ERROR` kèm `details.field`; `422 REASON_RE
 | GET/POST/PATCH | `/users`, `/users/{id}`; POST `/users/{id}/reset-password` | admin | Tài khoản |
 
 Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ một phân công hiệu lực; mỗi kho/cửa hàng đúng một quản lý chính; chỉ quản lý có `can_approve` mới xác nhận chuyển kho / sửa ca / đóng ngoại lệ của kho đó.
+
+### 13.0a ASM-006/007 — Nhân sự, lịch làm chính thức và điểm danh (hợp đồng mục tiêu)
+
+- **Nhân sự (ASM-006):** trước khi đổi/chấm dứt phân công của quản lý chính phải bố trí người quản lý hợp lệ thay thế. Khóa user người đã nghỉ; lịch sử không xóa. Đổi phân công, quản lý, owner, nghỉ việc phải ghi audit actor, before/after cùng transaction. Sửa hồi tố chỉ admin đủ quyền và phải có `reason_text`; các action code mới cho đổi manager/owner/terminate cần được bổ sung contract trước code.
+- **Lịch ca chính thức (ASM-007/Q11):** Warehouse Manager được phân công làm quản lý tại kho đó có quyền tạo/cập nhật **lịch nhân viên–ngày–ca**; API đích dự kiến `GET /warehouses/{id}/shift-schedule?from=&to=`, `PUT /warehouses/{id}/shift-schedule` (payload người–ngày–ca, kèm `reason_text` khi sửa hồi tố). Định dạng cụ thể/chống lịch chồng/lưu revision và migration phải được Dev 1 đề xuất và review trước triển khai. Sai role → 403; ngoài kho → 404.
+- `expected_staff` của `shift_template` chỉ là số dự kiến để so sánh; tuyệt đối **không** là số lượng dùng tự phân người hoặc dồn người vào ca cuối. `attendance_gen` chỉ chép lịch đã được Manager xác nhận để tạo `planned`, không tự dựng từ `expected_staff`.
+- `PUT /warehouses/{id}/attendance` chỉ cập nhật tình trạng thực tế cho người **đã có lịch**; `all_present` không tự tạo ca hay sửa lịch. Sửa dữ liệu quá khứ phải có quyền và lý do. Mọi cập nhật ghi `SHIFT_CHANGED` hoặc `ATTENDANCE_CHANGED` với actor/before/after cùng transaction. Thiếu lịch chính thức → trả/cảnh báo thiếu dữ liệu, không xác nhận công suất dựa trên người giả định.
+- Đây là **đặc tả mục tiêu của PR docs**; không tuyên bố endpoint, bảng hoặc migration hiện có đã hỗ trợ.
+
 
 ### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
 

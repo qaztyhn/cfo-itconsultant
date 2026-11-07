@@ -40,6 +40,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 
 ## 4. Bất biến (không bao giờ vi phạm)
 
+> **ASM-005 — Quyết định phạm vi pilot ngày 07/11/2026:** Điều phối đơn chỉ khi **100% SKU mapping confirmed**. Thiếu SKU → quy trình cũ, không giữ đơn chờ IT trong CFO; không tự chuyển ngược sau mapping. Đây là **hợp đồng mục tiêu chưa implement**, cần xử lý chống double fulfilment trước khi cho chạy thật.
+
+
 1. **Không tự duyệt.** Chỉ người dùng có quyền bấm duyệt: Dispatcher xử lý đầy đủ; Sales chỉ rank-1 tiêu chuẩn trong cửa hàng mình, đủ điều kiện theo `docs/DECISION_SALES_CONFIRMATION.md`. Không job/engine tự duyệt.
 2. **Không tự đổi ngày giao.** Ngày yêu cầu (`date_from/date_to`) chỉ đổi khi tồn tại `ops.date_negotiation` với `outcome = 'agreed'` do dispatcher ghi.
 3. **Báo trễ cho khách do dispatcher gửi.** Hệ thống chỉ tạo `notification` trạng thái `draft` cho mẫu `DELAY`. Bốn mẫu còn lại (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) tự động.
@@ -48,7 +51,7 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 6. **Engine là hàm thuần.** Trong `engine/` không import `sqlalchemy`, `httpx`, `requests`, `datetime.now`, không đọc env/file, không ghi log, không gọi mạng. Mọi dữ liệu và "bây giờ" truyền vào qua tham số.
 7. **Giờ công đơn như nhau ở mọi kho.** Không dùng giờ công làm tiêu chí so sánh giữa các kho; định mức là **một bộ chung** do IT quản lý (`efficiency_factor` mặc định 1,0, không có UI).
 8. **Xếp hạng = 0,5 × `n_km` + 0,5 × `n_fill`** (min–max trong các phương án khả thi của cùng đơn, có vùng bỏ qua). **Không quy ra tiền, không dùng "cost/SEK" làm tiêu chí hay hiển thị xếp hạng.** KPI "cost per delivery" là giờ công và km.
-9. **Chỉ IT ánh xạ SKU** sang sản phẩm global và gán nhóm xử lý. Không vai trò nào khác gọi được endpoint `mapping/*` ghi.
+9. **Chỉ IT ánh xạ SKU** sang sản phẩm global và gán nhóm xử lý. Không vai trò nào khác gọi được endpoint `mapping/*` ghi. Theo ASM-005, đơn thiếu bất kỳ SKU confirmed **không được CFO điều phối**, mà đi quy trình cũ; mapping về sau không kéo hồi tố đơn cũ vào CFO. Không tự động tạo plan/hold từ mapping.
 10. **Một kho xử lý trọn đơn; một xe chỉ chở một đơn trong một chuyến (không ghép đơn); một đơn được dùng nhiều xe.** Engine chọn bộ xe **ít nhất** cùng kho, cùng ngày, chia hàng theo tải/thể tích, các xe tới chênh ≤ `multi_vehicle.max_arrival_spread_min`; không giới hạn số xe. Thiếu loại xe hoặc kín xe → `NO_FEASIBLE_DATE` (check `truck`). Không có trạng thái `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`. Không bỏ qua gate để "cho qua".
 11. **Giữ chỗ cả 3 phương án; hàng và giờ công chỉ tính một lần cho (đơn, kho).** Hold 15 phút, gia hạn tối đa 2 lần. Xe/tài xế của các phương án **cùng đơn** được trùng, **khác đơn** thì không (ràng buộc EXCLUDE ở DB). Hàng và giờ công **không** có ràng buộc DB: **lúc lập kế hoạch không khóa** (giữ chỗ `held` được phép vượt); **khi duyệt** phải lấy `pg_advisory_xact_lock` theo `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>` rồi kiểm tra lại; tổng `committed` không bao giờ vượt khả dụng.
 12. **Chuyển trạng thái đơn chỉ qua `transition()`** tra `ops.order_transition`; không `UPDATE customer_order SET status` ở nơi khác.
@@ -68,6 +71,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 
 26. **Sales chỉ duyệt có điều kiện.** Cùng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, không transfer/manual/replan/date change, dữ liệu mới, hold còn hạn; dùng chung ApprovalService, lock và audit. Nếu đơn cũ chưa duyệt tranh công suất chưa chứng minh đủ nguồn lực, Sales phải chuyển Dispatcher.
 27. **FIFO hiển thị, không FIFO thực thi bắt buộc.** Danh sách theo `submitted_at,id` tăng dần; chèn đơn giao sớm vào lịch nếu không lấn `committed` của đơn cũ. `held` stock/labour có thể vượt, không được hứa cam kết trước khi duyệt.
+
+28. **ASM-006:** mọi thay đổi phân công, owner, quản lý, nghỉ việc ghi actor + before/after và `decision_log` cùng transaction. Sửa hồi tố chỉ admin đủ quyền, phải có lý do; quản lý chỉ rời vị trí sau khi có người thay thế. Chưa có action code phải đề xuất cập nhật hợp đồng trước, không bỏ audit.
+29. **ASM-007/Q11:** Warehouse Manager lập lịch ca chính thức từng người/ngày; `expected_staff` chỉ dùng so sánh, không tự chia/dồn nhân viên theo ca. `attendance_gen` chỉ tạo `planned` từ lịch xác nhận. `all_present` không tạo ca hoặc thay đổi phân công. Sửa lịch và điểm danh có audit; hồi tố cần lý do. Thiếu lịch không tính công suất như đã đủ người.
 
 ## 5. Quy ước backend (Python)
 

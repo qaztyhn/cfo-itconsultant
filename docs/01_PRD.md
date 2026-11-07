@@ -104,10 +104,13 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-INT-08 (M)** Sales trong CFO yêu cầu đồng bộ ngay đơn đã submit tại POS bằng API đọc qua adapter, không cần chờ lượt polling 5 phút; polling là dự phòng. Không sửa POS hay gộp database.
 
 ### 5.2 Sản phẩm và ánh xạ
+
+> **ASM-005 (quyết định 07/11/2026):** Pilot khởi đầu khoảng 100 SKU được IT mapping. CFO là lớp điều phối **chỉ cho đơn đủ 100% SKU mapped**; đơn không đủ điều kiện ở lại quy trình cũ, không bị giữ chờ IT trong CFO. Đây là thay đổi **mục tiêu**, chưa phải code đang chạy; xem `docs/ASSUMPTIONS.md` §ASM-005.
+
 - **FR-PRD-01 (M)** Mỗi nước một bảng sản phẩm riêng (mã nội bộ) ánh xạ sang `product_global`. [C]
-- **FR-PRD-02 (M)** SKU chưa xác nhận ánh xạ → đơn chứa SKU đó `BLOCKED_UNMAPPED_SKU` kèm lý do rõ; tạo mapping task cho IT.
+- **FR-PRD-02 (M)** Chỉ đơn có **tất cả SKU `mapping_status=confirmed`** được đưa vào luồng điều phối CFO. Nếu có một SKU chưa được xác nhận, **toàn bộ đơn đi theo quy trình cũ**, không chờ IT hoặc lập kế hoạch/giữ chỗ tại CFO. IT vẫn có hàng đợi mapping SKU để mở rộng danh mục cho **các đơn tương lai**.
 - **FR-PRD-03 (M)** Gợi ý ứng viên bằng quy tắc (GTIN trùng, tên gần giống `pg_trgm`, nhóm xử lý theo bảng quy tắc). **Chỉ IT** xác nhận hoặc từ chối (từ chối bắt buộc có lý do). [C]
-- **FR-PRD-04 (M)** Khi ánh xạ xong, đơn bị chặn tự được kiểm tra lại và lập kế hoạch.
+- **FR-PRD-04 (M)** IT mapping xong chỉ mở rộng tập SKU đủ điều kiện cho **những đơn được tiếp nhận CFO về sau**; không tự động mở khóa, chạy planning, gửi xác nhận hoặc chuyển những đơn đã đi theo quy trình cũ sang CFO. Không tái sử dụng `HANDLED_EXTERNALLY` đã bị loại khỏi schema v1.2.
 - **FR-PRD-05 (M)** IT quản lý sản phẩm global, quy đổi đơn vị chuẩn bị (pallet, bó, m³, kiện), nhóm N1–N6, định mức giờ công dùng chung mọi kho, hệ số cờ.
 
 ### 5.3 Đơn hàng
@@ -127,7 +130,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-PRP-02 (M)** Công suất ngày = số người có mặt (điểm danh) × giờ hữu ích × **90%** tỷ lệ dành cho đơn giao − việc đã đặt. [S][C]
 - **FR-PRP-03 (đã bỏ ở v1.1)** ~~Thiết bị kho được ép buộc~~. Ngoài MVP theo slide; giả định mọi kho có đủ thiết bị [C][A].
 - **FR-PRP-04 (M)** Nếu chuẩn bị xong sau giờ cắt lên hàng, lên hàng ở ca đầu của ngày làm việc kế tiếp. [S]
-- **FR-PRP-05 (M)** Quản lý/trưởng ca điểm danh từng người (nút "tất cả có mặt"), sửa ca; công nhân không có tài khoản.
+- **FR-PRP-05 (M)** Warehouse Manager lập/sửa lịch phân ca chính thức cho **từng nhân viên**; warehouse ghi điểm danh thực tế (có mặt/vắng/nghỉ) trong phạm vi được cấp quyền. `expected_staff` chỉ là số dự kiến, CFO không tự phân/đổi ca. Sửa dữ liệu quá khứ phải có quyền, lý do và audit; công nhân không có tài khoản.
 
 ### 5.6 Xe, giao hàng, gate
 - **FR-DEL-01 (M)** Xe thuộc kho; chọn xe đủ tải/thể tích, được chở nhóm hàng, đủ khả năng, rảnh; tài xế đủ bằng và còn hạn, trong giờ làm. [S][C]
@@ -192,7 +195,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-ORD-04** Địa chỉ giao được chụp lại trên đơn kèm toạ độ; khách ở bảng riêng. [C]
 - **BR-PRD-01** Mã nội bộ từng nước ánh xạ về sản phẩm global theo thứ tự: ánh xạ đã xác nhận → GTIN/EAN → thuộc tính → (AI gợi ý, sau) → người duyệt. [S]
 - **BR-PRD-02** Chỉ IT xác nhận ánh xạ SKU, vì mỗi nước có admin/quản lý kho/dispatcher riêng nên để họ tự ánh xạ sẽ làm dữ liệu không đồng nhất. [C]
-- **BR-PRD-03** SKU chưa ánh xạ hoặc chưa duyệt → đơn chứa nó bị chặn kèm lý do. [C]
+- **BR-PRD-03** SKU chưa ánh xạ/chưa được IT duyệt → **đơn không thuộc luồng CFO, tiếp tục xử lý theo quy trình cũ**. Đơn có đủ mọi SKU đã xác nhận mới được CFO điều phối; không điều phối trùng, không hồi tố chuyển đơn cũ sau mapping. [C]
 - **BR-PRD-04** Nhóm xử lý N1–N6 gán bằng bảng quy tắc cứng; **IT** nhập định mức (giờ cố định/dòng, giờ công/đơn vị chuẩn bị) và xác nhận nhóm, vì MVP chưa có số liệu từ quản lý kho; AI tinh chỉnh khi có đủ dữ liệu thực tế (phần mở rộng, dựa trên giờ nhân công thực tế trên một đơn vị cơ sở của từng nhóm, FR-EXE-04). Nhóm N6 không gắn cờ FRAGILE (tránh nhân hệ số hai lần). [C]
 - **BR-PRD-05** Định mức giờ công dùng chung mọi kho; kho có hệ số hiệu suất mặc định 1,0 (chưa có UI). [C]
 
@@ -211,6 +214,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-PRP-03 (đã bỏ ở v1.1)** ~~Ép buộc giờ thiết bị~~. Không có mã `PREP_NO_EQUIPMENT` trong MVP. [C]
 - **BR-PRP-04** Quá giờ cắt lên hàng thì lên hàng ca đầu ngày làm việc kế. [S]
 - **BR-PRP-05** Một nhân viên tại một thời điểm chỉ ở một nơi; manager/supervisor mặc định không tính vào công suất nhặt hàng. [C]
+
+- **BR-PRP-06** Lịch làm việc chính thức do Warehouse Manager nhập/xác nhận, không suy ra từ `shift_template.expected_staff`. Công suất theo từng ngày/ca sử dụng lịch người–ca và điểm danh thực tế; lịch tương lai chưa có danh sách nhân viên thì không được tự dựng ca giả. Thay đổi lịch/điểm danh có audit; sửa hồi tố cần lý do.
 
 ### 6.5 Giao hàng và gate
 - **BR-DEL-01** Xe phải đủ tải trọng và thể tích, được chở nhóm hàng, đủ khả năng (crane, dump…) và rảnh. [S]
@@ -255,6 +260,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-EMP-02** Mỗi kho/cửa hàng có đúng một quản lý chính; owner mặc định là quản lý. [C]
 - **BR-EMP-03** Duyệt chuyển kho (nguồn), sửa ca, đóng ngoại lệ chỉ do quản lý có `can_approve` của kho đó. [C]
 - **BR-EMP-04** Nhân viên thôi việc: khóa tài khoản, giữ lịch sử, ẩn danh sau hạn lưu giữ. [A]
+- **BR-EMP-05** Trước khi quản lý chuyển công tác/nghỉ việc, phải có người thay thế phù hợp; tài khoản nghỉ việc bị khóa và lưu lịch sử. Thay đổi phân công, quản lý, owner và nghỉ việc ghi audit; điều chỉnh hồi tố chỉ admin đủ quyền và có lý do.
+
 - **BR-KPI-01** Không thêm vai trò; Business owner và Project lead đều là `viewer`, phân biệt bằng `kpi_scopes` (`revenue_all` / `ops`). **Doanh thu:** Business owner (mọi nơi, hai góc nhìn), owner cửa hàng (chỉ cửa hàng đó, góc nhìn store), owner kho (chỉ kho đó, góc nhìn warehouse), admin; người khác không xem; Business owner không xem KPI vận hành, nhật ký quyết định hay thông tin khách. **KPI vận hành:** admin, dispatcher, quản lý kho, Project lead (`ops`). Doanh thu ghi nhận = Σ `total_amount` của đơn `DELIVERED` theo ngày giao ở múi giờ market; đơn thất bại rồi giao lại chỉ tính một lần; mỗi nước tiền tệ riêng. **Giả định [A]:** chi phí giao hàng, lương nhân viên, ưu đãi giữa các nước khác nhau và nhóm thiếu số liệu, nên doanh thu chỉ là tổng giá trị đơn, không phải lợi nhuận. "Cost per delivery" của slide được thay bằng giờ công và km mỗi lần giao (KPI vận hành); so sánh "chi phí" giữa các phương án của một đơn do điểm xếp hạng đảm nhận (FR-RNK-01). [C]
 
 ---

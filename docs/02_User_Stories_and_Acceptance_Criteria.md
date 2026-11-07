@@ -45,21 +45,28 @@
 
 ## Epic 2 — Sản phẩm và ánh xạ (IT)
 
-**US-PRD-01 — Hàng đợi ánh xạ SKU** · Là *IT*, tôi muốn thấy các SKU chưa ánh xạ và các đơn đang bị chặn. · FR-PRD-02/03
-- AC1. *Given* đơn chứa SKU `SE-NEW-77` chưa ánh xạ, *When* đơn vào CFO, *Then* đơn `BLOCKED_UNMAPPED_SKU` với `block_reason` nêu SKU, `mapping_task` được tạo với `blocked_order_count = 1`.
-- AC2. *Given* hai đơn cùng chứa SKU đó, *Then* chỉ một `mapping_task`, `blocked_order_count = 2`.
+**US-PRD-00 — Phân luồng theo 100% SKU đã mapping** · FR-PRD-02, BR-PRD-03
+- AC1. Đơn có đủ tất cả SKU mapping confirmed được phép vào CFO; chỉ một SKU `pending`/`rejected`/không tồn tại thì **toàn bộ đơn** thuộc quy trình cũ và CFO không được lập plan/hold/approve.
+- AC2. Khi IT mapping SKU về sau, đơn đã đi theo quy trình cũ **không tự động** quay lại CFO; chỉ các đơn mới đủ điều kiện mới đi luồng CFO.
+- AC3. Cần bảo đảm một đơn không được hai luồng cùng điều phối, kể cả polling và Sales sync-now cạnh tranh hoặc khi version nguồn thay đổi; nếu chưa đủ thông tin quyết định hệ thống điều phối, CFO phải fail closed và không xác nhận giao hàng.
+- AC4. Không thay POS/WMS/ERP hay ghi ngược để phân luồng; khả năng xác minh nguồn sở hữu đơn phải được đánh giá trước khi triển khai.
+
+
+**US-PRD-01 — Hàng đợi ánh xạ SKU** · Là *IT*, tôi muốn thấy SKU chưa xác nhận để mở rộng phạm vi CFO, **không giữ đơn khách chờ mapping trong CFO**. · FR-PRD-02/03
+- AC1. *Given* đơn nguồn chứa SKU `SE-NEW-77` chưa được IT xác nhận, *When* đánh giá điều kiện sử dụng CFO, *Then* toàn bộ đơn **không được CFO lập plan/giữ chỗ/duyệt**; tiếp tục quy trình cũ. SKU xuất hiện trong hàng đợi IT qua đồng bộ danh mục sản phẩm, không phụ thuộc tạo đơn chặn trong CFO.
+- AC2. *Given* nhiều đơn nguồn cùng có SKU chưa mapping, *Then* không tạo nhiều mapping task cho một SKU ở cùng market; không coi `blocked_order_count` là số đơn **chờ được CFO xử lý**.
 - AC3. *Given* SKU có `gtin` trùng sản phẩm global G-000123, *Then* `candidates` có G-000123 với `reason = gtin`.
 - AC4. *Given* tên SKU giống 0,6 theo `pg_trgm` và cùng category, *Then* xuất hiện ứng viên `name_sim` kèm điểm.
 
-**US-PRD-02 — Xác nhận ánh xạ** · Là *IT*, tôi chọn hoặc tạo sản phẩm global để mở khóa đơn. · BR-PRD-02
-- AC1. *Given* tôi là `admin`, *When* `POST /mapping/tasks/{id}/confirm` với `global_product_id`, *Then* `product_se.mapping_status = confirmed`, `mapped_by` là tôi, các đơn bị chặn tự chuyển `SUBMITTED` rồi vào lập kế hoạch.
+**US-PRD-02 — Xác nhận ánh xạ** · Là *IT*, tôi chọn hoặc tạo sản phẩm global để các đơn **mới** có thể được CFO xử lý khi đủ SKU. · BR-PRD-02
+- AC1. *Given* tôi là `admin`, *When* `POST /mapping/tasks/{id}/confirm` với `global_product_id`, *Then* `product_se.mapping_status = confirmed`, `mapped_by` là tôi; **không** tự chuyển đơn đã chạy theo quy trình cũ sang `SUBMITTED`, không tạo planning run/hold cho các đơn đó.
 - AC2. *Given* tôi là `dispatcher`, `warehouse` hoặc `sales`, *When* gọi endpoint, *Then* `403 FORBIDDEN`.
 - AC3. *Given* tạo global mới, *Then* bắt buộc: nhóm xử lý, `base_unit`, cân nặng, thể tích, `base_units_per_prep_unit` (trừ nhóm đơn vị `line`), `units_to_base` > 0; thiếu → `422`.
 - AC4. *Then* ghi `decision_log MAPPING_CONFIRMED` kèm trước/sau.
 
 **US-PRD-03 — Từ chối ánh xạ** · Là *IT*, tôi từ chối với lý do. · BR-GEN-04
 - AC1. *When* `reject` không có `reason_text`, *Then* `422 REASON_REQUIRED`.
-- AC2. *When* reject hợp lệ, *Then* SKU `rejected`, đơn liên quan vẫn bị chặn và dispatcher thấy lý do.
+- AC2. *When* reject hợp lệ, *Then* SKU giữ `rejected`, lý do được lưu cho IT; các đơn có SKU đó tiếp tục ở quy trình cũ, **không** biến thành danh sách chờ Dispatcher của CFO.
 
 **US-PRD-04 — Quản lý nhóm xử lý và định mức** · Là *IT*, tôi chỉnh N1–N6, hệ số cờ, quy tắc gán nhóm. · FR-PRD-05
 - AC1. *Given* sửa `labour_hours_per_unit` của N3 từ 0,15 → 0,18, *When* lập kế hoạch đơn mới, *Then* khối lượng việc dùng 0,18; kế hoạch đang giữ chỗ không đổi.
@@ -162,6 +169,19 @@
 - AC3. *When* ghi `SHIFT_CHANGE`, *Then* công suất ngày được tính lại và các đơn có giữ chỗ ngày đó được tính lại ETA.
 
 ---
+
+**US-WH-06 — Warehouse Manager lập lịch làm chính thức từng người (ASM-007/Q11)**
+- AC1. Quản lý kho hợp lệ chọn người, ngày, ca và lưu lịch; danh sách `expected_staff` chỉ hiển thị so sánh, không tự xếp lại người, không tự đưa người dư vào ca cuối.
+- AC2. Người không thuộc kho, đã nghỉ, hoặc bị xếp ca trùng thời gian bị từ chối; thao tác sai kho → 404, sai quyền → 403.
+- AC3. Job `attendance_gen` chỉ sao từ lịch chính thức, không tạo ca dựa vào `expected_staff`. Thiếu lịch → cảnh báo thiếu dữ liệu thay vì tính công suất từ nhân viên giả định.
+- AC4. Warehouse ghi điểm danh hiện diện theo lịch; `all_present` không tạo người mới/đổi ca; vắng/nghỉ giảm công suất. Lưu `SHIFT_CHANGED` và `ATTENDANCE_CHANGED` với actor, before/after.
+- AC5. Sửa lịch/điểm danh trong quá khứ phải có quyền và lý do; không làm mất lịch sử.
+
+**US-EMP-05 — Ghi lịch sử thay đổi nhân sự (ASM-006)**
+- AC1. Khi quản lý kho/cửa hàng chuyển công tác hoặc nghỉ, hệ thống kiểm có quản lý thay thế trước khi cho thay đổi.
+- AC2. Người nghỉ việc bị khóa account, không xóa lịch sử; owner do admin gán riêng không tự đổi theo quản lý.
+- AC3. Thay đổi phân công, quản lý, owner, nghỉ việc ghi decision_log với actor và before/after trong transaction; chỉnh hồi tố cần lý do, và không tạo hai phân công chồng ngày.
+
 
 ## Epic 6 — Lập kế hoạch và quyết định của dispatcher
 
@@ -471,7 +491,7 @@
 | 2 | US-PRD-01..05 | FR-PRD-01..05, BR-PRD-01..05 |
 | 3 | US-ORD-01..05 | FR-ORD-01..05, BR-ORD-01..04, BR-DEL-05 |
 | 4 | US-ATP-01..03 | FR-ATP-01..03, BR-ATP-01..05 |
-| 5 | US-WH-01..05 (US-WH-03 đã bỏ) | FR-PRP-02, FR-PRP-04, FR-PRP-05, FR-EXE-01, BR-PRP-02, BR-PRP-04, BR-PRP-05, BR-EMP-03 |
+| 5 | US-WH-01..06 (US-WH-03 đã bỏ, US-WH-06 mới: lịch phân ca từng người) | FR-PRP-02, FR-PRP-04, FR-PRP-05, FR-EXE-01, BR-PRP-02, BR-PRP-04, BR-PRP-05, BR-EMP-03 |
 | 6 | US-PLN-01..08 | FR-PRP-01, FR-DEL-01..04, FR-RNK-01..03, BR-PRP-01, BR-DEL-01..05, BR-GATE-01, BR-RNK-01..05 |
 | 7 | US-RES-01, US-APR-01..04 | FR-APR-01..05, BR-RES-01..04, BR-APR-01..04 |
 | 8 | US-EXE-01..04, US-WH-04 | FR-EXE-01..04, BR-EXE-01..03, BR-DEL-05 |
