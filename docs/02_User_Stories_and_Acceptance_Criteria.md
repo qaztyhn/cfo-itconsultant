@@ -39,6 +39,10 @@
 
 ---
 
+**US-INT-06 — Sales đồng bộ ngay đơn POS** · FR-INT-08
+- AC1. Sales cùng cửa hàng gọi `POST /integration/orders/sync-now` với `external_ref`; CFO GET nguồn, upsert đúng 1 đơn theo version; không nhân đôi với polling.
+- AC2. Sai vai trò 403, đơn ngoài cửa hàng 404, nguồn lỗi có Retry; không có duyệt thành công giả hoặc writeback POS.
+
 ## Epic 2 — Sản phẩm và ánh xạ (IT)
 
 **US-PRD-01 — Hàng đợi ánh xạ SKU** · Là *IT*, tôi muốn thấy các SKU chưa ánh xạ và các đơn đang bị chặn. · FR-PRD-02/03
@@ -74,13 +78,13 @@
 - AC1. *Given* form POS, *When* chọn dạng ngày `exact` 2026-11-18, *Then* `date_from = date_to`; `range` yêu cầu `date_from < date_to`; `latest` chỉ có `date_to`.
 - AC2. *Given* khung giờ từ–đến, *Then* `window_start < window_end`; để trống nếu khách không yêu cầu.
 - AC3. *When* `validate` thiếu địa chỉ/toạ độ hoặc không có dòng hàng, *Then* trả lỗi, không cho `submit`.
-- AC4. *When* `submit` sau `validate` thành công, *Then* đơn `SUBMITTED_FOR_PLANNING` và được CFO kéo ở lượt kế tiếp.
+- AC4. *When* `submit` sau `validate` thành công, *Then* đơn `SUBMITTED_FOR_PLANNING` và được CFO kéo qua sync-now của Sales hoặc polling định kỳ.
 - AC5. *Then* địa chỉ chọn từ danh sách seed có toạ độ (không geocoding thật).
 
 **US-ORD-02 — Danh sách đơn theo phạm vi** · Là *dispatcher/kho/cửa hàng/CS*, tôi thấy đúng các đơn mình được xem. · FR-ORD-03
 - AC1. *Given* quản lý kho Malmö, *Then* chỉ thấy đơn có kế hoạch/giao từ kho Malmö; *Given* store manager Göteborg Väst, chỉ thấy đơn `origin_store_id` của mình (chỉ xem).
 - AC2. *Given* ID đơn ngoài phạm vi, *Then* `404`.
-- AC3. *When* lọc `risk_color=orange&status=PREPARING`, *Then* kết quả đúng và sắp xếp theo `promise_end` tăng dần.
+- AC3. *When* lọc `risk_color=orange&status=PREPARING`, *Then* kết quả đúng và mặc định sắp xếp theo `submitted_at ASC, id ASC`, có thể chủ động chọn sort `promise_end`.
 
 **US-ORD-03 — Chi tiết đơn và dòng thời gian** · Là *dispatcher*, tôi xem toàn bộ lịch sử một đơn. · FR-ORD-04
 - AC1. *Then* timeline gộp: đơn nộp, các run lập kế hoạch, quyết định, sự kiện kho/tài xế, thông báo, phiên bản ETA, theo thứ tự thời gian.
@@ -100,6 +104,10 @@
 - AC6. *Then* không xe nào chở hai đơn trong cùng chuyến (không ghép đơn).
 
 ---
+
+**US-ORD-06 — Thứ tự đặt và lịch giao** · BR-ORD-05
+- AC1. Danh sách theo `submitted_at ASC, id ASC`, nhưng có thể lập lịch đơn đặt sau giao sớm trước đơn cũ.
+- AC2. Không lấn nguồn lực đã `committed` của đơn cũ; nếu có đơn cũ chưa duyệt tranh công suất mà chưa chứng minh đủ năng lực, Sales không được tự duyệt đơn sau.
 
 ## Epic 4 — Tồn kho, ATP, chuyển kho
 
@@ -256,6 +264,11 @@
 - AC7. *Given* đơn đã `DISPATCHED`, *Then* chỉ tạo alert, không tạo gợi ý.
 
 ---
+
+**US-APR-05 — Sales xác nhận phương án giao tiêu chuẩn** · FR-APR-06, BR-APR-05
+- AC1. Sales thuộc cửa hàng nguồn, plan rank 1, năm gate pass, reserve safe, một xe, dữ liệu tươi, hold hợp lệ → bấm Confirm; cùng ApprovalService kiểm lại và commit → `APPROVED`, audit actor, gửi CONFIRMED.
+- AC2. Ngoài cửa hàng 404; sai role 403; rank 2/multi-vehicle/low reserve/stale/đổi ngày/đơn cũ chưa duyệt tranh công suất → 409 và chuyển Dispatcher.
+- AC3. Hai Sales tranh xe/SKU/giờ công không được overcommit; hold hết hạn/Idempotency-Key xử lý đúng; không thông báo khách trước commit.
 
 ## Epic 8 — Thực thi và tài xế
 

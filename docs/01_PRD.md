@@ -29,7 +29,9 @@
 
 ## 1. Tóm tắt sản phẩm
 
-**CFO** là một lớp điều phối dùng chung, đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước. Nó kết hợp tồn kho, công suất kho và đội xe để **đưa ra cam kết giao hàng khả thi**, để dispatcher duyệt, rồi **theo dõi thực thi và ngoại lệ đến khi khách nhận hàng**, kèm thông báo cho khách và cải tiến dự báo từ dữ liệu thực tế [S].
+> Decision 2026-11-07: Sales confirms eligible standard plans in a separate CFO UI without changing POS. `docs/DECISION_SALES_CONFIRMATION.md`.
+
+**CFO** là một lớp điều phối dùng chung, đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước. Nó kết hợp tồn kho, công suất kho và đội xe để **đưa ra cam kết giao hàng khả thi**, để Dispatcher hoặc Sales đủ điều kiện duyệt, rồi **theo dõi thực thi và ngoại lệ đến khi khách nhận hàng**, kèm thông báo cho khách và cải tiến dự báo từ dữ liệu thực tế [S].
 
 **MVP** là một **ứng dụng web chạy thật** (không phải bản trình bày), pilot ở Thụy Điển với dữ liệu giả lập: ~100 SKU, 3 kho, 25 cửa hàng [S][C]. Kiến trúc coi mọi nước bình đẳng để mở rộng Bắc Âu mà không sửa lõi.
 
@@ -38,7 +40,7 @@ Company A là nhà bán lẻ vật liệu xây dựng Đan Mạch với hàng tr
 
 ### 1.2 Mục tiêu sản phẩm
 1. Mỗi đơn có **kế hoạch giao hàng khả thi** (kho, xe, tài xế, giờ) trong vài phút thay vì kiểm tra tay trên nhiều hệ thống.
-2. **Cam kết đáng tin**: ngày/khung giờ chỉ được cam kết sau khi dispatcher duyệt và tài nguyên đã được giữ.
+2. **Cam kết đáng tin**: ngày/khung giờ chỉ được cam kết sau khi người có quyền duyệt, nguồn lực được kiểm tra lại và commit thành công.
 3. **Phát hiện trễ sớm** bằng ETA tính lại theo sự kiện và GPS; dispatcher quyết định báo khách.
 4. **Một lõi chung, cấu hình riêng theo nước**: thêm nước = thêm adapter, cấu hình và bảng sản phẩm.
 5. **Chứng minh giá trị đo được** bằng 6 KPI pilot của slide cộng 2 chỉ số bổ sung.
@@ -65,7 +67,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 | **Dispatcher** | Điều phối viên theo nước | Duyệt kế hoạch giao hàng, xử lý ngoại lệ, quyết định báo trễ cho khách, theo dõi GPS | Web (dashboard) |
 | **Warehouse manager / deputy / supervisor** | Quản lý và trưởng ca kho | Khai báo năng lực (điểm danh, ca), ghi mốc chuẩn bị, báo ngoại lệ, xác nhận chuyển kho | Web |
 | **Driver** | Tài xế | Nhận chuyến, ghi xuất phát/giao/thất bại, gửi vị trí | PWA |
-| **Sales** | Nhân viên bán ở cửa hàng (retail, trade) | Nhập đơn ở POS, theo dõi đơn của cửa hàng | POS giả lập + Web (xem) |
+| **Sales** | Nhân viên bán tại cửa hàng | Tạo đơn ở POS, yêu cầu CFO đồng bộ ngay và xác nhận kế hoạch tiêu chuẩn đủ điều kiện | POS + CFO Web |
 | **Store manager** | Quản lý cửa hàng (owner mặc định) | Theo dõi đơn và KPI cửa hàng mình | Web |
 | **Customer service (CSKH)** | Bộ phận chăm sóc khách hàng, **tách khỏi sales** [C] | Trả lời khách về trạng thái và ETA, ghi nhật ký liên hệ | Web |
 | **IT / Admin** | Nhân viên IT trung tâm (quyền admin) | Ánh xạ SKU, quản lý sản phẩm global/nhóm xử lý, nhân sự, cấu hình, đồng bộ | Web |
@@ -99,6 +101,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-INT-05 (M)** Đơn đã duyệt mà nguồn sửa/hủy → không ghi đè, tạo alert và gợi ý phương án mới (FR-APR-05) để dispatcher quyết định.
 - **FR-INT-06 (M)** Tồn kho là ảnh chụp ghi đè kèm `as_of`; quá 15 phút chưa đồng bộ → cờ vàng + alert.
 - **FR-INT-07 (M)** CFO **chỉ đọc** từ hệ thống nguồn, không ghi ngược; đơn đã duyệt hiện bước "xác nhận thủ công trong WMS".
+- **FR-INT-08 (M)** Sales trong CFO yêu cầu đồng bộ ngay đơn đã submit tại POS bằng API đọc qua adapter, không cần chờ lượt polling 5 phút; polling là dự phòng. Không sửa POS hay gộp database.
 
 ### 5.2 Sản phẩm và ánh xạ
 - **FR-PRD-01 (M)** Mỗi nước một bảng sản phẩm riêng (mã nội bộ) ánh xạ sang `product_global`. [C]
@@ -109,8 +112,8 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ### 5.3 Đơn hàng
 - **FR-ORD-01 (M)** Đơn gồm vật liệu, số lượng, ngày giao yêu cầu (3 dạng), khung giờ nhận hàng tùy chọn (từ–đến), khách, địa chỉ chụp lại kèm toạ độ, ngày đặt, sales phụ trách, cửa hàng nhận đơn, đơn giá. [C]
-- **FR-ORD-02 (M)** Ngày yêu cầu khác ngày cam kết; ngày cam kết chỉ có sau khi dispatcher duyệt. [T][C]
-- **FR-ORD-03 (M)** Danh sách đơn theo vai trò và phạm vi (dispatcher cả nước, kho theo kho, cửa hàng theo cửa hàng), lọc theo trạng thái, rủi ro, ngày, kho.
+- **FR-ORD-02 (M)** Ngày yêu cầu khác ngày cam kết; ngày cam kết chỉ có sau khi Dispatcher hoặc Sales đủ điều kiện duyệt thành công. [T][C]
+- **FR-ORD-03 (M)** Danh sách đơn theo vai trò và phạm vi (dispatcher cả nước, kho theo kho, cửa hàng theo cửa hàng), lọc theo trạng thái, rủi ro, ngày, kho; mặc định sắp theo `submitted_at ASC, id ASC` (đơn đặt trước hiển thị trước).
 - **FR-ORD-04 (M)** Dòng thời gian của đơn (sự kiện, quyết định, thông báo, ETA).
 - **FR-ORD-05 (M)** Đơn lớn hơn một xe: hệ thống **gợi ý cơ cấu xe** (số xe, loại xe, phần hàng mỗi xe), ưu tiên **ít xe nhất**, và **xếp lịch nhiều xe** cùng kho, cùng ngày, tới gần như cùng lúc; không giới hạn số xe (chỉ bị giới hạn bởi xe và tài xế rảnh của kho). Không ghép đơn. Thiếu loại xe cần (cẩu, ben) hoặc kín xe → `NO_FEASIBLE_DATE` (check `truck`): dispatcher thương lượng ngày, lập tay, hoặc hủy có lý do. [C]
 
@@ -139,6 +142,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-APR-01 (M)** Dispatcher có 4 quyền: duyệt, chọn phương án khác (bắt buộc lý do), đổi tiêu chí và chạy lại (bắt buộc lý do), lập kế hoạch tay với một hoặc nhiều xe (bắt buộc mã lý do; dùng được cho đơn `PLANNED` hoặc `NO_FEASIBLE_DATE`). [S][C]
 - **FR-APR-02 (M)** Giữ chỗ cả 3 phương án theo (đơn, địa điểm), hết hạn 15 phút, gia hạn tối đa 2 lần; hàng và giờ công chỉ tính một lần cho mỗi (đơn, kho). [C]
 - **FR-APR-03 (M)** Khi duyệt: kiểm tra lại, khóa tài nguyên trong một transaction, hai đơn không tranh cùng xe/tài xế. Kế hoạch trở thành cam kết về tồn kho, công việc kho và xe. [S]
+- **FR-APR-06 (M)** Sales duyệt rank-1 của đơn tại cửa hàng mình nếu 5 gate pass, reserve safe, một xe, nguồn tươi, giữ chỗ hợp lệ và không tranh chấp gây chậm đơn cũ. Dùng cùng ApprovalService, các trường hợp khác do Dispatcher xử lý.
 - **FR-APR-05 (M)** **Gợi ý lập lại tự động:** khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn sau duyệt, tồn kho đổi làm kế hoạch không còn hợp lệ, sự cố xe, giao thất bại), hệ thống báo dispatcher và tạo phương án mới để duyệt. Khi tính, coi như kế hoạch hiện tại của chính đơn không tồn tại (không tính sai nhân công, công suất, tồn kho). Dispatcher duyệt, giữ kế hoạch cũ (lý do) hoặc lập lại tay. [C]
 - **FR-APR-04 (M)** Kế hoạch tay lưu mã lý do, ghi chú, ảnh chụp bối cảnh; gắn cờ trong KPI (dữ liệu để AI học sau này). [C]
 
@@ -177,7 +181,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 ### 6.1 Nguyên tắc chung
 - **BR-GEN-01** CFO chạy trên hệ thống sẵn có và chỉ đọc từ chúng. [S]
 - **BR-GEN-02** Lõi quyết định dùng chung; quy tắc từng nước là dữ liệu cấu hình, không có mã riêng nước trong lõi. [S][C]
-- **BR-GEN-03** Hệ thống đề xuất, dispatcher quyết định; không tự duyệt, không tự đổi ngày giao khi khách chưa đồng ý. [S]
+- **BR-GEN-03** Hệ thống đề xuất, Dispatcher quyết định các ca đầy đủ/ngoại lệ và Sales được duyệt có điều kiện; không tự duyệt, không tự đổi ngày giao khi khách chưa đồng ý. [S]
 - **BR-GEN-04** Mọi quyết định được ghi `decision_log`; chọn phương án khác, đổi tiêu chí, kế hoạch tay, từ chối ánh xạ, hủy/lập lại đơn bắt buộc có lý do. [S][C]
 - **BR-GEN-05** Mọi dữ kiện có nguồn và độ tươi; dữ liệu cũ hiển thị cờ cảnh báo. [T]
 
@@ -191,6 +195,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-PRD-03** SKU chưa ánh xạ hoặc chưa duyệt → đơn chứa nó bị chặn kèm lý do. [C]
 - **BR-PRD-04** Nhóm xử lý N1–N6 gán bằng bảng quy tắc cứng; **IT** nhập định mức (giờ cố định/dòng, giờ công/đơn vị chuẩn bị) và xác nhận nhóm, vì MVP chưa có số liệu từ quản lý kho; AI tinh chỉnh khi có đủ dữ liệu thực tế (phần mở rộng, dựa trên giờ nhân công thực tế trên một đơn vị cơ sở của từng nhóm, FR-EXE-04). Nhóm N6 không gắn cờ FRAGILE (tránh nhân hệ số hai lần). [C]
 - **BR-PRD-05** Định mức giờ công dùng chung mọi kho; kho có hệ số hiệu suất mặc định 1,0 (chưa có UI). [C]
+
+- **BR-ORD-05** Ưu tiên hiển thị đơn đặt trước; đơn đặt sau có thể chuẩn bị/giao trước nếu không làm trễ cam kết trước. Với đơn cũ chưa duyệt có tranh chấp công suất, Sales phải chuyển Dispatcher khi chưa chứng minh đủ năng lực; `held` không bảo đảm tuyệt đối.
 
 ### 6.3 Tồn kho và chuyển kho
 - **BR-ATP-01** `usable = tồn hiện có − wms_reserved − giữ chỗ của đơn khác (held còn hạn + committed) + hàng nhập đã xác nhận về trước ngày cần (cộng thời gian nhận kho)`. [S][T]
@@ -230,6 +236,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-APR-02** Kế hoạch tay phải qua gate, có lý do và cờ KPI. [C]
 - **BR-APR-03** Lập lại sau duyệt, xếp lại sau giao thất bại, hủy đơn: trong một transaction, kế hoạch cũ → `superseded`, giữ chỗ → `released`, chuyến/điểm dừng chưa xong → `cancelled`, ngày cam kết bị xóa (giá trị cũ ghi nhật ký). Lần duyệt mới gửi `CONFIRMED` mới cho khách. [C]
 - **BR-APR-04** Gợi ý lập lại tự động không tạo giữ chỗ và không bao giờ tự duyệt; khi dispatcher duyệt, kế hoạch cũ được đóng và kế hoạch mới được kiểm tra lại, commit trong cùng một transaction. [C]
+
+- **BR-APR-05** Sales chỉ duyệt đơn tiêu chuẩn rank-1 cùng cửa hàng, 5 gate pass, reserve safe, một xe, không thay ngày/ngoại lệ, dùng cùng transaction/locking/audit như Dispatcher.
 
 ### 6.8 Thực thi, rủi ro, thông báo
 - **BR-EXE-01** Sự kiện chỉ thêm, đúng thứ tự trạng thái, có idempotency key; không có bước duyệt. [S]

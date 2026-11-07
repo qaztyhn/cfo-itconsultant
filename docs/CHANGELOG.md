@@ -3,6 +3,13 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [Sales confirmation B — Product decision] — 2026-11-07 — docs-only, chưa triển khai
+
+- Giữ POS/WMS/ERP, database riêng và read-only adapter; Sales yêu cầu CFO đọc đơn ngay qua `sync-now`, polling 5 phút dự phòng.
+- Sales xác nhận trực tiếp trên màn CFO riêng chỉ khi plan rank 1 đủ 5 gate, reserve safe, một xe, không ngoại lệ, đúng cửa hàng; ApprovalService vẫn kiểm tra lại và khóa nguồn lực khi commit.
+- FIFO hiển thị (`submitted_at,id`), không ép FIFO thực thi; bảo vệ committed của đơn cũ, cạnh tranh với đơn cũ chưa duyệt → Dispatcher.
+- Bổ sung hợp đồng mục tiêu và acceptance criteria; không có code/migration/test thực thi trong PR docs này. PR #37 cần đối chiếu trước khi merge.
+
 ## [06 v1.2.1] — 2026-11-06 — **chờ nhóm duyệt** (PR qaztyhn/cfo-itconsultant#8)
 
 ### Thêm
