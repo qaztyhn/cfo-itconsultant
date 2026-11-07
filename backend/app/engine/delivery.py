@@ -11,13 +11,18 @@ Ngày: exact không sớm hơn; range từ date_from; latest ≤ date_to; ngoài
 ETA làm tròn lên eta_round_min; ETA phương án = xe tới cuối. planning_reserve = close(window(date_to))
 − earliest_feasible_eta.
 
+Q12 / 04 mục 6.7 (đã duyệt 07/11/2026): lên hàng chỉ trong ca kho chính thức có người (`loading_windows`) và
+trước `cutoff`; khoảng làm việc của từng tài xế [loading_start, trip_end] nằm trọn trong ca thực tế
+(`DriverCtx.shifts`); thiếu dữ liệu ca → không có phương án (không mặc định 24/7). Ràng buộc nhóm/năng lực
+theo dòng hàng trên từng xe; ghép tài xế–xe bằng quay lui.
+
 Owner: Dev 1 (luồng A).
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from itertools import combinations
+from itertools import combinations, islice, permutations
 
 from app.engine.capacity import is_working_day
 from app.engine.types import (
@@ -25,6 +30,7 @@ from app.engine.types import (
     CheckResult,
     DriverCtx,
     EngineConfig,
+    LineCtx,
     OrderCtx,
     VehicleAssignment,
     VehicleCtx,
@@ -78,32 +84,117 @@ def vehicle_free(vehicle: VehicleCtx, start: datetime, end: datetime) -> bool:
     return not _overlaps(vehicle.busy, start, end)
 
 
+def within_shift(shifts: tuple[tuple[datetime, datetime], ...], start: datetime, end: datetime) -> bool:
+    """[start, end] nằm TRỌN trong một ca (ca có thể qua nửa đêm). Không có ca → False."""
+    return any(s_start <= start and end <= s_end for s_start, s_end in shifts)
+
+
+def driver_problem(
+    driver: DriverCtx, vehicle: VehicleCtx, start: datetime, end: datetime, cfg: EngineConfig
+) -> str | None:
+    """Lý do tài xế KHÔNG chạy được chuyến [start, end) của xe; None = được.
+
+    Thứ tự: `licence` (hạng bằng thấp), `busy` (trùng lịch đã nhận), `no_schedule` (không có ca nào),
+    `outside_shift` (có ca nhưng không phủ trọn chuyến), `expired` (bằng hết hạn), `hours` (vượt giờ/ngày).
+    """
+    if LICENCE_RANK[driver.licence_class] < LICENCE_RANK[vehicle.required_licence]:
+        return "licence"
+    if _overlaps(driver.busy, start, end):
+        return "busy"
+    if not driver.shifts:
+        return "no_schedule"
+    if not within_shift(driver.shifts, start, end):
+        return "outside_shift"
+    day = start.date()
+    if driver.licence_expires_on < day:
+        return "expired"
+    trip_hours = Decimal(int((end - start).total_seconds())) / 3600
+    if driver.booked_hours_by_day.get(day, Decimal(0)) + trip_hours > cfg.driver_max_hours_day:
+        return "hours"
+    return None
+
+
+_SAFETY_CODES = {"outside_shift": "OUTSIDE_DRIVER_SHIFT", "hours": "DRIVER_HOURS_EXCEEDED",
+                 "expired": "LICENCE_EXPIRED"}  # fmt: skip
+
+
+def _failure_code(problems: list[str]) -> tuple[str, str]:
+    """(mã, lý do) khi không tài xế nào đạt: ưu tiên lỗi safety gần đạt nhất, sau đó NO_DRIVER kèm lý do."""
+    for problem in ("hours", "expired", "outside_shift"):
+        if problem in problems:
+            return _SAFETY_CODES[problem], problem
+    reason = "no_schedule" if "no_schedule" in problems else ("busy" if "busy" in problems else "licence")
+    return "NO_DRIVER", reason
+
+
 def pick_driver(
     wh: WarehouseCtx, vehicle: VehicleCtx, start: datetime, end: datetime, cfg: EngineConfig
 ) -> tuple[DriverCtx | None, str | None]:
-    """Tài xế đầu tiên (id tăng) đủ điều kiện cho chuyến [start, end) của xe.
+    """Tài xế đầu tiên (id tăng) đủ điều kiện cho chuyến [start, end) của xe (04 mục 6.2 bước 2d, 6.7).
 
-    Điều kiện: có mặt ngày đó, hạng bằng ≥ yêu cầu, không trùng giờ, bằng còn hạn tới ngày chuyến,
-    tổng giờ trong ngày + chuyến ≤ driver_max_hours_day. Không ai đạt: DRIVER_HOURS_EXCEEDED nếu có tài xế
-    chỉ vướng giờ lái; LICENCE_EXPIRED nếu có tài xế vướng hạn bằng; còn lại NO_DRIVER.
+    Điều kiện: hạng bằng ≥ yêu cầu, không trùng lịch, **chuyến nằm trọn trong một ca thực tế** của tài xế
+    (`DriverCtx.shifts`), bằng còn hạn, tổng giờ trong ngày + chuyến ≤ driver_max_hours_day. Không ai đạt →
+    mã DRIVER_HOURS_EXCEEDED / LICENCE_EXPIRED / OUTSIDE_DRIVER_SHIFT (safety) hoặc NO_DRIVER.
     """
-    day = start.date()
-    trip_hours = Decimal(int((end - start).total_seconds())) / 3600
-    hours_only = expired_seen = False
+    problems: list[str] = []
     for driver in sorted(wh.drivers, key=lambda d: d.employee_id):
-        if day not in driver.available_days or _overlaps(driver.busy, start, end):
-            continue
-        if LICENCE_RANK[driver.licence_class] < LICENCE_RANK[vehicle.required_licence]:
-            continue
-        expired = driver.licence_expires_on < day
-        over = driver.booked_hours_by_day.get(day, Decimal(0)) + trip_hours > cfg.driver_max_hours_day
-        if not expired and not over:
+        problem = driver_problem(driver, vehicle, start, end, cfg)
+        if problem is None:
             return driver, None
-        hours_only |= over and not expired
-        expired_seen |= expired
-    if hours_only:
-        return None, "DRIVER_HOURS_EXCEEDED"
-    return None, ("LICENCE_EXPIRED" if expired_seen else "NO_DRIVER")
+        problems.append(problem)
+    return None, _failure_code(problems)[0]
+
+
+def assign_drivers(
+    drivers: tuple[DriverCtx, ...],
+    vehicles: tuple[VehicleCtx, ...],
+    intervals: list[tuple[datetime, datetime]],
+    cfg: EngineConfig,
+) -> tuple[tuple[DriverCtx, ...] | None, str, str]:
+    """Ghép mỗi xe một tài xế KHÁC nhau (bipartite, quay lui) — không tham lam (04 mục 6.7).
+
+    Trả (tài xế theo thứ tự xe, mã, lý do). Thất bại: một xe không có ứng viên → mã theo lỗi của xe đó;
+    mọi xe có ứng viên nhưng không đủ người khác nhau → NO_DRIVER / `not_enough_drivers`.
+    """
+    candidates: list[list[DriverCtx]] = []
+    for vehicle, (start, end) in zip(vehicles, intervals, strict=True):
+        ok: list[DriverCtx] = []
+        problems: list[str] = []
+        for driver in sorted(drivers, key=lambda d: d.employee_id):
+            problem = driver_problem(driver, vehicle, start, end, cfg)
+            if problem is None:
+                ok.append(driver)
+            else:
+                problems.append(problem)
+        if not ok:
+            code, reason = _failure_code(problems)
+            return None, code, reason
+        candidates.append(ok)
+    order = sorted(range(len(vehicles)), key=lambda i: len(candidates[i]))  # ít ứng viên trước
+    chosen: dict[int, DriverCtx] = {}
+
+    def solve(k: int, used: frozenset[int]) -> bool:
+        if k == len(order):
+            return True
+        idx = order[k]
+        for driver in candidates[idx]:
+            if driver.employee_id not in used:
+                chosen[idx] = driver
+                if solve(k + 1, used | {driver.employee_id}):
+                    return True
+        return False
+
+    if not solve(0, frozenset()):
+        # Không đủ người khác nhau: nếu tài xế còn lại bị loại vì giờ lái/hạn bằng/ca → báo lỗi safety đó.
+        excluded = [
+            problem
+            for vehicle, (start, end) in zip(vehicles, intervals, strict=True)
+            for driver in drivers
+            if (problem := driver_problem(driver, vehicle, start, end, cfg)) is not None
+        ]
+        code, reason = _failure_code(excluded)
+        return None, code, ("not_enough_drivers" if code == "NO_DRIVER" else reason)
+    return tuple(chosen[i] for i in range(len(vehicles))), "OK", ""
 
 
 def handling_minutes(load_kg: Decimal, base_min: int, min_per_ton: int) -> int:
@@ -195,19 +286,27 @@ def _busy_all_day(vehicle: VehicleCtx, day: date) -> bool:
     return False
 
 
+def can_carry(vehicle: VehicleCtx, ln: LineCtx) -> bool:
+    """Xe chở được dòng này: nhóm hàng được phép (rỗng = mọi nhóm) và đủ năng lực của nhóm (04 mục 6.7)."""
+    group = ln.product.group
+    return (not vehicle.allowed_group_codes or group.code in vehicle.allowed_group_codes) and (
+        group.vehicle_requirement <= vehicle.capabilities
+    )
+
+
 def choose_vehicle_sets(
     order: OrderCtx, wh: WarehouseCtx, day: date, max_sets: int = 2
 ) -> tuple[tuple[VehicleCtx, ...], ...]:
-    """Bộ xe ứng viên (bước 2d, v1.2): Σ kg ≥ tổng kg, Σ m³ ≥ tổng m³, **số xe ít nhất**; cùng số xe thì
-    tổng tải nhỏ hơn (rồi tổng thể tích, rồi mã xe). Trả tối đa `max_sets` bộ: bộ tốt nhất và bộ thay thế
-    (cùng số xe nếu có, nếu không thì bộ tốt nhất với thêm một xe). Rỗng → caller báo NO_TRUCK_FIT.
-
-    Giới hạn MVP: mỗi xe trong bộ phải chở được MỌI nhóm hàng và năng lực của đơn (eligible_vehicles),
-    nên phần chia hàng không phải ràng buộc theo nhóm. Xe bận cả ngày bị bỏ; trùng giờ cụ thể được xử lý
-    khi xếp giờ (plan_delivery).
+    """Bộ xe ứng viên (bước 2d, v1.2): xếp được TOÀN BỘ hàng (split_load thành công, ràng buộc nhóm/năng lực
+    theo dòng trên từng xe), **số xe ít nhất**; cùng số xe thì tổng tải nhỏ hơn (rồi thể tích, mã xe). Trả tối
+    đa `max_sets` bộ: tốt nhất và thay thế (có thể thêm một xe). Bỏ xe bận cả ngày; trùng giờ cụ thể xử lý ở
+    plan_delivery. Rỗng → caller báo NO_TRUCK_FIT (`capability` nếu có dòng không xe nào chở được).
     """
-    eligible, _ = eligible_vehicles(order, wh)
-    pool = [v for v in eligible if not _busy_all_day(v, day)]
+    pool = [
+        v
+        for v in sorted(wh.vehicles, key=lambda v: v.code)
+        if not _busy_all_day(v, day) and any(can_carry(v, ln) for ln in order.lines)
+    ]
     need_kg, need_m3 = order_load(order)
 
     def key(vs: tuple[VehicleCtx, ...]) -> tuple[Decimal, Decimal, tuple[str, ...]]:
@@ -219,45 +318,37 @@ def choose_vehicle_sets(
 
     found: list[tuple[VehicleCtx, ...]] = []
     for size in range(1, len(pool) + 1):
-        fits = sorted(
-            (
-                vs
-                for vs in combinations(pool, size)
-                if sum((v.capacity_kg for v in vs), Decimal(0)) >= need_kg
-                and sum((v.capacity_m3 for v in vs), Decimal(0)) >= need_m3
-            ),
-            key=key,
-        )
+        fits = [
+            vs
+            for vs in sorted(combinations(pool, size), key=key)
+            if sum((v.capacity_kg for v in vs), Decimal(0)) >= need_kg
+            and sum((v.capacity_m3 for v in vs), Decimal(0)) >= need_m3
+            and all(any(can_carry(v, ln) for v in vs) for ln in order.lines)
+            and split_load(order, vs)
+        ]
         found.extend(fits[: max_sets - len(found)])
         if len(found) >= max_sets or (found and size > len(found[0])):
             break
     return tuple(found[:max_sets])
 
 
-def split_load(
-    order: OrderCtx, vehicle_set: tuple[VehicleCtx, ...]
-) -> tuple[tuple[tuple[int, Decimal], ...], ...]:
-    """Chia dòng hàng cho các xe theo tải và thể tích (bước 2d): lần lượt lấp đầy từng xe theo thứ tự
-    dòng; một dòng có thể tách qua nhiều xe (ví dụ 40 pallet chia 2 xe). `line_no` = vị trí dòng (1-based).
-    Lượng làm tròn xuống 0,001 theo `qty_base`. Không xếp hết (giới hạn của cách lấp tham lam hai chiều) →
-    trả `()`; caller thử bộ xe khác hoặc báo NO_TRUCK_FIT.
-    """
+_MAX_ORDERINGS = 720  # tối đa 6! hoán vị xe
+
+
+def _greedy(
+    order: OrderCtx, vehicles: tuple[VehicleCtx, ...], line_order: list[int]
+) -> list[tuple[tuple[int, Decimal], ...]] | None:
     remaining = [ln.qty_base for ln in order.lines]
     loads: list[tuple[tuple[int, Decimal], ...]] = []
-    for idx, vehicle in enumerate(vehicle_set):
-        last = idx == len(vehicle_set) - 1
+    for vehicle in vehicles:
         kg_left, m3_left = vehicle.capacity_kg, vehicle.capacity_m3
         parts: list[tuple[int, Decimal]] = []
-        for i, ln in enumerate(order.lines):
-            qty = remaining[i]
-            if qty <= 0:
+        for i in line_order:
+            ln, qty = order.lines[i], remaining[i]
+            if qty <= 0 or not can_carry(vehicle, ln):
                 continue
             w, v = ln.product.weight_kg, ln.product.volume_m3
-            fit = min(
-                kg_left / w if w > 0 else qty,
-                m3_left / v if v > 0 else qty,
-                qty,
-            )
+            fit = min(kg_left / w if w > 0 else qty, m3_left / v if v > 0 else qty, qty)
             take = qty if fit >= qty else fit.quantize(_QTY, rounding=ROUND_FLOOR)
             if take <= 0:
                 continue
@@ -265,13 +356,39 @@ def split_load(
             remaining[i] = qty - take
             kg_left -= take * w
             m3_left -= take * v
-        if parts:
-            loads.append(tuple(parts))
-        elif not last:
-            loads.append(())
-    if any(q > 0 for q in remaining) or len(loads) != len(vehicle_set) or not all(loads):
-        return ()
-    return tuple(loads)
+        if not parts:
+            return None  # xe thừa trong bộ → bộ không tối giản
+        loads.append(tuple(sorted(parts)))
+    return loads if all(q <= 0 for q in remaining) else None
+
+
+def split_load(
+    order: OrderCtx, vehicle_set: tuple[VehicleCtx, ...]
+) -> tuple[tuple[tuple[int, Decimal], ...], ...]:
+    """Chia dòng hàng cho các xe theo tải, thể tích và **nhóm/năng lực của từng dòng** (bước 2d): một dòng có
+    thể tách qua nhiều xe; `line_no` = vị trí dòng (1-based); làm tròn xuống 0,001.
+
+    Lấp tham lam hai chiều có thể bỏ sót cách xếp hợp lệ, nên thử nhiều thứ tự (hoán vị xe, dòng theo thứ tự
+    gốc / nặng-trên-thể-tích giảm / tăng) trước khi kết luận không xếp được (`()`). Kết quả theo thứ tự xe
+    của `vehicle_set`; mỗi xe phải chở ít nhất một phần.
+    """
+    n = len(order.lines)
+
+    def density(i: int) -> Decimal:
+        p = order.lines[i].product
+        return p.weight_kg / p.volume_m3 if p.volume_m3 > 0 else Decimal(10**9)
+
+    line_orders = [list(range(n)), sorted(range(n), key=density, reverse=True), sorted(range(n), key=density)]
+    for perm in islice(permutations(range(len(vehicle_set))), _MAX_ORDERINGS):
+        ordered = tuple(vehicle_set[i] for i in perm)
+        for line_order in line_orders:
+            loads = _greedy(order, ordered, line_order)
+            if loads is not None:
+                result: list[tuple[tuple[int, Decimal], ...]] = [()] * len(vehicle_set)
+                for pos, idx in enumerate(perm):
+                    result[idx] = loads[pos]
+                return tuple(result)
+    return ()
 
 
 def _load_of(order: OrderCtx, parts: tuple[tuple[int, Decimal], ...]) -> tuple[Decimal, Decimal]:
@@ -284,6 +401,20 @@ def _check(name: CheckNameT, code: str, message: str, **detail: object) -> Check
     return CheckResult(name, code.endswith("_OK"), code, {"message": message, **detail})
 
 
+def place_loading(wh: WarehouseCtx, earliest: datetime, minutes: int) -> datetime | None:
+    """Giờ bắt đầu lên hàng sớm nhất ≥ `earliest` sao cho [t, t+minutes] nằm TRỌN trong một ca kho chính
+    thức có người (`loading_windows`) và t ≤ `cutoff` của ngày đó (bước 2c, 04 mục 6.7). None = không có."""
+    length = timedelta(minutes=minutes)
+    for w_start, w_end in sorted(wh.loading_windows):
+        start = max(earliest, w_start)
+        while start + length <= w_end:
+            if start <= datetime.combine(start.date(), wh.cutoff, tzinfo=start.tzinfo):
+                return start
+            # quá giờ cắt của ngày này: thử phần sau nửa đêm của cùng ca (ca qua đêm)
+            start = datetime.combine(start.date() + timedelta(days=1), time.min, tzinfo=start.tzinfo)
+    return None
+
+
 def plan_delivery(
     order: OrderCtx,
     wh: WarehouseCtx,
@@ -291,124 +422,150 @@ def plan_delivery(
     goods_ready_at: datetime,
     cfg: EngineConfig,
 ) -> tuple[DeliveryOption | None, tuple[CheckResult, ...]]:
-    """Xếp giờ cho một bộ xe (bước 2d–2f, v1.2) và trả các check truck → site_date → safety.
+    """Xếp giờ cho một bộ xe (bước 2c–2f, v1.2; 04 mục 6.7) và trả check truck → site_date → safety.
 
-    Lên hàng lần lượt từ `goods_ready_at` (mỗi xe `loading_min` theo tải của nó); nếu ngày giao muộn hơn
-    ngày lên hàng thì lên hàng ngược từ giờ xuất phát của ngày giao (không chờ qua đêm); xe đụng lịch bận thì
-    dời `loading_start` tới hết khoảng bận (tối đa 10 lần, quá → TRUCK_BUSY). Mọi xe tới CÙNG một ETA
-    (xe lên hàng xong sớm chờ xuất phát), nên chênh lệch tới = 0 ≤ `max_arrival_spread_min`; ETA phương án =
-    xe tới cuối. Mỗi xe một tài xế khác nhau (pick_driver): không ai → NO_DRIVER (truck); chỉ vướng giờ lái /
-    hạn bằng → check safety. Hàm thuần.
+    - Lên hàng lần lượt, không trước `goods_ready_at`; mỗi xe lên hàng trọn trong một **ca kho chính thức có
+      người** và trước `cutoff` (không có → NO_WAREHOUSE_SHIFT, check preparation).
+    - Mọi xe tới CÙNG một ETA (xe xong sớm chờ xuất phát); ETA phương án = xe tới cuối.
+    - Có xe lên hàng trước ngày giao → xếp lại lên hàng muộn nhất (xe cuối xong đúng giờ xuất phát), trong ca
+      kho chính thức, không chờ qua đêm.
+    - Xe đụng lịch bận → dời lên hàng tới hết khoảng bận (tối đa 10 lần, rồi TRUCK_BUSY; hết ngày cho phép
+      sau khi đã dời cũng là TRUCK_BUSY).
+    - Khoảng làm việc của tài xế = [loading_start, trip_end] của xe (gồm chờ, chạy, dỡ, quay về), phải nằm
+      trọn trong ca thực tế của tài xế; ghép tài xế–xe bằng quay lui (assign_drivers).
+    Hàm thuần.
     """
     loads = split_load(order, vehicle_set)
     if not loads:
-        return None, (_check("truck", "NO_TRUCK_FIT", "Load cannot be split over this vehicle set.",
-                             reason="combined_capacity"),)  # fmt: skip
+        reason = (
+            "capability"
+            if any(not any(can_carry(v, ln) for v in vehicle_set) for ln in order.lines)
+            else ("combined_capacity")
+        )
+        return None, (
+            _check("truck", "NO_TRUCK_FIT", "Load cannot be placed on this vehicle set.", reason=reason),
+        )
+    no_shift = (
+        _check("preparation", "NO_WAREHOUSE_SHIFT", "No official staffed warehouse shift for loading."),
+    )
+    if not wh.loading_windows:
+        return None, no_shift
     if wh.route is None:
         return None, (
             _check("truck", "TRUCK_OK", "Vehicles fit the load."),
             _check("site_date", "ROUTE_DATA_UNAVAILABLE", "No route data for this warehouse."),
         )
+
+    def busy(message: str) -> tuple[CheckResult, ...]:
+        return (_check("truck", "TRUCK_BUSY", message, vehicle_codes=[v.code for v in vehicle_set]),)
+
     drive = timedelta(minutes=wh.route.drive_min)
     weights = [_load_of(order, parts) for parts in loads]
-    min_start = [goods_ready_at] * len(vehicle_set)
-    for _attempt in range(MAX_BUSY_SHIFTS + 1):
-        starts: list[datetime] = []
-        ends: list[datetime] = []
-        cursor = goods_ready_at
-        for i, (kg, _) in enumerate(weights):
-            start = max(cursor, min_start[i])
-            end = start + timedelta(
-                minutes=handling_minutes(kg, cfg.loading_base_min, cfg.loading_min_per_ton)
-            )
-            starts.append(start)
-            ends.append(end)
-            cursor = end
-        arrival = place_arrival(order, max(e + drive for e in ends), cfg)
-        if arrival.code != "DATE_OK" or arrival.eta_at is None or arrival.target_date is None:
-            if _attempt > 0:  # đã phải dời vì lịch bận mà không còn ngày hợp lệ → nguyên nhân là xe bận
-                busy = _check(
-                    "truck", "TRUCK_BUSY", "Vehicles stay busy until no delivery day is left.",
-                    vehicle_codes=[v.code for v in vehicle_set],
-                )  # fmt: skip
-                return None, (busy,)
-            return None, (
-                _check("truck", "TRUCK_OK", "Vehicles fit the load."),
-                CheckResult("site_date", False, arrival.code, arrival.detail),
-            )
-        eta = arrival.eta_at
-        if eta.date() > ends[-1].date():
-            # Giao vào ngày sau: không để xe/tài xế "chờ qua đêm" — lên hàng lần lượt NGƯỢC từ giờ xuất phát
-            # trong ngày giao (vẫn sau goods_ready_at và sau mốc dời do lịch bận).
-            cursor = eta - drive
-            for i in reversed(range(len(weights))):
-                minutes = ends[i] - starts[i]
-                start = max(cursor - minutes, min_start[i])
-                starts[i], ends[i] = start, start + minutes
-                cursor = start
-        trip_ends = [
-            eta
-            + timedelta(minutes=handling_minutes(kg, cfg.unloading_base_min, cfg.unloading_min_per_ton))
-            + drive
-            for kg, _ in weights
-        ]
-        clash = next(
-            (i for i, v in enumerate(vehicle_set) if not vehicle_free(v, starts[i], trip_ends[i])), None
-        )
-        if clash is None:
-            break
-        vehicle = vehicle_set[clash]
-        min_start[clash] = max(
-            b_end for b_start, b_end in vehicle.busy if b_start < trip_ends[clash] and starts[clash] < b_end
-        )
-    else:
-        return None, (_check("truck", "TRUCK_BUSY", "Vehicles are busy on this day.",
-                             vehicle_codes=[v.code for v in vehicle_set]),)  # fmt: skip
+    load_min = [handling_minutes(kg, cfg.loading_base_min, cfg.loading_min_per_ton) for kg, _ in weights]
+    Schedule = tuple[list[datetime], list[datetime], ArrivalResult]
 
-    assignments: list[VehicleAssignment] = []
-    remaining_drivers = wh.drivers
-    safety_code: str | None = None
-    for i, vehicle in enumerate(vehicle_set):
-        pool = replace(wh, drivers=remaining_drivers)
-        chosen, problem = pick_driver(pool, vehicle, starts[i], trip_ends[i], cfg)
-        if chosen is None:
-            if problem == "NO_DRIVER":
-                return None, (_check("truck", "NO_DRIVER", "No eligible driver is free for every vehicle.",
-                                     vehicle_code=vehicle.code),)  # fmt: skip
-            safety_code = safety_code or problem
-            continue
-        remaining_drivers = tuple(d for d in remaining_drivers if d.employee_id != chosen.employee_id)
-        kg, m3 = weights[i]
-        assignments.append(
-            VehicleAssignment(
-                seq=i + 1,
-                vehicle_id=vehicle.id,
-                vehicle_code=vehicle.code,
-                capacity_kg=vehicle.capacity_kg,
-                capacity_m3=vehicle.capacity_m3,
-                driver_employee_id=chosen.employee_id,
-                load_kg=kg,
-                load_m3=m3,
-                load_lines=loads[i],
-                loading_start_at=starts[i],
-                depart_at=eta - drive,
-                eta_at=eta,
-                trip_end_at=trip_ends[i],
+    def schedule(anchor: datetime) -> Schedule | tuple[CheckResult, ...]:
+        """Giờ lên hàng/kết thúc chuyến từ mốc `anchor` (≥ goods_ready_at); lỗi → tuple check."""
+        min_start = [goods_ready_at] * len(vehicle_set)
+        shifted = False
+        for attempt in range(MAX_BUSY_SHIFTS + 3):
+            starts: list[datetime] = []
+            cursor = anchor
+            for i in range(len(vehicle_set)):
+                start = place_loading(wh, max(cursor, min_start[i]), load_min[i])
+                if start is None:
+                    return busy("Vehicles stay busy past the staffed shifts.") if shifted else no_shift
+                starts.append(start)
+                cursor = start + timedelta(minutes=load_min[i])
+            ends = [st + timedelta(minutes=m) for st, m in zip(starts, load_min, strict=True)]
+            arrival = place_arrival(order, max(e + drive for e in ends), cfg)
+            if arrival.code != "DATE_OK" or arrival.eta_at is None or arrival.target_date is None:
+                if shifted:
+                    return busy("Vehicles stay busy until no delivery day is left.")
+                return (
+                    _check("truck", "TRUCK_OK", "Vehicles fit the load."),
+                    CheckResult("site_date", False, arrival.code, arrival.detail),
+                )
+            eta = arrival.eta_at
+            if eta.date() > starts[0].date():  # có xe lên hàng trước ngày giao (kể cả do qua giờ cắt)
+                latest = latest_anchor(eta)  # không chờ qua đêm
+                if anchor < latest:
+                    anchor = latest
+                    continue
+            trip_ends = [
+                eta
+                + timedelta(minutes=handling_minutes(kg, cfg.unloading_base_min, cfg.unloading_min_per_ton))
+                + drive
+                for kg, _ in weights
+            ]
+            clash = next(
+                (i for i, v in enumerate(vehicle_set) if not vehicle_free(v, starts[i], trip_ends[i])), None
             )
-        )
+            if clash is None:
+                return starts, trip_ends, arrival
+            if attempt >= MAX_BUSY_SHIFTS:
+                break
+            shifted = True
+            vehicle = vehicle_set[clash]
+            min_start[clash] = max(
+                b_end
+                for b_start, b_end in vehicle.busy
+                if b_start < trip_ends[clash] and starts[clash] < b_end
+            )
+        return busy("Vehicles are busy on this day.")
+
+    def latest_anchor(eta: datetime) -> datetime:
+        """Mốc lên hàng muộn nhất để xe cuối xong đúng giờ xuất phát (vẫn ≥ goods_ready_at)."""
+        return max(goods_ready_at, eta - drive - timedelta(minutes=sum(load_min)))
+
+    result = schedule(goods_ready_at)
+    if not isinstance(result[0], list):
+        return None, result
+    starts, trip_ends, arrival = result
+    drivers, code, reason = assign_drivers(
+        wh.drivers, vehicle_set, list(zip(starts, trip_ends, strict=True)), cfg
+    )
+    if drivers is None and arrival.eta_at is not None and latest_anchor(arrival.eta_at) > starts[0]:
+        # Bước 2c mặc định lên hàng sớm nhất (giữ dự trữ). Nếu thời gian chờ làm khoảng làm việc của tài xế
+        # không vừa ca/giờ, thử lại một lần với lịch lên hàng sát giờ xuất phát trước khi kết luận.
+        retry = schedule(latest_anchor(arrival.eta_at))
+        if isinstance(retry[0], list):
+            r_starts, r_ends, r_arrival = retry
+            r_drivers, r_code, r_reason = assign_drivers(
+                wh.drivers, vehicle_set, list(zip(r_starts, r_ends, strict=True)), cfg
+            )
+            if r_drivers is not None:
+                starts, trip_ends, arrival, drivers = r_starts, r_ends, r_arrival, r_drivers
+    assert arrival.eta_at is not None and arrival.target_date is not None
+    eta = arrival.eta_at
     truck = _check("truck", "TRUCK_OK", f"{len(vehicle_set)} vehicle(s) fit the load.")
     site = CheckResult("site_date", True, "DATE_OK", arrival.detail)
-    if safety_code is not None:
+    if drivers is None:
+        if code == "NO_DRIVER":
+            return None, (_check("truck", "NO_DRIVER", "No eligible scheduled driver for every vehicle.",
+                                 reason=reason),)  # fmt: skip
         return None, (
             truck,
             site,
-            _check("safety", safety_code, "Driver hours or licence do not allow this trip."),
+            _check("safety", code, "Driver shift, hours or licence do not allow this trip."),
         )
-    spread = max(a.eta_at for a in assignments) - min(a.eta_at for a in assignments)
-    if spread > timedelta(minutes=cfg.max_arrival_spread_min):  # bất biến; cùng ETA nên không xảy ra
-        return None, (
-            truck,
-            _check("site_date", "OUTSIDE_RECEIVING_HOURS", "Vehicles would not arrive together."),
+    assignments = tuple(
+        VehicleAssignment(
+            seq=i + 1,
+            vehicle_id=vehicle.id,
+            vehicle_code=vehicle.code,
+            capacity_kg=vehicle.capacity_kg,
+            capacity_m3=vehicle.capacity_m3,
+            driver_employee_id=drivers[i].employee_id,
+            load_kg=weights[i][0],
+            load_m3=weights[i][1],
+            load_lines=loads[i],
+            loading_start_at=starts[i],
+            depart_at=eta - drive,
+            eta_at=eta,
+            trip_end_at=trip_ends[i],
         )
-    option = DeliveryOption(tuple(assignments), arrival.target_date, planning_reserve_min(order, eta, cfg))
+        for i, vehicle in enumerate(vehicle_set)
+    )
+    option = DeliveryOption(assignments, arrival.target_date, planning_reserve_min(order, eta, cfg))
     return option, (truck, site, _check("safety", "SAFETY_OK", "Drivers and loads are within limits."))

@@ -136,6 +136,9 @@ class DriverCtx:
     available_days: frozenset[date]
     booked_hours_by_day: dict[date, Decimal]
     busy: tuple[tuple[datetime, datetime], ...]
+    # Ca làm việc THỰC TẾ từ lịch chính thức (Q12, 04 mục 6.7), đã trừ giờ nghỉ, có thể qua nửa đêm.
+    # Rỗng = chưa có lịch → tài xế không dùng được (không mặc định 24/7).
+    shifts: tuple[tuple[datetime, datetime], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -160,6 +163,8 @@ class WarehouseCtx:
     vehicles: tuple[VehicleCtx, ...]
     drivers: tuple[DriverCtx, ...]
     route: RouteInfo | None
+    # Ca kho chính thức có ít nhất một người tính công suất (Q12, 04 mục 6.7). Rỗng → không lên hàng được.
+    loading_windows: tuple[tuple[datetime, datetime], ...] = ()
 
 
 @dataclass(frozen=True)
