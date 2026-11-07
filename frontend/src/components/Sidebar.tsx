@@ -100,7 +100,7 @@ export function Sidebar({ className }: SidebarProps) {
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-pine px-6 py-4">
-        <p className="text-body font-semibold text-surface">{user.name}</p>
+        <p className="text-body font-semibold text-surface">{user.name ?? "—"}</p>
         <p className="text-caption text-surface">{roleLabel(user)}</p>
         {email && <p className="font-mono text-caption text-surface">{email}</p>}
         <button

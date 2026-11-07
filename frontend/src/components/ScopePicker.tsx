@@ -30,7 +30,7 @@ export function ScopePicker() {
     <div className="flex flex-col gap-3 px-6">
       <div>
         <span className="font-mono text-overline uppercase text-apricot">Market</span>
-        <p className="font-mono text-body text-surface">{user.market}</p>
+        <p className="font-mono text-body text-surface">{user.market ?? "—"}</p>
       </div>
 
       {warehouses.length === 1 && (
