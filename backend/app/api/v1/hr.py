@@ -31,6 +31,94 @@ class PersonRef(BaseModel):
     name: str
 
 
+class PositionRef(BaseModel):
+    code: str
+    name: str
+
+
+class AssignmentRef(BaseModel):
+    location_id: int
+    location_code: str
+    location_name: str
+    start_date: str
+
+
+class AssignmentHistoryItem(BaseModel):
+    location_id: int
+    location_code: str
+    start_date: str
+    end_date: str | None
+
+
+class WarehouseStaffOut(BaseModel):
+    role: str
+    counts_in_capacity: bool
+
+
+class DriverStaffOut(BaseModel):
+    licence_class: str
+    licence_expires_on: str
+    home_warehouse_id: int
+    adr: bool
+
+
+class SalesStaffOut(BaseModel):
+    role: str
+
+
+class DispatcherStaffOut(BaseModel):
+    can_send_delay_notice: bool
+
+
+class CsStaffOut(BaseModel):
+    team: str | None
+
+
+class EmployeeOut(BaseModel):
+    """06 mục 13.1. Trường không hiển thị cho vai trò bị BỎ khỏi phản hồi (không phải null).
+
+    Mọi vai trò: id, first_name, last_name, position, assignment. Dispatcher: + driver_staff.
+    Warehouse: + warehouse_staff. Admin: mọi trường; chi tiết thêm weekly_hours, reports_to_employee_id,
+    assignment_history.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 55, "first_name": "Anna", "last_name": "Lind",
+                    "position": {"code": "DRIVER", "name": "Driver"},
+                    "assignment": {"location_id": 7, "location_code": "STO", "location_name": "Stockholm DC",
+                                   "start_date": "2025-03-01"},
+                    "driver_staff": {"licence_class": "C", "licence_expires_on": "2027-01-31",
+                                     "home_warehouse_id": 7, "adr": False},
+                }
+            ]
+        }
+    )  # fmt: skip
+
+    id: int
+    first_name: str
+    last_name: str
+    position: PositionRef
+    assignment: AssignmentRef | None
+    warehouse_staff: WarehouseStaffOut | None = None
+    sales_staff: SalesStaffOut | None = None
+    dispatcher_staff: DispatcherStaffOut | None = None
+    driver_staff: DriverStaffOut | None = None
+    cs_staff: CsStaffOut | None = None
+    employee_no: str | None = None
+    status: str | None = None
+    employment_type: str | None = None
+    hire_date: str | None = None
+    end_date: str | None = None
+    work_email: str | None = None
+    work_phone: str | None = None
+    weekly_hours: float | None = None
+    reports_to_employee_id: int | None = None
+    assignment_history: list[AssignmentHistoryItem] | None = None
+
+
 class LocationManagers(BaseModel):
     primary: PersonRef | None
     deputy: PersonRef | None
@@ -66,10 +154,36 @@ class LocationOut(BaseModel):
     managers: LocationManagers
 
 
-@router.get("/employees")
-async def list_employees() -> dict[str, object]:
-    """GET /employees — admin; R: dispatcher, warehouse (kho mình)."""
-    raise NotImplementedError
+@router.get(
+    "/employees", response_model=Page[EmployeeOut], response_model_exclude_unset=True, responses=_READ_ERRORS
+)
+async def list_employees(
+    user: AuthUser,
+    db: DbSession,
+    position_code: str | None = None,
+    location_id: int | None = None,
+    status: Annotated[str | None, Query(description="active | on_leave | terminated")] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    sort: SortParam = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> Page[EmployeeOut]:
+    """GET /employees — admin; dispatcher (market); warehouse (kho mình) — 06 mục 13.1."""
+    scope = await resolve_hr_scope(db, user)
+    items, total = await hr_read_service.list_employees(
+        db,
+        scope,
+        position_code=position_code,
+        location_id=location_id,
+        status=status,
+        q=q,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+    return Page[EmployeeOut](
+        items=[EmployeeOut.model_validate(i) for i in items], page=page, page_size=page_size, total=total
+    )
 
 
 @router.post("/employees")
@@ -78,10 +192,16 @@ async def create_employee() -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/employees/{employee_id}")
-async def get_employee(employee_id: int) -> dict[str, object]:
-    """GET /employees/{employee_id} — Theo phạm vi."""
-    raise NotImplementedError
+@router.get(
+    "/employees/{employee_id}",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_READ_ERRORS,
+)
+async def get_employee(employee_id: int, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """GET /employees/{employee_id} — theo phạm vi; ngoài phạm vi → 404."""
+    scope = await resolve_hr_scope(db, user)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 
 @router.post("/employees/{employee_id}/assignments")
