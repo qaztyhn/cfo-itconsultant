@@ -514,12 +514,20 @@ CREATE TABLE ops.order_routing (
   reason_code text NOT NULL CHECK (reason_code IN ('all_confirmed','unmapped_sku','manual_started')),
   unmapped_skus text[] NOT NULL DEFAULT '{}',
   decided_at timestamptz NOT NULL, decided_source_version int NOT NULL,
-  decided_by_user_id bigint REFERENCES ref.app_user(id),
+  decided_by_user_id bigint NOT NULL REFERENCES ref.app_user(id),            -- 0011: không có quyết định hệ thống
+  decided_by_role text NOT NULL CHECK (decided_by_role IN ('sales','dispatcher')),   -- 0011 (DEC-ROUTING-002)
+  reason_text text,                                                          -- 0011: bắt buộc khi manual_started
   acknowledged_by_user_id bigint REFERENCES ref.app_user(id), acknowledged_at timestamptz,
   PRIMARY KEY (market_id, external_ref),
   CONSTRAINT ck_routing_reason CHECK ((route = 'cfo') = (reason_code = 'all_confirmed')),
-  CONSTRAINT ck_routing_ack CHECK ((acknowledged_by_user_id IS NULL) = (acknowledged_at IS NULL))   -- 0010
+  CONSTRAINT ck_routing_ack CHECK ((acknowledged_by_user_id IS NULL) = (acknowledged_at IS NULL)),  -- 0010
+  CONSTRAINT ck_routing_manual_reason CHECK (                                                       -- 0011
+    reason_code <> 'manual_started' OR (reason_text IS NOT NULL AND btrim(reason_text) <> ''))
 );
+-- 0011 / DEC-ROUTING-002: polling chỉ đồng bộ dữ liệu nguồn, KHÔNG ghi bảng này. Chỉ Sales "Sync & check routing" hoặc
+-- Dispatcher kiểm tra được ủy quyền mới ghi, trên dữ liệu nguồn mới nhất và trạng thái mapping lúc đó. Đã ghi `cfo` mà
+-- Sales báo đã điều phối tay → KHÔNG đổi luồng; ghi ROUTING_MANUAL_CONFLICT_ESCALATED + alert ROUTING_MANUAL_CONFLICT
+-- cho Dispatcher.
 -- 0010: trigger ops.trg_guard_order_routing (BEFORE UPDATE OR DELETE) — quyết định BẤT BIẾN: không đổi khóa, route,
 -- reason_code, unmapped_skus, decided_*; không DELETE; chỉ ghi MỘT LẦN cặp acknowledged_by_user_id/acknowledged_at.
 CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khách đồng ý [S][C]
@@ -598,6 +606,7 @@ CREATE TABLE ops.alert (
   type text NOT NULL,                            -- RISK_ORANGE, PREDICTED_LATE, OVERDUE, GPS_LOST, STALE_DATA, EXCEPTION,
                                                  -- MAPPING_BLOCK, SYNC_FAILED, ORDER_CHANGED_AFTER_APPROVAL, HOLD_EXPIRING,
                                                  -- PLAN_INVALIDATED, REPLAN_SUGGESTED (v1.2: details.run_id của phương án gợi ý)
+                                                 -- ROUTING_MANUAL_CONFLICT (DEC-ROUTING-002: đơn cfo bị báo đã điều phối tay)
   message text NOT NULL, target_roles ref.user_role[] NOT NULL,
   dedupe_key text NOT NULL,                      -- v1.1: chỉ duy nhất khi cảnh báo còn mở (xem chỉ mục dưới)
   acknowledged_by bigint REFERENCES hr.employee(id), acknowledged_at timestamptz, resolved_at timestamptz
@@ -912,7 +921,7 @@ Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bư�
 
 ## 11. Thứ tự migration và seed
 
-1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role). → 9. `0009_schedule_routing_driver_rules` (lịch ca chính thức, nhật ký làm việc tài xế, phân luồng đơn, phạm vi 561/2006 của xe — Q12/Q12b/Q14) → 10. `0010_order_routing_immutable` (quyết định phân luồng bất biến, xác nhận bàn giao ghi một lần).
+1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role). → 9. `0009_schedule_routing_driver_rules` (lịch ca chính thức, nhật ký làm việc tài xế, phân luồng đơn, phạm vi 561/2006 của xe — Q12/Q12b/Q14) → 10. `0010_order_routing_immutable` (quyết định phân luồng bất biến, xác nhận bàn giao ghi một lần) → 11. `0011_routing_decided_by_check` (quyết định chỉ do Sales check/Dispatcher, lý do bắt buộc cho manual_started).
 Seed dữ liệu mẫu (script `seed/generate_data.py`, cố định random seed): xem tài liệu 08 mục "Dữ liệu seed".
 
 **Định mức mẫu cho `ref.handling_group` (ví dụ minh họa, IT thay bằng số thật) [T][A]:**

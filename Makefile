@@ -54,3 +54,18 @@ seed-m0:
 
 seed-m0-docker:
 	$(COMPOSE) run --rm --no-deps cfo-api python -m app.seed.m0_accounts
+
+# Reference data only; full scenario seed remains the separate `seed` target.
+.PHONY: seed-reference seed-reference-docker
+seed-reference:
+	cd backend && $(PYTHON) -m app.seed.reference_demo
+
+seed-reference-docker:
+	$(COMPOSE) run --rm --no-deps cfo-api python -m app.seed.reference_demo
+
+.PHONY: source-seed-reference source-seed-reference-docker
+source-seed-reference:
+	cd source_system && $(SOURCE_PYTHON) -m app.seed_reference
+
+source-seed-reference-docker:
+	$(COMPOSE) run --rm --no-deps source-se python -m app.seed_reference

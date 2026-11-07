@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 Phụ lục A — `routing.fallback_retry_min`] — 2026-11-07 — review PR #65, chờ duyệt
+
+- Thêm khóa cấu hình `MarketConfig.routing.fallback_retry_min` (mặc định 60, phải > 0): fallback ORS không còn được lưu và dùng vô thời hạn; quá hạn thì thử ORS lại. Không đổi DDL/route/mã lỗi; `route_matrix.computed_at` sẵn có.
+- Test PostgreSQL: `backend/tests/integration/test_dev2_route_cache.py`.
+
+
 ## [Approved decision register] — 2026-11-07 — docs-only
 
 - Tập trung quyết định đã duyệt ở `docs/ASSUMPTIONS.md`: ASM-001/002/003/005/006/007; Sales confirmation, Q12/Q13/Q14 và giờ làm/nghỉ của kho/tài xế trong MVP Bắc Âu.
@@ -26,6 +32,16 @@
 
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
+
+## [DEC-ROUTING-002 — 05/06 + migration 0011] — 2026-11-07 — quyết định của chủ dự án, chờ review PR
+
+- **Quyết định:** polling chỉ đồng bộ dữ liệu nguồn. Quyết định `cfo`/`legacy` chỉ ghi khi Sales Sync & check hoặc Dispatcher kiểm tra được ủy quyền, trên dữ liệu nguồn và mapping lúc đó. Đã ghi không tự đổi. Điều phối tay trước khi kiểm là ngoại lệ có lý do + audit; đơn đã `cfo` thì không đổi sang `legacy` mà chuyển Dispatcher. Thay thế phần "polling được quyết định" của Q14/DEC-ROUTING-001.
+- **`05`:** `ops.order_routing.decided_by_user_id` NOT NULL, `decided_by_role` (`sales|dispatcher`) NOT NULL, `reason_text`, `ck_routing_manual_reason`. Trigger bất biến bao cả hai cột mới. Thêm loại alert `ROUTING_MANUAL_CONFLICT`. Migration `0011` thất bại nếu bảng đã có dữ liệu cũ (fail closed).
+- **`06` §5.0.2:**
+  - `sync-now` trả lại quyết định đã lưu (`already_decided`);
+  - `routing-ack` `manual_started` có ba nhánh: chưa quyết định → `legacy/manual_started`; đã `legacy` → chỉ audit; đã `cfo` → `409 RESOURCE_CONFLICT` + escalation.
+- **`04` §10:** mã hành động `ROUTING_DECIDED`, `ROUTING_LEGACY_ACKNOWLEDGED`, `ROUTING_MANUAL_START_RECORDED`, `ROUTING_MANUAL_CONFLICT_ESCALATED`.
+- Service/API (`sync-now`, `routing-ack`, escalation) và ingestion **chưa code**. Dev 2 làm phần ingestion/sync-now, Dev 1 làm guard/routing-ack.
 
 ## [05 — migration 0010] — 2026-11-07 — quyết định phân luồng bất biến (Q14), chờ review
 
