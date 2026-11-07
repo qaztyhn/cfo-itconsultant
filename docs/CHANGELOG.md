@@ -3,6 +3,22 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [06 v1.4] — 2026-11-07 — **đã duyệt** (Q5–Q11, PR qaztyhn/cfo-itconsultant#37; chủ dự án trả lời trong phiên làm việc 2026-11-07)
+
+Quyết định: Q5 = A, Q6 = A, Q8 = A, Q9 = A, Q10 = A, Q11 = B. Q7 được chốt lại theo nguyên tắc "ưu tiên đơn đặt trước, linh hoạt chèn đơn giao sớm, nhưng mọi đơn phải đúng hạn đã cam kết", khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5.
+
+### Thêm
+- `06` mục 5.2: phạm vi đơn theo vai trò (warehouse qua kế hoạch chưa superseded hoặc chuyến từ kho mình; sales theo cửa hàng gốc; driver theo chuyến mình; viewer `403`; ngoài phạm vi `404`).
+- `06` mục 5.3: bảng trường của `GET /orders/{id}` theo vai trò; trường bị cấm thì bỏ khỏi phản hồi; không có GPS.
+- `06` mục 5.4: phần tử `GET /orders`; **sắp mặc định `submitted_at ASC, id ASC`** (thay cho `promise_end` trong đề xuất ban đầu); bucket của `/orders/counts`.
+- `06` mục 5.5: timeline; CS không thấy quyết định nội bộ, lần chạy kế hoạch, điểm số, GPS.
+- `06` mục 12.2: schema đọc `/mapping/tasks*`, `/products/local`; phản hồi confirm/reject.
+- `06` mục 13.2: schema điểm danh và công suất; quy tắc chia ca khi sinh điểm danh `planned` (Q11 = B). Người vượt quá tổng `expected_staff` được xếp vào ca cuối (chi tiết Dev 1 bổ sung, cần nhóm xác nhận khi review).
+
+### Ảnh hưởng
+- Mã: route M2-C (mapping), M2-D (orders, counts), M2-E (timeline), M3 (điểm danh, công suất, `attendance_gen`). Không đổi `05`.
+- Thứ tự thực thi không theo FIFO cứng: bảo vệ đơn cũ bằng `committed` (đã duyệt); đơn cũ chưa duyệt tranh nguồn lực thì Sales chuyển Dispatcher (`06` mục 6.3a, `09` bất biến 26–27).
+
 ## [Sales confirmation B — Product decision] — 2026-11-07 — docs-only, chưa triển khai
 
 - Giữ POS/WMS/ERP, database riêng và read-only adapter; Sales yêu cầu CFO đọc đơn ngay qua `sync-now`, polling 5 phút dự phòng.

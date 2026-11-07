@@ -1,5 +1,7 @@
 # 06 — API Specification (CFO MVP)
 
+> **Phiên bản 1.4 (07/11/2026):** phạm vi đơn theo vai trò (mục 5.2), trường hiển thị theo vai trò của chi tiết đơn (5.3), danh sách đơn sắp mặc định theo thứ tự đặt `submitted_at, id` và bucket của `/orders/counts` (5.4), timeline (5.5), schema đọc ánh xạ SKU và phản hồi confirm/reject (12.2), điểm danh/công suất và cách sinh điểm danh nhiều ca (13.2). Chủ dự án chốt Q5–Q11 trong PR qaztyhn/cfo-itconsultant#37, khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5.
+>
 > **Phiên bản 1.3 (07/11/2026):** API đọc nhân sự, địa điểm, xe (mục 13.1): schema phản hồi, phạm vi theo vai trò và địa điểm, kiểm theo ngày hiệu lực, hiển thị trường theo vai trò; quyền đọc `/vehicles` theo ma trận mục 3. Duyệt ở PR qaztyhn/cfo-itconsultant#12 (Q1–Q4).
 >
 > **Phiên bản 1.2 (06/11/2026):** phương án có **nhiều xe** (`vehicles[]`); bỏ `MANUAL_PLANNING`, `result = manual`, `external-handoff`; kế hoạch tay nhận nhiều xe; gợi ý lập lại tự động (mục 6.6); sự kiện `PREP_PAUSED`/`PREP_RESUMED` và sự kiện theo từng xe (`trip_id`); doanh thu thành nhóm endpoint `/revenue/*` với `kpi_scopes` (mục 14.1); giữ chỗ chỉ khóa khi duyệt.
@@ -107,9 +109,9 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
 | Phương thức | Đường dẫn | Vai trò | Ghi chú |
 |---|---|---|---|
-| GET | `/orders` | theo ma trận | Lọc: `status`, `risk_color`, `committed_date_from/to`, `warehouse_id`, `store_id`, `date_mode`, `q`, `blocked` |
-| GET | `/orders/{id}` | theo ma trận | Chi tiết (mục 5.1) |
-| GET | `/orders/{id}/timeline` | dispatcher, warehouse, CS, admin | Gộp sự kiện, quyết định, thông báo, ETA theo thời gian |
+| GET | `/orders` | theo phạm vi mục 5.2 | Lọc: `status`, `risk_color`, `committed_date_from/to`, `warehouse_id`, `store_id`, `date_mode`, `q`, `blocked`; phần tử và sắp xếp ở mục 5.4 |
+| GET | `/orders/{id}` | theo phạm vi mục 5.2 | Chi tiết (mục 5.1), trường theo vai trò (mục 5.3) |
+| GET | `/orders/{id}/timeline` | dispatcher, warehouse, CS, admin | Gộp sự kiện, quyết định, thông báo, ETA theo thời gian (mục 5.5) |
 | GET | `/orders/{id}/eta-forecasts` | dispatcher, warehouse, CS | Các phiên bản ETA và rủi ro |
 | POST | `/orders/{id}/replan` | dispatcher | `{ "reason_code": "customer_change", "reason_text": "…" }`. Từ `APPROVED` hoặc `FAILED`. Một transaction: kế hoạch cũ → `superseded`, giữ chỗ → `released`, `trip_stop`/`delivery_trip` chưa xong → `cancelled`, xóa `approved_plan_id`/`committed_date`/`promise_*`, đơn → `SUBMITTED`, ghi `ORDER_REPLAN` (trước/sau) |
 | POST | `/orders/{id}/cancel` | dispatcher | `{ "reason_text": "…" }` (bắt buộc), chỉ trước `DISPATCHED`; đóng kế hoạch như `replan`; ghi `ORDER_CANCELLED` |
@@ -136,7 +138,95 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
   "risk": null, "version": 1, "submitted_at": "2026-11-05T07:12:00Z"
 }
 ```
-`sales` (cửa hàng) và `customer_service` nhận bản rút gọn (không có `manual`, giá vốn, nhật ký quyết định). `driver` chỉ nhận địa chỉ, liên hệ, hàng, yêu cầu đặc biệt, cửa sổ nhận hàng.
+`sales` (cửa hàng), `customer_service` và `driver` nhận bản rút gọn theo mục 5.3.
+
+### 5.2 Phạm vi đơn theo vai trò (v1.4, Q5)
+
+Kiểm ở máy chủ cho `/orders`, `/orders/{id}`, `/orders/{id}/timeline`, `/orders/counts`. Vai trò không có quyền → `403 FORBIDDEN`; đơn tồn tại nhưng ngoài phạm vi → `404 NOT_FOUND`. Bộ lọc `warehouse_id`/`store_id` ngoài phạm vi → danh sách rỗng. "Hôm nay" và `location_ids` tính theo múi giờ market.
+
+| Vai trò | Thấy đơn khi |
+|---|---|
+| admin | Đơn thuộc market của mình; tài khoản admin không gắn nhân viên thấy mọi market |
+| dispatcher | `market_id` = market của nhân viên |
+| warehouse | Có `fulfilment_plan` với trạng thái `proposed`/`approved`/`manual` và `warehouse_id` thuộc `location_ids`, **hoặc** có `delivery_trip` xuất từ kho đó |
+| sales | `origin_store_id` thuộc `location_ids` (xem; quyền lập kế hoạch/duyệt của Sales theo mục 6.3a) |
+| driver | Có `trip_stop` (không `cancelled`) trên `delivery_trip` có `driver_employee_id` = mình |
+| customer_service | `market_id` = market của nhân viên |
+| viewer | `403` |
+
+Đơn `SUBMITTED` / `BLOCKED_UNMAPPED_SKU` chưa có kế hoạch: chỉ admin, dispatcher, CS và Sales của cửa hàng gốc thấy.
+
+### 5.3 Trường của `GET /orders/{id}` theo vai trò (v1.4, Q6)
+
+Trường/khối không được phép bị **bỏ hẳn** khỏi phản hồi (không trả `null`). Không vai trò nào nhận GPS ở endpoint này.
+
+| Khối | admin, dispatcher, warehouse | sales, customer_service | driver |
+|---|---|---|---|
+| `id`, `order_no`, `status`, `market`, `version`, `submitted_at` | ✓ | ✓ | ✓ |
+| `external_ref` | ✓ | ✓ | — |
+| `customer` | ✓ | ✓ | chỉ `name` |
+| `contact`, `delivery` | ✓ | ✓ | ✓ |
+| `date_request` | ✓ | ✓ | chỉ `window` |
+| `committed` | ✓ | ✓ | ✓ |
+| `origin_store`, `sales` | ✓ | ✓ | — |
+| `lines[]` | ✓ | ✓ không có `handling_group`, `flags` | chỉ `line_no`, `name`, `qty_sale`, `sale_unit` |
+| `lines[].unit_price`, `line_total`, `totals.amount`, `totals.currency` | ✓ | ✓ | — |
+| `totals.weight_kg`, `totals.volume_m3` | ✓ | — | ✓ |
+| `block_reason` | ✓ | ✓ | — |
+| `approved_plan_id`, `latest_run_id` | ✓ | — | — |
+| `risk` | đầy đủ | `{status, color, forecast_eta}` | — |
+
+`risk` = bản `ops.eta_forecast` mới nhất: `{status, color, forecast_eta, planned_eta, commitment_deadline, slack_min, consumption_pct}`; `null` nếu chưa có.
+
+### 5.4 `GET /orders` và `GET /orders/counts` (v1.4, Q7)
+
+Phần tử danh sách (trường bị cấm theo mục 5.3 thì bỏ):
+```json
+{ "id": 4021, "order_no": "SE-2026-004021", "status": "PLANNED", "customer_name": "Nordbygg AB",
+  "site": "Göteborg", "warehouse": { "id": 7, "code": "STO" }, "origin_store": { "id": 21, "code": "GBG-V" },
+  "date_request": { "mode": "latest", "date_from": null, "date_to": "2026-11-18" },
+  "committed_date": null, "promise_end": null, "risk_color": null, "block_reason": null,
+  "total_amount": "48300.00", "currency": "SEK", "submitted_at": "2026-11-05T07:12:00Z" }
+```
+- `site` = phần sau dấu phẩy cuối cùng của `delivery_address` (cột CUSTOMER · SITE của `03`).
+- `warehouse` = kho của kế hoạch đã duyệt; nếu chưa có thì kho của kế hoạch `proposed` rank 1; nếu không có thì `null`.
+- `blocked=true` ⇔ `status = BLOCKED_UNMAPPED_SKU`.
+- `q` khớp `order_no`, `external_ref` hoặc tên khách, không phân biệt hoa thường.
+- **Sắp xếp mặc định: thứ tự đặt hàng** `submitted_at ASC, id ASC` (đơn đặt trước hiện trước; BR-ORD-05, `09` bất biến 27). Có thể chọn `?sort=` theo `submitted_at`, `date_to` (ngày yêu cầu), `promise_end` (`NULL` xếp cuối), `committed_date`, `order_no`, `status`. Thứ tự hiển thị **không** ép thứ tự thực thi: đơn đặt sau cần giao sớm vẫn có thể được chuẩn bị/giao trước nếu không lấn nguồn lực `committed` của đơn trước (mục 6.3a).
+
+Bucket của `/orders/counts` (Phụ lục A), theo phạm vi mục 5.2; "hôm nay" theo múi giờ market:
+
+| Bucket | Trạng thái / điều kiện |
+|---|---|
+| `all` | Mọi đơn trong phạm vi, trừ `DELIVERED`/`CANCELLED` đã đóng trước hôm nay |
+| `needs_plan` | `SUBMITTED`, `BLOCKED_UNMAPPED_SKU` |
+| `awaiting_approval` | `PLANNED` |
+| `no_feasible_date` | `NO_FEASIBLE_DATE` |
+| `in_execution` | `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED` |
+| `replan_suggested` | Có `planning_run.kind = 'replan_suggestion'` chưa được duyệt hoặc giữ nguyên |
+| `delivered_today` | `DELIVERED`, `delivered_at` hôm nay |
+| `nav.order_queue` | `needs_plan` + `awaiting_approval` + `no_feasible_date` (dispatcher; vai trò khác `0`) |
+| `nav.exceptions` | Alert mở loại `EXCEPTION` / `REPLAN_SUGGESTED` trong phạm vi |
+| `nav.tracking_risk` | Đơn `in_execution` có `risk_color` `orange`/`red` |
+
+### 5.5 `GET /orders/{id}/timeline` (v1.4, Q9)
+
+Không phân trang; sắp theo `at` tăng dần, cùng thời điểm theo thứ tự `kind` trong bảng.
+```json
+{ "items": [ { "at": "2026-11-05T07:12:00Z", "kind": "order_submitted", "title": "Order submitted",
+               "detail": {}, "actor": null } ] }
+```
+
+| `kind` | Nguồn | admin, dispatcher, warehouse | customer_service |
+|---|---|---|---|
+| `order_submitted` | `customer_order.submitted_at` | ✓ | ✓ |
+| `planning_run` | `plan.planning_run` (`kind`, kết quả) | ✓ | — |
+| `decision` | `audit.decision_log` (`action`, `reason_text`, người thực hiện) | ✓ | — (US-ORD-03 AC2) |
+| `milestone` | `ops.milestone_event` (`type`, xe) | ✓ | ✓ không tọa độ |
+| `notification` | `ops.notification` (`type`, `channel`, `status`) | ✓ | ✓ |
+| `eta` | `ops.eta_forecast` (`version`, `forecast_eta`, `risk_status`, `risk_color`) | ✓ | `forecast_eta`, `risk_status` |
+
+Không có điểm số, GPS, `snapshot`/`before`/`after` của decision log trong timeline; xem các trường đó qua `/audit/decisions` theo quyền riêng.
 
 ## 6. Lập kế hoạch và duyệt
 
@@ -367,6 +457,25 @@ Thông báo tự động (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) do h
 Kiểm tra: sản phẩm nhóm `N6` không được có cờ `FRAGILE` (đã tính trong định mức) → `422 VALIDATION_ERROR`.
 Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`; các đơn `BLOCKED_UNMAPPED_SKU` chứa SKU này tự được kiểm tra lại và chuyển `SUBMITTED` → lập kế hoạch; `decision_log MAPPING_CONFIRMED`.
 
+### 12.2 Đọc ánh xạ và phản hồi (v1.4, Q8)
+
+Quyền (mục 3): admin **W**; dispatcher, warehouse **R** trong market mình; vai trò khác `403`. Task ngoài market → `404`.
+
+`GET /mapping/tasks?status=&market=&q=` (phân trang; mặc định `status=open`; sắp mặc định `-blocked_order_count,local_sku`). Phần tử:
+```json
+{ "id": 12, "market": "SE", "local_sku": "SE-NEW-77", "name": "…", "category": "…", "gtin": "…",
+  "sale_unit": "pallet", "mapping_status": "pending", "status": "open", "blocked_order_count": 2,
+  "candidates": [ { "global_product_id": 123, "code": "G-000123", "name": "…", "reason": "gtin", "score": 1.0 } ],
+  "resolved_by": null, "resolved_at": null }
+```
+`GET /mapping/tasks/{id}`: cùng schema, thêm `suggested_handling_group` (theo `handling_group_rule`, US-PRD-04 AC2) và `blocked_orders: [{id, order_no}]`. Với warehouse, `blocked_orders` chỉ liệt kê đơn trong phạm vi mục 5.2; `blocked_order_count` vẫn là tổng.
+
+`POST /mapping/tasks/{id}/confirm` → `200 { "task_id", "local_sku", "global_product_id", "mapping_status": "confirmed", "ready_order_ids": [...], "still_blocked_order_ids": [...] }`.
+`POST /mapping/tasks/{id}/reject` → `200 { "task_id", "local_sku", "mapping_status": "rejected" }`.
+Lỗi: `403`; `404`; `422 VALIDATION_ERROR` kèm `details.field`; `422 REASON_REQUIRED`.
+
+`GET /products/local?market=SE&mapping_status=&q=` (phân trang, sắp mặc định `local_sku`): phần tử là các cột của `ref.v_product_local` — `{market, local_sku, name, category, gtin, sale_unit, units_to_base, unit_price, currency, global_product_id, mapping_status}` (US-PRD-05 AC1).
+
 ## 13. Nhân sự, điểm danh, công suất, xe
 
 | Phương thức | Đường dẫn | Vai trò | Mô tả |
@@ -442,6 +551,27 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
   "allowed_groups": [ { "id": 4, "code": "N4" } ], "status": "available" }
 ```
 `allowed_groups: []` = chở được mọi nhóm. Lịch bận ở `GET /vehicles/{id}/availability`.
+
+### 13.2 Điểm danh và công suất (v1.4, Q10–Q11)
+
+`GET /warehouses/{id}/attendance?date=`: warehouse của kho đó, dispatcher và admin trong market; ngoài phạm vi → `404`. Phản hồi của `PUT /warehouses/{id}/attendance` dùng cùng schema:
+```json
+{ "warehouse_id": 1, "date": "2026-11-12",
+  "counts": { "planned": 0, "present": 10, "absent": 2, "leave": 0 },
+  "items": [ { "employee_id": 120, "name": "…", "position": "WAREHOUSE_OPERATOR", "counts_in_capacity": true,
+               "shift": { "id": 4, "start": "07:00", "end": "15:00" }, "status": "present",
+               "on_approved_leave": false } ] }
+```
+
+`GET /warehouses/{id}/capacity?from=&to=`: cùng phạm vi; tối đa 31 ngày (vượt → `422`).
+```json
+{ "warehouse_id": 1, "days": [ { "date": "2026-11-12", "holiday": false,
+    "shifts": [ { "start": "07:00", "end": "15:00", "present": 8, "useful_hours": 7.0 } ],
+    "labour_cap_hours": 50.4, "booked_hours": { "committed": 22.0, "held": 8.0 }, "free_hours": 20.4 } ] }
+```
+`labour_cap_hours` = Σ người có mặt × giờ hữu ích × `delivery_share` (US-WH-02 AC1). Ngày lễ trả `0` (AC3). `booked_hours` gồm giờ của mọi đơn (AC2).
+
+**Sinh điểm danh `planned` (job `attendance_gen`, Q11 = B):** với mỗi ngày trong 14 ngày tới, nhân viên tính công suất có phân công hiệu lực tại kho được chia lần lượt vào các ca mẫu của ngày theo `start_time`, tối đa `expected_staff` mỗi ca, theo thứ tự `employee_no`. Người còn dư vào ca cuối cùng. Dòng đã có không bị ghi đè. Quản lý kho chỉnh lại khi điểm danh.
 
 ## 14. KPI
 

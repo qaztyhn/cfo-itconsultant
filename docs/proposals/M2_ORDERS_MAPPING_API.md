@@ -1,6 +1,8 @@
 # Đề xuất hợp đồng — API đơn hàng và ánh xạ SKU (M2, Dev 1)
 
-> **Trạng thái: ĐỀ XUẤT — chờ nhóm review. Chưa phải hợp đồng.** Không có mã triển khai đi kèm. Khi nhóm chốt,
+> **Trạng thái: ĐÃ CHỐT 2026-11-07 → `06` v1.4** (Q5 A, Q6 A, Q7 sắp theo thứ tự đặt `submitted_at, id`, Q8 A, Q9 A, Q10 A, Q11 B). Hợp đồng chính thức là `06` mục 5.2–5.5, 12.2, 13.2; phần dưới là nội dung đề xuất ban đầu, giữ làm lịch sử.
+>
+> Trạng thái cũ: ĐỀ XUẤT — chờ nhóm review. Không có mã triển khai đi kèm. Khi nhóm chốt,
 > nội dung được đưa vào `06` mục 5 và 12 cùng `CHANGELOG`; mã và test nằm trong cùng PR triển khai (`09` mục 6, 14).
 > Tác giả: Dev 1. Ngày: 2026-11-07.
 > Liên quan: `10` M2 Dev 1 ("API orders, counts, timeline, mapping"), US-PRD-01..05, US-ORD-02/03.
