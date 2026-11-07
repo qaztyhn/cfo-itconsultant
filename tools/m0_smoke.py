@@ -15,9 +15,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,11 +44,77 @@ def wait_for_http(url: str, *, healthy: bool) -> bool:
                     return response.status == 200
                 data = json.load(response)
                 return data.get("status") == "ok" and data.get("db") == "ok"
-        except HTTPError:
-            return False
+        except HTTPError as exc:
+            if exc.code != 503:
+                return False
+            time.sleep(1)
         except (URLError, TimeoutError):
             time.sleep(1)
     return False
+
+
+def check_auth(base: str, password: str, set_active: Callable[[bool], bool]) -> bool:
+    """One login only; never log response bodies containing credentials/tokens."""
+    try:
+        body = json.dumps(
+            {"email": "dispatcher@cfo.demo", "password": password}
+        ).encode()
+        with urlopen(
+            Request(
+                base + "/auth/login",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=10,
+        ) as response:
+            login = json.load(response)
+        if login.get("expires_in") != 28800 or login["user"]["roles"] != ["dispatcher"]:
+            return False
+        if not login["user"].get("location_ids"):
+            return False
+        with urlopen(
+            Request(
+                base + "/auth/me",
+                headers={"Authorization": "Bearer " + login["access_token"]},
+            ),
+            timeout=10,
+        ) as response:
+            if json.load(response) != login["user"]:
+                return False
+        for headers in ({}, {"Authorization": "Bearer invalid"}):
+            try:
+                with urlopen(Request(base + "/auth/me", headers=headers), timeout=10):
+                    return False
+            except HTTPError as exc:
+                error = json.load(exc).get("error", {})
+                if (
+                    exc.code != 401
+                    or error.get("code") != "AUTH_INVALID"
+                    or not error.get("correlation_id")
+                ):
+                    return False
+        if not set_active(False):
+            return False
+        try:
+            try:
+                with urlopen(
+                    Request(
+                        base + "/auth/me",
+                        headers={"Authorization": "Bearer " + login["access_token"]},
+                    ),
+                    timeout=10,
+                ):
+                    return False
+            except HTTPError as exc:
+                if exc.code != 401:
+                    return False
+        finally:
+            restored = set_active(True)
+        if not restored:
+            return False
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return True
 
 
 def main() -> int:
@@ -72,12 +139,15 @@ def main() -> int:
     ):
         env[key] = free_port()
     env.update(
+        PYTHONUTF8="1",
         POSTGRES_PASSWORD=password,
         DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@postgres:5432/cfo",
         SOURCE_SE_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@postgres:5432/source_se",
-        SOURCE_TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@localhost:{env['POSTGRES_PORT']}/source_se",
+        SOURCE_TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@127.0.0.1:{env['POSTGRES_PORT']}/source_test",
         SOURCE_DB_NAME="source_se",
         SOURCE_SCHEMA="src_se",
+        TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@127.0.0.1:{env['POSTGRES_PORT']}/cfo_test",
+        SEED_DEMO_PASSWORD=secrets.token_urlsafe(32),
         JWT_SECRET=secrets.token_urlsafe(32),
         INTERNAL_TICK_KEY=secrets.token_urlsafe(32),
         SOURCE_SE_API_KEY=secrets.token_urlsafe(32),
@@ -127,6 +197,30 @@ def main() -> int:
                 env,
             ):
                 return 1
+            # Pytest migration fixtures reset their schemas. Keep them separate
+            # from the live stack's application databases, even in this tmpfs project.
+            if not run(
+                "create dedicated pytest databases",
+                compose
+                + [
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "cfo",
+                    "-d",
+                    "postgres",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-c",
+                    "CREATE DATABASE cfo_test",
+                    "-c",
+                    "CREATE DATABASE source_test",
+                ],
+                env,
+            ):
+                return 1
             outcomes.append(
                 run(
                     "source schema bootstrap",
@@ -150,10 +244,25 @@ def main() -> int:
                     ROOT / "source_system",
                 )
             )
+            if not run("build CFO API", compose + ["build", "cfo-api"], env):
+                return 1
+            for label, command in (
+                ("CFO migrations", ["alembic", "upgrade", "head"]),
+                ("M0 account seed", ["python", "-m", "app.seed.m0_accounts"]),
+            ):
+                if not run(
+                    label,
+                    compose + ["run", "--rm", "--no-deps", "cfo-api"] + command,
+                    env,
+                ):
+                    return 1
             outcomes.append(
                 run(
                     "start CFO API and web",
-                    compose + ["up", "-d", "--build", "cfo-api", "cfo-web"],
+                    # Dependencies are already healthy and bootstrapped. Do not
+                    # recreate tmpfs PostgreSQL after migrations and seeding.
+                    compose
+                    + ["up", "-d", "--build", "--no-deps", "cfo-api", "cfo-web"],
                     env,
                 )
             )
@@ -171,6 +280,41 @@ def main() -> int:
                 flush=True,
             )
             outcomes.extend([source_ok, cfo_ok, web_ok])
+
+            def set_active(active: bool) -> bool:
+                # This callback only targets the newly seeded, isolated test DB.
+                sql = (
+                    "UPDATE ref.app_user SET is_active="
+                    + ("true" if active else "false")
+                    + " WHERE email='dispatcher@cfo.demo'"
+                )
+                return run(
+                    "restore test account" if active else "disable test account",
+                    compose
+                    + [
+                        "exec",
+                        "-T",
+                        "postgres",
+                        "psql",
+                        "-U",
+                        "cfo",
+                        "-d",
+                        "cfo",
+                        "-v",
+                        "ON_ERROR_STOP=1",
+                        "-c",
+                        sql,
+                    ],
+                    env,
+                )
+
+            auth_ok = check_auth(
+                f"http://localhost:{env['CFO_API_PORT']}/api/v1",
+                env["SEED_DEMO_PASSWORD"],
+                set_active,
+            )
+            print(f"Authentication smoke: {auth_ok}", flush=True)
+            outcomes.append(auth_ok)
             outcomes.append(
                 run(
                     "Harness verify",
@@ -187,6 +331,17 @@ def main() -> int:
             outcomes.append(
                 run("Harness smoke", [sys.executable, "tools/harness.py", "smoke"], env)
             )
+            # Prove that running database tests did not remove the application's
+            # seed accounts or compromise live authentication.
+            auth_preserved = check_auth(
+                f"http://localhost:{env['CFO_API_PORT']}/api/v1",
+                env["SEED_DEMO_PASSWORD"],
+                set_active,
+            )
+            print(
+                f"Authentication preserved after Harness: {auth_preserved}", flush=True
+            )
+            outcomes.append(auth_preserved)
             run("container status", compose + ["ps", "-a"], env)
             return 0 if all(outcomes) else 1
         finally:

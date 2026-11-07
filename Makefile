@@ -47,3 +47,10 @@ migrate-docker:
 seed-docker:
 	$(PYTHON) tools/check_m0_dependencies.py seed
 	$(COMPOSE) run --rm --no-deps cfo-api python -m app.seed.generate_data
+
+.PHONY: seed-m0 seed-m0-docker
+seed-m0:
+	cd backend && $(PYTHON) -m app.seed.m0_accounts
+
+seed-m0-docker:
+	$(COMPOSE) run --rm --no-deps cfo-api python -m app.seed.m0_accounts
