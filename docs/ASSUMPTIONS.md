@@ -30,7 +30,7 @@
 ## ASM-002 — Diễn giải seed tham chiếu `0008_seed_reference`
 
 - **Ngày:** 2026-11-06
-- **Trạng thái:** đề xuất của Dev 1, chờ nhóm xác nhận trong review PR T4. Không sửa `05`.
+- **Trạng thái:** **chủ dự án chấp thuận hướng ASM-002 ngày 07/11/2026** cho MVP. Các chi tiết seed được giữ như danh sách bên dưới; test/migration vẫn phải xác minh trước khi coi là đã chạy.
 - **Bối cảnh:** `05` mục 11 liệt kê dữ liệu cần seed (market SE, N1–N6, special_flag, position, order_transition)
   nhưng không ghi đủ giá trị cho mọi cột.
 - **Diễn giải:**
@@ -61,7 +61,7 @@
 ## ASM-003 — Chi tiết xác thực chưa có trong `06` mục 4
 
 - **Ngày:** 2026-11-06
-- **Trạng thái:** đề xuất của Dev 1, chờ nhóm xác nhận trong review PR T5. Không sửa `06`.
+- **Trạng thái:** **chủ dự án chấp thuận hướng ASM-003 ngày 07/11/2026** cho MVP. Giới hạn login 5 lượt/phút/IP chỉ là giới hạn demo một instance; triển khai nhiều instance phải dùng shared rate limiter, không tuyên bố đây là phòng chống brute-force hoàn chỉnh.
 - **Diễn giải:**
   1. **Giới hạn tần suất login:** tính **mọi lần thử** (đúng hoặc sai) theo **IP client**, cửa sổ trượt 60 giây,
      tối đa 5 lần; lần thứ 6 → `429`. Bộ đếm in-memory theo tiến trình (MVP một instance), dùng đồng hồ đơn điệu
@@ -119,15 +119,13 @@
 ## ASM-006 — Quy tắc ghi nhân sự chưa ghi trong `06` mục 13
 
 - **Ngày:** 2026-11-07
-- **Trạng thái:** đề xuất của Dev 1 (M3-A), chờ nhóm xác nhận trong review PR. Không sửa `05`/`06`.
+- **Trạng thái:** **chủ dự án chấp thuận nguyên tắc ASM-006 ngày 07/11/2026**, có điều chỉnh bắt buộc: thay đổi nhân sự/quản lý/owner phải có audit, sửa dữ liệu quá khứ cần quyền + lý do. Các tình huống biên và schema/API cần test, chưa phải code đã hoàn thành.
 - **Bối cảnh:** `06` mục 13 cho đường dẫn và thân của `POST /employees/{id}/assignments`, `POST …/terminate`,
   `PUT /locations/{id}/managers`, `PATCH /locations/{id}/owner` nhưng không nêu phản hồi và một số quy tắc biên.
 - **Diễn giải:**
   1. **Phản hồi:** trả lại tài nguyên theo schema đọc đã duyệt `06` v1.3 mục 13.1 (`EmployeeOut` / `LocationOut`,
      góc nhìn admin). Thân `PATCH …/owner` là `{ "owner_employee_id": <id> }` (tên cột `05`).
-  2. **Chuyển công tác:** `start_date` ≥ hôm nay (múi giờ market) và ≥ `hire_date`; phải sau ngày bắt đầu của
-     phân công đang mở; phân công cũ đóng `end_date = start_date − 1`. Cùng địa điểm → `422`. Địa điểm khác market
-     hoặc đã đóng → `422`.
+  2. **Chuyển công tác:** thao tác thường cho phép `start_date` ≥ hôm nay (múi giờ market) và ≥ `hire_date`, phải sau ngày bắt đầu phân công đang mở; phân công cũ đóng `end_date = start_date − 1`. Cùng địa điểm, khác market, nơi đã đóng → `422`. **Điều chỉnh hồi tố** chỉ admin có quyền, kèm lý do bắt buộc, ghi log trước/sau trong cùng transaction; không âm thầm ghi đè lịch sử hoặc tạo hai phân công chồng ngày.
   3. **Quản lý không được chuyển hoặc nghỉ khi còn giữ vai trò quản lý** (hiện tại hoặc tương lai) tại địa điểm cũ:
      `422` (`details.field = employee_id`). Admin thay quản lý trước, để không địa điểm nào mất quản lý chính ngầm.
   4. **Nghỉ việc:** `status = terminated`, `employee.end_date` = hôm nay, phân công còn hiệu lực sau hôm nay
@@ -139,24 +137,19 @@
      hiện tại.
   6. **Owner mặc định** (US-EMP-01 AC4): khi đổi quản lý chính, owner trống hoặc đang là quản lý chính cũ → chuyển
      sang quản lý chính mới. Owner do admin gán riêng được giữ.
-  7. Các thay đổi này **không ghi `decision_log`**: `04` mục 10 không có mã hành động cho phân công / quản lý, và
-     thêm mã là thay đổi hợp đồng.
-- **Cần nhóm xác nhận:** các mục 2 (cấm ngày quá khứ), 3, 4 và 7.
+  7. **Bắt buộc ghi lịch sử.** Ghi `audit.decision_log` trong cùng transaction với các thao tác đổi phân công/chuyển công tác (`EMPLOYEE_ASSIGNMENT_CHANGED` đã có trong `04` mục 10), thay quản lý/owner, nghỉ việc và điều chỉnh hồi tố. Phải có `actor`, `before`, `after`, `correlation_id`; điều chỉnh hồi tố bắt buộc có lý do. Đối với các nghiệp vụ chưa có mã action chuẩn (đổi owner/quản lý/nghỉ việc), Dev đề xuất bổ sung mã vào `04`/`06`, test và CHANGELOG trước khi triển khai; **không bỏ audit**.
+- **Đã chốt:** quản lý phải có người thay hợp lệ trước khi chuyển/nghỉ; tài khoản người nghỉ bị khóa và lịch sử không bị xóa; owner admin gán riêng được giữ. **Điều chỉnh hồi tố** được phép cho admin với lý do và log. **Chờ thiết kế kỹ thuật:** action codes còn thiếu, kiểm tra các ràng buộc ngày hiệu lực và test thao tác atomic.
 
 ## ASM-007 — Quy tắc điểm danh chưa ghi trong `06` mục 13
 
 - **Ngày:** 2026-11-07
-- **Trạng thái:** đề xuất của Dev 1 (M3-B), chờ nhóm xác nhận. Không sửa `05`/`06`.
+- **Trạng thái:** **chủ dự án chấp thuận ASM-007 với điều chỉnh Q11 ngày 07/11/2026**. Warehouse Manager là người tạo/sửa lịch làm chính thức của từng người, CFO không được tự xếp/đổi ca dựa theo `expected_staff`. Chỉnh điểm danh/lịch phải ghi lịch sử; sửa ngày quá khứ bắt buộc có quyền và lý do.
 - **Diễn giải** cho `PUT /warehouses/{id}/attendance` (tầng service `hr_service.set_attendance`):
-  1. **Roster** của kho trong ngày là các dòng `hr.attendance` của ngày đó mà nhân viên có phân công hiệu lực tại kho
-     hôm đó và chưa `terminated` (US-WH-01 AC3). Service **không tạo dòng mới**: dòng `planned` do job
-     `attendance_gen` sinh. Nhân viên trong `items` mà không có dòng trong roster → `422` (`details.field = items`).
+  1. **Roster** trong ngày được tạo từ **lịch phân ca chính thức do Warehouse Manager lưu**, sau khi kiểm nhân viên đang được phân công tại kho và chưa nghỉ việc. `hr.attendance` ghi điểm danh thực tế trên các lịch đó. Service không tự tạo lịch mới từ số lượng `expected_staff`; nhân viên không nằm trong lịch chính thức → `422` và yêu cầu quản lý cập nhật lịch trước. 
+     **Schema hiện có chưa tách lịch phân ca cá nhân khỏi attendance**: Dev 1 phải đề xuất bổ sung cấu trúc dữ liệu (vd. `hr.employee_shift_schedule`) và migration trong PR code riêng, không âm thầm biến điểm danh thành nguồn phân ca.
   2. `all_present` đặt mọi dòng của roster **trừ `leave`** thành `present` bằng một câu UPDATE, rồi `items` ghi đè.
      Trạng thái hợp lệ trong `items`: `present`, `absent`, `leave` (`planned` chỉ do job sinh).
-  3. Chỉ vai trò `warehouse` của chính kho đó được ghi (06 mục 13). Admin/dispatcher chỉ đọc → `403`. Kho khác,
-     cửa hàng hoặc id không tồn tại → `404`.
-  4. `ATTENDANCE_CHANGED` ghi mỗi lần lưu: trước/sau là số đếm theo trạng thái, `snapshot.changed_employee_ids` chỉ
-     chứa id (không có tên).
-  5. Không giới hạn ngày (quá khứ / tương lai). Đây là câu hỏi mở cho nhóm.
-- **Câu hỏi mở cho `attendance_gen`** (chưa làm): kho có nhiều ca trong một ngày thì nhân viên được xếp vào ca nào?
-  `05` không có bảng gán nhân viên–ca. Cần nhóm chốt trước khi viết job.
+  3. **Warehouse Manager** có phân công quản lý hợp lệ tại đúng kho lập/sửa lịch phân ca. Điểm danh thực tế do tài khoản warehouse được phép của chính kho đó ghi theo phân quyền hiện hành; admin/dispatcher chỉ đọc điểm danh thường, không được tự phân ca thay Warehouse Manager. Ngoài kho → `404`, không đủ quyền → `403`. Cần chốt rõ guard theo chức danh ở API trước khi code.
+  4. Mỗi lần ghi điểm danh phải có `ATTENDANCE_CHANGED` với before/after, changed employee IDs (không PII). Mỗi lần Warehouse Manager lập/đổi lịch nhân viên phải ghi `SHIFT_CHANGED`, actor, trước/sau, ngày hiệu lực. Mọi ghi log trong **cùng transaction** với thay đổi.
+  5. Lịch phân ca chính thức cho tương lai do Warehouse Manager lập/sửa; điểm danh ghi đúng ngày làm, người được ủy quyền ở kho có thể ghi `present`/`absent`/`leave`. **Sửa dữ liệu quá khứ** chỉ với quyền hợp lệ, lý do bắt buộc và log, không sửa âm thầm. Việc `all_present` chỉ tác động những người có trong lịch ca chính thức, không tự thêm/đổi ca.
+- **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** hiện còn quy tắc Q11=B chia theo `expected_staff`/đẩy dư vào ca cuối; phải sửa/rebase trước khi merge.

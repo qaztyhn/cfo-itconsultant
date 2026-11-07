@@ -283,6 +283,10 @@ Khi kho đích `w` thiếu hàng (mọi kho đều `STOCK_SHORT`): với từng 
 
 Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất; (2) độ tương đồng tên `pg_trgm` ≥ 0,45 cùng `category`; (3) gán nhóm xử lý theo `ref.handling_group_rule` (theo `category_like`, khoảng khối lượng, ưu tiên thấp trước). Lưu vào `mapping_task.candidates`. **Chỉ IT xác nhận**.
 
+### 6.6 Công suất theo lịch Warehouse Manager đã xác nhận (ASM-007/Q11)
+
+Lịch phân ca chính thức cho **từng nhân viên/ngày/ca** do Warehouse Manager tạo/sửa. `shift_template.expected_staff` là mốc tham chiếu, **không phải dữ liệu nhân viên để `attendance_gen` tự chia ca**. `hr.attendance` chỉ ghi thực tế; engine dùng lịch hợp lệ và thông tin điểm danh/nghỉ phép để tính năng lực, và nếu thiếu lịch thì không tự bịa số người có mặt. Thao tác đổi lịch/điểm danh có audit và lý do khi chỉnh hồi tố. Quy tắc dữ liệu/API mục tiêu cần PR migration riêng.
+
 ## 7. Giữ chỗ và duyệt (`ReservationService`, `ApprovalService`)
 
 1. **Đề xuất:** `PlanningService` gọi engine, rồi trong **một transaction**: tạo `planning_run` (+ `input_snapshot`), `fulfilment_plan` (3 phương án) + `plan_vehicle` (các xe của mỗi phương án), `plan.stock_reservation` và `prep_reservation` **một lần cho mỗi (đơn, kho)**, `vehicle_reservation` cho từng xe của từng phương án (**không khóa**, cho phép vượt, quy tắc 8); `hold_expires_at = now + 15 phút`; ghi `decision_log` (`PLAN_PROPOSED`, `RESERVATION_HELD`); chuyển đơn `PLANNED`.
@@ -340,6 +344,8 @@ Reuse PlanningService/ReservationService/ApprovalService; Sales cùng cửa hàn
 - **GPS [C][S]:** chỉ `dispatcher` đọc được `vehicle_position` (kiểm ở API, không trả cho vai trò khác dưới mọi hình thức); khách và CS không bao giờ thấy; cờ `gps_enabled` theo nước và `compliance_record(DPIA)`; PWA hiện thông báo quyền riêng tư (mục đích, ai xem, 30 ngày); bản demo hiện biểu ngữ "chưa có DPIA, chỉ demo"; không có báo cáo năng suất theo tài xế; job xóa điểm GPS sau `retention_days` kể từ khi chuyến kết thúc; mất tín hiệu quá 60 phút → alert `GPS_LOST`.
 - **Dữ liệu cá nhân:** log kỹ thuật không chứa tên/điện thoại/email/địa chỉ; ẩn danh khách và nhân viên sau thời gian lưu giữ; email/SMS chỉ chứa trạng thái và ETA, không toạ độ.
 - **API:** CORS giới hạn origin của web; giới hạn tần suất cơ bản trên `/auth/login`; `Idempotency-Key`; xác thực endpoint `/internal/*` bằng khóa riêng.
+
+**ASM-006:** chuyển công tác, nghỉ việc, đổi quản lý/owner đều phải có actor và before/after trong `audit.decision_log` cùng transaction; thao tác hồi tố bắt buộc lý do. `EMPLOYEE_ASSIGNMENT_CHANGED` dùng cho phân công (đã nằm trong danh sách dưới). Các mã mới cho đổi manager/owner/terminate cần được định nghĩa trước PR code, không được miễn log vì hiện chưa có tên action chuẩn.
 
 ## 10. Logging và quan sát
 

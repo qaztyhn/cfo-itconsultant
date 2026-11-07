@@ -96,6 +96,12 @@ Không thêm vai trò mới. `kpi_scopes` trong token phân biệt: `revenue_all
 ```
 Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
+### ASM-002/003 — Giải thích hợp đồng seed và auth đã chốt
+
+- **ASM-002:** seed tham chiếu migration chỉ chứa market, nhóm xử lý, cấu hình mặc định và position; không seed tài khoản/mật khẩu/dữ liệu demo; GPS mặc định tắt, bật cho demo ở seed riêng.
+- **ASM-003:** giới hạn login **5 yêu cầu/60 giây/IP** trên MVP một instance, yêu cầu thứ 6 trả HTTP 429 (mã hiện tại `AUTH_INVALID`); email không phân biệt hoa thường; logout token hợp lệ → 204; người thôi việc/bị vô hiệu phải bị từ chối ở request tiếp theo. Multi-instance cần shared rate limiter, **chưa** thuộc MVP.
+
+
 ## 5. Đơn hàng
 
 **Cách B:** POS/WMS/ERP giữ DB riêng; CFO chỉ GET nguồn. Sales có thể yêu cầu đồng bộ theo mã đơn từ giao diện CFO, không cần chờ polling 5 phút; polling vẫn dự phòng.
@@ -391,6 +397,15 @@ Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`, ghi `decis
 | GET/POST/PATCH | `/users`, `/users/{id}`; POST `/users/{id}/reset-password` | admin | Tài khoản |
 
 Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ một phân công hiệu lực; mỗi kho/cửa hàng đúng một quản lý chính; chỉ quản lý có `can_approve` mới xác nhận chuyển kho / sửa ca / đóng ngoại lệ của kho đó.
+
+### 13.0a ASM-006/007 — Nhân sự, lịch làm chính thức và điểm danh (hợp đồng mục tiêu)
+
+- **Nhân sự (ASM-006):** trước khi đổi/chấm dứt phân công của quản lý chính phải bố trí người quản lý hợp lệ thay thế. Khóa user người đã nghỉ; lịch sử không xóa. Đổi phân công, quản lý, owner, nghỉ việc phải ghi audit actor, before/after cùng transaction. Sửa hồi tố chỉ admin đủ quyền và phải có `reason_text`; các action code mới cho đổi manager/owner/terminate cần được bổ sung contract trước code.
+- **Lịch ca chính thức (ASM-007/Q11):** Warehouse Manager được phân công làm quản lý tại kho đó có quyền tạo/cập nhật **lịch nhân viên–ngày–ca**; API đích dự kiến `GET /warehouses/{id}/shift-schedule?from=&to=`, `PUT /warehouses/{id}/shift-schedule` (payload người–ngày–ca, kèm `reason_text` khi sửa hồi tố). Định dạng cụ thể/chống lịch chồng/lưu revision và migration phải được Dev 1 đề xuất và review trước triển khai. Sai role → 403; ngoài kho → 404.
+- `expected_staff` của `shift_template` chỉ là số dự kiến để so sánh; tuyệt đối **không** là số lượng dùng tự phân người hoặc dồn người vào ca cuối. `attendance_gen` chỉ chép lịch đã được Manager xác nhận để tạo `planned`, không tự dựng từ `expected_staff`.
+- `PUT /warehouses/{id}/attendance` chỉ cập nhật tình trạng thực tế cho người **đã có lịch**; `all_present` không tự tạo ca hay sửa lịch. Sửa dữ liệu quá khứ phải có quyền và lý do. Mọi cập nhật ghi `SHIFT_CHANGED` hoặc `ATTENDANCE_CHANGED` với actor/before/after cùng transaction. Thiếu lịch chính thức → trả/cảnh báo thiếu dữ liệu, không xác nhận công suất dựa trên người giả định.
+- Đây là **đặc tả mục tiêu của PR docs**; không tuyên bố endpoint, bảng hoặc migration hiện có đã hỗ trợ.
+
 
 ### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
 
