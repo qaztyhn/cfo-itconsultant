@@ -143,10 +143,10 @@ def main() -> int:
         POSTGRES_PASSWORD=password,
         DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@postgres:5432/cfo",
         SOURCE_SE_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@postgres:5432/source_se",
-        SOURCE_TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@localhost:{env['POSTGRES_PORT']}/source_se",
+        SOURCE_TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@127.0.0.1:{env['POSTGRES_PORT']}/source_test",
         SOURCE_DB_NAME="source_se",
         SOURCE_SCHEMA="src_se",
-        TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@localhost:{env['POSTGRES_PORT']}/cfo",
+        TEST_DATABASE_URL=f"postgresql+asyncpg://cfo:{password}@127.0.0.1:{env['POSTGRES_PORT']}/cfo_test",
         SEED_DEMO_PASSWORD=secrets.token_urlsafe(32),
         JWT_SECRET=secrets.token_urlsafe(32),
         INTERNAL_TICK_KEY=secrets.token_urlsafe(32),
@@ -197,6 +197,30 @@ def main() -> int:
                 env,
             ):
                 return 1
+            # Pytest migration fixtures reset their schemas. Keep them separate
+            # from the live stack's application databases, even in this tmpfs project.
+            if not run(
+                "create dedicated pytest databases",
+                compose
+                + [
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "cfo",
+                    "-d",
+                    "postgres",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-c",
+                    "CREATE DATABASE cfo_test",
+                    "-c",
+                    "CREATE DATABASE source_test",
+                ],
+                env,
+            ):
+                return 1
             outcomes.append(
                 run(
                     "source schema bootstrap",
@@ -237,7 +261,8 @@ def main() -> int:
                     "start CFO API and web",
                     # Dependencies are already healthy and bootstrapped. Do not
                     # recreate tmpfs PostgreSQL after migrations and seeding.
-                    compose + ["up", "-d", "--build", "--no-deps", "cfo-api", "cfo-web"],
+                    compose
+                    + ["up", "-d", "--build", "--no-deps", "cfo-api", "cfo-web"],
                     env,
                 )
             )
@@ -306,6 +331,17 @@ def main() -> int:
             outcomes.append(
                 run("Harness smoke", [sys.executable, "tools/harness.py", "smoke"], env)
             )
+            # Prove that running database tests did not remove the application's
+            # seed accounts or compromise live authentication.
+            auth_preserved = check_auth(
+                f"http://localhost:{env['CFO_API_PORT']}/api/v1",
+                env["SEED_DEMO_PASSWORD"],
+                set_active,
+            )
+            print(
+                f"Authentication preserved after Harness: {auth_preserved}", flush=True
+            )
+            outcomes.append(auth_preserved)
             run("container status", compose + ["ps", "-a"], env)
             return 0 if all(outcomes) else 1
         finally:
