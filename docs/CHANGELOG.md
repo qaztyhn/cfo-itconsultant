@@ -27,6 +27,18 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [05 — migration 0009] — 2026-11-07 — DDL theo Q12/Q12b/Q14 đã duyệt (PR qaztyhn/cfo-itconsultant#53), chờ review PR migration
+
+### Thêm
+- `hr.employee_shift_schedule`: lịch ca chính thức của nhân viên kho và tài xế (giờ theo template hoặc giờ riêng, ca qua nửa đêm, giờ nghỉ, trạng thái `scheduled/cancelled`, người lập, lý do); `ux_shift_one_per_day` (Q12a).
+- `hr.driver_duty_log`: kỳ làm việc/lái của tài xế (`duty_start/end`, `driving_min`, `source`, `trip_id`) — nguồn kiểm nghỉ 11 giờ và giờ lái (Q12b).
+- `ops.order_routing`: quyết định luồng `cfo`/`legacy` một lần theo `(market_id, external_ref)`; `ck_routing_reason` (cfo ⇔ all_confirmed); `unresolved` không lưu được (Q14).
+- `ref.vehicle.max_permissible_mass_kg`, `ref.vehicle.regulation_561_scope` (`in_scope|out_of_scope|unknown`, mặc định `unknown` → engine fail closed).
+- Trigger `set_updated_at` cho ba bảng mới (ASM-001).
+
+### Ảnh hưởng
+- Không đổi bảng/cột cũ khác. Service/API dùng các bảng này (lịch ca, phân luồng, dựng ngữ cảnh engine) ở PR tiếp theo; Dev 2 seed lịch demo và phạm vi xe.
+
 ## [Q12–Q14 — lựa chọn nghiệp vụ đã duyệt] — 2026-11-07 — docs, DDL/API/engine chờ PR triển khai (PR qaztyhn/cfo-itconsultant#53)
 
 - Q12: lịch ca chính thức một bảng cho nhân viên kho **và tài xế**; 1 ca/người/ngày; quản lý chính/phó `can_approve` cập nhật; sửa quá khứ cần lý do; thiếu lịch → `schedule_verified=false`, công suất 0; giờ riêng, ca qua nửa đêm, giờ nghỉ, nghỉ giữa ca `driver_min_rest_hours` (MarketConfig mới, mặc định 11).
