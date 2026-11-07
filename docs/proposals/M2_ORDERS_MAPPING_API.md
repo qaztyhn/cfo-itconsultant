@@ -1,6 +1,6 @@
 # Đề xuất hợp đồng — API đơn hàng và ánh xạ SKU (M2, Dev 1)
 
-> **Trạng thái: ĐÃ CHỐT 2026-11-07 → `06` v1.4** (Q5 A, Q6 A, Q7 sắp theo thứ tự đặt `submitted_at, id`, Q8 A, Q9 A, Q10 A, Q11 B). Hợp đồng chính thức là `06` mục 5.2–5.5, 12.2, 13.2; phần dưới là nội dung đề xuất ban đầu, giữ làm lịch sử.
+> **Trạng thái: ĐÃ CHỐT 2026-11-07 → `06` v1.4** (Q5 A, Q6 A, Q7 sắp theo thứ tự đặt `submitted_at, id`, Q8 A có điều chỉnh ASM-005, Q9 A, Q10 A). **Q11 = B đã bị thay thế** bởi ASM-007 (PR qaztyhn/cfo-itconsultant#50): lịch phân ca từng người do Warehouse Manager lập, `expected_staff` chỉ để so sánh. Theo ASM-005 (PR qaztyhn/cfo-itconsultant#49), đơn thiếu SKU đi quy trình cũ, mapping confirm không mở khóa đơn. Hợp đồng chính thức là `06` mục 5.2–5.5, 12.2, 13.0a, 13.2; các mục Q8 (`blocked_orders`, `ready_order_ids`) và Q11 dưới đây là nội dung đề xuất ban đầu, **không còn hiệu lực**.
 >
 > Trạng thái cũ: ĐỀ XUẤT — chờ nhóm review. Không có mã triển khai đi kèm. Khi nhóm chốt,
 > nội dung được đưa vào `06` mục 5 và 12 cùng `CHANGELOG`; mã và test nằm trong cùng PR triển khai (`09` mục 6, 14).

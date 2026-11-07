@@ -1,6 +1,6 @@
 # 06 — API Specification (CFO MVP)
 
-> **Phiên bản 1.4 (07/11/2026):** phạm vi đơn theo vai trò (mục 5.2), trường hiển thị theo vai trò của chi tiết đơn (5.3), danh sách đơn sắp mặc định theo thứ tự đặt `submitted_at, id` và bucket của `/orders/counts` (5.4), timeline (5.5), schema đọc ánh xạ SKU và phản hồi confirm/reject (12.2), điểm danh/công suất và cách sinh điểm danh nhiều ca (13.2). Chủ dự án chốt Q5–Q11 trong PR qaztyhn/cfo-itconsultant#37, khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5.
+> **Phiên bản 1.4 (07/11/2026):** phạm vi đơn theo vai trò (mục 5.2), trường hiển thị theo vai trò của chi tiết đơn (5.3), danh sách đơn sắp mặc định theo thứ tự đặt `submitted_at, id` và bucket của `/orders/counts` (5.4), timeline (5.5), schema đọc ánh xạ SKU và phản hồi confirm/reject (12.2), schema điểm danh/công suất (13.2). Chủ dự án chốt Q5–Q10 trong PR qaztyhn/cfo-itconsultant#37, khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5; Q11 được thay bằng ASM-007 (PR qaztyhn/cfo-itconsultant#50, mục 13.0a); đơn thiếu SKU theo ASM-005 (PR qaztyhn/cfo-itconsultant#49).
 >
 > **Phiên bản 1.3 (07/11/2026):** API đọc nhân sự, địa điểm, xe (mục 13.1): schema phản hồi, phạm vi theo vai trò và địa điểm, kiểm theo ngày hiệu lực, hiển thị trường theo vai trò; quyền đọc `/vehicles` theo ma trận mục 3. Duyệt ở PR qaztyhn/cfo-itconsultant#12 (Q1–Q4).
 >
@@ -160,7 +160,7 @@ Kiểm ở máy chủ cho `/orders`, `/orders/{id}`, `/orders/{id}/timeline`, `/
 | customer_service | `market_id` = market của nhân viên |
 | viewer | `403` |
 
-Đơn `SUBMITTED` / `BLOCKED_UNMAPPED_SKU` chưa có kế hoạch: chỉ admin, dispatcher, CS và Sales của cửa hàng gốc thấy.
+Đơn `SUBMITTED` chưa có kế hoạch: chỉ admin, dispatcher, CS và Sales của cửa hàng gốc thấy. Theo ASM-005, đơn thiếu SKU confirmed đi quy trình cũ và **không** phải đơn chờ CFO xử lý; bản ghi `BLOCKED_UNMAPPED_SKU` còn lại chỉ là dữ liệu legacy (mục 5.4).
 
 ### 5.3 Trường của `GET /orders/{id}` theo vai trò (v1.4, Q6)
 
@@ -196,7 +196,7 @@ Phần tử danh sách (trường bị cấm theo mục 5.3 thì bỏ):
 ```
 - `site` = phần sau dấu phẩy cuối cùng của `delivery_address` (cột CUSTOMER · SITE của `03`).
 - `warehouse` = kho của kế hoạch đã duyệt; nếu chưa có thì kho của kế hoạch `proposed` rank 1; nếu không có thì `null`.
-- `blocked=true` ⇔ `status = BLOCKED_UNMAPPED_SKU`.
+- `blocked=true` ⇔ `status = BLOCKED_UNMAPPED_SKU` (bản ghi legacy, chỉ để tra cứu; ASM-005). Các đơn này **không** nằm trong hàng đợi Dispatcher.
 - `q` khớp `order_no`, `external_ref` hoặc tên khách, không phân biệt hoa thường.
 - **Sắp xếp mặc định: thứ tự đặt hàng** `submitted_at ASC, id ASC` (đơn đặt trước hiện trước; BR-ORD-05, `09` bất biến 27). Có thể chọn `?sort=` theo `submitted_at`, `date_to` (ngày yêu cầu), `promise_end` (`NULL` xếp cuối), `committed_date`, `order_no`, `status`. Thứ tự hiển thị **không** ép thứ tự thực thi: đơn đặt sau cần giao sớm vẫn có thể được chuẩn bị/giao trước nếu không lấn nguồn lực `committed` của đơn trước (mục 6.3a).
 
@@ -204,8 +204,8 @@ Bucket của `/orders/counts` (Phụ lục A), theo phạm vi mục 5.2; "hôm n
 
 | Bucket | Trạng thái / điều kiện |
 |---|---|
-| `all` | Mọi đơn trong phạm vi, trừ `DELIVERED`/`CANCELLED` đã đóng trước hôm nay |
-| `needs_plan` | `SUBMITTED`, `BLOCKED_UNMAPPED_SKU` |
+| `all` | Mọi đơn trong phạm vi, trừ `DELIVERED`/`CANCELLED` đã đóng trước hôm nay và `BLOCKED_UNMAPPED_SKU` legacy |
+| `needs_plan` | `SUBMITTED` (không gồm `BLOCKED_UNMAPPED_SKU` legacy — ASM-005) |
 | `awaiting_approval` | `PLANNED` |
 | `no_feasible_date` | `NO_FEASIBLE_DATE` |
 | `in_execution` | `APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`, `DISPATCHED` |
@@ -441,7 +441,7 @@ Thông báo tự động (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) do h
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/mapping/tasks` | Hàng đợi: lọc `status`, `market`; kèm `blocked_order_count` và `candidates` |
+| GET | `/mapping/tasks` | Hàng đợi SKU cho IT: lọc `status`, `market`; kèm `candidates` (`blocked_order_count` là trường legacy — mục 12.2) |
 | GET | `/mapping/tasks/{id}` | Chi tiết SKU nội bộ + ứng viên (GTIN trùng, tên gần giống, nhóm xử lý theo quy tắc) |
 | POST | `/mapping/tasks/{id}/confirm` | Xác nhận ánh xạ (mục 12.1) |
 | POST | `/mapping/tasks/{id}/reject` | `{ "reason_text": "…" }` bắt buộc; SKU giữ `rejected` |
@@ -470,16 +470,18 @@ Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`, ghi `decis
 
 Quyền (mục 3): admin **W**; dispatcher, warehouse **R** trong market mình; vai trò khác `403`. Task ngoài market → `404`.
 
-`GET /mapping/tasks?status=&market=&q=` (phân trang; mặc định `status=open`; sắp mặc định `-blocked_order_count,local_sku`). Phần tử:
+`GET /mapping/tasks?status=&market=&q=` (phân trang; mặc định `status=open`; sắp mặc định `id` — task cũ trước; có thể sắp `local_sku`). Phần tử:
 ```json
 { "id": 12, "market": "SE", "local_sku": "SE-NEW-77", "name": "…", "category": "…", "gtin": "…",
   "sale_unit": "pallet", "mapping_status": "pending", "status": "open", "blocked_order_count": 2,
   "candidates": [ { "global_product_id": 123, "code": "G-000123", "name": "…", "reason": "gtin", "score": 1.0 } ],
   "resolved_by": null, "resolved_at": null }
 ```
-`GET /mapping/tasks/{id}`: cùng schema, thêm `suggested_handling_group` (theo `handling_group_rule`, US-PRD-04 AC2) và `blocked_orders: [{id, order_no}]`. Với warehouse, `blocked_orders` chỉ liệt kê đơn trong phạm vi mục 5.2; `blocked_order_count` vẫn là tổng.
+`blocked_order_count` là trường legacy (ASM-005 mục 6): **không** phải số đơn đang chờ CFO xử lý, không dùng để ưu tiên hay làm hàng đợi Dispatcher; giữ trong phản hồi để tương thích cho tới khi có thiết kế KPI thay thế.
 
-`POST /mapping/tasks/{id}/confirm` → `200 { "task_id", "local_sku", "global_product_id", "mapping_status": "confirmed", "ready_order_ids": [...], "still_blocked_order_ids": [...] }`.
+`GET /mapping/tasks/{id}`: cùng schema, thêm `suggested_handling_group` (theo `handling_group_rule`, US-PRD-04 AC2). Không liệt kê đơn khách: đơn thiếu SKU đi quy trình cũ.
+
+`POST /mapping/tasks/{id}/confirm` → `200 { "task_id", "local_sku", "global_product_id", "mapping_status": "confirmed" }`. Không mở khóa, không chuyển trạng thái, không lập kế hoạch/giữ chỗ cho đơn nào (mục 12.1, ASM-005).
 `POST /mapping/tasks/{id}/reject` → `200 { "task_id", "local_sku", "mapping_status": "rejected" }`.
 Lỗi: `403`; `404`; `422 VALIDATION_ERROR` kèm `details.field`; `422 REASON_REQUIRED`.
 
@@ -570,7 +572,7 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 ```
 `allowed_groups: []` = chở được mọi nhóm. Lịch bận ở `GET /vehicles/{id}/availability`.
 
-### 13.2 Điểm danh và công suất (v1.4, Q10–Q11)
+### 13.2 Điểm danh và công suất (v1.4, Q10; Q11 thay bằng ASM-007)
 
 `GET /warehouses/{id}/attendance?date=`: warehouse của kho đó, dispatcher và admin trong market; ngoài phạm vi → `404`. Phản hồi của `PUT /warehouses/{id}/attendance` dùng cùng schema:
 ```json
@@ -589,7 +591,7 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 ```
 `labour_cap_hours` = Σ người có mặt × giờ hữu ích × `delivery_share` (US-WH-02 AC1). Ngày lễ trả `0` (AC3). `booked_hours` gồm giờ của mọi đơn (AC2).
 
-**Sinh điểm danh `planned` (job `attendance_gen`, Q11 = B):** với mỗi ngày trong 14 ngày tới, nhân viên tính công suất có phân công hiệu lực tại kho được chia lần lượt vào các ca mẫu của ngày theo `start_time`, tối đa `expected_staff` mỗi ca, theo thứ tự `employee_no`. Người còn dư vào ca cuối cùng. Dòng đã có không bị ghi đè. Quản lý kho chỉnh lại khi điểm danh.
+**Nguồn roster và `attendance_gen` (ASM-007, thay Q11 = B):** roster điểm danh lấy từ **lịch phân ca chính thức do Warehouse Manager lập cho từng nhân viên/ngày/ca** (mục 13.0a). `shift_template.expected_staff` chỉ là số dự kiến để so sánh: hệ thống **không** tự chia người vào ca theo số này, **không** đưa người dư vào ca cuối. `attendance_gen` chỉ chép lịch đã được quản lý xác nhận thành dòng `planned`; khi bảng lịch chính thức chưa có (chờ PR migration riêng) thì job **không tạo dòng nào**. `PUT …/attendance` và `all_present` chỉ cập nhật người đã có trong lịch, không tạo ca. Thiếu lịch → công suất chỉ tính từ dòng điểm danh thực có (có thể bằng 0) và phải được cảnh báo là chưa xác minh, không dựng số người giả định.
 
 ## 14. KPI
 
