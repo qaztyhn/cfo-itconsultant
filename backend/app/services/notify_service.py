@@ -7,6 +7,8 @@ send/discard (lý do bắt buộc). dedupe_key gồm plan_id/trip_stop; shadow_m
 Owner: Dev 2 (B) — M7.
 """
 
+from app.services.notification_delivery import process_outbox as deliver_outbox
+
 
 async def enqueue(order_id: int, template: str, plan_id: int | None = None) -> int | None:
     """TODO(#notify-enqueue)."""
@@ -31,5 +33,5 @@ async def discard_draft(notification_id: int, actor: object, reason_text: str) -
 
 
 async def process_outbox() -> int:
-    """TODO(#notify-process_outbox)."""
-    raise NotImplementedError
+    """Deliver already queued rows; rendering/enqueue and dispatcher actions remain separate."""
+    return await deliver_outbox()
