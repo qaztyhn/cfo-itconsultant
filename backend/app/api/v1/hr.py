@@ -283,7 +283,15 @@ _WRITE_ERRORS: dict[int | str, dict[str, object]] = {
 async def assign_employee(employee_id: int, body: AssignmentIn, user: AuthUser, db: DbSession) -> EmployeeOut:
     """POST /employees/{id}/assignments — admin; đóng phân công cũ (US-EMP-01 AC2)."""
     scope = await resolve_hr_scope(db, user)
-    await hr_write_service.assign(db, scope, employee_id, body.location_id, body.start_date)
+    await hr_write_service.assign(
+        db,
+        scope,
+        employee_id,
+        body.location_id,
+        body.start_date,
+        actor_user_id=user.id,
+        actor_employee_id=user.employee_id,
+    )
     return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 

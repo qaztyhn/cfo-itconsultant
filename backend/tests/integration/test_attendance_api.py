@@ -1,4 +1,8 @@
-"""Điểm danh, công suất, attendance_gen (06 v1.4 mục 13.2; US-WH-01, US-WH-02 AC1–AC3; Q11 = B).
+"""Điểm danh, công suất, attendance_gen (06 v1.4 mục 13.0a, 13.2; US-WH-01, US-WH-02 AC1–AC3, US-WH-06 AC3).
+
+ASM-007 (PR #50): roster lấy từ lịch người/ngày/ca do Warehouse Manager xác nhận. Bảng lịch chính thức chưa
+migrate, nên test chèn trực tiếp các dòng `planned` đại diện cho lịch đã xác nhận (SCHEDULED); attendance_gen
+không được tự tạo dòng từ `expected_staff`.
 
 Dữ liệu ở hr_fixture (hôm nay = thứ Tư 2026-11-04, Stockholm). Thêm: hai operator WH-1 (SE-012, SE-013, tính
 công suất), ca mẫu thứ Tư của WH-1: 07:00–15:00 (expected 1) và 15:00–22:00 (expected 1), 7 giờ hữu ích;
@@ -44,6 +48,12 @@ EXTRA = (
     "INSERT INTO ref.market_holiday (market_id, holiday_date, name) VALUES (1, '2026-11-05', 'Test holiday')",
 )
 
+# Lịch đã được quản lý xác nhận cho thứ Tư 04/11: Will ca 1; SE-012, SE-013 ca 2.
+SCHEDULED = (
+    "INSERT INTO hr.attendance (employee_id, work_date, shift_template_id, status) VALUES "
+    "(4, '2026-11-04', 1, 'planned'), (11, '2026-11-04', 2, 'planned'), (12, '2026-11-04', 2, 'planned')",
+)
+
 
 async def _generate(dsn: str) -> int:
     engine = create_async_engine(async_url(dsn), poolclass=NullPool)
@@ -70,18 +80,24 @@ def shifts_of(dsn: str, day: date) -> dict[int, int]:
     return {r["employee_id"]: r["shift_template_id"] for r in rows}
 
 
-def test_Q11_attendance_gen_fills_shifts_in_employee_no_order(at: Api) -> None:
-    created = asyncio.run(_generate(at.dsn))
-    # 14 ngày từ 04/11: thứ Tư 04/11 và 11/11 có ca; mỗi ngày 3 người tính công suất ở WH-1
-    assert created == 6
-    assert shifts_of(at.dsn, date(2026, 11, 4)) == {4: 1, 11: 2, 12: 2}  # ca 1 đủ 1 người, dư vào ca cuối
-    assert asyncio.run(_generate(at.dsn)) == 0  # chạy lại không tạo trùng
-    managers = fetch(at.dsn, "SELECT count(*) AS n FROM hr.attendance WHERE employee_id IN (3, 5)")
-    assert managers[0]["n"] == 0  # quản lý, tài xế không tính công suất
+def test_US_WH_06_AC3_attendance_gen_never_derives_shifts_from_expected_staff(at: Api) -> None:
+    """Có ca mẫu, có nhân viên tính công suất, nhưng chưa có lịch chính thức → job không tạo dòng nào."""
+    assert asyncio.run(_generate(at.dsn)) == 0
+    assert fetch(at.dsn, "SELECT count(*) AS n FROM hr.attendance")[0]["n"] == 0
+    execute(at.dsn, *SCHEDULED)
+    assert asyncio.run(_generate(at.dsn)) == 0  # không thêm, không đổi ca đã xếp
+    assert shifts_of(at.dsn, date(2026, 11, 4)) == {4: 1, 11: 2, 12: 2}
+
+
+def test_capacity_without_schedule_counts_nobody(at: Api) -> None:
+    """Thiếu lịch → công suất 0 (chưa xác minh), không dựng số người giả định từ expected_staff."""
+    r = at.get("/warehouses/1/capacity", DISPATCHER, **{"from": "2026-11-04", "to": "2026-11-04"})
+    [day] = r.json()["days"]
+    assert [sh["present"] for sh in day["shifts"]] == [0, 0] and day["labour_cap_hours"] == 0
 
 
 def test_US_WH_01_AC1_put_all_present_returns_roster(at: Api) -> None:
-    asyncio.run(_generate(at.dsn))
+    execute(at.dsn, *SCHEDULED)
     body = {"date": "2026-11-04", "all_present": True, "items": [{"employee_id": 12, "status": "absent"}]}
     r = at.send("PUT", "/warehouses/1/attendance", WAREHOUSE, body)
     assert r.status_code == 200, r.text
@@ -95,7 +111,7 @@ def test_US_WH_01_AC1_put_all_present_returns_roster(at: Api) -> None:
 
 @pytest.mark.parametrize("user_id", [ADMIN, SYSTEM_ADMIN, DISPATCHER, WAREHOUSE])
 def test_get_attendance_allowed(at: Api, user_id: int) -> None:
-    asyncio.run(_generate(at.dsn))
+    execute(at.dsn, *SCHEDULED)
     r = at.get("/warehouses/1/attendance", user_id, date="2026-11-04")
     assert r.status_code == 200, r.text
     assert r.json()["counts"]["planned"] == 3
@@ -126,7 +142,7 @@ def test_put_attendance_body_is_strict(at: Api) -> None:
 
 
 def test_US_WH_02_capacity_formula_booked_and_holiday(at: Api) -> None:
-    asyncio.run(_generate(at.dsn))
+    execute(at.dsn, *SCHEDULED)
     at.send("PUT", "/warehouses/1/attendance", WAREHOUSE, {"date": "2026-11-04", "all_present": True})
     execute(
         at.dsn,
