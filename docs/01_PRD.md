@@ -104,10 +104,13 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-INT-08 (M)** Sales trong CFO yêu cầu đồng bộ ngay đơn đã submit tại POS bằng API đọc qua adapter, không cần chờ lượt polling 5 phút; polling là dự phòng. Không sửa POS hay gộp database.
 
 ### 5.2 Sản phẩm và ánh xạ
+
+> **ASM-005 (quyết định 07/11/2026):** Pilot khởi đầu khoảng 100 SKU được IT mapping. CFO là lớp điều phối **chỉ cho đơn đủ 100% SKU mapped**; đơn không đủ điều kiện ở lại quy trình cũ, không bị giữ chờ IT trong CFO. Đây là thay đổi **mục tiêu**, chưa phải code đang chạy; xem `docs/ASSUMPTIONS.md` §ASM-005.
+
 - **FR-PRD-01 (M)** Mỗi nước một bảng sản phẩm riêng (mã nội bộ) ánh xạ sang `product_global`. [C]
-- **FR-PRD-02 (M)** SKU chưa xác nhận ánh xạ → đơn chứa SKU đó `BLOCKED_UNMAPPED_SKU` kèm lý do rõ; tạo mapping task cho IT.
+- **FR-PRD-02 (M)** Chỉ đơn có **tất cả SKU `mapping_status=confirmed`** được đưa vào luồng điều phối CFO. Nếu có một SKU chưa được xác nhận, **toàn bộ đơn đi theo quy trình cũ**, không chờ IT hoặc lập kế hoạch/giữ chỗ tại CFO. IT vẫn có hàng đợi mapping SKU để mở rộng danh mục cho **các đơn tương lai**.
 - **FR-PRD-03 (M)** Gợi ý ứng viên bằng quy tắc (GTIN trùng, tên gần giống `pg_trgm`, nhóm xử lý theo bảng quy tắc). **Chỉ IT** xác nhận hoặc từ chối (từ chối bắt buộc có lý do). [C]
-- **FR-PRD-04 (M)** Khi ánh xạ xong, đơn bị chặn tự được kiểm tra lại và lập kế hoạch.
+- **FR-PRD-04 (M)** IT mapping xong chỉ mở rộng tập SKU đủ điều kiện cho **những đơn được tiếp nhận CFO về sau**; không tự động mở khóa, chạy planning, gửi xác nhận hoặc chuyển những đơn đã đi theo quy trình cũ sang CFO. Không tái sử dụng `HANDLED_EXTERNALLY` đã bị loại khỏi schema v1.2.
 - **FR-PRD-05 (M)** IT quản lý sản phẩm global, quy đổi đơn vị chuẩn bị (pallet, bó, m³, kiện), nhóm N1–N6, định mức giờ công dùng chung mọi kho, hệ số cờ.
 
 ### 5.3 Đơn hàng
@@ -192,7 +195,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-ORD-04** Địa chỉ giao được chụp lại trên đơn kèm toạ độ; khách ở bảng riêng. [C]
 - **BR-PRD-01** Mã nội bộ từng nước ánh xạ về sản phẩm global theo thứ tự: ánh xạ đã xác nhận → GTIN/EAN → thuộc tính → (AI gợi ý, sau) → người duyệt. [S]
 - **BR-PRD-02** Chỉ IT xác nhận ánh xạ SKU, vì mỗi nước có admin/quản lý kho/dispatcher riêng nên để họ tự ánh xạ sẽ làm dữ liệu không đồng nhất. [C]
-- **BR-PRD-03** SKU chưa ánh xạ hoặc chưa duyệt → đơn chứa nó bị chặn kèm lý do. [C]
+- **BR-PRD-03** SKU chưa ánh xạ/chưa được IT duyệt → **đơn không thuộc luồng CFO, tiếp tục xử lý theo quy trình cũ**. Đơn có đủ mọi SKU đã xác nhận mới được CFO điều phối; không điều phối trùng, không hồi tố chuyển đơn cũ sau mapping. [C]
 - **BR-PRD-04** Nhóm xử lý N1–N6 gán bằng bảng quy tắc cứng; **IT** nhập định mức (giờ cố định/dòng, giờ công/đơn vị chuẩn bị) và xác nhận nhóm, vì MVP chưa có số liệu từ quản lý kho; AI tinh chỉnh khi có đủ dữ liệu thực tế (phần mở rộng, dựa trên giờ nhân công thực tế trên một đơn vị cơ sở của từng nhóm, FR-EXE-04). Nhóm N6 không gắn cờ FRAGILE (tránh nhân hệ số hai lần). [C]
 - **BR-PRD-05** Định mức giờ công dùng chung mọi kho; kho có hệ số hiệu suất mặc định 1,0 (chưa có UI). [C]
 
