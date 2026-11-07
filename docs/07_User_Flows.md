@@ -198,10 +198,11 @@ flowchart TD
 
 **Tác nhân:** WH, SYS · **Màn:** Attendance & shifts (5.A5), Prep queue (5.6) · **Quy tắc:** BR-PRP-02/03/05, BR-EMP
 
-1. SYS sinh điểm danh `planned` cho 14 ngày tới từ ca mẫu của kho.
-2. Đầu ca, WH mở **Attendance & shifts** cho hôm nay → bấm **All present**, rồi đánh dấu người vắng/nghỉ → công suất ngày tự tính lại (số có mặt × giờ hữu ích × 90%).
-3. Khi ca thực tế khác kế hoạch: WH ghi `SHIFT_CHANGE` (số người, ghi chú). SYS tính lại ETA các đơn có giữ chỗ ngày đó và báo DISP nếu có rủi ro.
-4. Thay đổi nhân sự dài hạn do IT xử lý (chuyển công tác, thôi việc); công nhân kho **không có tài khoản**.
+1. **Warehouse Manager** nhập và xác nhận lịch phân ca cho **từng nhân viên, từng ngày**; `shift_template` cung cấp mẫu giờ/giờ hữu ích, `expected_staff` chỉ để đối chiếu. Không có thuật toán tự phân đều hay đưa người dư vào ca cuối.
+2. Job `attendance_gen` chỉ sinh ghi nhận `planned` từ lịch đã được xác nhận; thiếu lịch chính thức → hiện cảnh báo/đánh dấu công suất chưa xác minh, không tự gán ca cho nhân viên.
+3. Đầu ca, warehouse mở **Attendance & shifts** cho hôm nay → ghi người có mặt/vắng/nghỉ. `All present` chỉ áp dụng người có lịch hợp lệ, không tạo ca mới. Công suất từng ca cập nhật theo điểm danh thực tế.
+4. Khi lịch phải đổi, Warehouse Manager sửa lịch nhân viên và ghi `SHIFT_CHANGED` (before/after, actor); thay đổi điểm danh ghi `ATTENDANCE_CHANGED`. Sửa hồi tố cần quyền và lý do. SYS cập nhật rủi ro/ETA nếu ảnh hưởng các đơn đã giữ chỗ.
+5. Chuyển công tác/nghỉ việc dài hạn do IT xử lý với người thay quản lý và audit; công nhân kho không có tài khoản.
 
 ## 8. Luồng chuẩn bị hàng và bốc xếp (kho)
 
