@@ -5,6 +5,13 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { useAuthStore } from "../app/store";
+
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().clearAuth();
+  window.localStorage.clear();
+});
 
 declare global {
   interface Window {
