@@ -48,3 +48,7 @@ NOTIF_STATUS = _enum("ops", "notif_status", E.NotifStatus)
 TRANSFER_STATUS = _enum("ops", "transfer_status", E.TransferStatus)
 NEGOTIATION_OUTCOME = _enum("ops", "negotiation_outcome", ("agreed", "declined", "unreachable"))
 TRIP_STATUS = _enum("ops", "trip_status", ("planned", "loading", "on_road", "completed", "cancelled"))
+
+# plan
+PLAN_STATUS = _enum("plan", "plan_status", E.PlanStatus)
+RES_STATUS = _enum("plan", "res_status", E.ResStatus)
