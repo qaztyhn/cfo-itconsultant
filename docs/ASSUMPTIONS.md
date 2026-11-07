@@ -32,6 +32,32 @@
 
 ---
 
+## ASM-009 — Dữ liệu tham chiếu demo độc lập của Dev 2
+
+- **Ngày:** 2026-11-07.
+- **Lịch sử mã:** trước đây dùng ASM-008 trên nhánh Dev 2; đổi sang ASM-009 để không trùng
+  ASM-008 của Dev 3 được sổ quyết định nhánh `docs/approved-assumptions-register-20261107`
+  tham chiếu tới PR #55. Nội dung giả định kỹ thuật không đổi; không phê duyệt đề xuất của Dev 3.
+- **Trạng thái:** giả định kỹ thuật cho dữ liệu tổng hợp; không sửa hợp đồng `05`/`06`.
+- **Bối cảnh:** `08` §5.1–5.5 quy định số lượng/khoảng giá trị, nhưng không cho đủ giá trị từng bản ghi.
+- **Lựa chọn:** random seed `20261104`; 7/5 người ở hai ca, 11 công nhân và 2 trưởng ca mỗi kho;
+  cửa hàng dùng tọa độ gần đúng quanh ba kho. Xe chưa có sức chứa cụ thể trong `08` dùng giá trị demo
+  được khai báo tập trung trong `seed/fleet.py`; dữ liệu này chưa chứng minh các kết quả kịch bản §5.6.
+- **Sản phẩm:** đủ 100 SKU, phân bổ N1–N6 và 3 SKU pending đúng §5.2; các giá trị chưa được tài liệu cho
+  dùng giá/khối lượng/thể tích tổng hợp. GTIN thuộc dải tổng hợp, có check digit, khớp local/global;
+  đây là fixtures tham chiếu, chưa phải seed định lượng cho các kịch bản engine.
+- **Nguồn:** 40 khách tổng hợp (30 doanh nghiệp, 10 consumer), mỗi khách 2 địa chỉ quanh ba vùng,
+  email chỉ thuộc miền `.test`, không tạo số điện thoại thật. Chưa seed giờ nhận vì schema nguồn
+  hiện thiếu trường này và SRC-Q8 chưa được duyệt.
+- **Catalog nguồn:** đóng gói độc lập 100 SKU trong `source_system/seed/se`; test đối chiếu mọi trường
+  sản phẩm với seed CFO để phát hiện lệch fixture. Không import ứng dụng CFO lúc chạy nguồn, không đọc
+  dữ liệu vận hành CFO để ghi ngược; không đổi trạng thái mapping, không seed tồn kho/đơn kịch bản.
+- **Tính lặp lại:** chỉ thêm dữ liệu thiếu; bảo toàn mật khẩu, trạng thái khóa, cấu hình, phân công,
+  ánh xạ sản phẩm và các bản ghi đã tồn tại. Mâu thuẫn định danh tài khoản/nhân viên/xe làm rollback.
+  Không bật GPS hoặc sửa DPIA khi chạy seed tham chiếu; bật GPS demo vẫn là bước cấu hình có kiểm soát.
+- **Ảnh hưởng:** `make seed-reference` / `seed-reference-docker` chạy tập con này; `make seed` vẫn là
+  seed đầy đủ riêng và không được báo PASS khi generator kịch bản chưa có.
+
 > Ghi nhận cách diễn giải/giả định theo `09_AI_Coding_Rules.md` mục 14. Mục ở đây **không** thay thế phê duyệt
 > thay đổi hợp đồng: thay đổi `05`/`06` vẫn phải sửa tài liệu + migration + `CHANGELOG` trong cùng PR.
 
