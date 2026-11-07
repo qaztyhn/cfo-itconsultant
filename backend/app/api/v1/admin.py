@@ -47,7 +47,4 @@ async def integration_overview() -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/health")
-async def health() -> dict[str, object]:
-    """GET /health — Công khai: db, last_sync_age_min, notify_queue."""
-    raise NotImplementedError
+# GET /health: chuyển sang app/api/v1/health.py (Dev 1, M0) theo bàn giao trong tools/M0_INFRA_REPORT.md.
