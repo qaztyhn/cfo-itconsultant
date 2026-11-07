@@ -1,6 +1,8 @@
 /**
- * RiskChip — Colored chip with dot indicating risk level.
- * Owner: Dev 3 (luồng C).
+ * RiskChip — chip rủi ro có chấm tròn trước chữ (docs/03 mục 2.1, 4).
+ * Màu theo eta_forecast.risk_color, nhãn theo risk_status; truyền cả hai khi API trả cả hai (red = Predicted late hoặc Overdue).
+ * At risk (cam) có viền trái apricot 3px. Không có dữ liệu thì KHÔNG render (không khẳng định "On track").
+ * Owner: Dev 3 (luồng C) — M0.
  */
 
 export type RiskLevel = "ON_TRACK" | "AT_RISK" | "PREDICTED_LATE" | "OVERDUE";
@@ -12,86 +14,49 @@ export interface RiskChipProps {
   className?: string;
 }
 
-type RiskConfig = {
-  bg: string;
-  fg: string;
+interface Look {
+  chip: string;
   dot: string;
   label: string;
-  leftBorder?: string;
-};
-
-function getRiskConfig(level?: RiskLevel, color?: RiskColor): RiskConfig {
-  // Map color to level if level not provided
-  const resolvedLevel =
-    level ??
-    (color === "green"
-      ? "ON_TRACK"
-      : color === "yellow"
-      ? "AT_RISK"
-      : color === "orange"
-      ? "AT_RISK"
-      : color === "red"
-      ? "PREDICTED_LATE"
-      : "ON_TRACK");
-
-  switch (resolvedLevel) {
-    case "ON_TRACK":
-      return {
-        bg: "bg-risk-onTrack-bg",
-        fg: "text-risk-onTrack-fg",
-        dot: "bg-risk-onTrack-fg",
-        label: "On track",
-      };
-    case "AT_RISK":
-      if (color === "orange") {
-        return {
-          bg: "bg-risk-atRisk-bg",
-          fg: "text-risk-atRisk-fg",
-          dot: "bg-apricot",
-          label: "At risk",
-          leftBorder: "border-l-[3px] border-l-apricot",
-        };
-      }
-      return {
-        bg: "bg-risk-atRisk-bg",
-        fg: "text-risk-atRisk-fg",
-        dot: "bg-risk-atRisk-fg",
-        label: "At risk",
-      };
-    case "PREDICTED_LATE":
-      return {
-        bg: "bg-risk-predictedLate-bg",
-        fg: "text-risk-predictedLate-fg",
-        dot: "bg-risk-predictedLate-fg",
-        label: "Predicted late",
-      };
-    case "OVERDUE":
-      return {
-        bg: "bg-risk-overdue-bg",
-        fg: "text-risk-overdue-fg",
-        dot: "bg-risk-overdue-fg",
-        label: "Overdue",
-      };
-    default:
-      return {
-        bg: "bg-chip",
-        fg: "text-ink",
-        dot: "bg-inkMuted",
-        label: "Unknown",
-      };
-  }
 }
 
+// Chuỗi class viết đầy đủ để Tailwind quét được.
+const LOOK: Record<RiskLevel, Look> = {
+  ON_TRACK: { chip: "bg-risk-onTrack-bg text-risk-onTrack-fg", dot: "bg-risk-onTrack-fg", label: "On track" },
+  AT_RISK: { chip: "bg-risk-atRisk-bg text-risk-atRisk-fg", dot: "bg-risk-atRisk-fg", label: "At risk" },
+  PREDICTED_LATE: { chip: "bg-risk-predictedLate-bg text-risk-predictedLate-fg", dot: "bg-risk-predictedLate-fg", label: "Predicted late" },
+  OVERDUE: { chip: "bg-risk-overdue-bg text-risk-overdue-fg", dot: "bg-risk-overdue-fg", label: "Overdue" },
+};
+
+/** Khi chỉ biết màu: red hiểu là Predicted late (không phân biệt được Overdue nếu thiếu risk_status). */
+const LEVEL_FROM_COLOR: Record<RiskColor, RiskLevel> = {
+  green: "ON_TRACK",
+  yellow: "AT_RISK",
+  orange: "AT_RISK",
+  red: "PREDICTED_LATE",
+};
+
 export function RiskChip({ level, color, className }: RiskChipProps) {
-  const cfg = getRiskConfig(level, color);
+  const resolved = level ?? (color ? LEVEL_FROM_COLOR[color] : undefined);
+  if (!resolved) {
+    return null;
+  }
+
+  const look = LOOK[resolved];
+  const orangeAtRisk = resolved === "AT_RISK" && color === "orange";
+  const classes = [
+    "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-overline",
+    look.chip,
+    orangeAtRisk ? "border-l-[3px] border-l-apricot" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono ${cfg.bg} ${cfg.fg} ${cfg.leftBorder ?? ""} ${className ?? ""}`}
-      aria-label={`Risk: ${cfg.label}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} aria-hidden="true" />
-      {cfg.label}
+    <span role="img" aria-label={`Risk: ${look.label}`} className={classes}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${look.dot}`} />
+      <span aria-hidden="true">{look.label}</span>
     </span>
   );
 }
