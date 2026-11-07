@@ -1,79 +1,72 @@
-# Dev 2 — M0 integration
+# Dev 2 — M0 integration (PR #41)
 
-This branch integrates the Dev 1 handoff and was updated with `origin/main`
-at `cff287b` before opening the Dev 2 PR. Its diff against main is limited to
-the seven Dev 2 files listed below; it does not approve pending contracts.
+Updated against origin/main at 798aa22. This PR contains only M0 seed/build/smoke
+changes; M1 source APIs, complete scenario seed and later Dev 2 components remain
+separate. Assumptions: reviewed ASM-001/002/003 and the decisions register; no new
+business decision or contract change.
 
 ## Minimal account seed
 
-Run migrations first, then `make seed-m0` (local backend environment) or
-`make seed-m0-docker`. Supply `SEED_DEMO_PASSWORD` through the environment.
-The command creates dispatcher, admin, sales, owner and projectlead demo accounts
-listed in `docs/M0_BACKEND_HANDOFF.md`. Each gets an employee and one assignment;
-roles and KPI scopes are copied from the migrated position records.
+Run migrations first, then make seed-m0 or make seed-m0-docker. Supply
+SEED_DEMO_PASSWORD privately through the environment. The seed creates the five
+accounts required by docs/M0_BACKEND_HANDOFF.md, with Argon2 password hashes,
+employees and one assignment each. Roles and KPI scopes come from hr.position.
 
-Synthetic bootstrap locations are DC, HQ and ST-001. They use Göteborg coordinates
-and fixed 2026-01-01 employment/assignment start dates so the documented demo clock
-can sign in. These are minimal login fixtures, not the full M1 business dataset.
-Existing locations are reused, never overwritten. Existing account passwords,
-roles, scopes and disabled status are preserved. Conflicting demo identity or
-assignment causes a transaction rollback. No deletes or password reset occur.
+DC/HQ/ST-001 and fixed 2026-01-01 dates are synthetic M0 login fixtures. Existing
+identities, assignments, passwords, roles/scopes and disabled state are preserved;
+conflicting identities/assignments roll back. No passwords are committed or reset.
+make seed remains the separate full M1 generator and is not marked complete.
 
-`make seed` remains the full M1 entry point and still reports BLOCKED until its
-scenario generator is implemented. A successful minimal seed does not satisfy
-US-SRC-01 (full dataset and 18 scenarios).
+## Reproducible Docker build
 
-## Isolated smoke
+The API image copies app before package installation so Alembic can import it.
+Backend/frontend Docker contexts exclude environment files, local dependencies,
+logs and build output. The web image uses npm ci with the committed package lock.
+No frontend UI, dependency versions, auth implementation or migrations change.
 
-`python tools/m0_smoke.py --docker <docker executable>` starts a uniquely named
-Compose project with PostgreSQL on tmpfs and random secrets kept in memory.
-It bootstraps the source, builds the API, migrates CFO to head, seeds minimal
-accounts, starts API/web, checks health and login/profile/invalid-token behavior,
-disables the isolated dispatcher account to verify token revocation and restores it,
-then runs Harness verify and smoke. TEST_DATABASE_URL is supplied so backend
-PostgreSQL tests execute instead of skipping. Containers in this new project are
-stopped afterwards; existing projects and volumes are not removed.
+## Isolated live-stack verification
 
-Python subprocesses enable UTF-8 mode. The installed Alembic still reads its INI
-with explicit `encoding="locale"`; on Windows cp1252 this fails on Vietnamese
-comments in `backend/alembic.ini`. Dev 1 owns the Alembic configuration: replace
-those comments with ASCII or supply an approved UTF-8-compatible Alembic setup.
-This Windows gate remains failed until that dependency is resolved.
+Run python tools/m0_smoke.py --docker <docker executable> with the backend dev
+Python environment. It creates a unique Compose project, random credentials in
+memory and tmpfs PostgreSQL, without resetting existing projects or deleting volumes.
 
-Remaining M0 acceptance includes UI login.
-OpenAPI baselines and team approval of Dev 1's pending contracts remain separate.
+The runner:
 
-## Verification — 2026-11-07
+1. Validates Compose and starts postgres, mailpit and source-se.
+2. Creates dedicated cfo_test/source_test databases for destructive pytest fixtures.
+3. Bootstraps the source, builds CFO, migrates to head and seeds minimal accounts.
+4. Starts API/web and checks valid source/CFO health responses and web HTTP.
+5. Checks login, profile, missing/invalid token and disabled-account revocation;
+   restores the isolated account after the check.
+6. Runs Harness verify against the test databases and Harness smoke against the apps.
+7. Repeats authentication after Harness to prove test migrations preserved app data.
+8. Reports service status and stops only its new test project's containers.
 
-The runtime results below were collected before updating to `cff287b`.
-That update brings additional backend code/tests; these counts are historical,
-not a claim that the updated head has passed. PR CI must verify the new head.
+Published PostgreSQL is IPv4-only, so test DSNs use 127.0.0.1. Application and
+pytest databases remain separate. A failed gate makes the runner exit nonzero.
 
-- Final isolated stack: Compose config PASS, all five services start, CFO
-  `alembic current` is `0008 (head)`, source/CFO health and web HTTP PASS.
-  Login/profile, missing/invalid token and disabled-account token revocation PASS;
-  the isolated account is restored afterwards. Source: 17 tests passed.
-  Harness `smoke`: PASS. Harness `verify`: FAIL on Windows backend pytest only;
-  the full smoke script correctly exits 1. Test containers were stopped without
-  deleting volumes or touching existing projects.
-- Backend Python 3.12 / PostgreSQL 16 in the isolated Linux container:
-  `TEST_DATABASE_URL="$DATABASE_URL" pytest -q`: **173 passed**, no skipped tests.
-  The container was given dev dependencies and `/docs` for schema-drift tests;
-  application images do not need test dependencies or design documents at runtime.
-- New seed integration coverage: five accounts and Argon2 passwords, roles/scopes
-  from positions, one assignment each, repeatability without resetting disabled
-  accounts or passwords, missing password rejection and conflict rollback.
-- Harness frontend: `npm run lint`, `npm run test` (1 test), `npm run build`: PASS.
-- `python -m unittest discover -s tools/tests`: 4 passed.
-- Windows Harness backend: Ruff, Black, mypy and import-linter pass. Pytest fails
-  on Alembic's locale decoding described above; Linux success does not turn this
-  Windows result into a pass.
+## Validation and limits
 
-Changes: `Makefile`, `backend/Dockerfile`, `backend/.dockerignore`,
-`backend/app/seed/m0_accounts.py`, `backend/tests/integration/test_m0_seed.py`,
-`tools/m0_smoke.py`, and this report. No auth implementation, migrations,
-business logic, frontend UI or API/schema contracts were changed.
+Current-head Windows/Docker results and GitHub CI are recorded in the validation
+section of https://github.com/qaztyhn/cfo-itconsultant/pull/41. Historical results
+from older heads are not certificates for the updated head.
 
-Next independent Dev 2 slice is M1 source API and full scenario seed under
-`06` section 16 / `08` section 5, with contract review by Dev 1 and POS UI
-integration by Dev 3. The minimal seed in this change is not that deliverable.
+The former Windows Alembic INI encoding blocker was fixed by Dev 1 in PR #42 and
+is included through main. No workaround or test suppression is added here.
+Source tests run on real PostgreSQL. Seed integration tests cover Argon2 hashes,
+roles/scopes, assignments, repeatability, disabled-account preservation and rollback.
+
+The approved OpenAPI baselines are still absent/empty: contract comparison is
+BLOCKED / NOT VERIFIED, independently of unit/integration test success. UI browser
+login verification remains Dev 3's responsibility; HTTP/auth smoke is not UI E2E.
+GNU Make is unavailable in this Windows shell; equivalent container/module commands
+are executed by the runner. No unexecuted make target is claimed as verified.
+
+npm ci reports existing audit findings in the committed frontend dependency tree;
+this M0 infrastructure change does not upgrade packages or run npm audit fix --force.
+Dependency remediation remains a separate Dev 3 task.
+
+Files: Makefile, backend/Dockerfile, backend/.dockerignore,
+backend/app/seed/m0_accounts.py, backend/tests/integration/test_m0_seed.py,
+frontend/Dockerfile, frontend/.dockerignore, tools/m0_smoke.py and this report.
+No API/schema/business contract is changed; this PR does not declare all M0 or M1 complete.
