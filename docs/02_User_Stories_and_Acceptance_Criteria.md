@@ -170,6 +170,19 @@
 
 ---
 
+**US-WH-03 — Warehouse Manager lập lịch làm chính thức từng người (ASM-007/Q11)**
+- AC1. Quản lý kho hợp lệ chọn người, ngày, ca và lưu lịch; danh sách `expected_staff` chỉ hiển thị so sánh, không tự xếp lại người, không tự đưa người dư vào ca cuối.
+- AC2. Người không thuộc kho, đã nghỉ, hoặc bị xếp ca trùng thời gian bị từ chối; thao tác sai kho → 404, sai quyền → 403.
+- AC3. Job `attendance_gen` chỉ sao từ lịch chính thức, không tạo ca dựa vào `expected_staff`. Thiếu lịch → cảnh báo thiếu dữ liệu thay vì tính công suất từ nhân viên giả định.
+- AC4. Warehouse ghi điểm danh hiện diện theo lịch; `all_present` không tạo người mới/đổi ca; vắng/nghỉ giảm công suất. Lưu `SHIFT_CHANGED` và `ATTENDANCE_CHANGED` với actor, before/after.
+- AC5. Sửa lịch/điểm danh trong quá khứ phải có quyền và lý do; không làm mất lịch sử.
+
+**US-EMP-05 — Ghi lịch sử thay đổi nhân sự (ASM-006)**
+- AC1. Khi quản lý kho/cửa hàng chuyển công tác hoặc nghỉ, hệ thống kiểm có quản lý thay thế trước khi cho thay đổi.
+- AC2. Người nghỉ việc bị khóa account, không xóa lịch sử; owner do admin gán riêng không tự đổi theo quản lý.
+- AC3. Thay đổi phân công, quản lý, owner, nghỉ việc ghi decision_log với actor và before/after trong transaction; chỉnh hồi tố cần lý do, và không tạo hai phân công chồng ngày.
+
+
 ## Epic 6 — Lập kế hoạch và quyết định của dispatcher
 
 **US-PLN-01 — Tính khối lượng việc** · Là *hệ thống*, tôi tính giờ công chuẩn. · BR-PRP-01
