@@ -774,6 +774,6 @@ Mọi `checks.<name>` của một phương án có thêm `detail` (đối tượ
 
 **Bổ sung `GET /orders` (mỗi phần tử):** `journey: [{step:"approved", state:"done|todo|overdue"} ×6]`, `requested_label`, `window`, `source_warehouse`, `risk {status,color}`, `earliest_feasible_date` (khi `NO_FEASIBLE_DATE`), `feasible_plan_count` (khi `PLANNED`), `hold_expires_at`, `reserve_class`.
 
-**Cấu hình thêm vào `MarketConfig` (`04` mục 8):** `"routing": { "allow_fallback": true }`. Khi `false`, cặp (kho, điểm giao) thiếu trong `route_matrix` làm ứng viên bị loại với mã `ROUTE_DATA_UNAVAILABLE` (check `site_date`).
+**Cấu hình thêm vào `MarketConfig` (`04` mục 8):** `"routing": { "allow_fallback": true, "fallback_retry_min": 60 }`. `fallback_retry_min` (> 0, phút): route fallback đã lưu trong `route_matrix` chỉ được dùng lại trong khoảng này; quá hạn thì job chuẩn bị route gọi lại ORS — thành công thì thay bằng route `ors`, thất bại thì lưu fallback mới với `computed_at` mới (giới hạn tần suất gọi lại). Route `ors` được dùng lại như cũ. Khi `false`, cặp (kho, điểm giao) thiếu trong `route_matrix` làm ứng viên bị loại với mã `ROUTE_DATA_UNAVAILABLE` (check `site_date`).
 
 **Tên hành động nhật ký hiển thị ở UI** dùng đúng mã trong `04` mục 10 (`ALT_SELECTED`, `CRITERIA_CHANGED_RERUN`, `MANUAL_PLAN_CREATED`, `MAPPING_CONFIRMED`, `NOTIFICATION_SENT`, …); các mã khác trong ảnh thiết kế chỉ là ví dụ.
