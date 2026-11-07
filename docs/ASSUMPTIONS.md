@@ -93,3 +93,30 @@
      → `VALIDATION_ERROR`.
   3. `GET /health` khi DB lỗi trả `503` với thân health (`status = "error"`, `db = "unavailable"`), không dùng
      định dạng lỗi, để công cụ uptime/smoke đọc được (06 mục 15).
+
+## ASM-006 — Quy tắc ghi nhân sự chưa ghi trong `06` mục 13
+
+- **Ngày:** 2026-11-07
+- **Trạng thái:** đề xuất của Dev 1 (M3-A), chờ nhóm xác nhận trong review PR. Không sửa `05`/`06`.
+- **Bối cảnh:** `06` mục 13 cho đường dẫn và thân của `POST /employees/{id}/assignments`, `POST …/terminate`,
+  `PUT /locations/{id}/managers`, `PATCH /locations/{id}/owner` nhưng không nêu phản hồi và một số quy tắc biên.
+- **Diễn giải:**
+  1. **Phản hồi:** trả lại tài nguyên theo schema đọc đã duyệt `06` v1.3 mục 13.1 (`EmployeeOut` / `LocationOut`,
+     góc nhìn admin). Thân `PATCH …/owner` là `{ "owner_employee_id": <id> }` (tên cột `05`).
+  2. **Chuyển công tác:** `start_date` ≥ hôm nay (múi giờ market) và ≥ `hire_date`; phải sau ngày bắt đầu của
+     phân công đang mở; phân công cũ đóng `end_date = start_date − 1`. Cùng địa điểm → `422`. Địa điểm khác market
+     hoặc đã đóng → `422`.
+  3. **Quản lý không được chuyển hoặc nghỉ khi còn giữ vai trò quản lý** (hiện tại hoặc tương lai) tại địa điểm cũ:
+     `422` (`details.field = employee_id`). Admin thay quản lý trước, để không địa điểm nào mất quản lý chính ngầm.
+  4. **Nghỉ việc:** `status = terminated`, `employee.end_date` = hôm nay, phân công còn hiệu lực sau hôm nay
+     đóng ở hôm nay, `app_user.is_active = false`. Nhân viên có phân công bắt đầu trong tương lai → `422`.
+     Không xóa bản ghi.
+  5. **Đổi quản lý:** bản ghi đang mở của cấp đổi người → `valid_to = max(valid_from, hôm nay) − 1`. Bản ghi bắt
+     đầu từ hôm nay trở đi trở thành "không bao giờ hiệu lực" nhưng vẫn giữ lịch sử. Người mới có
+     `valid_from` = hôm nay. Cấp không đổi người giữ nguyên bản ghi. `deputy_employee_id` vắng / `null` → đóng phó
+     hiện tại.
+  6. **Owner mặc định** (US-EMP-01 AC4): khi đổi quản lý chính, owner trống hoặc đang là quản lý chính cũ → chuyển
+     sang quản lý chính mới. Owner do admin gán riêng được giữ.
+  7. Các thay đổi này **không ghi `decision_log`**: `04` mục 10 không có mã hành động cho phân công / quản lý, và
+     thêm mã là thay đổi hợp đồng.
+- **Cần nhóm xác nhận:** các mục 2 (cấm ngày quá khứ), 3, 4 và 7.

@@ -6,6 +6,7 @@ Mỗi endpoint cần test đường được phép và bị cấm (06 mục 3).
 Owner: Dev 1 (A) — M3.
 """
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -13,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
 from app.deps import AuthUser, DbSession
-from app.services import hr_read_service
+from app.services import hr_read_service, hr_write_service
 from app.services.hr_scope import resolve_hr_scope
 
 router = APIRouter(tags=["hr"])
@@ -245,16 +246,58 @@ async def get_employee(employee_id: int, user: AuthUser, db: DbSession) -> Emplo
     return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 
-@router.post("/employees/{employee_id}/assignments")
-async def assign_employee(employee_id: int) -> dict[str, object]:
-    """POST /employees/{employee_id}/assignments — admin; đóng phân công cũ."""
-    raise NotImplementedError
+class AssignmentIn(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"location_id": 3, "start_date": "2026-11-20"}}
+    )
+    location_id: int
+    start_date: date
 
 
-@router.post("/employees/{employee_id}/terminate")
-async def terminate_employee(employee_id: int) -> dict[str, object]:
-    """POST /employees/{employee_id}/terminate — admin."""
-    raise NotImplementedError
+class ManagersIn(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"primary_employee_id": 40, "deputy_employee_id": 41}}
+    )
+    primary_employee_id: int
+    deputy_employee_id: int | None = None
+
+
+class OwnerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"owner_employee_id": 40}})
+    owner_employee_id: int
+
+
+_WRITE_ERRORS: dict[int | str, dict[str, object]] = {
+    **_READ_ERRORS,
+    403: {"description": "FORBIDDEN — admin only"},
+    422: {"description": "VALIDATION_ERROR — details.field names the rule that failed"},
+}
+
+
+@router.post(
+    "/employees/{employee_id}/assignments",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_WRITE_ERRORS,
+)
+async def assign_employee(employee_id: int, body: AssignmentIn, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """POST /employees/{id}/assignments — admin; đóng phân công cũ (US-EMP-01 AC2)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.assign(db, scope, employee_id, body.location_id, body.start_date)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
+
+
+@router.post(
+    "/employees/{employee_id}/terminate",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_WRITE_ERRORS,
+)
+async def terminate_employee(employee_id: int, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """POST /employees/{id}/terminate — admin; khóa tài khoản, giữ lịch sử (US-EMP-03 AC4)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.terminate(db, scope, employee_id)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 
 @router.get("/locations", response_model=Page[LocationOut], responses=_READ_ERRORS)
@@ -287,10 +330,22 @@ async def get_location(location_id: int, user: AuthUser, db: DbSession) -> Locat
     return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
 
 
-@router.put("/locations/{location_id}/managers")
-async def set_managers(location_id: int) -> dict[str, object]:
-    """PUT /locations/{location_id}/managers — admin; một quản lý chính."""
-    raise NotImplementedError
+@router.put("/locations/{location_id}/managers", response_model=LocationOut, responses=_WRITE_ERRORS)
+async def set_managers(location_id: int, body: ManagersIn, user: AuthUser, db: DbSession) -> LocationOut:
+    """PUT /locations/{id}/managers — admin; quản lý phải có phân công tại đó (US-EMP-01 AC3–AC5)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.set_managers(
+        db, scope, location_id, body.primary_employee_id, body.deputy_employee_id
+    )
+    return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
+
+
+@router.patch("/locations/{location_id}/owner", response_model=LocationOut, responses=_WRITE_ERRORS)
+async def set_owner(location_id: int, body: OwnerIn, user: AuthUser, db: DbSession) -> LocationOut:
+    """PATCH /locations/{id}/owner — admin gán lại owner (US-EMP-01 AC4)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.set_owner(db, scope, location_id, body.owner_employee_id)
+    return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
 
 
 @router.get("/warehouses/{warehouse_id}/attendance")
