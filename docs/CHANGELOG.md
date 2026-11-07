@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [ASM-005 — quyết định phân luồng SKU] — 2026-11-07 — docs-only, chưa triển khai
+
+- Khởi đầu khoảng 100 SKU mapping confirmed do IT quản lý, mở rộng danh mục từng giai đoạn.
+- Chỉ đơn có **100% SKU confirmed** mới đi CFO. Đơn thiếu SKU tiếp tục quy trình cũ, không bị CFO chặn chờ mapping/không lập plan/hold.
+- Mapping về sau không tự động chuyển các đơn đã đi quy trình cũ sang CFO. Bắt buộc ngăn xử lý trùng bằng xác minh luồng thực hiện tại đầu vào; CFO vẫn read-only với POS/WMS/ERP.
+- API response, trạng thái theo dõi luồng cũ và bất biến tránh double fulfilment cần được Dev đề xuất trước triển khai. Không tự phục hồi trạng thái `HANDLED_EXTERNALLY` đã bỏ ở v1.2; không có migration/code trong PR này.
+
+
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 

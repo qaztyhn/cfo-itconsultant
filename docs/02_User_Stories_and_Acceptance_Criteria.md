@@ -45,21 +45,28 @@
 
 ## Epic 2 — Sản phẩm và ánh xạ (IT)
 
-**US-PRD-01 — Hàng đợi ánh xạ SKU** · Là *IT*, tôi muốn thấy các SKU chưa ánh xạ và các đơn đang bị chặn. · FR-PRD-02/03
-- AC1. *Given* đơn chứa SKU `SE-NEW-77` chưa ánh xạ, *When* đơn vào CFO, *Then* đơn `BLOCKED_UNMAPPED_SKU` với `block_reason` nêu SKU, `mapping_task` được tạo với `blocked_order_count = 1`.
-- AC2. *Given* hai đơn cùng chứa SKU đó, *Then* chỉ một `mapping_task`, `blocked_order_count = 2`.
+**US-PRD-00 — Phân luồng theo 100% SKU đã mapping** · FR-PRD-02, BR-PRD-03
+- AC1. Đơn có đủ tất cả SKU mapping confirmed được phép vào CFO; chỉ một SKU `pending`/`rejected`/không tồn tại thì **toàn bộ đơn** thuộc quy trình cũ và CFO không được lập plan/hold/approve.
+- AC2. Khi IT mapping SKU về sau, đơn đã đi theo quy trình cũ **không tự động** quay lại CFO; chỉ các đơn mới đủ điều kiện mới đi luồng CFO.
+- AC3. Cần bảo đảm một đơn không được hai luồng cùng điều phối, kể cả polling và Sales sync-now cạnh tranh hoặc khi version nguồn thay đổi; nếu chưa đủ thông tin quyết định hệ thống điều phối, CFO phải fail closed và không xác nhận giao hàng.
+- AC4. Không thay POS/WMS/ERP hay ghi ngược để phân luồng; khả năng xác minh nguồn sở hữu đơn phải được đánh giá trước khi triển khai.
+
+
+**US-PRD-01 — Hàng đợi ánh xạ SKU** · Là *IT*, tôi muốn thấy SKU chưa xác nhận để mở rộng phạm vi CFO, **không giữ đơn khách chờ mapping trong CFO**. · FR-PRD-02/03
+- AC1. *Given* đơn nguồn chứa SKU `SE-NEW-77` chưa được IT xác nhận, *When* đánh giá điều kiện sử dụng CFO, *Then* toàn bộ đơn **không được CFO lập plan/giữ chỗ/duyệt**; tiếp tục quy trình cũ. SKU xuất hiện trong hàng đợi IT qua đồng bộ danh mục sản phẩm, không phụ thuộc tạo đơn chặn trong CFO.
+- AC2. *Given* nhiều đơn nguồn cùng có SKU chưa mapping, *Then* không tạo nhiều mapping task cho một SKU ở cùng market; không coi `blocked_order_count` là số đơn **chờ được CFO xử lý**.
 - AC3. *Given* SKU có `gtin` trùng sản phẩm global G-000123, *Then* `candidates` có G-000123 với `reason = gtin`.
 - AC4. *Given* tên SKU giống 0,6 theo `pg_trgm` và cùng category, *Then* xuất hiện ứng viên `name_sim` kèm điểm.
 
-**US-PRD-02 — Xác nhận ánh xạ** · Là *IT*, tôi chọn hoặc tạo sản phẩm global để mở khóa đơn. · BR-PRD-02
-- AC1. *Given* tôi là `admin`, *When* `POST /mapping/tasks/{id}/confirm` với `global_product_id`, *Then* `product_se.mapping_status = confirmed`, `mapped_by` là tôi, các đơn bị chặn tự chuyển `SUBMITTED` rồi vào lập kế hoạch.
+**US-PRD-02 — Xác nhận ánh xạ** · Là *IT*, tôi chọn hoặc tạo sản phẩm global để các đơn **mới** có thể được CFO xử lý khi đủ SKU. · BR-PRD-02
+- AC1. *Given* tôi là `admin`, *When* `POST /mapping/tasks/{id}/confirm` với `global_product_id`, *Then* `product_se.mapping_status = confirmed`, `mapped_by` là tôi; **không** tự chuyển đơn đã chạy theo quy trình cũ sang `SUBMITTED`, không tạo planning run/hold cho các đơn đó.
 - AC2. *Given* tôi là `dispatcher`, `warehouse` hoặc `sales`, *When* gọi endpoint, *Then* `403 FORBIDDEN`.
 - AC3. *Given* tạo global mới, *Then* bắt buộc: nhóm xử lý, `base_unit`, cân nặng, thể tích, `base_units_per_prep_unit` (trừ nhóm đơn vị `line`), `units_to_base` > 0; thiếu → `422`.
 - AC4. *Then* ghi `decision_log MAPPING_CONFIRMED` kèm trước/sau.
 
 **US-PRD-03 — Từ chối ánh xạ** · Là *IT*, tôi từ chối với lý do. · BR-GEN-04
 - AC1. *When* `reject` không có `reason_text`, *Then* `422 REASON_REQUIRED`.
-- AC2. *When* reject hợp lệ, *Then* SKU `rejected`, đơn liên quan vẫn bị chặn và dispatcher thấy lý do.
+- AC2. *When* reject hợp lệ, *Then* SKU giữ `rejected`, lý do được lưu cho IT; các đơn có SKU đó tiếp tục ở quy trình cũ, **không** biến thành danh sách chờ Dispatcher của CFO.
 
 **US-PRD-04 — Quản lý nhóm xử lý và định mức** · Là *IT*, tôi chỉnh N1–N6, hệ số cờ, quy tắc gán nhóm. · FR-PRD-05
 - AC1. *Given* sửa `labour_hours_per_unit` của N3 từ 0,15 → 0,18, *When* lập kế hoạch đơn mới, *Then* khối lượng việc dùng 0,18; kế hoạch đang giữ chỗ không đổi.
