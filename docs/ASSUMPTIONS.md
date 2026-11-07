@@ -1,5 +1,37 @@
 # Assumptions (ASM-xxx)
 
+## Sổ quyết định đã chốt (cập nhật 2026-11-07)
+
+**Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
+
+**Nguồn và mức độ hiệu lực:** quyết định đã duyệt được ghi ở đây là **ràng buộc về nghiệp vụ**; `05`/`06`/`04` và `09` vẫn phải được đồng bộ bằng PR được review. Ghi vào sổ **không có nghĩa code, migration hay kiểm thử đã hoàn thành**. Không tự đổi API/DDL chỉ vì có một đoạn giải thích trong sổ. Nếu có mâu thuẫn, dừng thay đổi liên quan và mở PR đồng bộ đặc tả.
+
+| ID | Quyết định được xác nhận | Ngày | Bằng chứng / chi tiết | Tình trạng triển khai |
+|---|---|---|---|---|
+| [ASM-001](#asm-001--cột-chung-created_at--updated_at-cho-mọi-bảng-cfo) | Cột metadata chung cho 57 bảng CFO, không áp dụng `src_*`; log bất biến | 06/11 | Xem mục ASM-001 | Đã chốt quy tắc; cần test theo migration |
+| [ASM-002](#asm-002--diễn-giải-seed-tham-chiếu-0008_seed_reference) | Seed tham chiếu tách seed demo; GPS migration mặc định tắt, không seed mật khẩu | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Đã duyệt hướng; kiểm tra seed/test |
+| [ASM-003](#asm-003--chi-tiết-xác-thực-chưa-có-trong-06-mục-4) | Login tối đa 5 lần/60 giây/IP cho demo một instance; 429; 204 logout; hạn chế lộ thông tin | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Đã duyệt hướng; cần xác minh code |
+| [ASM-005](#asm-005--quy-tắc-xác-nhận--từ-chối-ánh-xạ-và-phạm-vi-đơn-cfo) | Chỉ đơn **100% SKU confirmed** dùng CFO; thiếu SKU dùng quy trình cũ | 07/11 | [PR #49](https://github.com/qaztyhn/cfo-itconsultant/pull/49) | Nghiệp vụ đã duyệt; routing code còn phụ thuộc Q14 |
+| [ASM-006](#asm-006--quy-tắc-ghi-nhân-sự-chưa-ghi-trong-06-mục-13) | Chuyển/nghỉ việc có người thay quản lý; khóa tài khoản, giữ lịch sử và audit | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Nghiệp vụ đã duyệt; mã audit đề xuất ở Q13 |
+| [ASM-007](#asm-007--quy-tắc-điểm-danh-chưa-ghi-trong-06-mục-13) | Warehouse Manager quyết định lịch người–ca; `expected_staff` **chỉ để so sánh** | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Cần lịch chính thức, migration/API |
+| [DEC-SALES-001](#dec-sales-001--sales-xác-nhận-có-điều-kiện-và-sync-now) | Sales dùng CFO riêng, sync-now; chỉ confirm phương án chuẩn an toàn | 07/11 | [PR #43](https://github.com/qaztyhn/cfo-itconsultant/pull/43) | Docs đã merge, code theo milestone |
+| [DEC-ROUTING-001](#dec-routing-001--sales-kiểm-cfo-trước-khi-điều-phối-thủ-công) | Sales phải kiểm CFO trước khi điều phối tay; luồng CFO/legacy không tự đảo | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; chi tiết Q14 vẫn chờ migration/API |
+| [DEC-SHIFTS-001](#dec-shifts-001--q12-lịch-làm-chính-thức-của-kho-và-tài-xế) | Q12a–d: 1 ca/người/ngày, manager chính/phó có quyền, hồi tố có lý do, thiếu lịch thì 0 công suất | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; bảng/API đề xuất cần review |
+| [DEC-AUDIT-001](#dec-audit-001--q13-mã-nhật-ký-nhân-sự) | Q13 chấp thuận 3 mã audit mới và quy tắc hồi tố | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Chờ cập nhật contract/code |
+| [DEC-DRIVER-001](#dec-driver-001--khung-giờ-làm-nghỉ-và-giới-hạn-lái-xe) | Kiểm ca tài xế và nhân viên kho; nghỉ mặc định 11h; lái xe/nghỉ theo phạm vi pháp luật | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54) | Quy tắc MVP đã duyệt; engine/schema cần nghiệm thu |
+
+**Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
+
+### Cách ghi nhận quyết định mới — bắt buộc
+
+1. **Chỉ sau khi có xác nhận rõ ràng từ owner/nhóm có thẩm quyền**, bổ sung/sửa một mục tại **`docs/ASSUMPTIONS.md`** trong PR hiện tại hoặc PR tài liệu riêng. Không ghi “đã chốt” cho suy đoán, bình luận chưa được chấp thuận, hoặc PR chưa review.
+2. Mỗi bản ghi phải có **mã duy nhất, ngày, người/phạm vi phê duyệt, câu chốt nguyên nghĩa, trường hợp biên, nguồn (URL PR/comment), tài liệu/code bị ảnh hưởng, tình trạng triển khai**. Nếu thay đổi quyết định cũ, ghi **superseded by** và giữ lịch sử, không xóa.
+3. **Cùng PR** cập nhật các hợp đồng `01`–`09` liên quan và `docs/CHANGELOG.md` khi thay đổi API/DDL/quyền/bất biến; thêm migration và test khi triển khai code. Không được âm thầm code chỉ từ đề xuất.
+4. Trước khi tạo PR Dev phải **đọc sổ và kiểm tra quyết định mới nhất**; PR description và checklist phải có dòng “Assumptions: reviewed / new decision IDs / none”. Reviewer từ chối merge nếu PR làm trái quyết định chốt hoặc thiếu ghi nhận.
+5. Khi chủ dự án chốt thêm trong **cuộc trò chuyện**, trợ lý cập nhật file qua GitHub ngay **nếu có quyền công cụ tại lượt đó**; nếu không có quyền thì soạn bản vá/prompt để Dev cập nhật. **Không có tiến trình tự chạy/giám sát GitHub liên tục**, nên không thể tự cập nhật file khi không có tương tác.
+
+---
+
 > Ghi nhận cách diễn giải/giả định theo `09_AI_Coding_Rules.md` mục 14. Mục ở đây **không** thay thế phê duyệt
 > thay đổi hợp đồng: thay đổi `05`/`06` vẫn phải sửa tài liệu + migration + `CHANGELOG` trong cùng PR.
 
@@ -152,4 +184,48 @@
   3. **Warehouse Manager** có phân công quản lý hợp lệ tại đúng kho lập/sửa lịch phân ca. Điểm danh thực tế do tài khoản warehouse được phép của chính kho đó ghi theo phân quyền hiện hành; admin/dispatcher chỉ đọc điểm danh thường, không được tự phân ca thay Warehouse Manager. Ngoài kho → `404`, không đủ quyền → `403`. Cần chốt rõ guard theo chức danh ở API trước khi code.
   4. Mỗi lần ghi điểm danh phải có `ATTENDANCE_CHANGED` với before/after, changed employee IDs (không PII). Mỗi lần Warehouse Manager lập/đổi lịch nhân viên phải ghi `SHIFT_CHANGED`, actor, trước/sau, ngày hiệu lực. Mọi ghi log trong **cùng transaction** với thay đổi.
   5. Lịch phân ca chính thức cho tương lai do Warehouse Manager lập/sửa; điểm danh ghi đúng ngày làm, người được ủy quyền ở kho có thể ghi `present`/`absent`/`leave`. **Sửa dữ liệu quá khứ** chỉ với quyền hợp lệ, lý do bắt buộc và log, không sửa âm thầm. Việc `all_present` chỉ tác động những người có trong lịch ca chính thức, không tự thêm/đổi ca.
-- **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** hiện còn quy tắc Q11=B chia theo `expected_staff`/đẩy dư vào ca cuối; phải sửa/rebase trước khi merge.
+- **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** đã được Dev 1 báo cập nhật Q11 theo ASM-007 trong comment, nhưng vẫn phải review/rebase trước khi merge; không áp dụng lại Q11=B cũ.
+
+## DEC-SALES-001 — Sales xác nhận có điều kiện và sync-now
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #43 đã merge](https://github.com/qaztyhn/cfo-itconsultant/pull/43).
+- Sales vẫn submit đơn trên POS; **CFO là ứng dụng độc lập, chỉ đọc POS/WMS/ERP**, không ghi ngược và không gộp database. Sales có `Sync now` để yêu cầu CFO đọc đơn ngay, polling 5 phút làm dự phòng.
+- CFO **không tự phê duyệt**. Sales của đúng cửa hàng được **chủ động** confirm duy nhất phương án **rank 1 tiêu chuẩn**: cả 5 gate pass, reserve safe, **một xe**, nguồn mới và hold còn hạn; không ngoại lệ/transfer/manual/replan/đổi ngày. Dùng chung `ApprovalService` để kiểm tra lại và lock trước commit; trường hợp khác thuộc Dispatcher.
+- FIFO là **thứ tự hiển thị** `submitted_at,id`, không ép mọi đơn được thực thi FIFO; không lấn nguồn lực đã `committed` cho đơn cũ. Đơn cũ chưa duyệt gây tranh chấp nguồn lực phải chuyển Dispatcher.
+- **Triển khai:** [`docs/DECISION_SALES_CONFIRMATION.md`](DECISION_SALES_CONFIRMATION.md) là tài liệu chi tiết; phê duyệt nghiệp vụ **không đồng nghĩa** API/UI đã chạy end-to-end.
+
+## DEC-ROUTING-001 — Sales kiểm CFO trước khi điều phối thủ công
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #53 Q14](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [ASM-005/PR #49](https://github.com/qaztyhn/cfo-itconsultant/pull/49).
+- Quy trình: **(1)** Sales nhập/submit đơn POS → **(2)** Sales bắt buộc kiểm trạng thái tại CFO (`Sync & check routing`) **trước khi bắt đầu điều phối thủ công** → **(3)** toàn bộ SKU confirmed thì dùng CFO, có ít nhất một SKU chưa confirmed thì **toàn bộ đơn** dùng quy trình thủ công cũ.
+- Quy tắc được duyệt của **Q14 = phương án A**: mỗi đơn nguồn chỉ có một quyết định phân luồng đã lưu (`cfo` hoặc `legacy`), không tự chuyển luồng theo bản cập nhật mapping về sau. `legacy` không có plan, hold, approve trong CFO. Dữ liệu chưa đủ/CFO hoặc nguồn không truy cập được = **unresolved**, **không được mặc định thành legacy hoặc xác nhận giao**.
+- Quy trình cũ được nhân viên **điều phối thủ công**, không có hệ thống tự động điều phối cạnh tranh. Vì CFO không ghi ngược POS, bảng routing nội bộ **không tự ngăn** nhân viên đã thực hiện thủ công; cần bước xác nhận bàn giao/audit và cơ chế chống xử lý trùng trước rollout.
+- **Thiết kế Dev đề xuất, chưa được xem là DDL/API đã duyệt:** bảng `ops.order_routing`, `routing-ack` với lựa chọn `legacy_acknowledged` / `manual_started`, routing từ polling, cách xử lý đơn cũ. Xem [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) và yêu cầu review implementation. **Chưa có quyết định cho phép tự động chuyển sang quy trình cũ khi CFO lỗi**; phải hỏi owner nếu muốn làm ngoại lệ.
+
+## DEC-SHIFTS-001 — Q12 lịch làm chính thức của kho và tài xế
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #53 Q12](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50).
+- **Q12a = A:** tối đa **1 ca chính thức/người/ngày** cho MVP. Ca có thể kéo qua ngày hôm sau; khi đánh giá xung đột phải kiểm cả khoảng thời gian, không chỉ ngày bắt đầu.
+- **Q12b = A:** Warehouse Manager chính hoặc phó đang hiệu lực, có `can_approve=true`, được lập/cập nhật lịch chính thức cho nhân viên kho và **tài xế thuộc kho**. Dispatcher/admin chỉ đọc lịch theo đề xuất nghiệp vụ hiện tại; quyền ghi phải kiểm ở server theo kho.
+- **Q12c = A:** quản lý được phép sửa lịch quá khứ với **lý do bắt buộc** và audit actor + before/after trong cùng transaction; không xóa lịch sử.
+- **Q12d = A:** thiếu lịch chính thức thì `schedule_verified=false`, công suất xác minh = **0**; không tự tạo người dựa trên `expected_staff`.
+- Lịch điểm danh thực tế tách lịch phân ca; `expected_staff` chỉ là **mục tiêu để so sánh**, không phải quota, không cho auto-assign/dồn nhân viên dư vào ca cuối. `attendance_gen` chỉ sao lịch do Manager xác nhận.
+- **Thiết kế Dev đề xuất cần review:** một bảng `hr.employee_shift_schedule` cho kho và tài xế, ca tùy chỉnh, nghỉ giữa ca, API `shift-schedule`, lịch sử hủy/thay ca, quyền chi tiết, xử lý ca qua nửa đêm. Tham khảo [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53). Không tự coi schema đề xuất là migration đã chạy.
+
+## DEC-AUDIT-001 — Q13 mã nhật ký nhân sự
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #53 Q13](https://github.com/qaztyhn/cfo-itconsultant/pull/53), ASM-006.
+- Chấp thuận các action codes: `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`; chuyển công tác dùng `EMPLOYEE_ASSIGNMENT_CHANGED` đã có.
+- Chỉnh hồi tố phân công phải là admin có quyền, `reason_code=retroactive`, có `reason_text`, không tạo hai phân công hiệu lực trùng khoảng. Mọi thay đổi nhân sự/quản lý/owner/termination phải được audit actor, before/after, correlation ID trong cùng transaction.
+- **Triển khai:** bổ sung code chuẩn vào `04`/`06` và actions, migration/test khi thích hợp; không coi đã có đầy đủ code chỉ vì owner đồng ý mã.
+
+## DEC-DRIVER-001 — Khung giờ làm, nghỉ và giới hạn lái xe
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) và [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54), bao gồm phê duyệt đề xuất cho 5 nước Bắc Âu (SE, DK, NO, FI, IS).
+- **Bất biến lập kế hoạch:** thời gian chuẩn bị/lên hàng phải nằm trong **ca kho chính thức có công suất**, và **toàn bộ ca nhiệm vụ tài xế** phù hợp lịch làm **chính thức của chính tài xế đó** (lên hàng/chờ, chạy xe, dỡ hàng, quay lại kho khi thuộc chuyến). Kiểm tra lịch bận đã nhận, bằng lái, giờ nghỉ và ca qua nửa đêm; **không mặc định 24/7**. Thiếu lịch hoặc lịch sử liên quan → không đưa ra phương án có thể duyệt một cách tự động.
+- **Mốc mặc định của MVP:** nghỉ hằng ngày giữa các ca **11 giờ liên tục** (tài xế; nhân viên kho dùng mặc định thận trọng, tùy luật và thỏa ước). Nghỉ rút ngắn **9 giờ bị tắt khi tự động lập kế hoạch MVP**. Không có “override” tùy tiện vượt quy tắc an toàn.
+- **Với vận tải thuộc phạm vi Quy định (EC) 561/2006 / quy định EEA tương ứng:** phải phân biệt **giờ lái xe** khỏi **tổng giờ làm/nhiệm vụ**; giới hạn thường dùng **9 giờ lái/ngày**, trường hợp đủ điều kiện có thể **10 giờ tối đa hai lần/tuần**; sau không quá **4 giờ 30 phút lái liên tục** phải có **45 phút nghỉ**, hoặc chia **15 phút rồi 30 phút**. Ngoại lệ 9 giờ nghỉ hằng ngày (nếu hợp lệ, không quá 3 lần giữa hai kỳ nghỉ hằng tuần) và các ngoại lệ khác **không tự kích hoạt trong MVP**; việc áp dụng phải kiểm tra phạm vi, nghỉ tuần, lái tuần/2 tuần, dữ liệu lịch sử.
+- **Phạm vi là theo quốc gia + xe + loại hình vận tải** (nội địa/quốc tế/cabotage, trọng lượng được phép gồm rơ-moóc, ngoại lệ), **không áp dụng rập khuôn cho mọi xe và tài xế**. Các nước Bắc Âu cùng hệ thống EU/EEA liên quan nhưng có khác biệt thi hành/thỏa ước. Mốc cấu hình pilot **không phải chứng nhận tuân thủ pháp luật**; phải rà soát với bộ phận pháp lý/vận hành từng nước trước khi triển khai thật.
+- Engine phải kiểm tra **thời gian làm nhiệm vụ** và **thời gian lái thực** riêng biệt; `driver_max_hours_day=9` trong code hiện tại **không được tự diễn giải** là đủ kiểm tra quy tắc lái xe của EU/EEA. Ca và dữ liệu nghỉ thiếu phải hiển thị lý do không thể duyệt, không chỉ coi là “không có tài xế”.
+- **Triển khai:** Dev 1 phối hợp lịch chính thức Q12, sửa engine/kiểm thử trong PR #54; tài liệu/DB/API, seed driver, dữ liệu lịch sử chuyến và phạm vi áp dụng vẫn cần PR triển khai và test. Nguồn kiểm tra phạm vi: [European Commission — driving time and rest periods](https://transport.ec.europa.eu/transport-modes/road/social-provisions/driving-time-and-rest-periods_en), [EUR-Lex — Regulation 561/2006](https://eur-lex.europa.eu/eli/reg/2006/561/oj).
+

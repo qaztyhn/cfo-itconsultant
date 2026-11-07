@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Approved decision register] — 2026-11-07 — docs-only
+
+- Tập trung quyết định đã duyệt ở `docs/ASSUMPTIONS.md`: ASM-001/002/003/005/006/007; Sales confirmation, Q12/Q13/Q14 và giờ làm/nghỉ của kho/tài xế trong MVP Bắc Âu.
+- **ASM-004 giữ trạng thái chưa duyệt**; các proposal kỹ thuật vẫn cần PR contract/migration/test riêng. Không dùng mã ASM đã cấp trùng với ASM-008 trong PR #55; quyết định sản phẩm dùng `DEC-xxx`.
+- `AGENTS.md` và `09_AI_Coding_Rules.md`: bắt buộc Dev/agent cập nhật sổ khi owner chốt giả định mới, kiểm tra trước khi mở PR, dẫn nguồn và phân biệt phê duyệt với triển khai.
+- Chỉ có thay đổi docs, không có migration/code/test trong PR này.
+
+
 ## [ASM-002, ASM-003, ASM-006, ASM-007/Q11 — quyết định chủ dự án] — 2026-11-07 — docs-only
 
 - ASM-002: chấp thuận seed tham chiếu (market, N1–N6, position, transitions) riêng dữ liệu demo; GPS mặc định tắt ở migration, tài khoản/mật khẩu demo không nằm trong migration.
