@@ -255,3 +255,24 @@ def test_owner_must_be_active_in_market(hr: Api, owner: int) -> None:
 
 def test_unknown_location_is_404(hr: Api) -> None:
     assert_error(hr.send("PATCH", "/locations/999/owner", ADMIN, {"owner_employee_id": 6}), 404, "NOT_FOUND")
+
+
+def test_ASM_006_assignment_change_is_audited_in_same_transaction(hr: Api) -> None:
+    hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-10"})
+    [log] = fetch(
+        hr.dsn,
+        "SELECT action, entity, entity_id, actor_user_id, actor_employee_id, actor_role, before, after "
+        "FROM audit.decision_log",
+    )
+    assert (log["action"], log["entity"], log["entity_id"], log["actor_user_id"], log["actor_role"]) == (
+        "EMPLOYEE_ASSIGNMENT_CHANGED",
+        "employee",
+        "4",
+        ADMIN,
+        "admin",
+    )
+    assert '"location_id": 1' in log["before"] and '"end_date": "2026-11-09"' in log["after"]
+    assert '"start_date": "2026-11-10"' in log["after"]
+    # vi phạm quy tắc → không đổi dữ liệu, không ghi log
+    hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-03"})
+    assert fetch(hr.dsn, "SELECT count(*) AS n FROM audit.decision_log")[0]["n"] == 1

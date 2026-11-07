@@ -29,12 +29,6 @@ async def prep_queue_v2() -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/warehouses/{warehouse_id}/capacity")
-async def warehouse_capacity(warehouse_id: int) -> dict[str, object]:
-    """GET /warehouses/{warehouse_id}/capacity — Công suất theo ngày."""
-    raise NotImplementedError
-
-
 @router.get("/driver/trips")
 async def driver_trips() -> dict[str, object]:
     """GET /driver/trips — Chuyến của tài xế đang đăng nhập."""

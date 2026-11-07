@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Approved decision register] — 2026-11-07 — docs-only
+
+- Tập trung quyết định đã duyệt ở `docs/ASSUMPTIONS.md`: ASM-001/002/003/005/006/007; Sales confirmation, Q12/Q13/Q14 và giờ làm/nghỉ của kho/tài xế trong MVP Bắc Âu.
+- **ASM-004 giữ trạng thái chưa duyệt**; các proposal kỹ thuật vẫn cần PR contract/migration/test riêng. Không dùng mã ASM đã cấp trùng với ASM-008 trong PR #55; quyết định sản phẩm dùng `DEC-xxx`.
+- `AGENTS.md` và `09_AI_Coding_Rules.md`: bắt buộc Dev/agent cập nhật sổ khi owner chốt giả định mới, kiểm tra trước khi mở PR, dẫn nguồn và phân biệt phê duyệt với triển khai.
+- Chỉ có thay đổi docs, không có migration/code/test trong PR này.
+
+
 ## [ASM-002, ASM-003, ASM-006, ASM-007/Q11 — quyết định chủ dự án] — 2026-11-07 — docs-only
 
 - ASM-002: chấp thuận seed tham chiếu (market, N1–N6, position, transitions) riêng dữ liệu demo; GPS mặc định tắt ở migration, tài khoản/mật khẩu demo không nằm trong migration.
@@ -18,6 +26,34 @@
 
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
+
+## [Q12–Q14 — lựa chọn nghiệp vụ đã duyệt] — 2026-11-07 — docs, DDL/API/engine chờ PR triển khai (PR qaztyhn/cfo-itconsultant#53)
+
+- Q12: lịch ca chính thức một bảng cho nhân viên kho **và tài xế**; 1 ca/người/ngày; quản lý chính/phó `can_approve` cập nhật; sửa quá khứ cần lý do; thiếu lịch → `schedule_verified=false`, công suất 0; giờ riêng, ca qua nửa đêm, giờ nghỉ, nghỉ giữa ca `driver_min_rest_hours` (MarketConfig mới, mặc định 11).
+- Yêu cầu mới của chủ dự án: phương án chỉ hợp lệ khi lên hàng trong ca kho chính thức có người và khoảng làm việc của từng tài xế nằm trọn trong ca thực tế; không mặc định 24/7. Engine: `WarehouseCtx.loading_windows`, `DriverCtx.shifts`, ghép tài xế bipartite, ràng buộc nhóm/năng lực theo dòng trên từng xe; mã `NO_WAREHOUSE_SHIFT`, `OUTSIDE_DRIVER_SHIFT` (`04` mục 6.7, `06` mục 13.0b).
+- Q12b (chính sách Bắc Âu cho MVP, duyệt hướng 07/11/2026, không phải xác nhận pháp lý):
+  - nghỉ hằng ngày 11 giờ; tắt nghỉ rút gọn 9 giờ;
+  - tách thời gian lái (561/2006: 9 giờ/ngày, nghỉ 45 phút sau 4 giờ 30, giới hạn tuần/hai tuần) khỏi tổng giờ làm `driver_max_hours_day`;
+  - phạm vi theo market/xe/loại vận hành (`ref.vehicle.regulation_561_scope`);
+  - fail closed khi thiếu lịch sử hoặc phạm vi;
+  - mã mới `DRIVER_REST_INSUFFICIENT`, `DRIVING_TIME_EXCEEDED`, `DRIVING_BREAK_REQUIRED`, `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`.
+- Q13: mã audit `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`, chỉnh hồi tố `EMPLOYEE_ASSIGNMENT_CHANGED`/`retroactive`.
+- Q14: `ops.order_routing` (cfo/legacy, không đổi), trạng thái `unresolved` riêng, Sales kiểm CFO trước điều phối tay, `routing-ack` (`legacy_acknowledged`/`manual_started`), polling không tự tạo hold; nêu rõ bảng nội bộ không bảo đảm chặn điều phối tay (`06` mục 5.0.2).
+## [06 v1.4] — 2026-11-07 — **đã duyệt** (Q5–Q10, PR qaztyhn/cfo-itconsultant#37; chủ dự án trả lời trong phiên làm việc 2026-11-07; Q11 thay bằng ASM-007, PR qaztyhn/cfo-itconsultant#50)
+
+Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, Q10 = A. **Q11 = B bị thay thế** bởi ASM-007: lịch phân ca từng người do Warehouse Manager lập; không chia theo `expected_staff`, không dồn người dư vào ca cuối. Q7 được chốt lại theo nguyên tắc "ưu tiên đơn đặt trước, linh hoạt chèn đơn giao sớm, nhưng mọi đơn phải đúng hạn đã cam kết", khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5.
+
+### Thêm
+- `06` mục 5.2: phạm vi đơn theo vai trò (warehouse qua kế hoạch chưa superseded hoặc chuyến từ kho mình; sales theo cửa hàng gốc; driver theo chuyến mình; viewer `403`; ngoài phạm vi `404`).
+- `06` mục 5.3: bảng trường của `GET /orders/{id}` theo vai trò; trường bị cấm thì bỏ khỏi phản hồi; không có GPS.
+- `06` mục 5.4: phần tử `GET /orders`; **sắp mặc định `submitted_at ASC, id ASC`** (thay cho `promise_end` trong đề xuất ban đầu); bucket của `/orders/counts`. `BLOCKED_UNMAPPED_SKU` là legacy: không thuộc `needs_plan`/`all`/hàng đợi Dispatcher (ASM-005).
+- `06` mục 5.5: timeline; CS không thấy quyết định nội bộ, lần chạy kế hoạch, điểm số, GPS.
+- `06` mục 12.2: schema đọc `/mapping/tasks*`, `/products/local`; phản hồi confirm/reject. Theo ASM-005 (PR qaztyhn/cfo-itconsultant#49): confirm **không** mở khóa/chuyển trạng thái đơn, phản hồi không có `ready_order_ids`/`still_blocked_order_ids`; chi tiết task không liệt kê đơn khách; `blocked_order_count` là trường legacy, sắp mặc định theo `id` thay vì số đơn bị chặn.
+- `06` mục 13.2: schema điểm danh và công suất. Roster và `attendance_gen` theo lịch chính thức của Warehouse Manager (ASM-007, mục 13.0a); khi chưa có bảng lịch thì job không tạo dòng, không suy từ `expected_staff`.
+
+### Ảnh hưởng
+- Mã: route M2-C (mapping), M2-D (orders, counts), M2-E (timeline), M3 (điểm danh, công suất). PR code căn chỉnh ASM-005/007 bỏ mở khóa đơn khi confirm và bỏ chia ca theo `expected_staff`. Không đổi `05`; bảng lịch ca chính thức cần PR migration riêng.
+- Thứ tự thực thi không theo FIFO cứng: bảo vệ đơn cũ bằng `committed` (đã duyệt); đơn cũ chưa duyệt tranh nguồn lực thì Sales chuyển Dispatcher (`06` mục 6.3a, `09` bất biến 26–27).
 
 ## [Sales confirmation B — Product decision] — 2026-11-07 — docs-only, chưa triển khai
 

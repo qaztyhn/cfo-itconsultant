@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.actions import Action
+from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.errors import DomainError
 from app.domain.models.hr import Employee, EmployeeAssignment, LocationManager
@@ -84,9 +86,19 @@ async def _manages(
 
 
 async def assign(
-    session: AsyncSession, scope: HrReadScope, employee_id: int, location_id: int, start_date: date
+    session: AsyncSession,
+    scope: HrReadScope,
+    employee_id: int,
+    location_id: int,
+    start_date: date,
+    *,
+    actor_user_id: int | None = None,
+    actor_employee_id: int | None = None,
 ) -> None:
-    """POST /employees/{id}/assignments (US-EMP-01 AC1/AC2; ux_one_active_assignment)."""
+    """POST /employees/{id}/assignments (US-EMP-01 AC1/AC2; ux_one_active_assignment).
+
+    ASM-006: ghi EMPLOYEE_ASSIGNMENT_CHANGED (actor, trước/sau) trong cùng transaction.
+    """
     _require_admin(scope)
     employee = await _employee(session, scope, employee_id)
     if employee.status == "terminated":
@@ -113,6 +125,28 @@ async def assign(
         await session.flush()
     session.add(EmployeeAssignment(employee_id=employee_id, location_id=location_id, start_date=start_date))
     await session.flush()
+    await record_decision(
+        session,
+        Action.EMPLOYEE_ASSIGNMENT_CHANGED,
+        "employee",
+        str(employee_id),
+        before=(
+            None
+            if current is None
+            else {"location_id": current.location_id, "start_date": current.start_date, "end_date": None}
+        ),
+        after={
+            "closed": (
+                None
+                if current is None
+                else {"location_id": current.location_id, "end_date": current.end_date}
+            ),
+            "new": {"location_id": location_id, "start_date": start_date},
+        },
+        actor_user_id=actor_user_id,
+        actor_employee_id=actor_employee_id,
+        actor_role="admin",
+    )
 
 
 async def terminate(session: AsyncSession, scope: HrReadScope, employee_id: int) -> None:

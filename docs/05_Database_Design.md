@@ -321,6 +321,8 @@ CREATE TABLE hr.shift_template (                -- ca mẫu của kho
   expected_staff smallint NOT NULL,
   UNIQUE (warehouse_id, weekday, start_time)
 );
+-- Q12 (đã duyệt nghiệp vụ 07/11/2026, DDL chờ PR migration 0009): hr.employee_shift_schedule cho cả nhân viên kho
+-- và tài xế — xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md (giờ riêng, qua nửa đêm, giờ nghỉ, 1 ca/người/ngày).
 -- ASM-007 / Q11 — quyết định sản phẩm (chưa là DDL đã migrate):
 -- Warehouse Manager là nguồn xác thực duy nhất cho lịch phân ca chính thức theo từng người/ngày.
 -- Đề xuất cho PR migration riêng: hr.employee_shift_schedule
@@ -477,6 +479,8 @@ CREATE TABLE ops.order_transition (              -- bảng tra chuyển trạng 
   requires_reason boolean NOT NULL DEFAULT false, allowed_roles ref.user_role[] NOT NULL,
   PRIMARY KEY (from_status, to_status)
 );
+-- Q14 (đã duyệt phương án A 07/11/2026, DDL chờ PR migration 0009): ops.order_routing — quyết định luồng cfo/legacy
+-- không đổi theo (market_id, external_ref); 'unresolved' không được lưu. Xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md.
 CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khách đồng ý [S][C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),

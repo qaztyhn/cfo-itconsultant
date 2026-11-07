@@ -91,10 +91,11 @@ def decisions(dsn: str) -> list[dict[str, object]]:
 # --- confirm ---------------------------------------------------------------------------------------------
 
 
-def test_US_PRD_02_AC1_confirm_existing_global_unblocks_orders(db: str) -> None:
+def test_US_PRD_02_AC1_confirm_does_not_pull_legacy_orders_into_cfo(db: str) -> None:
+    """ASM-005 (PR #49): confirm chỉ xác nhận SKU; đơn đã đi quy trình cũ không tự quay lại CFO."""
     blocked(db, (1, ("SE-NEW-77",)), (2, ("SE-NEW-77", "SE-OK-1")))
     result = run(db, lambda s: ms.confirm(s, 1, IT, EXISTING))
-    assert result == ms.ConfirmResult(1, (1, 2), ())
+    assert result == ms.ConfirmResult(1)
     row = product(db)
     assert (row["global_product_id"], row["units_to_base"], row["status"], row["mapped_by"]) == (
         1,
@@ -103,19 +104,25 @@ def test_US_PRD_02_AC1_confirm_existing_global_unblocks_orders(db: str) -> None:
         1,
     )
     assert row["mapped_at"] is not None
-    assert status_of(db, 1) == ("SUBMITTED", None) and status_of(db, 2) == ("SUBMITTED", None)
-    qty = fetch(db, "SELECT qty_base FROM ops.order_line WHERE order_id = 1")[0]["qty_base"]
-    assert qty == Decimal("160.000")  # 4 × 40
-    assert tasks(db) == [("SE-NEW-77", 0, "done")]
+    assert status_of(db, 1)[0] == "BLOCKED_UNMAPPED_SKU" and status_of(db, 2)[0] == "BLOCKED_UNMAPPED_SKU"
+    assert fetch(db, "SELECT qty_base FROM ops.order_line WHERE order_id = 1")[0]["qty_base"] is None
+    assert fetch(db, "SELECT count(*) AS n FROM plan.planning_run")[0]["n"] == 0  # không lập kế hoạch/giữ chỗ
+    assert tasks(db)[0][0::2] == ("SE-NEW-77", "done")
 
 
-def test_US_PRD_02_AC1_order_with_another_unmapped_sku_stays_blocked(db: str) -> None:
+def test_US_PRD_00_new_order_after_confirm_is_eligible(db: str) -> None:
+    """Đơn MỚI có 100% SKU confirmed sau khi IT xác nhận thì đi được luồng CFO (US-PRD-00 AC1/AC2)."""
+    blocked(db, (1, ("SE-NEW-77",)))
+    run(db, lambda s: ms.confirm(s, 1, IT, EXISTING))
+    execute(db, *order_sql(2, "SUBMITTED", ("SE-NEW-77",)))
+    assert run(db, _prepare(2)).status == S.SUBMITTED
+    assert status_of(db, 1)[0] == "BLOCKED_UNMAPPED_SKU"
+
+
+def test_US_PRD_02_AC1_confirm_leaves_legacy_order_untouched(db: str) -> None:
     blocked(db, (1, ("SE-NEW-77", "SE-REJ")))
-    result = run(db, lambda s: ms.confirm(s, 1, IT, EXISTING))
-    assert result.ready_order_ids == () and result.still_blocked_order_ids == (1,)
-    status, reason = status_of(db, 1)
-    assert status == "BLOCKED_UNMAPPED_SKU" and reason == "UNMAPPED_SKU: SE-REJ"
-    assert tasks(db) == [("SE-NEW-77", 0, "done"), ("SE-REJ", 1, "open")]
+    run(db, lambda s: ms.confirm(s, 1, IT, EXISTING))
+    assert status_of(db, 1) == ("BLOCKED_UNMAPPED_SKU", "UNMAPPED_SKU: SE-NEW-77, SE-REJ")
 
 
 def test_US_PRD_02_AC2_non_it_roles_are_forbidden(db: str) -> None:
@@ -146,7 +153,7 @@ def test_US_PRD_02_AC3_create_global_success(db: str) -> None:
         1,
     )
     assert product(db)["global_product_id"] == result.global_product_id
-    assert result.ready_order_ids == (1,)
+    assert status_of(db, 1)[0] == "BLOCKED_UNMAPPED_SKU"
 
 
 def test_US_PRD_02_AC3_create_global_validation(db: str) -> None:
@@ -202,7 +209,7 @@ def test_US_PRD_02_AC3_line_group_does_not_need_prep_conversion(db: str) -> None
     payload = ms.ConfirmInput(
         units_to_base=Decimal("1"), create_global=new_global(group="N1", base_units_per_prep_unit=None)
     )
-    assert run(db, lambda s: ms.confirm(s, 1, IT, payload)).ready_order_ids == (1,)
+    assert run(db, lambda s: ms.confirm(s, 1, IT, payload)).global_product_id == 2
 
 
 def test_US_PRD_04_AC4_n6_with_fragile_is_rejected(db: str) -> None:
@@ -226,9 +233,7 @@ def test_US_PRD_02_AC4_confirm_logs_before_and_after(db: str) -> None:
         "admin",
     )
     assert '"mapping_status": "pending"' in str(log["before"])
-    assert '"mapping_status": "confirmed"' in str(log["after"]) and '"ready_order_ids": [1]' in str(
-        log["after"]
-    )
+    assert '"mapping_status": "confirmed"' in str(log["after"]) and "ready_order_ids" not in str(log["after"])
 
 
 def test_confirm_unknown_task_is_not_found(db: str) -> None:
@@ -252,15 +257,14 @@ def test_US_PRD_03_AC1_reject_without_reason(db: str) -> None:
     assert product(db)["status"] == "pending" and decisions(db) == []
 
 
-def test_US_PRD_03_AC2_reject_keeps_orders_blocked_with_visible_reason(db: str) -> None:
+def test_US_PRD_03_AC2_reject_keeps_reason_for_it_and_leaves_orders_alone(db: str) -> None:
+    """ASM-005: lý do từ chối lưu cho IT (decision_log); không gắn đơn vào hàng đợi Dispatcher."""
     blocked(db, (1, ("SE-NEW-77",)), (2, ("SE-NEW-77", "SE-REJ")))
+    before = [status_of(db, i) for i in (1, 2)]
     run(db, lambda s: ms.reject(s, 1, IT, "Discontinued item"))
     assert product(db)["status"] == "rejected"
-    for order_id in (1, 2):
-        status, reason = status_of(db, order_id)
-        assert status == "BLOCKED_UNMAPPED_SKU"
-        assert reason is not None and reason.endswith("| REJECTED SE-NEW-77: Discontinued item")
-    assert tasks(db)[0] == ("SE-NEW-77", 2, "done")
+    assert [status_of(db, i) for i in (1, 2)] == before  # block_reason không đổi
+    assert tasks(db)[0][0::2] == ("SE-NEW-77", "done")
     [log] = decisions(db)
     assert (log["action"], log["reason_text"], log["actor_role"]) == (
         "MAPPING_REJECTED",
@@ -280,9 +284,9 @@ def test_reject_resolved_or_confirmed_is_invalid(db: str) -> None:
     assert (err.code, err.details) == ("VALIDATION_ERROR", {"field": "mapping_status"})
 
 
-def test_confirm_after_reject_unblocks(db: str) -> None:
-    """ASM-005: IT có thể xác nhận sau khi đã từ chối (ví dụ nguồn sửa dữ liệu sản phẩm)."""
+def test_confirm_after_reject(db: str) -> None:
+    """ASM-005 mục 4: IT có thể xác nhận sau khi đã từ chối; đơn cũ vẫn không quay lại CFO."""
     blocked(db, (1, ("SE-NEW-77",)))
     run(db, lambda s: ms.reject(s, 1, IT, "Need supplier data"))
-    assert run(db, lambda s: ms.confirm(s, 1, IT, EXISTING)).ready_order_ids == (1,)
-    assert status_of(db, 1) == (S.SUBMITTED.value, None)
+    assert run(db, lambda s: ms.confirm(s, 1, IT, EXISTING)) == ms.ConfirmResult(1)
+    assert product(db)["status"] == "confirmed" and status_of(db, 1)[0] == S.BLOCKED_UNMAPPED_SKU.value
