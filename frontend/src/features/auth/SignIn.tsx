@@ -91,7 +91,7 @@ export function SignIn() {
   }
 
   return (
-    <div className="min-h-screen bg-stone">
+    <div data-screen="SignIn" className="min-h-screen bg-stone">
       <DemoBanner context="Pick a demo account to explore each role." />
       <main className="mx-auto flex max-w-4xl flex-col gap-8 p-8 md:flex-row md:items-start">
         <section className="w-full rounded-card border bg-surface p-6 shadow-card md:w-[380px] md:shrink-0">
