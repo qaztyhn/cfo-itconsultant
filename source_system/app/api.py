@@ -8,9 +8,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from app.auth import require_api_key
 from app.db import database_ready
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_key)])
+health_router = APIRouter()
 
 
 @router.get("/orders")
@@ -87,7 +89,7 @@ async def addresses(q: str = "") -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/health")
+@health_router.get("/health")
 async def health(ready: Annotated[bool, Depends(database_ready)]) -> JSONResponse:
     """Public health probe; do not report healthy when the database is unavailable."""
     return JSONResponse(
