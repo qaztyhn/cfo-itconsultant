@@ -7,6 +7,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { login } from "../../api/auth";
 import { isApiError } from "../../api/client";
+import { APP_ENV, isDemoEnv } from "../../api/config";
 import { useAuthStore } from "../../app/store";
 import { DemoBanner } from "../../components/DemoBanner";
 
@@ -45,7 +46,12 @@ const INPUT =
   "w-full rounded-control border bg-surface px-3 py-2 text-body text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine disabled:opacity-60";
 const INPUT_INVALID = "border-risk-predictedLate-fg";
 
-export function SignIn() {
+export interface SignInProps {
+  /** Mặc định lấy từ config; truyền vào khi test. */
+  env?: string;
+}
+
+export function SignIn({ env = APP_ENV }: SignInProps) {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,7 +98,7 @@ export function SignIn() {
 
   return (
     <div data-screen="SignIn" className="min-h-screen bg-stone">
-      <DemoBanner context="Pick a demo account to explore each role." />
+      <DemoBanner env={env} context="Pick a demo account to explore each role." />
       <main className="mx-auto flex max-w-4xl flex-col gap-8 p-8 md:flex-row md:items-start">
         <section className="w-full rounded-card border bg-surface p-6 shadow-card md:w-[380px] md:shrink-0">
           <p className="font-mono text-overline uppercase text-inkMuted">CFO</p>
@@ -164,28 +170,30 @@ export function SignIn() {
           </form>
         </section>
 
-        <section aria-labelledby="demo-accounts-title" className="flex-1">
-          <h2 id="demo-accounts-title" className="text-h3 text-ink">
-            Demo accounts
-          </h2>
-          <p className="mt-1 text-caption text-inkMuted">Choose an account to fill in the email, then enter the shared demo password.</p>
-          <ul aria-label="Demo accounts" className="mt-4 grid gap-3 sm:grid-cols-2">
-            {DEMO_ACCOUNTS.map((account) => (
-              <li key={account.email}>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => chooseDemo(account.email)}
-                  className="flex h-full w-full flex-col gap-0.5 rounded-card border bg-surface p-4 text-left shadow-card hover:bg-rowHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine disabled:opacity-60"
-                >
-                  <span className="text-h3 text-ink">{account.title}</span>
-                  <span className="text-caption text-inkMuted">{account.hint}</span>
-                  <span className="mt-1 font-mono text-caption text-inkMuted">{account.email}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {isDemoEnv(env) && (
+          <section aria-labelledby="demo-accounts-title" className="flex-1">
+            <h2 id="demo-accounts-title" className="text-h3 text-ink">
+              Demo accounts
+            </h2>
+            <p className="mt-1 text-caption text-inkMuted">Choose an account to fill in the email, then enter the shared demo password.</p>
+            <ul aria-label="Demo accounts" className="mt-4 grid gap-3 sm:grid-cols-2">
+              {DEMO_ACCOUNTS.map((account) => (
+                <li key={account.email}>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => chooseDemo(account.email)}
+                    className="flex h-full w-full flex-col gap-0.5 rounded-card border bg-surface p-4 text-left shadow-card hover:bg-rowHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine disabled:opacity-60"
+                  >
+                    <span className="text-h3 text-ink">{account.title}</span>
+                    <span className="text-caption text-inkMuted">{account.hint}</span>
+                    <span className="mt-1 font-mono text-caption text-inkMuted">{account.email}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </main>
     </div>
   );
