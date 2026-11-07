@@ -2,6 +2,11 @@
 
 US-NOT-01 AC3/4, US-NOT-03 AC1..3. Caller owns transaction and supplies transports.
 One attempt per invocation; failed attempts remain queued until the configured cap.
+
+Known risk (DEC-NOTIFY-001, docs/ASSUMPTIONS.md): delivery is at-least-once. SMTP is called inside the
+transaction and `sent` is committed afterwards, so if SMTP accepts the message but the DB commit fails, the
+row stays `queued` and the next run sends the same email again. Do not point SMTP at real customer inboxes
+until a dedupe key, a committed claim before sending, and provider reconciliation exist.
 """
 
 import os
