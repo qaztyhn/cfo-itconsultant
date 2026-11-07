@@ -8,7 +8,7 @@ import pytest
 from alembic import command
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, execute, fetch, rejects, table_columns
-from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_in
+from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_before_0009
 
 pytestmark = pytest.mark.integration
 
@@ -29,7 +29,7 @@ def seeded(db: str) -> str:
 
 
 def test_migration_0004_0005_tables_and_columns_match_spec(db: str) -> None:
-    spec = spec_tables_in("stg", "ops")
+    spec = spec_tables_before_0009("stg", "ops")  # test chạy tới 0005
     actual = table_columns(db, "stg", "ops")
     assert len(spec) == 21 and set(actual) == set(spec)
     for table, columns in spec.items():

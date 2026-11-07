@@ -372,3 +372,21 @@ class IdempotencyKey(TimestampMixin, Base):
     request_hash: Mapped[str] = mapped_column(Text)
     response_status: Mapped[int | None] = mapped_column(Integer)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class OrderRouting(TimestampMixin, Base):
+    """Quyết định luồng cfo/legacy của đơn nguồn (Q14, 0009); không đổi; 'unresolved' không lưu."""
+
+    __tablename__ = "order_routing"
+    __table_args__ = SCHEMA
+
+    market_id: Mapped[int] = mapped_column(SmallInteger, _fk("ref.market.id"), primary_key=True)
+    external_ref: Mapped[str] = mapped_column(Text, primary_key=True)
+    route: Mapped[str] = mapped_column(Text)
+    reason_code: Mapped[str] = mapped_column(Text)
+    unmapped_skus: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    decided_at: Mapped[datetime] = mapped_column(TSTZ)
+    decided_source_version: Mapped[int] = mapped_column(Integer)
+    decided_by_user_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    acknowledged_by_user_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(TSTZ)
