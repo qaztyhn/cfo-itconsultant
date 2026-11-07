@@ -287,6 +287,15 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 
 Lịch phân ca chính thức cho **từng nhân viên/ngày/ca** do Warehouse Manager tạo/sửa. `shift_template.expected_staff` là mốc tham chiếu, **không phải dữ liệu nhân viên để `attendance_gen` tự chia ca**. `hr.attendance` chỉ ghi thực tế; engine dùng lịch hợp lệ và thông tin điểm danh/nghỉ phép để tính năng lực, và nếu thiếu lịch thì không tự bịa số người có mặt. Thao tác đổi lịch/điểm danh có audit và lý do khi chỉnh hồi tố. Quy tắc dữ liệu/API mục tiêu cần PR migration riêng.
 
+### 6.7 Giờ làm thực tế của kho và tài xế trong engine (Q12, đã duyệt 07/11/2026)
+
+(chi tiết: `docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md`; lựa chọn nghiệp vụ đã duyệt ở PR qaztyhn/cfo-itconsultant#53; DDL/API/engine cuối cùng review ở PR triển khai)
+- **Đầu vào mới:** `WarehouseCtx.loading_windows` = các khoảng ca kho chính thức có ít nhất một người tính công suất (từ `hr.employee_shift_schedule`); `DriverCtx.shifts` = các khoảng ca thực tế của từng tài xế (đã trừ giờ nghỉ, có thể qua nửa đêm). Không có dữ liệu → không có khả năng (không mặc định 24/7).
+- **Bước 2c/2d bổ sung:** mỗi xe lên hàng trọn trong một `loading_window`, `loading_start ≤ cutoff` của ngày, không trước `goods_ready_at`; khoảng làm việc của tài xế `[loading_start, trip_end]` (gồm chờ xuất phát, chạy, dỡ, quay về) nằm trọn trong một ca của tài xế, không chồng lịch đã nhận, tổng giờ ngày ≤ `driver_max_hours_day`; giao ngày sau thì lên hàng trong cửa sổ của ngày giao (không chờ qua đêm). Ghép tài xế–xe bằng bipartite/backtracking.
+- **Phân bổ hàng theo xe:** ràng buộc nhóm hàng (`allowed_group_ids`) và năng lực (`vehicle_requirement`) áp cho **các dòng thực sự chở trên xe đó**; thử nhiều cách xếp trước khi kết luận `NO_TRUCK_FIT`.
+- **Mã mới:** `NO_WAREHOUSE_SHIFT` (preparation), `OUTSIDE_DRIVER_SHIFT` (safety); `NO_DRIVER.detail.reason` ∈ `no_schedule | licence | busy`.
+
+
 ## 7. Giữ chỗ và duyệt (`ReservationService`, `ApprovalService`)
 
 1. **Đề xuất:** `PlanningService` gọi engine, rồi trong **một transaction**: tạo `planning_run` (+ `input_snapshot`), `fulfilment_plan` (3 phương án) + `plan_vehicle` (các xe của mỗi phương án), `plan.stock_reservation` và `prep_reservation` **một lần cho mỗi (đơn, kho)**, `vehicle_reservation` cho từng xe của từng phương án (**không khóa**, cho phép vượt, quy tắc 8); `hold_expires_at = now + 15 phút`; ghi `decision_log` (`PLAN_PROPOSED`, `RESERVATION_HELD`); chuyển đơn `PLANNED`.

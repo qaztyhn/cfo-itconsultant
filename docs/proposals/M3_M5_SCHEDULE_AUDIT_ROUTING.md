@@ -1,122 +1,160 @@
-# Đề xuất hợp đồng — lịch ca chính thức, mã audit nhân sự, phân luồng đơn (Q12–Q14)
+# Hợp đồng — lịch ca chính thức (kho + tài xế), mã audit nhân sự, phân luồng đơn (Q12–Q14)
 
-> **Trạng thái: ĐỀ XUẤT — chờ chủ dự án/nhóm duyệt. Chưa phải hợp đồng, chưa có migration/code.**
-> Tác giả: Dev 1. Ngày: 2026-11-07. Lý do: các quyết định ở qaztyhn/cfo-itconsultant#49 (ASM-005) và
-> qaztyhn/cfo-itconsultant#50 (ASM-006/007) yêu cầu Dev 1 **đề xuất trước khi code**:
-> - bảng lịch phân ca từng người kèm API (US-WH-06);
-> - mã hành động còn thiếu cho đổi quản lý, đổi owner, nghỉ việc, chỉnh hồi tố (US-EMP-05);
-> - cơ chế phân luồng một đơn chỉ thuộc một hệ thống điều phối (US-PRD-00 AC3).
+> **Trạng thái:** ngày 2026-11-07, chủ dự án **đã duyệt các lựa chọn nghiệp vụ** trong comment trên PR qaztyhn/cfo-itconsultant#53:
+> Q12a–d = A, Q13 = các mã đề xuất, Q14 = A cùng quy trình vận hành. Chủ dự án bổ sung **yêu cầu bắt buộc** về giờ làm
+> thực tế của nhân viên kho và tài xế. **Migration, API và engine cuối cùng vẫn phải review** ở PR triển khai.
 >
-> Khi được duyệt, Dev 1 làm một PR cho mỗi Q, gồm: `05`/`06`/`04` + `CHANGELOG`, migration và test PostgreSQL.
+> Tác giả: Dev 1.
+> Đã đưa vào: `04` (mục 6.7), `05` (mục 4, 6), `06` (mục 5.0.2, 13.0b), `CHANGELOG`.
+> Nguồn: qaztyhn/cfo-itconsultant#49 (ASM-005), qaztyhn/cfo-itconsultant#50 (ASM-006/007), review của
+> qaztyhn/cfo-itconsultant#54.
 
-## Tóm tắt quyết định cần chốt
+## Quyết định đã duyệt
 
-| # | Câu hỏi | Đề xuất (A) | Phương án khác |
-|---|---|---|---|
-| **Q12a** | Mỗi người được mấy ca trong một ngày? | **Tối đa 1 ca/người/ngày** (chỉ mục duy nhất) | **B.** Nhiều ca không chồng giờ, kiểm bằng trigger |
-| **Q12b** | Ai được lập/sửa lịch? | Tài khoản `warehouse` có bản ghi `hr.location_manager` (primary **hoặc** deputy) hiệu lực tại kho, `can_approve = true` | **B.** Chỉ quản lý chính (primary) |
-| **Q12c** | Sửa lịch ngày đã qua | Cùng người có quyền ở Q12b, **bắt buộc `reason_text`**; admin không sửa lịch thay | **B.** Chỉ admin, kèm lý do |
-| **Q12d** | Công suất khi thiếu lịch | Ngày không có dòng lịch nào → `schedule_verified: false`, công suất 0 | **B.** Không thêm cờ, chỉ trả 0 |
-| **Q13** | Mã audit ASM-006 | `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`; chỉnh hồi tố phân công dùng `EMPLOYEE_ASSIGNMENT_CHANGED` kèm `reason_code = 'retroactive'` và **bắt buộc lý do** | Đặt tên khác |
-| **Q14** | Phân luồng ASM-005, chống xử lý trùng | **A.** Bảng `ops.order_routing` ghi luồng được chọn lần đầu (`cfo`/`legacy`), **không bao giờ đổi**; đơn `legacy` không tạo `customer_order` | **B.** Giữ `customer_order` với `BLOCKED_UNMAPPED_SKU` làm dấu luồng cũ; bỏ chuyển `BLOCKED → SUBMITTED` khỏi seed để trạng thái này là cuối. **C.** Đọc owner luồng từ API POS (bị loại: hợp đồng nguồn không có trường này và không được sửa POS) |
+| # | Quyết định |
+|---|---|
+| Q12a | Tối đa **1 ca chính thức/nhân viên/ngày** (MVP) |
+| Q12b | Người lập/sửa lịch: quản lý **chính hoặc phó** của kho đó, đang hiệu lực và có `can_approve = true`. `expected_staff` chỉ để so sánh, không phải quota |
+| Q12c | Quản lý được phép sửa lịch quá khứ, nhưng **bắt buộc lý do** và có lịch sử audit |
+| Q12d | Thiếu lịch chính thức → `schedule_verified = false`, công suất 0 |
+| Q13 | `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`. Chỉnh hồi tố phân công dùng `EMPLOYEE_ASSIGNMENT_CHANGED`, `reason_code = retroactive`, lý do bắt buộc |
+| Q14 | Mỗi đơn nguồn có một quyết định luồng `cfo` / `legacy`, đã lưu thì **không đổi**. Đơn legacy không có plan/hold/approve trong CFO; IT mapping về sau không chuyển nó vào CFO. Sales phải kiểm đơn trong CFO **trước khi** điều phối tay. Fail closed khi dữ liệu nguồn hoặc quyền sở hữu luồng chưa chắc chắn |
+| **Mới** | Phương án giao chỉ hợp lệ khi thỏa cả hai: (1) lên hàng/chuẩn bị nằm trong **ca chính thức có người** của kho; (2) **toàn bộ khoảng làm việc** của từng tài xế nằm trong **ca thực tế** của tài xế đó, gồm lên hàng, chờ, chạy, dỡ và quay về, có tôn trọng giờ nghỉ và lịch đã nhận. Không mặc định 24/7; không biết ca thì không có phương án duyệt được |
 
----
+## Q12 — Lịch phân ca chính thức cho nhân viên kho **và tài xế**
 
-## Q12 — Lịch phân ca chính thức (ASM-007, US-WH-06)
+**Nguồn dữ liệu và người cập nhật**
+- **Một bảng chung** `hr.employee_shift_schedule` cho mọi nhân viên của kho. Tài xế thuộc kho gốc `driver_staff.home_warehouse_id`.
+  Dùng chung để có một cơ chế quyền, một lịch sử và một quy tắc 1 ca/ngày.
+- **Người cập nhật:** Warehouse Manager của kho (Q12b), cho cả nhân viên kho và tài xế của kho. Dispatcher và admin chỉ đọc.
+  Không job hay engine nào tự tạo hoặc sửa lịch.
 
-### Bảng đề xuất (`05` mục 4)
+**Giờ ca, giờ nghỉ, nghỉ giữa ca**
+- Giờ ca lấy theo `shift_template`, hoặc **giờ riêng** `start_time` / `end_time` (thường dùng cho tài xế).
+- `end_time < start_time` nghĩa là ca **qua nửa đêm**, kết thúc vào ngày hôm sau. `work_date` là ngày bắt đầu ca, theo múi giờ market.
+- **Giờ nghỉ** `break_start` / `break_end` là tùy chọn. Engine coi đây là khoảng không làm việc: chuyến không được chồng lên giờ nghỉ.
+- **Nghỉ giữa hai ca:** khi lưu lịch, service từ chối nếu khoảng nghỉ giữa hai ca liên tiếp của một tài xế nhỏ hơn
+  `driver_min_rest_hours`. Đây là MarketConfig mới, mặc định 11.
+
+**DDL (`05` mục 4) — chờ PR migration**
 ```sql
-CREATE TABLE hr.employee_shift_schedule (        -- nguồn xác thực duy nhất cho lịch người–ngày–ca [C]
+CREATE TABLE hr.employee_shift_schedule (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   employee_id bigint NOT NULL REFERENCES hr.employee(id),
   warehouse_id bigint NOT NULL REFERENCES ref.location(id),
   work_date date NOT NULL,
-  shift_template_id bigint NOT NULL REFERENCES hr.shift_template(id),
+  shift_template_id bigint REFERENCES hr.shift_template(id),
+  start_time time, end_time time,
+  break_start time, break_end time,
   status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','cancelled')),
-  assigned_by bigint NOT NULL REFERENCES hr.employee(id),
-  assigned_at timestamptz NOT NULL,
+  assigned_by bigint NOT NULL REFERENCES hr.employee(id), assigned_at timestamptz NOT NULL,
   cancelled_by bigint REFERENCES hr.employee(id), cancelled_at timestamptz,
-  reason_text text,                              -- bắt buộc khi work_date < hôm nay (kiểm ở service)
+  reason_text text,
+  CHECK (shift_template_id IS NOT NULL OR start_time IS NOT NULL),
+  CHECK ((start_time IS NULL) = (end_time IS NULL)),
+  CHECK ((break_start IS NULL) = (break_end IS NULL)),
   CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL))
 );
 CREATE UNIQUE INDEX ux_shift_one_per_day ON hr.employee_shift_schedule (employee_id, work_date)
-  WHERE status = 'scheduled';                    -- Q12a = A
+  WHERE status = 'scheduled';
 ```
-- Kèm cột chung `created_at` / `updated_at` theo ASM-001.
-- **Đổi ca không UPDATE dòng cũ.** Dòng cũ chuyển `cancelled`, thêm dòng mới, ghi `SHIFT_CHANGED` (trước/sau) trong cùng transaction, nên lịch sử còn nguyên.
-- **Service kiểm:**
-  - nhân viên có phân công hiệu lực tại kho đúng ngày đó, chưa `terminated`;
-  - `shift_template` thuộc đúng kho và đúng thứ trong tuần;
-  - thiếu `reason_text` khi sửa ngày đã qua → `422 REASON_REQUIRED`.
-- **`expected_staff` không giới hạn số người xếp vào ca và không dùng để tự xếp.** API chỉ trả lại số này để so sánh.
+- Bảng có thêm các cột chung theo ASM-001.
+- Đổi ca = hủy dòng cũ rồi thêm dòng mới, ghi `SHIFT_CHANGED` (trước/sau, actor) trong cùng transaction. Không xóa dòng.
 
-### API (`06` mục 13.0a / 13.2)
-- `GET /warehouses/{id}/shift-schedule?from=&to=`
-  - Quyền: warehouse (kho mình), dispatcher, admin trong market. Tối đa 31 ngày.
-  - Phản hồi:
-    ```json
-    { "warehouse_id": 1, "days": [ { "date": "2026-11-12", "shifts": [ {
-        "shift_template_id": 4, "start": "07:00", "end": "15:00", "expected_staff": 6, "scheduled_count": 5,
-        "employees": [ { "employee_id": 120, "name": "…", "counts_in_capacity": true } ] } ] } ] }
-    ```
+**API (`06` mục 13.0b)**
+- `GET /warehouses/{id}/shift-schedule?from=&to=&kind=staff|driver|all`
+  - Quyền đọc: warehouse (kho mình), dispatcher, admin. Tối đa 31 ngày.
+  - Trả `expected_staff` (chỉ để so sánh), `scheduled_count`, và từng người với `start_at`, `end_at`, `break`.
 - `PUT /warehouses/{id}/shift-schedule`
-  - Quyền: chỉ người thỏa Q12b. Sai vai trò → `403`; kho khác → `404`.
-  - Thân request: `{ "entries": [ { "employee_id": 120, "date": "2026-11-12", "shift_template_id": 4 } ], "reason_text": null }`. Đặt `shift_template_id: null` để bỏ người khỏi lịch ngày đó.
-  - Áp dụng toàn bộ hoặc không gì cả. Phản hồi dùng cùng schema với GET.
-- **`attendance_gen`:** với mỗi dòng `scheduled` trong 14 ngày tới, tạo `hr.attendance` (`planned`, đúng ca). Không ghi đè dòng điểm danh đã có; nếu lịch bị hủy mà dòng điểm danh vẫn là `planned` thì xóa cờ (đề xuất: đặt `shift_template_id = NULL`).
-- **Công suất:** ngày không có dòng lịch → `schedule_verified: false` (Q12d), công suất 0, UI cảnh báo.
+  - Quyền ghi: Q12b. Sai vai trò → `403`; kho khác → `404`.
+  - Thân request: `entries[{employee_id, date, shift_template_id|null, start_time?, end_time?, break_start?, break_end?}]`, `reason_text?`.
+  - Áp dụng toàn bộ hoặc không gì cả.
+  - `422` kèm `details.field` khi: người không thuộc kho, người đã nghỉ, trùng ca trong ngày, chồng ca, thiếu nghỉ giữa ca, template sai kho hoặc sai thứ.
+  - Sửa ngày đã qua mà thiếu lý do → `422 REASON_REQUIRED`.
+- `attendance_gen` chép các dòng `scheduled` trong 14 ngày tới thành `planned`.
+- API công suất trả thêm `schedule_verified`.
 
-## Q13 — Mã hành động audit nhân sự (ASM-006, US-EMP-05)
+**Đầu vào engine và quy tắc (`04` mục 6.7)**
+- `WarehouseCtx.loading_windows`: các ca kho chính thức có ít nhất một người tính công suất.
+  Rỗng → `NO_WAREHOUSE_SHIFT` (check preparation).
+- `DriverCtx.shifts`: các ca thực tế của tài xế, đã trừ giờ nghỉ, có thể qua nửa đêm.
+  Rỗng → tài xế không dùng được.
+- Mỗi xe lên hàng trọn trong một `loading_window`, với `loading_start ≤ cutoff` của ngày đó.
+  Không được thì dời sang cửa sổ của ngày làm việc kế. Không bao giờ lên hàng trước `goods_ready_at`.
+- **Khoảng làm việc của tài xế** = `[loading_start, trip_end]` của xe, tính cả thời gian chờ xuất phát. Khoảng này phải
+  nằm trọn trong một ca của tài xế, không chồng lịch đã nhận, và tổng giờ trong ngày ≤ `driver_max_hours_day`.
+- Giao vào ngày sau: lên hàng trong cửa sổ của **ngày giao**; xe và tài xế không chờ qua đêm.
+- **Mã mới:**
+  - `NO_WAREHOUSE_SHIFT` (preparation);
+  - `OUTSIDE_DRIVER_SHIFT` (safety): có tài xế đủ bằng nhưng không ai có ca phủ trọn chuyến;
+  - `NO_DRIVER` thêm `detail.reason` = `no_schedule` | `licence` | `busy`.
+- **Ghép tài xế–xe:** ghép đúng bằng bipartite/backtracking. Tồn tại cách ghép hợp lệ thì không được báo `NO_DRIVER`.
 
-Thêm vào `04` mục 10 và `app/audit/actions.py`:
+## Q13 — Mã audit nhân sự
 
-| Mã | Khi nào | `before` / `after` |
+| Mã | Khi nào |
+|---|---|
+| `LOCATION_MANAGER_CHANGED` | `PUT /locations/{id}/managers` (quản lý chính/phó cũ → mới) |
+| `LOCATION_OWNER_CHANGED` | `PATCH /locations/{id}/owner`, hoặc owner tự đổi theo quản lý chính (`reason_code = follows_primary`) |
+| `EMPLOYEE_TERMINATED` | `POST /employees/{id}/terminate` |
+| `EMPLOYEE_ASSIGNMENT_CHANGED` | chuyển công tác; chỉnh hồi tố (`retroactive`, lý do bắt buộc, chỉ admin, không tạo phân công chồng ngày) |
+| `SHIFT_CHANGED` | mỗi lần lưu lịch (Q12) |
+
+## Q14 — Phân luồng đơn và quy trình Sales
+
+**Quy trình**
+1. Sales nhập và submit đơn trên POS.
+2. **Trước mọi điều phối tay**, Sales mở CFO → **Sync & check routing**.
+3. CFO trả một trong ba trạng thái:
+
+| `routing_status` | Điều kiện | Sales làm gì |
 |---|---|---|
-| `LOCATION_MANAGER_CHANGED` | `PUT /locations/{id}/managers` | primary/deputy cũ → mới (`employee_id`, `valid_from/to`) |
-| `LOCATION_OWNER_CHANGED` | `PATCH /locations/{id}/owner`, hoặc owner tự đổi theo quản lý chính | `owner_employee_id` cũ → mới, `reason_code = 'follows_primary'` khi tự đổi |
-| `EMPLOYEE_TERMINATED` | `POST /employees/{id}/terminate` | `status`, `end_date`, phân công đóng, `app_user.is_active` |
-| `EMPLOYEE_ASSIGNMENT_CHANGED` (đã có) | chuyển công tác; **chỉnh hồi tố** `reason_code = 'retroactive'`, `reason_text` bắt buộc | phân công cũ/mới |
+| `cfo` | Đọc đủ đơn, 100% SKU đã confirmed | CFO lập kế hoạch/điều phối theo cổng duyệt; **không** điều phối tay |
+| `legacy` | Đọc đủ đơn, có SKU chưa confirmed | Toàn bộ đơn theo quy trình tay; CFO không plan/hold/approve; mapping về sau không kéo đơn vào CFO |
+| `unresolved` | Nguồn hoặc CFO không sẵn sàng, dữ liệu thiếu, hoặc version đang đổi | **Không** coi là legacy; không lưu quyết định; thử lại hoặc báo theo quy trình; không xác nhận giao |
 
-**Chỉnh hồi tố phân công:**
-- Chỉ admin.
-- Thêm trường `reason_text` vào `POST /employees/{id}/assignments`, bắt buộc khi `start_date < hôm nay`.
-- Service từ chối nếu tạo ra hai phân công chồng ngày.
-- Không xóa bản ghi cũ: chỉ đóng hoặc mở `end_date`, có log trước/sau.
+4. **Xác nhận bàn giao** (chống làm trùng):
+   - `legacy` → Sales bấm "Tôi xử lý theo quy trình cũ", CFO ghi audit `ROUTING_LEGACY_ACKNOWLEDGED`.
+   - Đơn đã được điều phối tay trước khi kiểm CFO → Sales chọn "Đã điều phối tay". CFO lưu `legacy` với
+     `reason_code = manual_started`, kể cả khi đủ SKU.
 
-## Q14 — Phân luồng đơn: một đơn một hệ thống điều phối (ASM-005, US-PRD-00)
-
-**Phương án A (đề xuất).** Thêm bảng sau vào `05` mục 6:
+**DDL (`05` mục 6) — chờ PR migration**
 ```sql
 CREATE TABLE ops.order_routing (
   market_id smallint NOT NULL REFERENCES ref.market(id),
-  external_ref text NOT NULL,                     -- mã đơn POS
+  external_ref text NOT NULL,
   route text NOT NULL CHECK (route IN ('cfo','legacy')),
-  decided_at timestamptz NOT NULL, decided_source_version int NOT NULL,
-  reason_code text,                               -- 'unmapped_sku' | 'all_confirmed'
+  reason_code text NOT NULL CHECK (reason_code IN ('all_confirmed','unmapped_sku','manual_started')),
   unmapped_skus text[] NOT NULL DEFAULT '{}',
+  decided_at timestamptz NOT NULL, decided_source_version int NOT NULL,
+  decided_by_user_id bigint REFERENCES ref.app_user(id),
+  acknowledged_by_user_id bigint REFERENCES ref.app_user(id), acknowledged_at timestamptz,
   PRIMARY KEY (market_id, external_ref)
 );
 ```
-- **Quyết định một lần, không đổi:**
-  - Lần đầu CFO thấy đơn (polling hoặc Sales `sync-now`), trong cùng transaction: lấy advisory lock `routing:<market>:<external_ref>`, rồi `INSERT … ON CONFLICT DO NOTHING`.
-  - Bên thắng quyết định luồng; bên thua đọc kết quả đã có.
-  - `legacy` → **không** tạo `customer_order`, không lập plan, không giữ chỗ.
-  - Version nguồn đổi hoặc IT mapping xong cũng **không** đổi luồng (US-PRD-00 AC2).
-- **Fail closed (AC3):** chưa đọc được đủ dòng hàng hoặc danh mục sản phẩm → không quyết định, không tạo đơn CFO. `sync-now` trả trạng thái "chưa xác định, thử lại".
-- **`sync-now` cho đơn `legacy`:** trả `200 { "sync_status": "legacy_process", "unmapped_skus": [...] }`. Đề xuất dùng mã thành công thay vì lỗi: đơn hợp lệ, chỉ không thuộc CFO. Không có Confirm.
-- **Dữ liệu cũ:** migration chuyển các `customer_order` đang `BLOCKED_UNMAPPED_SKU` thành `order_routing(route='legacy')`. Xử lý các dòng này (giữ chỉ đọc hay xóa khỏi danh sách) cần chốt thêm.
-- **Phối hợp:** việc ghi `order_routing` nằm trong ingestion, thuộc Dev 2 (`ingest_service`). Dev 1 viết hàm kiểm điều kiện `route_for(order_lines)` và guard trong `order_service`/`planning_service`. Mọi đường lập plan/hold/approve kiểm `route = 'cfo'`.
-- **Mapping task:** vẫn sinh từ đồng bộ danh mục sản phẩm (SKU `pending`), không phụ thuộc đơn bị chặn (US-PRD-01 AC1).
 
-**Phương án B (ít thay đổi schema).**
-- Giữ `customer_order` ở trạng thái `BLOCKED_UNMAPPED_SKU` làm dấu luồng cũ.
-- Migration xóa cặp chuyển `BLOCKED_UNMAPPED_SKU → SUBMITTED` khỏi seed `ops.order_transition`, để đây là trạng thái cuối.
-- Unique `(market_id, external_ref)` có sẵn đã chống tạo trùng.
-- Nhược điểm: CFO vẫn lưu đơn không thuộc CFO; phải loại các đơn này khỏi mọi danh sách, KPI và doanh thu; dễ bị "mở khóa" nhầm.
+**Cách quyết định luồng**
+- Mỗi quyết định chạy trong một transaction: lấy advisory lock `routing:<market>:<external_ref>`, rồi `INSERT … ON CONFLICT DO NOTHING`.
+  Bên thua đọc lại quyết định đã lưu.
+- `customer_order` chỉ được tạo khi `route = 'cfo'`.
+- `order_service`, `planning_service`, `approval_service` đều kiểm `route = 'cfo'` trước khi plan/hold/approve.
+- Polling được phép quyết định `cfo`/`legacy`, nhưng **không tự tạo hold** trước khi Sales kiểm.
+- Dữ liệu cũ: đơn đang `BLOCKED_UNMAPPED_SKU` được chuyển thành `legacy / unmapped_sku`.
 
-## Ảnh hưởng nếu duyệt cả ba (phương án A)
-- **Migration mới `0009_…`:** `hr.employee_shift_schedule`, `ops.order_routing`. Không đổi bảng cũ.
-- **`06`:** chi tiết `13.0a` và `13.2` (lịch, `schedule_verified`), `5.0.1` (sync-now `legacy_process`), mã audit mới.
-- **Code Dev 1:** schedule service + API, `attendance_gen` chép từ lịch, audit ASM-006 cho manager/owner/terminate và chỉnh hồi tố, guard `route = 'cfo'` trước plan/hold/approve.
-- **Dev 2:** routing trong ingestion và sync-now.
-- **Dev 3:** màn lập lịch (5.A5) và trạng thái "quy trình cũ" ở My store orders.
+**Giới hạn:** bảng định tuyến nội bộ **không bảo đảm** chặn được điều phối tay, vì CFO chỉ đọc POS. Chống làm trùng dựa vào:
+1. quy tắc "kiểm CFO trước";
+2. xác nhận bàn giao có audit;
+3. lựa chọn `manual_started`;
+4. cảnh báo khi version đơn đổi.
+
+Nếu sau này POS cung cấp owner luồng thì có thể bổ sung kiểm tra tự động.
+
+**API (`06` mục 5.0.2)**
+- `sync-now` trả `routing_status` kèm `order_id?`, `unmapped_skus?`, `retry_after_s?`. Trạng thái `unresolved` trả `200`; lỗi kỹ thuật của nguồn vẫn là `503`.
+- `POST /integration/orders/{external_ref}/routing-ack` (Sales, đúng cửa hàng): `{choice: legacy_acknowledged | manual_started, reason_text?}`.
+  `manual_started` bắt buộc lý do và chỉ hợp lệ khi đơn chưa có hold/approve trong CFO.
+
+## Phối hợp
+- **Dev 1:** migration `0009`, schedule service + API, guard `route = 'cfo'`, các mã audit, engine (lịch kho/tài xế, ghép tài xế).
+- **Dev 2:** ghi `order_routing` trong ingestion/sync-now; polling không tạo hold; seed lịch demo cho kho và tài xế.
+- **Dev 3:** màn lập lịch có tài xế; màn Sync & check routing với ba trạng thái và các nút bàn giao.

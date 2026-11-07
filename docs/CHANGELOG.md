@@ -19,6 +19,13 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [Q12–Q14 — lựa chọn nghiệp vụ đã duyệt] — 2026-11-07 — docs, DDL/API/engine chờ PR triển khai (PR qaztyhn/cfo-itconsultant#53)
+
+- Q12: lịch ca chính thức một bảng cho nhân viên kho **và tài xế**; 1 ca/người/ngày; quản lý chính/phó `can_approve` cập nhật; sửa quá khứ cần lý do; thiếu lịch → `schedule_verified=false`, công suất 0; giờ riêng, ca qua nửa đêm, giờ nghỉ, nghỉ giữa ca `driver_min_rest_hours` (MarketConfig mới, mặc định 11).
+- Yêu cầu mới của chủ dự án: phương án chỉ hợp lệ khi lên hàng trong ca kho chính thức có người và khoảng làm việc của từng tài xế nằm trọn trong ca thực tế; không mặc định 24/7. Engine: `WarehouseCtx.loading_windows`, `DriverCtx.shifts`, ghép tài xế bipartite, ràng buộc nhóm/năng lực theo dòng trên từng xe; mã `NO_WAREHOUSE_SHIFT`, `OUTSIDE_DRIVER_SHIFT` (`04` mục 6.7, `06` mục 13.0b).
+- Q13: mã audit `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`, chỉnh hồi tố `EMPLOYEE_ASSIGNMENT_CHANGED`/`retroactive`.
+- Q14: `ops.order_routing` (cfo/legacy, không đổi), trạng thái `unresolved` riêng, Sales kiểm CFO trước điều phối tay, `routing-ack` (`legacy_acknowledged`/`manual_started`), polling không tự tạo hold; nêu rõ bảng nội bộ không bảo đảm chặn điều phối tay (`06` mục 5.0.2).
+
 ## [Sales confirmation B — Product decision] — 2026-11-07 — docs-only, chưa triển khai
 
 - Giữ POS/WMS/ERP, database riêng và read-only adapter; Sales yêu cầu CFO đọc đơn ngay qua `sync-now`, polling 5 phút dự phòng.

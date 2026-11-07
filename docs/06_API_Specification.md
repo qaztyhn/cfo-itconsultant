@@ -219,6 +219,13 @@ Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "
 Khóa: chỉ khi duyệt, theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi mọi xe → mọi tài xế của phương án), kiểm tra lại sau khi có khóa. Lúc lập kế hoạch giữ chỗ không khóa và có thể vượt; đơn duyệt trước thắng.
 Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `409 RESOURCE_CONFLICT` (xe/tài xế/hàng/công suất đã bị đơn khác chiếm, kèm `details.conflict` và gợi ý chạy lại), `422 REASON_REQUIRED`, `409 DATE_AGREEMENT_REQUIRED`, `409 ILLEGAL_TRANSITION`.
 
+### 5.0.2 Phân luồng đơn khi Sales kiểm trên CFO (Q14, đã duyệt phương án A)
+
+(chi tiết: `docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md`; lựa chọn nghiệp vụ đã duyệt ở PR qaztyhn/cfo-itconsultant#53; DDL/API/engine cuối cùng review ở PR triển khai)
+- Sales submit trên POS rồi **kiểm trên CFO trước mọi điều phối tay**. `sync-now` trả `routing_status`: `cfo` (đủ dữ liệu, 100% SKU confirmed — CFO điều phối, không điều phối tay), `legacy` (có SKU chưa confirmed — quy trình tay, CFO không plan/hold/approve, mapping sau không kéo vào CFO), `unresolved` (nguồn/CFO không sẵn sàng hoặc dữ liệu thiếu — **không** coi là legacy, không lưu quyết định, trả `retry_after_s`). Lỗi kỹ thuật nguồn vẫn `503`.
+- `POST /integration/orders/{external_ref}/routing-ack` (sales, đúng cửa hàng): `{ "choice": "legacy_acknowledged" | "manual_started", "reason_text"? }`; `manual_started` (đơn đã điều phối tay trước khi kiểm) bắt buộc lý do, lưu `legacy/manual_started`, chỉ khi chưa có hold/approve. Ghi `ROUTING_LEGACY_ACKNOWLEDGED`.
+- Bảng định tuyến nội bộ **không bảo đảm** chặn điều phối tay ngoài CFO (CFO chỉ đọc POS); chống trùng dựa vào quy trình kiểm trước, xác nhận bàn giao có audit và lựa chọn `manual_started`.
+
 ### 6.3a Sales approve (mở rộng endpoint đã có)
 
 `POST /plans/{id}/approve` cho Sales **chỉ** khi đúng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, version/dữ liệu nguồn còn mới, giữ chỗ hợp lệ, không transfer/manual/replan/date change, không làm trễ đơn cũ. Dùng chính ApprovalService, locks/transaction/audit với actor Sales. Thiếu quyền 403; ngoài cửa hàng 404; không đủ điều kiện hoặc đơn đặt trước chưa duyệt có cạnh tranh chưa chứng minh đủ năng lực: 409 `PLAN_NOT_APPROVABLE`; nguồn lực đổi: 409 `RESOURCE_CONFLICT`; hold hết: 409 `HOLD_EXPIRED`. Không auto-approve.
@@ -406,6 +413,14 @@ Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ m�
 - `PUT /warehouses/{id}/attendance` chỉ cập nhật tình trạng thực tế cho người **đã có lịch**; `all_present` không tự tạo ca hay sửa lịch. Sửa dữ liệu quá khứ phải có quyền và lý do. Mọi cập nhật ghi `SHIFT_CHANGED` hoặc `ATTENDANCE_CHANGED` với actor/before/after cùng transaction. Thiếu lịch chính thức → trả/cảnh báo thiếu dữ liệu, không xác nhận công suất dựa trên người giả định.
 - Đây là **đặc tả mục tiêu của PR docs**; không tuyên bố endpoint, bảng hoặc migration hiện có đã hỗ trợ.
 
+
+### 13.0b Lịch ca chính thức của kho và tài xế, mã audit nhân sự (Q12/Q13, đã duyệt)
+
+(chi tiết: `docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md`; lựa chọn nghiệp vụ đã duyệt ở PR qaztyhn/cfo-itconsultant#53; DDL/API/engine cuối cùng review ở PR triển khai)
+- Một bảng lịch cho **nhân viên kho và tài xế** (tài xế theo kho gốc). Người cập nhật: quản lý chính/phó `can_approve` của kho (Q12b); 1 ca/người/ngày (Q12a); sửa quá khứ cần lý do (Q12c); giờ riêng, ca qua nửa đêm, giờ nghỉ; kiểm nghỉ giữa ca `driver_min_rest_hours`.
+- `GET /warehouses/{id}/shift-schedule?from=&to=&kind=staff|driver|all`, `PUT /warehouses/{id}/shift-schedule` (`entries[{employee_id, date, shift_template_id|null, start_time?, end_time?, break_start?, break_end?}]`, `reason_text?`); ghi `SHIFT_CHANGED`. Công suất trả `schedule_verified` (Q12d).
+- Engine chỉ đề xuất phương án khi lên hàng nằm trong ca kho chính thức có người và khoảng làm việc của từng tài xế nằm trọn trong ca thực tế của tài xế; mã mới `NO_WAREHOUSE_SHIFT`, `OUTSIDE_DRIVER_SHIFT` (Phụ lục A).
+- Mã audit mới (Q13): `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`; chỉnh hồi tố phân công `EMPLOYEE_ASSIGNMENT_CHANGED` + `reason_code=retroactive` + lý do; `ROUTING_LEGACY_ACKNOWLEDGED` (Q14).
 
 ### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
 
