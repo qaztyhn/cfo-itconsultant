@@ -8,6 +8,7 @@ from app.api.v1 import (
     auth,
     execution,
     gps,
+    health,
     hr,
     internal,
     kpi,
@@ -33,4 +34,5 @@ router.include_router(hr.router)
 router.include_router(kpi.router)
 router.include_router(revenue.router)
 router.include_router(admin.router)
+router.include_router(health.router)
 router.include_router(internal.router)

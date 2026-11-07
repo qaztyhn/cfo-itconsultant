@@ -85,3 +85,51 @@ def fetch(dsn: str, sql: str, *args: Any) -> list[asyncpg.Record]:
             await conn.close()
 
     return asyncio.run(_run())
+
+
+def execute(dsn: str, *statements: str) -> None:
+    """Chạy các lệnh ghi trong MỘT transaction (lỗi ràng buộc → asyncpg exception, rollback)."""
+
+    async def _run() -> None:
+        conn = await asyncpg.connect(dsn)
+        try:
+            async with conn.transaction():
+                for statement in statements:
+                    await conn.execute(statement)
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
+
+
+COLUMNS_SQL = """
+SELECT table_schema || '.' || table_name AS name, column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = ANY($1::text[])
+  AND table_name IN (SELECT table_name FROM information_schema.tables
+                     WHERE table_schema = ANY($1::text[]) AND table_type = 'BASE TABLE')
+"""
+
+
+def table_columns(dsn: str, *schemas: str) -> dict[str, dict[str, asyncpg.Record]]:
+    """{'schema.table': {cột: thông tin}} cho các bảng thật (không gồm view)."""
+    out: dict[str, dict[str, asyncpg.Record]] = {}
+    for row in fetch(dsn, COLUMNS_SQL, list(schemas)):
+        out.setdefault(row["name"], {})[row["column_name"]] = row
+    return out
+
+
+def rejects(
+    dsn: str, error: type[asyncpg.PostgresError], constraint: str | None, *statements: str
+) -> asyncpg.PostgresError:
+    """Lệnh phải bị từ chối bởi ĐÚNG loại lỗi và (nếu có) ĐÚNG ràng buộc; lỗi cú pháp/kiểu không tính."""
+    with pytest.raises(error) as caught:
+        execute(dsn, *statements)
+    if constraint is not None:
+        assert caught.value.constraint_name == constraint
+    return caught.value
+
+
+def async_url(dsn: str) -> str:
+    """DSN cho SQLAlchemy async (asyncpg) từ DSN test bất kỳ dạng postgresql://."""
+    return "postgresql+asyncpg://" + _plain_dsn(dsn)[len("postgresql://") :]
