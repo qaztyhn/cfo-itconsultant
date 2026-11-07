@@ -144,23 +144,27 @@ describe("GET /orders/counts follows docs/06 mục 5", () => {
       }),
     );
     expect(counts).not.toHaveProperty("total");
-    const legacy = orders.items.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU");
-    expect(counts.all).toBe(orders.total - legacy.length);
+    expect(counts.all).toBe(orders.total);
+    expect(counts.all).toBe(orders.items.length);
     expect(counts.nav.order_queue).toBe(counts.needs_plan);
     expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
     expect(counts.nav.tracking_risk).toBe(orders.items.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length);
   });
 
-  it("does not count legacy BLOCKED_UNMAPPED_SKU orders as waiting for CFO (ASM-005)", async () => {
+  it("keeps legacy BLOCKED_UNMAPPED_SKU orders out of the CFO list, detail and counts (DEC-ROUTING-002)", async () => {
     const counts = await apiGet<Counts>("/orders/counts");
     const orders = await apiGet<OrderList>("/orders");
-    const legacy = orders.items.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU");
+    const filtered = await apiGet<OrderList>("/orders", { status: "BLOCKED_UNMAPPED_SKU" });
 
-    // Mock phải còn ít nhất một đơn legacy, nếu không test này không chứng minh gì.
-    expect(legacy.length).toBeGreaterThan(0);
-    expect(counts.all).toBe(orders.total - legacy.length);
+    expect(orders.items.some((o) => o.status === "BLOCKED_UNMAPPED_SKU")).toBe(false);
+    expect(filtered.total).toBe(0);
+    expect(counts.all).toBe(orders.total);
     expect(counts.needs_plan).toBe(orders.items.filter((o) => o.status === "SUBMITTED").length);
     expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
+  });
+
+  it("returns 404 for the legacy order detail instead of serving it as a CFO order", async () => {
+    await expect(apiGet("/orders/156")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
   });
 });
 

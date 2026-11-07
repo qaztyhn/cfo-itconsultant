@@ -184,27 +184,6 @@ const ORDERS = [
     created_at: "2026-11-04T07:00:00+01:00",
   },
   {
-    id: 156,
-    order_no: "SE-2026-000156",
-    status: "BLOCKED_UNMAPPED_SKU",
-    customer_name: "—",
-    site_name: "—",
-    site_address: "—",
-    date_mode: "exact",
-    date_from: null,
-    date_to: null,
-    window_start: null,
-    window_end: null,
-    total_lines: 2,
-    total_kg: 500,
-    total_m3: 1.5,
-    warehouse_code: null,
-    risk_color: null,
-    risk_status: null,
-    approved_plan_id: null,
-    created_at: "2026-11-04T09:00:00+01:00",
-  },
-  {
     id: 118,
     order_no: "SE-2026-000118",
     status: "DELIVERED",
@@ -227,15 +206,37 @@ const ORDERS = [
   },
 ];
 
+export const LEGACY_ORDERS = [{
+    id: 156,
+    order_no: "SE-2026-000156",
+    status: "BLOCKED_UNMAPPED_SKU",
+    customer_name: "—",
+    site_name: "—",
+    site_address: "—",
+    date_mode: "exact",
+    date_from: null,
+    date_to: null,
+    window_start: null,
+    window_end: null,
+    total_lines: 2,
+    total_kg: 500,
+    total_m3: 1.5,
+    warehouse_code: null,
+    risk_color: null,
+    risk_status: null,
+    approved_plan_id: null,
+    created_at: "2026-11-04T09:00:00+01:00",
+  },
+];
+
 const needsPlan = ORDERS.filter((o) => o.status === "SUBMITTED").length;
 const noFeasibleDate = ORDERS.filter((o) => o.status === "NO_FEASIBLE_DATE").length;
-// ASM-005: BLOCKED_UNMAPPED_SKU là dữ liệu legacy, chỉ để tra cứu; không thuộc bucket nào của /orders/counts.
-const COUNTED_ORDERS = ORDERS.filter((o) => o.status !== "BLOCKED_UNMAPPED_SKU");
 const replanSuggested = 0;
 
-// Hình dạng theo docs/06 mục 5 (`all` + `nav`); số liệu suy ra từ ORDERS để nhất quán với danh sách.
+// Hình dạng theo docs/06 mục 5 (`all` + `nav`). ORDERS chỉ chứa đơn CFO (đơn legacy nằm ở LEGACY_ORDERS,
+// DEC-ROUTING-002) nên mọi số liệu suy ra từ ORDERS, khớp đúng với GET /orders.
 const COUNTS = {
-  all: COUNTED_ORDERS.length,
+  all: ORDERS.length,
   needs_plan: needsPlan,
   awaiting_approval: ORDERS.filter((o) => o.status === "PLANNED").length,
   no_feasible_date: noFeasibleDate,
@@ -716,7 +717,8 @@ import { authHandlers } from "./authHandlers"
 
 export const handlers = [
   ...authHandlers,
-  // Orders
+  // Orders — chỉ đơn CFO (DEC-ROUTING-002). Đơn legacy (LEGACY_ORDERS) không có trong list/detail/counts;
+  // GET /orders/:id của đơn legacy trả 404 NOT_FOUND.
   http.get(`${BASE}/orders`, ({ request }) => {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
