@@ -15,8 +15,18 @@ from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
-from app.domain.models.hr import Employee, LocationManager
-from app.domain.models.ref import Location, Market
+from app.domain.models.hr import (
+    CsStaff,
+    DispatcherStaff,
+    DriverStaff,
+    Employee,
+    EmployeeAssignment,
+    LocationManager,
+    Position,
+    SalesStaff,
+    WarehouseStaff,
+)
+from app.domain.models.ref import HandlingGroup, Location, Market, Vehicle
 from app.services.hr_scope import HrReadScope
 from app.services.query_utils import parse_sort
 
@@ -140,3 +150,301 @@ async def get_location(session: AsyncSession, scope: HrReadScope, location_id: i
     if row is None:
         raise not_found("Location")
     return (await _location_views(session, scope, [(row[0], row[1])]))[0]
+
+
+# --- nhân viên (06 mục 13.1; Q4 = C có điều chỉnh) ------------------------------------------------------
+
+EMPLOYEE_STATUSES = frozenset({"active", "on_leave", "terminated"})
+_EMPLOYEE_SORT_BASE = {
+    "last_name": Employee.last_name,
+    "first_name": Employee.first_name,
+    "position_code": Employee.position_code,
+}
+_EMPLOYEE_SORT_ADMIN = {
+    **_EMPLOYEE_SORT_BASE,
+    "employee_no": Employee.employee_no,
+    "hire_date": Employee.hire_date,
+}
+
+
+def assignment_effective(d: date) -> ColumnElement[bool]:
+    return and_(
+        EmployeeAssignment.start_date <= d,
+        or_(EmployeeAssignment.end_date.is_(None), EmployeeAssignment.end_date >= d),
+    )
+
+
+def _assigned_at(locations: frozenset[int] | set[int], d: date) -> ColumnElement[bool]:
+    """Nhân viên có phân công hiệu lực ngày `d` tại một trong `locations`."""
+    return (
+        select(EmployeeAssignment.id)
+        .where(
+            EmployeeAssignment.employee_id == Employee.id,
+            EmployeeAssignment.location_id.in_(locations),
+            assignment_effective(d),
+        )
+        .exists()
+    )
+
+
+def _employee_scope(query: Select[Employee, str], scope: HrReadScope) -> Select[Employee, str]:
+    if scope.market_id is not None:
+        query = query.where(Employee.market_id == scope.market_id)
+    if scope.role != "admin":
+        query = query.where(Employee.status != "terminated")
+    if scope.role == "warehouse":
+        query = query.where(_assigned_at(scope.location_ids, scope.today))
+    return query
+
+
+def _iso(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+async def _employee_views(
+    session: AsyncSession, scope: HrReadScope, rows: Sequence[tuple[Employee, str]], *, detail: bool
+) -> list[dict[str, object]]:
+    ids = [e.id for e, _ in rows]
+    current: dict[int, dict[str, object]] = {}
+    history: dict[int, list[dict[str, object]]] = {i: [] for i in ids}
+    if ids:
+        assignments = await session.execute(
+            select(EmployeeAssignment, Location.code, Location.name)
+            .join(Location, Location.id == EmployeeAssignment.location_id)
+            .where(EmployeeAssignment.employee_id.in_(ids))
+            .order_by(EmployeeAssignment.start_date.desc(), EmployeeAssignment.id.desc())
+        )
+        for a, code, name in assignments.all():
+            effective = a.start_date <= scope.today and (a.end_date is None or a.end_date >= scope.today)
+            if effective and a.employee_id not in current:
+                current[a.employee_id] = {
+                    "location_id": a.location_id,
+                    "location_code": code,
+                    "location_name": name,
+                    "start_date": a.start_date.isoformat(),
+                }
+            history[a.employee_id].append(
+                {"location_id": a.location_id, "location_code": code, "start_date": a.start_date.isoformat(),
+                 "end_date": _iso(a.end_date)}
+            )  # fmt: skip
+    staff = await _staff_blocks(session, scope, ids)
+    views: list[dict[str, object]] = []
+    for e, position_name in rows:
+        view: dict[str, object] = {
+            "id": e.id,
+            "first_name": e.first_name,
+            "last_name": e.last_name,
+            "position": {"code": e.position_code, "name": position_name},
+            "assignment": current.get(e.id),
+        }
+        for block, values in staff.items():
+            view[block] = values.get(e.id)
+        if scope.role == "admin":
+            view |= {
+                "employee_no": e.employee_no,
+                "status": e.status,
+                "employment_type": e.employment_type,
+                "hire_date": e.hire_date.isoformat(),
+                "end_date": _iso(e.end_date),
+                "work_email": e.work_email,
+                "work_phone": e.work_phone,
+            }
+            if detail:
+                view |= {
+                    "weekly_hours": float(e.weekly_hours),
+                    "reports_to_employee_id": e.reports_to_employee_id,
+                    "assignment_history": history.get(e.id, []),
+                }
+        views.append(view)
+    return views
+
+
+async def _staff_blocks(
+    session: AsyncSession, scope: HrReadScope, ids: list[int]
+) -> dict[str, dict[int, dict[str, object]]]:
+    """Khối `*_staff` theo vai trò: admin cả 5; dispatcher driver_staff; warehouse warehouse_staff."""
+    visible = {
+        "admin": ("warehouse_staff", "sales_staff", "dispatcher_staff", "driver_staff", "cs_staff"),
+        "dispatcher": ("driver_staff",),
+        "warehouse": ("warehouse_staff",),
+    }[scope.role]
+    blocks: dict[str, dict[int, dict[str, object]]] = {name: {} for name in visible}
+    if not ids:
+        return blocks
+    if "warehouse_staff" in blocks:
+        for ws in (
+            await session.execute(select(WarehouseStaff).where(WarehouseStaff.employee_id.in_(ids)))
+        ).scalars():
+            blocks["warehouse_staff"][ws.employee_id] = {
+                "role": ws.role,
+                "counts_in_capacity": ws.counts_in_capacity,
+            }
+    if "driver_staff" in blocks:
+        for ds in (
+            await session.execute(select(DriverStaff).where(DriverStaff.employee_id.in_(ids)))
+        ).scalars():
+            blocks["driver_staff"][ds.employee_id] = {
+                "licence_class": ds.licence_class,
+                "licence_expires_on": ds.licence_expires_on.isoformat(),
+                "home_warehouse_id": ds.home_warehouse_id,
+                "adr": ds.adr,
+            }
+    if "sales_staff" in blocks:
+        for ss in (
+            await session.execute(select(SalesStaff).where(SalesStaff.employee_id.in_(ids)))
+        ).scalars():
+            blocks["sales_staff"][ss.employee_id] = {"role": ss.role}
+    if "dispatcher_staff" in blocks:
+        result = await session.execute(select(DispatcherStaff).where(DispatcherStaff.employee_id.in_(ids)))
+        for dsp in result.scalars():
+            blocks["dispatcher_staff"][dsp.employee_id] = {"can_send_delay_notice": dsp.can_send_delay_notice}
+    if "cs_staff" in blocks:
+        for cs in (await session.execute(select(CsStaff).where(CsStaff.employee_id.in_(ids)))).scalars():
+            blocks["cs_staff"][cs.employee_id] = {"team": cs.team}
+    return blocks
+
+
+def _employee_base() -> Select[Employee, str]:
+    return select(Employee, Position.name).join(Position, Position.code == Employee.position_code)
+
+
+async def list_employees(
+    session: AsyncSession,
+    scope: HrReadScope,
+    *,
+    position_code: str | None,
+    location_id: int | None,
+    status: str | None,
+    q: str | None,
+    sort: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, object]], int]:
+    """Danh sách nhân viên trong phạm vi; lọc vị trí, nơi phân công hiệu lực hôm nay, trạng thái, tên."""
+    if status is not None and status not in EMPLOYEE_STATUSES:
+        raise DomainError("VALIDATION_ERROR", f"Unknown employee status '{status}'.")
+    sortable = _EMPLOYEE_SORT_ADMIN if scope.role == "admin" else _EMPLOYEE_SORT_BASE
+    order = parse_sort(sort, frozenset(sortable), "last_name,first_name")
+    query = _employee_scope(_employee_base(), scope)
+    if position_code:
+        query = query.where(Employee.position_code == position_code)
+    if location_id is not None:
+        query = query.where(_assigned_at({location_id}, scope.today))
+    if status is not None:
+        query = query.where(Employee.status == status)
+    if q:
+        pattern = f"%{q.strip()}%"
+        conditions = [
+            Employee.first_name.ilike(pattern),
+            Employee.last_name.ilike(pattern),
+            (Employee.first_name + " " + Employee.last_name).ilike(pattern),
+        ]
+        if scope.role == "admin":
+            conditions.append(Employee.employee_no.ilike(pattern))
+        query = query.where(or_(*conditions))
+    columns = [sortable[f].desc() if desc else sortable[f].asc() for f, desc in order]
+    query = query.order_by(*columns, Employee.id)
+    total = (
+        await session.execute(select(func.count()).select_from(query.order_by(None).subquery()))
+    ).scalar_one()
+    rows = (await session.execute(query.limit(page_size).offset((page - 1) * page_size))).all()
+    return await _employee_views(session, scope, [(e, n) for e, n in rows], detail=False), int(total)
+
+
+async def get_employee(session: AsyncSession, scope: HrReadScope, employee_id: int) -> dict[str, object]:
+    """Một nhân viên trong phạm vi (admin có thêm trường chi tiết); không tồn tại/ngoài phạm vi → 404."""
+    row = (
+        await session.execute(_employee_scope(_employee_base(), scope).where(Employee.id == employee_id))
+    ).first()
+    if row is None:
+        raise not_found("Employee")
+    return (await _employee_views(session, scope, [(row[0], row[1])], detail=True))[0]
+
+
+# --- xe (06 mục 13.1; Q2 = A) ----------------------------------------------------------------------------
+
+VEHICLE_STATUSES = frozenset({"available", "maintenance", "retired"})
+VEHICLE_SORT = {"code": Vehicle.code, "capacity_kg": Vehicle.capacity_kg, "status": Vehicle.status}
+
+
+def _vehicle_base() -> Select[Vehicle, Location]:
+    return select(Vehicle, Location).join(Location, Location.id == Vehicle.home_warehouse_id)
+
+
+def _vehicle_scope(query: Select[Vehicle, Location], scope: HrReadScope) -> Select[Vehicle, Location]:
+    if scope.market_id is not None:
+        query = query.where(Location.market_id == scope.market_id)
+    if scope.role == "warehouse":
+        query = query.where(Vehicle.home_warehouse_id.in_(scope.location_ids))
+    return query
+
+
+async def _vehicle_views(
+    session: AsyncSession, rows: Sequence[tuple[Vehicle, Location]]
+) -> list[dict[str, object]]:
+    group_ids = {g for v, _ in rows for g in v.allowed_group_ids}
+    codes: dict[int, str] = {}
+    if group_ids:
+        result = await session.execute(
+            select(HandlingGroup.id, HandlingGroup.code).where(HandlingGroup.id.in_(group_ids))
+        )
+        codes = {i: c for i, c in result.all()}
+    return [
+        {
+            "id": v.id,
+            "code": v.code,
+            "plate": v.plate,
+            "name": v.name,
+            "home_warehouse": {"id": wh.id, "code": wh.code, "name": wh.name},
+            "capacity_kg": float(v.capacity_kg),
+            "capacity_m3": float(v.capacity_m3),
+            "capabilities": list(v.capabilities),
+            "required_licence": v.required_licence,
+            "allowed_groups": [
+                {"id": g, "code": codes[g]} for g in sorted(v.allowed_group_ids) if g in codes
+            ],
+            "status": v.status,
+        }
+        for v, wh in rows
+    ]
+
+
+async def list_vehicles(
+    session: AsyncSession,
+    scope: HrReadScope,
+    *,
+    home_warehouse_id: int | None,
+    status: str | None,
+    capability: str | None,
+    sort: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, object]], int]:
+    """Danh sách xe trong phạm vi: dispatcher theo market, warehouse theo kho gốc thuộc nơi của mình."""
+    if status is not None and status not in VEHICLE_STATUSES:
+        raise DomainError("VALIDATION_ERROR", f"Unknown vehicle status '{status}'.")
+    order = parse_sort(sort, frozenset(VEHICLE_SORT), "code")
+    query = _vehicle_scope(_vehicle_base(), scope)
+    if home_warehouse_id is not None:
+        query = query.where(Vehicle.home_warehouse_id == home_warehouse_id)
+    if status is not None:
+        query = query.where(Vehicle.status == status)
+    if capability:
+        query = query.where(Vehicle.capabilities.contains([capability]))
+    columns = [VEHICLE_SORT[f].desc() if desc else VEHICLE_SORT[f].asc() for f, desc in order]
+    query = query.order_by(*columns, Vehicle.id)
+    total = (
+        await session.execute(select(func.count()).select_from(query.order_by(None).subquery()))
+    ).scalar_one()
+    rows = (await session.execute(query.limit(page_size).offset((page - 1) * page_size))).all()
+    return await _vehicle_views(session, [(v, wh) for v, wh in rows]), int(total)
+
+
+async def get_vehicle(session: AsyncSession, scope: HrReadScope, vehicle_id: int) -> dict[str, object]:
+    """Một xe trong phạm vi; không tồn tại hoặc ngoài phạm vi → 404."""
+    row = (
+        await session.execute(_vehicle_scope(_vehicle_base(), scope).where(Vehicle.id == vehicle_id))
+    ).first()
+    if row is None:
+        raise not_found("Vehicle")
+    return (await _vehicle_views(session, [(row[0], row[1])]))[0]
