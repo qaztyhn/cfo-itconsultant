@@ -17,18 +17,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 from app.core.config import get_settings
+from app.core.db import to_async_url
 from app.domain.models.base import Base
 
 config = context.config
 target_metadata = Base.metadata
-
-
-def to_async_url(url: str) -> str:
-    """Chuẩn hóa URL Postgres sang driver asyncpg (`postgresql://` → `postgresql+asyncpg://`)."""
-    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql://", "postgres://"):
-        if url.startswith(prefix):
-            return "postgresql+asyncpg://" + url[len(prefix) :]
-    return url
 
 
 def database_url() -> str:
