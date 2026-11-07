@@ -40,13 +40,15 @@
 | Dev 1 | `order_service.prepare_for_planning`; `mapping_service` + `engine/mapping_candidates.py` (N6 không FRAGILE); API orders, counts, timeline, mapping | `services/order_service.py`, `services/mapping_service.py`, `engine/mapping_candidates.py`, `api/v1/orders.py`, `api/v1/mapping.py` | US-PRD-01..05, US-ORD-02/03 |
 | Dev 3 | Order queue nối API thật (cột CUSTOMER · SITE gộp, cột chip rủi ro); Data integration (unmapped tách khỏi rejected); Product mapping | `features/dispatcher/OrderQueue.tsx`, `features/it/DataIntegration.tsx`, `features/it/ProductMapping.tsx` | — |
 
+**M2-S (US-INT-06):** Dev 2 chịu trách nhiệm sync-now API/adapter/ingestion/polling fallback; Dev 1 chịu trách nhiệm duyệt hợp đồng RBAC/scope; Dev 3 UI Sales trong CFO, không sửa POS cũ. Chốt OpenAPI trước.
+
 ### M3 — Nhân sự, công suất (song song M2)
 
 | Người | Việc | File | Story |
 |---|---|---|---|
-| Dev 1 | `hr_service` (một phân công hiệu lực, một quản lý chính, terminate); điểm danh All present; `capacity()` = người × giờ hữu ích × 90% (không thiết bị); job `attendance_gen` | `services/hr_service.py`, `api/v1/hr.py`, `jobs/attendance_gen.py` | US-WH-01/02, US-EMP-01..04 |
-| Dev 2 | Seed nhân viên, ca mẫu, ngày lễ (`holidays`), bằng lái (1 bằng hết hạn) | `seed/generate_data.py` | — |
-| Dev 3 | Attendance & shifts (không tab Equipment); Employees & locations; Vehicles & drivers; Users (`kpi_scopes`) | `features/warehouse/Attendance.tsx`, `features/it/{Employees,Vehicles,Users}.tsx` | — |
+| Dev 1 | `hr_service` (một phân công hiệu lực, một quản lý chính, terminate + audit ASM-006); đề xuất migration và guard **lịch người/ngày/ca do Warehouse Manager nhập**; điểm danh All present chỉ trên lịch chính thức; `capacity()` theo người có lịch và điểm danh × giờ hữu ích × 90%; `attendance_gen` chỉ chép lịch đã xác nhận | `services/hr_service.py`, `api/v1/hr.py`, `jobs/attendance_gen.py` | US-WH-01/02, US-EMP-01..04 |
+| Dev 2 | Seed nhân viên, ca mẫu, **lịch nhân viên–ca demo do Warehouse Manager xác nhận** (không tự chia theo `expected_staff`), ngày lễ (`holidays`), bằng lái (1 bằng hết hạn) | `seed/generate_data.py` | — |
+| Dev 3 | Attendance & shifts (Warehouse Manager lập lịch từng người, điểm danh thực tế, lịch sử và lý do sửa hồi tố; không tab Equipment); Employees & locations; Vehicles & drivers; Users (`kpi_scopes`) | `features/warehouse/Attendance.tsx`, `features/it/{Employees,Vehicles,Users}.tsx` | — |
 
 ### M4 — Engine lập kế hoạch (đường găng)
 
@@ -65,6 +67,8 @@
 | Dev 1 | `reservation_service` (hold, extend ≤ 2, **không khóa khi giữ chỗ**); `approval_service` (approve với advisory lock `stock:`/`labour:` theo thứ tự kho → sản phẩm → ngày → xe → tài xế **chỉ khi duyệt**, manual plan nhiều xe, **duyệt/giữ phương án gợi ý lập lại**, date negotiation); `planning_service.suggest_replan` (4 tín hiệu, coi kế hoạch cũ như không tồn tại, không giữ chỗ); `domain/transitions.close_active_plan` (đóng kế hoạch cũ khi lập lại/hủy/xếp lại); `transfer_service`; Idempotency-Key; job `hold_expiry` | `services/reservation_service.py`, `services/approval_service.py`, `services/transfer_service.py`, `domain/transitions.py`, `core/db.py`, `api/v1/planning.py`, `api/v1/transfers.py`, `jobs/hold_expiry.py` | US-RES-01, US-APR-01..04, US-ATP-02/03, US-ORD-04/05, US-PLN-07 |
 | Dev 2 | Test tải đồng thời: lập kế hoạch đồng thời cho phép vượt; duyệt đồng thời tranh **xe**, **cùng SKU**, **cùng ngày công suất** (mỗi trường hợp đúng một thắng); seed kịch bản 5, 6, 9, 12, 14, 16 | `backend/tests/integration/` | — |
 | Dev 3 | Nút Approve, `DecisionBar`, bộ đếm hold + Extend, tick "accept tight", `ReasonModal`; màn kế hoạch tay nhiều xe; banner gợi ý lập lại + nút Approve suggested / Keep current; Plan review list; Exceptions (tab Replan suggested); Transfers; toast `409` có Re-run plan | `features/dispatcher/{PlanReviewList,ManualPlan,Exceptions,Transfers}.tsx`, `components/{DecisionBar,ReplanSuggestionBanner}.tsx` | — |
+
+**M5-S (US-APR-05, US-ORD-06):** Dev 1 làm Sales guard trong ApprovalService, kiểm đơn trước & audit; Dev 2 test đồng thời cạnh tranh nguồn lực; Dev 3 màn Check feasibility/Confirm/Escalate. Không mở Sales quyền GPS, replan, manual plan hay thương lượng ngày.
 
 ### M6 — Thực thi, driver PWA, GPS
 
@@ -128,6 +132,8 @@
 - **Đổi hợp đồng** (`05`/`06`): sửa tài liệu + migration + `docs/CHANGELOG.md` trong cùng PR, báo cả nhóm.
 - **Giả định mới:** ghi `docs/ASSUMPTIONS.md` (`ASM-xxx`); điểm nhạy cảm (duyệt, đổi ngày, báo trễ, GPS, ánh xạ SKU, doanh thu) thì hỏi nhóm trước.
 - **Đồng bộ:** họp ngắn mỗi ngày làm việc (15 phút: xong gì, làm gì, kẹt gì); cập nhật tiến độ theo milestone trong GitHub Issues/Projects.
+
+**Điểm nối nhánh Sales:** Dev 2 cung cấp API sync-now và dữ liệu nguồn; Dev 1 trả `sales_approvable` + lý do từ backend; Dev 3 chỉ bật Confirm theo quyền máy chủ. Chi tiết xem `docs/DECISION_SALES_CONFIRMATION.md`.
 
 ## 5. Điểm nối giữa các người (dễ kẹt)
 

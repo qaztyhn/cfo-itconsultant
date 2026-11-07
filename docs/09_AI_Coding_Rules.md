@@ -8,7 +8,7 @@
 
 ## 1. Dự án trong ba câu
 
-CFO là lớp điều phối giao hàng đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước: nó nhận đơn, kiểm tra tồn kho theo thời gian, công suất kho và xe, đề xuất **3 phương án**, để **dispatcher duyệt**, rồi theo dõi thực thi, ETA, GPS và báo trễ (do dispatcher gửi). MVP là **ứng dụng web chạy thật** (FastAPI + React + PostgreSQL) pilot ở Thụy Điển bằng dữ liệu giả lập, nhưng kiến trúc coi mọi nước bình đẳng. Hệ thống **đề xuất, con người quyết định**.
+CFO là lớp điều phối giao hàng đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước: nó nhận đơn, kiểm tra tồn kho theo thời gian, công suất kho và xe, đề xuất **3 phương án**, để **Dispatcher hoặc Sales đủ điều kiện bấm duyệt**, rồi theo dõi thực thi, ETA, GPS và báo trễ (do dispatcher gửi). MVP là **ứng dụng web chạy thật** (FastAPI + React + PostgreSQL) pilot ở Thụy Điển bằng dữ liệu giả lập, nhưng kiến trúc coi mọi nước bình đẳng. Hệ thống **đề xuất, con người quyết định**.
 
 ## 2. Nguồn sự thật và thứ tự ưu tiên
 
@@ -40,15 +40,18 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 
 ## 4. Bất biến (không bao giờ vi phạm)
 
-1. **Không tự duyệt.** Mọi code path dẫn tới `APPROVED` đều xuất phát từ hành động của dispatcher (hoặc kế hoạch tay của dispatcher). Không job, không engine, không "tiện thể" nào được duyệt thay.
+> **ASM-005 — Quyết định phạm vi pilot ngày 07/11/2026:** Điều phối đơn chỉ khi **100% SKU mapping confirmed**. Thiếu SKU → quy trình cũ, không giữ đơn chờ IT trong CFO; không tự chuyển ngược sau mapping. Đây là **hợp đồng mục tiêu chưa implement**, cần xử lý chống double fulfilment trước khi cho chạy thật.
+
+
+1. **Không tự duyệt.** Chỉ người dùng có quyền bấm duyệt: Dispatcher xử lý đầy đủ; Sales chỉ rank-1 tiêu chuẩn trong cửa hàng mình, đủ điều kiện theo `docs/DECISION_SALES_CONFIRMATION.md`. Không job/engine tự duyệt.
 2. **Không tự đổi ngày giao.** Ngày yêu cầu (`date_from/date_to`) chỉ đổi khi tồn tại `ops.date_negotiation` với `outcome = 'agreed'` do dispatcher ghi.
 3. **Báo trễ cho khách do dispatcher gửi.** Hệ thống chỉ tạo `notification` trạng thái `draft` cho mẫu `DELAY`. Bốn mẫu còn lại (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) tự động.
 4. **GPS chỉ dispatcher xem.** Mọi endpoint trả vị trí xe kiểm vai trò `dispatcher` ở máy chủ; `customer_service`, `sales`, `warehouse`, `viewer`, khách: `403`. Không thêm GPS vào thông báo, log kỹ thuật, báo cáo tổng hợp theo tài xế, hay phản hồi của endpoint nào khác.
-5. **CFO chỉ đọc từ hệ thống nguồn.** Không ghi ngược sang POS/WMS/ERP.
+5. **CFO chỉ đọc từ hệ thống nguồn.** Không ghi ngược sang POS/WMS/ERP. Sync-now là CFO GET nguồn theo yêu cầu Sales, polling 5 phút dự phòng.
 6. **Engine là hàm thuần.** Trong `engine/` không import `sqlalchemy`, `httpx`, `requests`, `datetime.now`, không đọc env/file, không ghi log, không gọi mạng. Mọi dữ liệu và "bây giờ" truyền vào qua tham số.
 7. **Giờ công đơn như nhau ở mọi kho.** Không dùng giờ công làm tiêu chí so sánh giữa các kho; định mức là **một bộ chung** do IT quản lý (`efficiency_factor` mặc định 1,0, không có UI).
 8. **Xếp hạng = 0,5 × `n_km` + 0,5 × `n_fill`** (min–max trong các phương án khả thi của cùng đơn, có vùng bỏ qua). **Không quy ra tiền, không dùng "cost/SEK" làm tiêu chí hay hiển thị xếp hạng.** KPI "cost per delivery" là giờ công và km.
-9. **Chỉ IT ánh xạ SKU** sang sản phẩm global và gán nhóm xử lý. Không vai trò nào khác gọi được endpoint `mapping/*` ghi.
+9. **Chỉ IT ánh xạ SKU** sang sản phẩm global và gán nhóm xử lý. Không vai trò nào khác gọi được endpoint `mapping/*` ghi. Theo ASM-005, đơn thiếu bất kỳ SKU confirmed **không được CFO điều phối**, mà đi quy trình cũ; mapping về sau không kéo hồi tố đơn cũ vào CFO. Không tự động tạo plan/hold từ mapping.
 10. **Một kho xử lý trọn đơn; một xe chỉ chở một đơn trong một chuyến (không ghép đơn); một đơn được dùng nhiều xe.** Engine chọn bộ xe **ít nhất** cùng kho, cùng ngày, chia hàng theo tải/thể tích, các xe tới chênh ≤ `multi_vehicle.max_arrival_spread_min`; không giới hạn số xe. Thiếu loại xe hoặc kín xe → `NO_FEASIBLE_DATE` (check `truck`). Không có trạng thái `MANUAL_PLANNING`/`HANDLED_EXTERNALLY`. Không bỏ qua gate để "cho qua".
 11. **Giữ chỗ cả 3 phương án; hàng và giờ công chỉ tính một lần cho (đơn, kho).** Hold 15 phút, gia hạn tối đa 2 lần. Xe/tài xế của các phương án **cùng đơn** được trùng, **khác đơn** thì không (ràng buộc EXCLUDE ở DB). Hàng và giờ công **không** có ràng buộc DB: **lúc lập kế hoạch không khóa** (giữ chỗ `held` được phép vượt); **khi duyệt** phải lấy `pg_advisory_xact_lock` theo `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>` rồi kiểm tra lại; tổng `committed` không bao giờ vượt khả dụng.
 12. **Chuyển trạng thái đơn chỉ qua `transition()`** tra `ops.order_transition`; không `UPDATE customer_order SET status` ở nơi khác.
@@ -65,6 +68,12 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 23. **Không có quản lý thiết bị kho trong MVP.** Không tạo bảng, endpoint, check hay mã `PREP_NO_EQUIPMENT`; năng lực cẩu/ben chỉ là thuộc tính xe.
 24. **Giờ công theo đơn vị cơ sở nhỏ nhất.** `prep_qty = qty_base / base_units_per_prep_unit` (không làm tròn); hàng không chia nhỏ được thì làm tròn lên; `line` = 1.
 25. **Không bí mật trong file.** Không mật khẩu (kể cả mật khẩu demo), khóa API, token hay dữ liệu mật trong mã, README, seed, tài liệu nộp; đọc từ biến môi trường.
+
+26. **Sales chỉ duyệt có điều kiện.** Cùng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, không transfer/manual/replan/date change, dữ liệu mới, hold còn hạn; dùng chung ApprovalService, lock và audit. Nếu đơn cũ chưa duyệt tranh công suất chưa chứng minh đủ nguồn lực, Sales phải chuyển Dispatcher.
+27. **FIFO hiển thị, không FIFO thực thi bắt buộc.** Danh sách theo `submitted_at,id` tăng dần; chèn đơn giao sớm vào lịch nếu không lấn `committed` của đơn cũ. `held` stock/labour có thể vượt, không được hứa cam kết trước khi duyệt.
+
+28. **ASM-006:** mọi thay đổi phân công, owner, quản lý, nghỉ việc ghi actor + before/after và `decision_log` cùng transaction. Sửa hồi tố chỉ admin đủ quyền, phải có lý do; quản lý chỉ rời vị trí sau khi có người thay thế. Chưa có action code phải đề xuất cập nhật hợp đồng trước, không bỏ audit.
+29. **ASM-007/Q11:** Warehouse Manager lập lịch ca chính thức từng người/ngày; `expected_staff` chỉ dùng so sánh, không tự chia/dồn nhân viên theo ca. `attendance_gen` chỉ tạo `planned` từ lịch xác nhận. `all_present` không tạo ca hoặc thay đổi phân công. Sửa lịch và điểm danh có audit; hồi tố cần lý do. Thiếu lịch không tính công suất như đã đủ người.
 
 ## 5. Quy ước backend (Python)
 
@@ -164,11 +173,14 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - Tắt kiểm tra quyền, trigger, ràng buộc DB hoặc test "cho nhanh".
 - Ghi PII vào log, ảnh chụp màn hình, dữ liệu seed thật của người thật.
 - Thêm GPS vào bất kỳ chỗ nào khách/CS/sales thấy được.
-- Thêm lại quản lý/xếp lịch thiết bị kho, hoặc thuật toán nhiều xe cho một đơn (đều ngoài MVP).
+- Thêm lại quản lý/xếp lịch thiết bị kho (ngoài MVP); không được xóa thuật toán nhiều xe cho một đơn đã nằm trong MVP.
 - Dùng chữ hay mã "cheapest/cost/SEK" cho xếp hạng (dùng `LOWEST_SCORE_OF_3`, "rank score").
 - Tự quyết các điểm mơ hồ của nghiệp vụ mà không ghi giả định (mục 14).
 
 ## 14. Khi mơ hồ hoặc thiếu thông tin
+
+**Bắt buộc ghi sổ quyết định:** trước khi bắt đầu task/PR, đọc các mục liên quan trong `docs/ASSUMPTIONS.md`. Khi owner/nhóm có thẩm quyền chốt thêm hoặc thay đổi assumption/quy tắc nghiệp vụ, Dev/agent phải bổ sung hoặc cập nhật trong file đó **cùng PR**; ghi mã duy nhất, ngày, ai chốt, quy tắc, trường hợp biên, nguồn PR/comment, ảnh hưởng và trạng thái triển khai. Quyết định cũ bị thay thì ghi `superseded by`, không xóa. Đề xuất chưa được duyệt không được ghi thành đã chốt. Thay đổi DB/API vẫn tuân thủ quy trình contract ở `05`/`06`, migration/test và `CHANGELOG`; ghi trong sổ **không phải bằng chứng code đã chạy**.
+
 
 1. Tìm trong `01–08` (dùng thứ tự ưu tiên mục 2). Nhiều chỗ đã có số cụ thể (ví dụ giờ hữu ích 7,0, 90%, 15 phút, 2 lần gia hạn, 33/66%, 14 ngày, 9 giờ lái).
 2. Nếu vẫn thiếu: **chọn phương án đơn giản, an toàn, tuân thủ bất biến**, ghi **giả định** vào mô tả PR và `docs/ASSUMPTIONS.md` (mã `ASM-xxx`, ngày, bối cảnh, phương án chọn, ảnh hưởng).
@@ -197,6 +209,7 @@ Không làm: <các mục ở 13 liên quan>
 - [ ] Hợp đồng `05/06` không đổi, hoặc đã cập nhật tài liệu + migration + `CHANGELOG`.
 - [ ] Quyền (vai trò **và** phạm vi) được kiểm ở máy chủ; có test đường bị cấm.
 - [ ] Mọi quyết định ghi `decision_log` đúng mã hành động, kèm lý do khi bắt buộc.
+- [ ] Đã đối chiếu `docs/ASSUMPTIONS.md`; quyết định mới được owner duyệt đã ghi trong sổ (mã/ngày/nguồn/impact/trạng thái), đồng bộ spec/CHANGELOG; nếu không có, PR ghi `Assumptions: reviewed — none`.
 - [ ] Không PII trong log; không GPS ở nơi không được phép.
 - [ ] Lập lại/hủy/xếp lại/duyệt gợi ý đóng kế hoạch cũ; khóa hàng và giờ công khi duyệt (bất biến 11, 21).
 - [ ] Không mật khẩu, khóa API hay thông tin mật trong file commit/nộp (bất biến 25).

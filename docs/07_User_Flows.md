@@ -20,8 +20,8 @@ flowchart LR
   B --> C["Submit for planning"]
   C --> D["SYS kéo đơn mỗi 5 phút"]
   D --> E{"SKU đã ánh xạ?"}
-  E -- "Chưa" --> F["BLOCKED_UNMAPPED_SKU và task cho IT"]
-  F --> G["IT ánh xạ"] --> D2["Đơn tự mở khóa"] --> H
+  E -- "Chưa" --> F["Đơn xử lý theo quy trình cũ; CFO không tạo plan hoặc hold"]
+  F --> G["IT ánh xạ SKU cho các đơn tương lai; không tự đưa đơn cũ về CFO"]
   E -- "Rồi" --> H["Engine lập kế hoạch"]
   H --> I{"Có phương án khả thi?"}
   I -- "Có (một hoặc nhiều xe)" --> J["PLANNED: 3 phương án, giữ chỗ 15 phút"]
@@ -44,10 +44,30 @@ flowchart LR
 1. SALES mở POS, chọn khách và địa chỉ giao (danh sách seed có toạ độ), chọn **dạng ngày** (Exact/Range/Latest), nhập khung giờ nhận (tùy chọn), yêu cầu đặc biệt, thêm dòng hàng (SKU, số lượng).
 2. Bấm **Submit for CFO planning**: POS gọi `validate` (khách, địa chỉ/toạ độ, dòng hàng > 0, dạng ngày hợp lệ, ngày làm việc, khung giờ nằm trong giờ của điểm giao). Lỗi → hiện lỗi từng trường, không nộp. Thành công → `submit` → `SUBMITTED_FOR_PLANNING`.
 3. SYS (`ingest_orders`, 5 phút) kéo đơn theo `updated_since`, upsert theo `(market_id, external_ref)`; dòng lỗi vào reject.
-4. SYS tạo `customer_order` `SUBMITTED`, chụp địa chỉ và toạ độ, kiểm tra ánh xạ SKU (luồng 3), tính ma trận lộ trình còn thiếu, gọi planning (luồng 4).
+4. SYS đánh giá **100% SKU đã mapping confirmed** trước khi đưa đơn vào luồng CFO. Nếu đủ: nạp `customer_order` `SUBMITTED`, chụp địa chỉ/toạ độ, lập kế hoạch (luồng 4). Nếu thiếu: đơn đi theo quy trình cũ; CFO không chạy planning/hold/approve. Không tạo cam kết CFO khi nguồn sở hữu luồng chưa xác minh được.
 5. Nếu nguồn sửa đơn **trước khi duyệt**: đơn được cập nhật, `version + 1`, lập kế hoạch lại tự động; **sau khi duyệt**: chỉ tạo alert (luồng 13).
 
-**Nhánh:** POS cảnh báo vàng nếu SKU chưa được IT ánh xạ (không chặn nộp). **Kết quả:** đơn `SUBMITTED` hoặc `BLOCKED_UNMAPPED_SKU` hoặc đã sang `PLANNED`/`NO_FEASIBLE_DATE`.
+**Nhánh:** Nếu thiếu SKU đã xác nhận, Sales tiếp tục quy trình cũ (không chặn thao tác trên POS), CFO chỉ báo không đủ điều kiện điều phối và **không lập plan/hold**. IT vẫn mapping dần danh mục; đơn đã đi theo quy trình cũ không tự chuyển sang CFO sau mapping.
+
+## 2a. Sales xác nhận tại quầy bằng CFO riêng
+
+1. Sales tạo/submit đơn trong POS cũ, không thay POS. 2. Sales mở CFO, nhập mã đơn nguồn và bấm `Sync now`; CFO GET nguồn qua adapter và upsert đơn. 3. Sales bấm `Check feasibility`; CFO lập phương án mặc định + hold 15 phút. 4. Nếu đủ điều kiện Sales (rank 1, 5 gate pass, safe, một xe, đúng cửa hàng, nguồn mới, không gây chậm đơn cũ), Sales bấm `Confirm`. 5. ApprovalService kiểm tra/khóa/commit nguồn lực, ghi actor và chuyển APPROVED. Chỉ lúc này mới thông báo cam kết cho khách. Nếu không đạt → Retry/Dispatcher. Polling 5 phút vẫn dự phòng; không ghi ngược POS.
+
+```mermaid
+flowchart TD
+  A[Sales submit đơn tại POS] --> B[Sales mở CFO và Sync now]
+  B --> C{Nguồn có đơn, đúng cửa hàng?}
+  C -- Không --> X[Retry hoặc chờ polling]
+  C -- Có --> C2{100% SKU confirmed và chưa thuộc quy trình cũ?}
+  C2 -- Không --> L[Tiếp tục quy trình cũ; CFO không lập plan/hold]
+  C2 -- Có --> D[CFO import và lập plan + hold]
+  D --> E{Sales đủ điều kiện xác nhận?}
+  E -- Không --> F[Chuyển Dispatcher]
+  E -- Có --> G[Sales bấm Confirm]
+  G --> H{Recheck và commit thành công?}
+  H -- Không --> F
+  H -- Có --> I[APPROVED và xác nhận khách]
+```
 
 ## 3. Luồng ánh xạ SKU (IT)
 
@@ -55,7 +75,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Đơn có SKU chưa xác nhận"] --> B["Đơn BLOCKED_UNMAPPED_SKU, hiện lý do"]
+  A["SKU sản phẩm nguồn chưa được xác nhận"] --> B["Đơn chứa SKU này đi quy trình cũ; không chờ mapping trong CFO"]
   B --> C["Tạo hoặc cập nhật mapping_task"]
   C --> D["Tính ứng viên: GTIN, tên gần giống, nhóm theo quy tắc"]
   D --> E["IT mở task"]
@@ -66,11 +86,11 @@ flowchart TD
   H --> I["Nhập nhóm N1-N6, đơn vị chuẩn bị, quy đổi, cờ"]
   G --> J["Xác nhận ánh xạ"]
   I --> J
-  J --> K["Đơn bị chặn tự mở khóa, chuyển SUBMITTED"]
-  K --> L["Tự động lập kế hoạch"]
+  J --> K["Các đơn mới đủ mapping sẽ được CFO tiếp nhận"]
+  K --> L["Đơn đã đi theo quy trình cũ không tự chuyển vào CFO"]
 ```
 
-**Chi tiết:** (1) IT lọc task theo số đơn bị chặn; (2) xem sản phẩm nội bộ và ứng viên; (3) tạo global mới cần nhóm xử lý, `base_unit`, cân nặng, thể tích, `base_units_per_prep_unit` (trừ nhóm đơn vị `line`), `units_to_base` > 0; (4) xác nhận → `MAPPING_CONFIRMED`; (5) mọi đơn bị chặn bởi SKU này tự chuyển `SUBMITTED` và chạy lập kế hoạch. **Từ chối:** SKU `rejected`, đơn vẫn bị chặn, dispatcher thấy lý do để liên hệ sales.
+**Chi tiết:** (1) IT xem SKU chưa mapping và ứng viên; (2) tạo global mới với nhóm xử lý, `base_unit`, cân nặng/thể tích, đơn vị quy đổi và cờ; (3) xác nhận → `MAPPING_CONFIRMED` và SKU đủ điều kiện cho **các đơn mới**; (4) từ chối → lưu lý do tại task/audit. **Đơn đã chuyển sang quy trình cũ không được tự mở khóa, tự tạo plan/hold hay chuyển về CFO.**
 
 ## 4. Luồng lập kế hoạch (hệ thống)
 
@@ -104,7 +124,7 @@ flowchart TD
   N --> Q["Đơn NO_FEASIBLE_DATE"]
 ```
 
-## 5. Luồng duyệt kế hoạch (dispatcher)
+## 5. Luồng duyệt kế hoạch (Dispatcher đầy đủ; Sales nhánh tiêu chuẩn mục 2a)
 
 **Tác nhân:** DISP · **Màn:** Plan review (5.2) · **Quy tắc:** BR-APR, BR-RES
 
@@ -178,10 +198,11 @@ flowchart TD
 
 **Tác nhân:** WH, SYS · **Màn:** Attendance & shifts (5.A5), Prep queue (5.6) · **Quy tắc:** BR-PRP-02/03/05, BR-EMP
 
-1. SYS sinh điểm danh `planned` cho 14 ngày tới từ ca mẫu của kho.
-2. Đầu ca, WH mở **Attendance & shifts** cho hôm nay → bấm **All present**, rồi đánh dấu người vắng/nghỉ → công suất ngày tự tính lại (số có mặt × giờ hữu ích × 90%).
-3. Khi ca thực tế khác kế hoạch: WH ghi `SHIFT_CHANGE` (số người, ghi chú). SYS tính lại ETA các đơn có giữ chỗ ngày đó và báo DISP nếu có rủi ro.
-4. Thay đổi nhân sự dài hạn do IT xử lý (chuyển công tác, thôi việc); công nhân kho **không có tài khoản**.
+1. **Warehouse Manager** nhập và xác nhận lịch phân ca cho **từng nhân viên, từng ngày**; `shift_template` cung cấp mẫu giờ/giờ hữu ích, `expected_staff` chỉ để đối chiếu. Không có thuật toán tự phân đều hay đưa người dư vào ca cuối.
+2. Job `attendance_gen` chỉ sinh ghi nhận `planned` từ lịch đã được xác nhận; thiếu lịch chính thức → hiện cảnh báo/đánh dấu công suất chưa xác minh, không tự gán ca cho nhân viên.
+3. Đầu ca, warehouse mở **Attendance & shifts** cho hôm nay → ghi người có mặt/vắng/nghỉ. `All present` chỉ áp dụng người có lịch hợp lệ, không tạo ca mới. Công suất từng ca cập nhật theo điểm danh thực tế.
+4. Khi lịch phải đổi, Warehouse Manager sửa lịch nhân viên và ghi `SHIFT_CHANGED` (before/after, actor); thay đổi điểm danh ghi `ATTENDANCE_CHANGED`. Sửa hồi tố cần quyền và lý do. SYS cập nhật rủi ro/ETA nếu ảnh hưởng các đơn đã giữ chỗ.
+5. Chuyển công tác/nghỉ việc dài hạn do IT xử lý với người thay quản lý và audit; công nhân kho không có tài khoản.
 
 ## 8. Luồng chuẩn bị hàng và bốc xếp (kho)
 
@@ -383,8 +404,10 @@ IT xem lượt chạy, dòng bị loại và có thể chạy tay (`/sync/{entit
 ```mermaid
 stateDiagram-v2
   [*] --> SUBMITTED
-  SUBMITTED --> BLOCKED_UNMAPPED_SKU: SKU chưa ánh xạ
-  BLOCKED_UNMAPPED_SKU --> SUBMITTED: IT ánh xạ xong
+  %% ASM-005: phân luồng SKU phải diễn ra trước khi CFO tiếp nhận/lập plan.
+  %% BLOCKED_UNMAPPED_SKU còn trong enum legacy, không dùng để giữ đơn mới chờ mapping.
+  SUBMITTED --> BLOCKED_UNMAPPED_SKU: legacy only (chờ migration/chốt thiết kế)
+  BLOCKED_UNMAPPED_SKU --> SUBMITTED: legacy only (không tự thực thi cho đơn xử lý cũ)
   SUBMITTED --> PLANNED: có phương án khả thi
   SUBMITTED --> NO_FEASIBLE_DATE: không khả thi
   PLANNED --> APPROVED: dispatcher duyệt
@@ -420,7 +443,7 @@ stateDiagram-v2
 | Dispatcher | Order queue | Mở đơn `PLANNED` → Plan review → Approve | Tracking & risk khi có cảnh báo; Exceptions khi có đơn không khả thi |
 | Warehouse | Prep queue | Điểm danh → bấm mốc chuẩn bị → báo ngoại lệ | Attendance & shifts, Transfers |
 | Driver | Today's trips | Mark dispatched → Delivered/Failed | — |
-| Sales | POS: New order | Nhập đơn, theo dõi đơn của cửa hàng | My store orders |
+| Sales | My store orders / Sync & confirm trong CFO | Submit ở POS cũ, sync-now, check feasibility, confirm nếu đủ điều kiện | Thành công → APPROVED; ngoại lệ → Dispatcher |
 | Store manager | My store orders | Theo dõi đơn; xem doanh thu cửa hàng mình nếu là owner | Revenue · my location |
 | Customer service | Order lookup | Tra cứu, ghi liên hệ | — |
 | IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi, nhân sự | Product mapping, Market config & GPS |

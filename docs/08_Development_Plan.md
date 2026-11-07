@@ -47,11 +47,13 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 - **C:** **Order queue** nối API thật; **Data integration** (5.9); **Product mapping** (5.A7).
 - **Xong khi:** đơn POS vào CFO trong ≤ 5 phút; nạp lại không nhân đôi; dòng lỗi vào reject; SKU lạ chặn đơn và xuất hiện ở hàng đợi IT; IT xác nhận → đơn tự mở khóa. *Story:* US-INT-01..05, US-PRD-01..03, US-ORD-02/03.
 
+**M2-S — Sales sync-now (US-INT-06):** Dev 2 làm API sync-now bằng GET adapter nguồn và ingestion idempotent với polling; Dev 1 review contract/scope cửa hàng; Dev 3 màn My store orders → Sync & confirm trong CFO. Không sửa POS/database nguồn. Phụ thuộc M1/M2 core.
+
 ### M3 — Nhân sự, công suất kho (phụ thuộc M0, song song M2)
-- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; `attendance_gen`; `GET /warehouses/{id}/capacity`.
+- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
 - **B:** seed nhân viên, ca mẫu, ngày lễ (thư viện `holidays`), bằng lái.
-- **C:** **Attendance & shifts** (5.A5); **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
-- **Xong khi:** "All present" ghi một lần; vắng giảm công suất đúng công thức; chuyển công tác đóng phân công cũ. *Story:* US-WH-01/02, US-EMP-01/02/04.
+- **C:** **Attendance & shifts** (5.A5) có màn Warehouse Manager lập lịch từng nhân viên/ngày/ca, xem chênh lệch dự kiến–thực tế, xem lịch sử, yêu cầu lý do khi chỉnh hồi tố; **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
+- **Xong khi:** Warehouse Manager lập lịch chính thức từng người; không tự chia theo `expected_staff`; "All present" chỉ trên người có lịch; vắng giảm công suất; thiếu lịch không tự dựng nhân viên; đổi quản lý, chuyển/nghỉ việc và chỉnh hồi tố có audit. *Story:* US-WH-01/02/06, US-EMP-01/02/04/05.
 
 ### M4 — Engine lập kế hoạch (phụ thuộc M2, M3) — **đường găng**
 - **A:** `engine/workload.py`, `atp.py`, `capacity.py`, `schedule.py`, `delivery.py`, `gate.py`, `scoring.py`, `explain.py`, `planner.py`, `transfer.py` đúng `04` mục 6; bộ test bảng đầy đủ (mục 6.2 của tài liệu này); `PlanningService` nạp ngữ cảnh → engine → lưu `planning_run`, `fulfilment_plan`, giữ chỗ; `POST /orders/{id}/plan`; `GET /planning-runs/{id}` (gồm `rejected_candidates`, `stock_matrix`, `dates_searched`).
@@ -64,6 +66,8 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 - **C:** nút Approve, `DecisionBar`, modal lý do, bộ đếm hold, Extend, tick "accept tight", kế hoạch tay nhiều xe, `VehicleList`, banner gợi ý lập lại; **Transfers** (5.A4); danh sách Plan review, Exceptions.
 - **B:** thử tải đồng thời (hai dispatcher tranh xe, tranh cùng SKU, tranh cùng ngày công suất), seed cho kịch bản 5, 6, 9, 14.
 - **Xong khi:** AC của US-RES-01, US-APR-01..04, US-ATP-02/03, US-PLN-07, US-ORD-05 pass; test đồng thời đúng một bên thắng (xe, SKU, ngày công suất); EXCLUDE chặn đơn khác nhưng cho phép cùng đơn; lập lại sau duyệt rồi duyệt lại không bị `ux_one_approved_plan` chặn.
+
+**M5-S — Sales có điều kiện (US-APR-05, US-ORD-06):** Dev 1 mở planning mặc định, rank-1 guarded approve và bảo vệ đơn cũ; Dev 2 test concurrency/cross-store/source freshness; Dev 3 UI feasibility/hold/Confirm/Escalate. Phụ thuộc engine M4 và ApprovalService M5; không thay đổi DB nếu chưa chứng minh cần.
 
 ### M6 — Thực thi, driver PWA, GPS (phụ thuộc M5)
 - **A:** `ExecutionService` (sự kiện bất biến, thứ tự, idempotency, POD theo từng `trip_stop`), `GET /driver/trips`, `/warehouses/{id}/prep-queue`; chuyển trạng thái qua `transition()`.
@@ -162,6 +166,8 @@ Dữ liệu tồn kho, hàng nhập (gồm IN-SE-88213), lịch xe, điểm danh
 - **E2E (Playwright):** kịch bản ở 6.3 chạy trên Docker Compose.
 - **Phi chức năng:** thời gian lập kế hoạch một đơn < 2 giây; bảng đơn < 1 giây với 1.000 đơn; kiểm tra truy cập bằng axe.
 
+**Test mới Sales:** POS submit → CFO sync-now → plan/hold → Sales confirm → APPROVED/CONFIRMED; trùng sync với polling không nhân đôi; khác cửa hàng 404, sai role 403; rank2/multi-vehicle/low reserve/stale/hold expired/đơn cũ chưa duyệt tranh nguồn lực → Dispatcher; hai Sales tranh xe/SKU/giờ công không overcommit; bảo vệ đơn cũ đã committed; FIFO hiển thị không ép FIFO giao. Chưa có test nào chạy trong PR tài liệu.
+
 ### 6.2 Bảng test bắt buộc cho engine (mỗi hàng là một test)
 Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhóm `line`); ATP (đủ ngay, đủ sau hàng nhập, hàng nhập chưa xác nhận, giữ chỗ của đơn khác, 14 ngày không đủ); công suất (điểm danh, 90%, ngày lễ, hết công suất trong 14 ngày); lịch (qua nhiều ngày, giờ cắt); xe (tải/thể tích/nhóm/năng lực/bằng/giờ lái/bận); ngày (exact không sớm, range, latest, ngoài cửa sổ, ngày làm việc kế); dự trữ (an toàn/sát/không khả thi); xếp hạng (ví dụ 0,50/0,50/0,26, vùng bỏ qua, một ứng viên, hòa nhiều tầng, mã `LOWEST_SCORE_OF_3`); đơn vị nhỏ nhất (20 bao = 0,5 pallet; hàng nguyên làm tròn lên); nhiều xe (ít xe nhất, chia dòng, đến cùng lúc ±30', thiếu năng lực, kín xe); hòa điểm xe nhỏ hơn; không khả thi (check xa nhất, ngày sớm nhất); chuyển kho (điều kiện, thứ tự); forecast (hấp thụ chậm, mốc quá hạn, GPS, làm tròn 15); rủi ro (29%, 50%, 75%, slack âm một lần và hai lần, overdue, reserve tối thiểu 30 phút).
 
@@ -183,7 +189,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, **gợi ý lập lại tự động** (không giữ chỗ, không tính kế hoạch cũ), dispatcher duyệt (kế hoạch cũ `superseded`, `CONFIRMED` mới), giao thành công; hai POD; doanh thu tính một lần |
 | 13 | GPS | Simulator → bản đồ dispatcher; CS/khách `403`; mất tín hiệu 60 phút → alert; retention 30 ngày |
 | 14 | Hold hết hạn / gia hạn | Extend 2 lần, lần 3 bị từ chối; Approve sau hết hạn vẫn kiểm tra lại |
-| 15 | Phân quyền | CS không thấy GPS/điểm; sales không duyệt; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
+| 15 | Phân quyền | CS không thấy GPS/điểm; Sales chỉ duyệt rank-1 tiêu chuẩn ở cửa hàng mình, không được duyệt ngoại lệ/plan khác; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
 | 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
 | 18 | Tạm dừng chuẩn bị | Start prep (3 người) → Pause → Resume (2 người) → Goods ready; `improvement_log` có giờ nhân công thực tế và giờ/đơn vị theo nhóm |

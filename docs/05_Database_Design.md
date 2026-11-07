@@ -321,6 +321,20 @@ CREATE TABLE hr.shift_template (                -- ca mẫu của kho
   expected_staff smallint NOT NULL,
   UNIQUE (warehouse_id, weekday, start_time)
 );
+-- Q12 (đã duyệt nghiệp vụ 07/11/2026, DDL chờ PR migration 0009): hr.employee_shift_schedule cho cả nhân viên kho
+-- và tài xế — xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md (giờ riêng, qua nửa đêm, giờ nghỉ, 1 ca/người/ngày).
+-- ASM-007 / Q11 — quyết định sản phẩm (chưa là DDL đã migrate):
+-- Warehouse Manager là nguồn xác thực duy nhất cho lịch phân ca chính thức theo từng người/ngày.
+-- Đề xuất cho PR migration riêng: hr.employee_shift_schedule
+-- (employee_id, warehouse_id, work_date, shift_template_id, status, assigned_by,
+--  assigned_at, updated_by, updated_at, [optional effective range]).
+-- Phải có guard chống xếp trùng ca/giờ, kiểm nhân viên phân công tại đúng kho,
+-- ghi decision_log SHIFT_CHANGED cùng transaction và giữ lịch sử trước/sau.
+-- hr.attendance chỉ ghi thực tế, không phải dữ liệu chủ để tự suy ca.
+-- expected_staff là chỉ tiêu dự kiến, KHÔNG là giới hạn hoặc thuật toán sinh lịch.
+-- Không đưa người vượt dự kiến vào ca cuối; không tự động đổi ca.
+-- Schema cuối cùng do Dev 1 đề xuất trong PR migration theo quy trình 09, không coi comment này là SQL triển khai.
+
 CREATE TABLE hr.attendance (                    -- điểm danh từng người (kho + tài xế) [C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   employee_id bigint NOT NULL REFERENCES hr.employee(id),
@@ -338,6 +352,8 @@ CREATE TABLE hr.absence (
   CHECK (end_date >= start_date)
 );
 ```
+
+**ASM-006/007 được chủ dự án chốt:** đổi phân công/quản lý/owner, nghỉ việc, thay lịch ca và sửa điểm danh phải có audit actor + before/after; thay đổi hồi tố bắt buộc lý do, giới hạn quyền. Lịch phân ca chính thức do Warehouse Manager quản lý, điểm danh chỉ ghi hiện diện thực tế. Bộ máy không tự chọn ca dựa vào `expected_staff`. Quy định này là **thiết kế mục tiêu** và phải được xác minh ở migration/API trước khi code.
 
 **Quy tắc dữ liệu nhân sự:** (1) nhân viên `active` phải có đúng một phân công đang hiệu lực (kiểm ở service); (2) mỗi kho/cửa hàng có đúng một quản lý chính đang hiệu lực (ràng buộc DB ở trên) và quản lý đó phải có phân công tại chính nơi đó (kiểm ở service); (3) `owner_employee_id` mặc định là quản lý chính, gán lại được; (4) nhân viên `terminated`: khóa `app_user.is_active`, giữ lịch sử, ẩn danh sau `data_retention_days`; (5) công suất kho dùng `counts_in_capacity = true` và điểm danh `present` (hoặc `planned` cho ngày tương lai, trừ nghỉ phép đã duyệt).
 
@@ -463,6 +479,8 @@ CREATE TABLE ops.order_transition (              -- bảng tra chuyển trạng 
   requires_reason boolean NOT NULL DEFAULT false, allowed_roles ref.user_role[] NOT NULL,
   PRIMARY KEY (from_status, to_status)
 );
+-- Q14 (đã duyệt phương án A 07/11/2026, DDL chờ PR migration 0009): ops.order_routing — quyết định luồng cfo/legacy
+-- không đổi theo (market_id, external_ref); 'unresolved' không được lưu. Xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md.
 CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khách đồng ý [S][C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),

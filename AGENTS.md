@@ -4,13 +4,18 @@
 
 ## Mission and current state
 
-CFO is a real, synthetic-data MVP for delivery orchestration over existing POS/WMS/ERP systems. It proposes fulfilment plans; **only the dispatcher decides**. Core stack: FastAPI / Python 3.12, PostgreSQL 16 / SQLAlchemy / Alembic, React 18 / Vite / TypeScript, and a separate simulated source system.
+**Product decision (2026-11-07):** Sales may confirm eligible standard plans in CFO; POS remains unchanged. Read `docs/DECISION_SALES_CONFIRMATION.md` before related work.
+
+CFO is a real, synthetic-data MVP for delivery orchestration over existing POS/WMS/ERP systems. It proposes fulfilment plans; **dispatcher decides exceptions/full plans; Sales may explicitly confirm eligible rank-1 standard plans for their store**. Core stack: FastAPI / Python 3.12, PostgreSQL 16 / SQLAlchemy / Alembic, React 18 / Vite / TypeScript, and a separate simulated source system.
 
 The repository contains scaffolding; **do not treat declared endpoints, stub screens, or TODOs as completed features**. Verify behavior by running checks. Implement in dependency order M0 → M9 (`docs/08_Development_Plan.md`), using `docs/10_Team_Assignment.md` for ownership.
 
 ## Mandatory reading and source of truth
 
-Before **any code change**, read `docs/09_AI_Coding_Rules.md` in full, especially §4 (all **25** invariants), §13 (prohibited changes), §14 (ambiguity), and §16 (definition of done). Before each PR, recheck §4 and §16.
+**Approved assumption/decision register:** Before starting or reviewing a task, consult `docs/ASSUMPTIONS.md` for applicable ASM/DEC decisions. Every newly owner-approved decision must be recorded there within the same PR as related spec changes, with unique ID, date, approver, precise rule, source PR/comment, affected files and implementation status. Do not treat dev proposals or CI success as owner approval; logging a decision does not mean implementation exists.
+
+
+Before **any code change**, read `docs/09_AI_Coding_Rules.md` in full, especially §4 (all **27** invariants), §13 (prohibited changes), §14 (ambiguity), and §16 (definition of done). Before each PR, recheck §4 and §16.
 
 When documents disagree, apply the precedence specified by `docs/09_AI_Coding_Rules.md` §2:
 
@@ -42,9 +47,9 @@ Read targeted sections, not all ten specifications every turn; `09` is the expli
 
 ## Non-negotiable safety and product rules (summary; `09` controls)
 
-- **No automatic approval**, date changes without agreed negotiation, or automatic sending of DELAY notices.
+- **No automatic approval**. Sales may explicitly confirm only an eligible, scoped standard plan via the same approval transaction; dispatcher retains all exception/replan authority. No unagreed dates or automatic DELAY notices.
 - **GPS access is enforced server-side for dispatcher only**. Never expose GPS or customer PII in logs or unauthorized responses.
-- **CFO reads source systems; never write back** to POS/WMS/ERP.
+- **CFO reads source systems; never write back** to POS/WMS/ERP. Sales may request an immediate read from CFO via existing adapter, with 5-minute polling as fallback.
 - **Engine is pure**: no DB, network, clock, filesystem, environment, or I/O. Use injected inputs and clock.
 - **One warehouse per order; no combining orders in one trip; one order may require multiple vehicles.**
 - **Planning holds may overlap; only approval acquires prescribed locks and rejects overcommit**. Close superseded plans in the same transaction.
@@ -60,7 +65,7 @@ Read targeted sections, not all ten specifications every turn; `09` is the expli
 3. **Test**: add tests first or alongside code; use `test_US_<EPIC>_<NN>_AC<k>_...` names for ACs. Test both allowed and forbidden permissions. DB constraints require real PostgreSQL integration tests.
 4. **Implement**: smallest change that satisfies the AC. Respect current architecture and file ownership. Do not disguise TODOs or `NotImplementedError` as implemented features.
 5. **Verify**: run affected tests and the harness gates below. A command that did not run is **NOT VERIFIED**, not PASS. Never disable tests/checks just to get green CI.
-6. **Report**: US/AC/BR covered; files changed; commands and results; risks, assumptions, and remaining work. Before reporting done, use `09` §16 checklist.
+6. **Report**: US/AC/BR covered; files changed; commands and results; risks, assumptions, and remaining work. Include `Assumptions: reviewed; new/changed decision IDs or none` in PR summaries. Before reporting done, use `09` §16 checklist.
 
 ## Harness commands (run from repository root)
 
@@ -81,7 +86,7 @@ The existing `Makefile` / `.github/workflows/ci.yml` are owned by Dev 2. Keep th
 ## Scope, uncertainty and team handoff
 
 - Work on the assigned milestone and workstream only. Never change another workstream's API/DB contract behind its owner's back.
-- If a business rule is undefined: follow `09` §14. Small safe assumptions require `docs/ASSUMPTIONS.md` with an `ASM-xxx` and PR note. Contract changes or sensitive decisions require team approval before implementation.
+- If a business rule is undefined: follow `09` §14. Dev proposals are marked `proposed` in `docs/ASSUMPTIONS.md` under a unique `ASM-xxx` after checking for collisions. Once owner approves, immediately mark approved or add a `DEC-xxx` product decision with source and impact. Contract changes or sensitive decisions require team approval before implementation. Preserve superseded historical decisions.
 - If `05` or `06` changes with approval, include the spec update, migration/code changes, tests and `docs/CHANGELOG.md` together.
 - Branch `feat/<epic>-<description>`, `fix/...`, or `chore/...`, conventional commits, reviewed PR. Owners/reviewers: `10`.
 - No claim of "feature complete" based solely on imports, scaffolds, 200 responses from `/openapi.json`, or green unit tests; verify the story's actual acceptance criteria.

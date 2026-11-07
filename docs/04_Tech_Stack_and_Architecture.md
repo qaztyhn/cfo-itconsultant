@@ -11,7 +11,7 @@
 1. **Tích hợp trên hệ thống sẵn có, không thay thế [S].** CFO chỉ đọc từ hệ thống nguồn của từng nước, không ghi ngược.
 2. **Một lõi quyết định dùng chung, quy tắc từng nước là cấu hình [S].** Không có `if market == 'SE'` trong lõi. Nước mới = adapter/instance nguồn mới + dòng cấu hình + bảng sản phẩm riêng.
 3. **Mọi nước bình đẳng [C].** Thụy Điển chạy đúng đường mà nước khác sẽ chạy: hệ thống nguồn giả lập riêng, gọi qua `MarketAdapter`.
-4. **Người quyết định, hệ thống đề xuất [S].** Không bao giờ tự duyệt kế hoạch, không tự đổi ngày giao khi khách chưa đồng ý.
+4. **Người quyết định, hệ thống đề xuất [S].** Không bao giờ tự duyệt kế hoạch; Dispatcher có đầy đủ quyền, Sales được bấm xác nhận rank-1 tiêu chuẩn đủ điều kiện ở cửa hàng mình; không tự đổi ngày giao khi khách chưa đồng ý.
 5. **Engine là hàm thuần**, không đọc DB, không gọi mạng. Dữ liệu vào là object, dữ liệu ra là object. Dễ test, dễ thay bằng Drools/OR-Tools sau này.
 6. **Mọi quyết định để lại dấu vết** (`audit.decision_log`) và mọi dữ kiện có nguồn và độ tươi.
 7. **Modular monolith**: một ứng dụng FastAPI, một SPA React, một PostgreSQL. Không microservice.
@@ -118,6 +118,10 @@ class MarketAdapter(Protocol):
 7. **Hàng nhập:** chỉ hàng chưa về; hàng `received` hoặc biến mất khỏi nguồn thì đặt `received = true`. Hàng chuyển kho tạo bởi CFO (`source='transfer'`) không bị nguồn ghi đè.
 8. **Sau mỗi lượt tồn kho/hàng nhập/lịch xe thay đổi:** tìm các đơn đã duyệt bị ảnh hưởng và gọi `RiskService.recalculate(order, trigger='source_change')`.
 9. **Lộ trình:** với mỗi cặp (kho, toạ độ giao) chưa có trong `plan.route_matrix`, `RoutingProvider` tính (ORS, hoặc fallback) và ghi `provider`. Việc này diễn ra trước khi lập kế hoạch, không trong engine.
+
+### 5.3 Đồng bộ theo yêu cầu của Sales (Cách B)
+
+Sau khi Sales submit tại POS, Sales mở **CFO Web riêng** và gọi `POST /integration/orders/sync-now`. CFO chủ động GET đơn từ nguồn thông qua `MarketAdapter` (API danh sách đơn phân trang hiện có), xác minh market/store, dùng chung upsert theo version, rejection/idempotency/checkpoint với polling. Giữ **hai database riêng** và không ghi ngược nguồn. Polling mỗi 5 phút vẫn dự phòng. Nếu POS thật không trả dữ liệu mới kịp thì hiển thị Retry, không hứa thời gian tuyệt đối.
 
 ## 6. Đặc tả engine (hàm thuần, trong `engine/`)
 
@@ -279,6 +283,20 @@ Khi kho đích `w` thiếu hàng (mọi kho đều `STOCK_SHORT`): với từng 
 
 Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất; (2) độ tương đồng tên `pg_trgm` ≥ 0,45 cùng `category`; (3) gán nhóm xử lý theo `ref.handling_group_rule` (theo `category_like`, khoảng khối lượng, ưu tiên thấp trước). Lưu vào `mapping_task.candidates`. **Chỉ IT xác nhận**.
 
+### 6.6 Công suất theo lịch Warehouse Manager đã xác nhận (ASM-007/Q11)
+
+Lịch phân ca chính thức cho **từng nhân viên/ngày/ca** do Warehouse Manager tạo/sửa. `shift_template.expected_staff` là mốc tham chiếu, **không phải dữ liệu nhân viên để `attendance_gen` tự chia ca**. `hr.attendance` chỉ ghi thực tế; engine dùng lịch hợp lệ và thông tin điểm danh/nghỉ phép để tính năng lực, và nếu thiếu lịch thì không tự bịa số người có mặt. Thao tác đổi lịch/điểm danh có audit và lý do khi chỉnh hồi tố. Quy tắc dữ liệu/API mục tiêu cần PR migration riêng.
+
+### 6.7 Giờ làm thực tế của kho và tài xế trong engine (Q12, đã duyệt 07/11/2026)
+
+(chi tiết: `docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md`; lựa chọn nghiệp vụ đã duyệt ở PR qaztyhn/cfo-itconsultant#53; DDL/API/engine cuối cùng review ở PR triển khai)
+- **Đầu vào mới:** `WarehouseCtx.loading_windows` = các khoảng ca kho chính thức có ít nhất một người tính công suất (từ `hr.employee_shift_schedule`); `DriverCtx.shifts` = các khoảng ca thực tế của từng tài xế (đã trừ giờ nghỉ, có thể qua nửa đêm). Không có dữ liệu → không có khả năng (không mặc định 24/7).
+- **Bước 2c/2d bổ sung:** mỗi xe lên hàng trọn trong một `loading_window`, `loading_start ≤ cutoff` của ngày, không trước `goods_ready_at`; khoảng làm việc của tài xế `[loading_start, trip_end]` (gồm chờ xuất phát, chạy, dỡ, quay về) nằm trọn trong một ca của tài xế, không chồng lịch đã nhận, tổng giờ ngày ≤ `driver_max_hours_day`; giao ngày sau thì lên hàng trong cửa sổ của ngày giao (không chờ qua đêm). Ghép tài xế–xe bằng bipartite/backtracking.
+- **Phân bổ hàng theo xe:** ràng buộc nhóm hàng (`allowed_group_ids`) và năng lực (`vehicle_requirement`) áp cho **các dòng thực sự chở trên xe đó**; thử nhiều cách xếp trước khi kết luận `NO_TRUCK_FIT`.
+- **Mã mới:** `NO_WAREHOUSE_SHIFT` (preparation), `OUTSIDE_DRIVER_SHIFT` (safety); `NO_DRIVER.detail.reason` ∈ `no_schedule | licence | busy`.
+- **Thời gian lái/nghỉ (Q12b, chính sách Bắc Âu cho MVP, chưa xác nhận pháp lý):** nghỉ hằng ngày 11 giờ giữa các kỳ làm việc, kể cả trường hợp về muộn rồi vào ca sớm; nghỉ rút gọn 9 giờ tắt. Với xe trong phạm vi 561/2006, kiểm **thời gian lái** riêng: ≤ 540 phút/ngày, 3360 phút/tuần, 5400 phút/hai tuần; chặng lái liên tục > 270 phút bị từ chối vì MVP chưa chèn giờ nghỉ 45 phút. `driver_max_hours_day` là **tổng giờ làm việc**, không phải giờ lái. Thiếu lịch sử hoặc phạm vi xe → không duyệt được. Mã safety mới: `DRIVER_REST_INSUFFICIENT`, `DRIVING_TIME_EXCEEDED`, `DRIVING_BREAK_REQUIRED`, `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`. Đầu vào: `DriverCtx.duty_history`, `driving_min_*`, `history_complete`, `VehicleCtx.regulation_561`, `MarketConfig.driver_rules`.
+
+
 ## 7. Giữ chỗ và duyệt (`ReservationService`, `ApprovalService`)
 
 1. **Đề xuất:** `PlanningService` gọi engine, rồi trong **một transaction**: tạo `planning_run` (+ `input_snapshot`), `fulfilment_plan` (3 phương án) + `plan_vehicle` (các xe của mỗi phương án), `plan.stock_reservation` và `prep_reservation` **một lần cho mỗi (đơn, kho)**, `vehicle_reservation` cho từng xe của từng phương án (**không khóa**, cho phép vượt, quy tắc 8); `hold_expires_at = now + 15 phút`; ghi `decision_log` (`PLAN_PROPOSED`, `RESERVATION_HELD`); chuyển đơn `PLANNED`.
@@ -291,6 +309,10 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 8. **Khóa đồng thời cho hàng và giờ công (quyết định nhóm):** xe/tài xế đã có EXCLUDE ở DB; hàng và giờ công thì không. **Lúc lập kế hoạch không khóa**, cho phép giữ chỗ `held` vượt tồn kho/công suất. **Chỉ khi duyệt**, service lấy `pg_advisory_xact_lock` theo key `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>`, theo thứ tự cố định **kho → sản phẩm → ngày → xe → tài xế** (id tăng dần), rồi đọc lại phần còn trống (trừ `committed` của đơn khác). Thiếu → `409 RESOURCE_CONFLICT` và rollback; đơn duyệt trước thắng. Không `FOR UPDATE` trên `ops.stock_snapshot` (job đồng bộ ghi đè bảng này).
 9. **Đơn nhiều xe khi thực thi:** mỗi xe một chuyến, một tài xế, một POD. Kho ghi `LOADED` theo từng xe; đơn `LOADED` khi mọi xe đã lên hàng; `DISPATCHED` khi xe đầu tiên xuất phát (thông báo `DISPATCHED` gửi một lần); `DELIVERED` khi mọi xe giao xong (thông báo `DELIVERED` một lần); nếu mọi chuyến đã kết thúc mà có xe thất bại → đơn `FAILED` (ghi phần đã giao), dispatcher xếp lại phần còn thiếu. Khách nhận một `CONFIRMED` cho cả đơn.
 10. **Gợi ý lập lại tự động:** khi đơn đã duyệt gặp một trong bốn tín hiệu — nguồn sửa đơn sau khi duyệt, tồn kho đổi làm kế hoạch không còn hợp lệ (`PLAN_INVALIDATED`), `VEHICLE_ISSUE`, giao `FAILED` — `PlanningService` chạy `planning_run(kind='replan_suggestion')`, **coi như kế hoạch hiện tại của chính đơn không tồn tại** (cộng lại hàng, giờ công, xe, tài xế của nó vào phần khả dụng) và **không tạo giữ chỗ**; tạo alert `REPLAN_SUGGESTED` cho dispatcher kèm `run_id`. Dispatcher duyệt phương án gợi ý → trong một transaction: đóng kế hoạch cũ (quy tắc 7) rồi khóa, kiểm tra lại, commit kế hoạch mới, đơn → `APPROVED`, gửi `CONFIRMED` mới; hoặc giữ kế hoạch cũ (lý do, đóng alert). Không bao giờ tự duyệt (09 bất biến 1). Đơn đã `DISPATCHED` chỉ nhận alert.
+
+### 7.1 Nhánh Sales xác nhận đơn tiêu chuẩn
+
+Reuse PlanningService/ReservationService/ApprovalService; Sales cùng cửa hàng chỉ lập plan mặc định và approve rank 1 với 5 gate pass, reserve safe, một xe, dữ liệu tươi, hold còn hạn, không đổi ngày/transfer/manual/replan. ApprovalService dùng chính thứ tự lock và transaction hiện tại, ghi audit actor Sales. `held` của stock/labour có thể vượt, không phải cam kết: đơn cũ chưa duyệt có tranh chấp chưa chứng minh đủ công suất thì chuyển Dispatcher. Các đơn cũ đã duyệt được bảo vệ bằng `committed`. Không thay engine thành thuật toán tối ưu đa đơn.
 
 ## 8. Cấu hình `MarketConfig` (JSON trong `ref.market.config`, mặc định [A])
 
@@ -332,6 +354,8 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 - **GPS [C][S]:** chỉ `dispatcher` đọc được `vehicle_position` (kiểm ở API, không trả cho vai trò khác dưới mọi hình thức); khách và CS không bao giờ thấy; cờ `gps_enabled` theo nước và `compliance_record(DPIA)`; PWA hiện thông báo quyền riêng tư (mục đích, ai xem, 30 ngày); bản demo hiện biểu ngữ "chưa có DPIA, chỉ demo"; không có báo cáo năng suất theo tài xế; job xóa điểm GPS sau `retention_days` kể từ khi chuyến kết thúc; mất tín hiệu quá 60 phút → alert `GPS_LOST`.
 - **Dữ liệu cá nhân:** log kỹ thuật không chứa tên/điện thoại/email/địa chỉ; ẩn danh khách và nhân viên sau thời gian lưu giữ; email/SMS chỉ chứa trạng thái và ETA, không toạ độ.
 - **API:** CORS giới hạn origin của web; giới hạn tần suất cơ bản trên `/auth/login`; `Idempotency-Key`; xác thực endpoint `/internal/*` bằng khóa riêng.
+
+**ASM-006:** chuyển công tác, nghỉ việc, đổi quản lý/owner đều phải có actor và before/after trong `audit.decision_log` cùng transaction; thao tác hồi tố bắt buộc lý do. `EMPLOYEE_ASSIGNMENT_CHANGED` dùng cho phân công (đã nằm trong danh sách dưới). Các mã mới cho đổi manager/owner/terminate cần được định nghĩa trước PR code, không được miễn log vì hiện chưa có tên action chuẩn.
 
 ## 10. Logging và quan sát
 
