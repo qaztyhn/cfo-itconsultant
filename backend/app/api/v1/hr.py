@@ -6,15 +6,226 @@ Mỗi endpoint cần test đường được phép và bị cấm (06 mục 3).
 Owner: Dev 1 (A) — M3.
 """
 
-from fastapi import APIRouter
+from datetime import date
+from typing import Annotated
+
+from fastapi import APIRouter, Query
+from pydantic import BaseModel, ConfigDict
+
+from app.api.v1.common import Page, PageNo, PageSize, SortParam
+from app.deps import AuthUser, DbSession
+from app.services import hr_read_service, hr_write_service
+from app.services.hr_scope import resolve_hr_scope
 
 router = APIRouter(tags=["hr"])
 
+_READ_ERRORS: dict[int | str, dict[str, object]] = {
+    401: {"description": "AUTH_INVALID"},
+    403: {"description": "FORBIDDEN — role cannot read this resource"},
+    404: {"description": "NOT_FOUND — missing or outside the caller's scope"},
+    422: {"description": "VALIDATION_ERROR"},
+}
 
-@router.get("/employees")
-async def list_employees() -> dict[str, object]:
-    """GET /employees — admin; R: dispatcher, warehouse (kho mình)."""
-    raise NotImplementedError
+
+class PersonRef(BaseModel):
+    employee_id: int
+    name: str
+
+
+class PositionRef(BaseModel):
+    code: str
+    name: str
+
+
+class AssignmentRef(BaseModel):
+    location_id: int
+    location_code: str
+    location_name: str
+    start_date: str
+
+
+class AssignmentHistoryItem(BaseModel):
+    location_id: int
+    location_code: str
+    start_date: str
+    end_date: str | None
+
+
+class WarehouseStaffOut(BaseModel):
+    role: str
+    counts_in_capacity: bool
+
+
+class DriverStaffOut(BaseModel):
+    licence_class: str
+    licence_expires_on: str
+    home_warehouse_id: int
+    adr: bool
+
+
+class SalesStaffOut(BaseModel):
+    role: str
+
+
+class DispatcherStaffOut(BaseModel):
+    can_send_delay_notice: bool
+
+
+class CsStaffOut(BaseModel):
+    team: str | None
+
+
+class EmployeeOut(BaseModel):
+    """06 mục 13.1. Trường không hiển thị cho vai trò bị BỎ khỏi phản hồi (không phải null).
+
+    Mọi vai trò: id, first_name, last_name, position, assignment. Dispatcher: + driver_staff.
+    Warehouse: + warehouse_staff. Admin: mọi trường; chi tiết thêm weekly_hours, reports_to_employee_id,
+    assignment_history.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 55, "first_name": "Anna", "last_name": "Lind",
+                    "position": {"code": "DRIVER", "name": "Driver"},
+                    "assignment": {"location_id": 7, "location_code": "STO", "location_name": "Stockholm DC",
+                                   "start_date": "2025-03-01"},
+                    "driver_staff": {"licence_class": "C", "licence_expires_on": "2027-01-31",
+                                     "home_warehouse_id": 7, "adr": False},
+                }
+            ]
+        }
+    )  # fmt: skip
+
+    id: int
+    first_name: str
+    last_name: str
+    position: PositionRef
+    assignment: AssignmentRef | None
+    warehouse_staff: WarehouseStaffOut | None = None
+    sales_staff: SalesStaffOut | None = None
+    dispatcher_staff: DispatcherStaffOut | None = None
+    driver_staff: DriverStaffOut | None = None
+    cs_staff: CsStaffOut | None = None
+    employee_no: str | None = None
+    status: str | None = None
+    employment_type: str | None = None
+    hire_date: str | None = None
+    end_date: str | None = None
+    work_email: str | None = None
+    work_phone: str | None = None
+    weekly_hours: float | None = None
+    reports_to_employee_id: int | None = None
+    assignment_history: list[AssignmentHistoryItem] | None = None
+
+
+class WarehouseRef(BaseModel):
+    id: int
+    code: str
+    name: str
+
+
+class GroupRef(BaseModel):
+    id: int
+    code: str
+
+
+class VehicleOut(BaseModel):
+    """06 mục 13.1. `allowed_groups: []` = chở được mọi nhóm."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 3, "code": "STO-CR-01", "plate": "…", "name": "Crane truck",
+                    "home_warehouse": {"id": 7, "code": "STO", "name": "Stockholm DC"},
+                    "capacity_kg": 8000.0, "capacity_m3": 30.0, "capabilities": ["crane"],
+                    "required_licence": "C", "allowed_groups": [{"id": 4, "code": "N4"}],
+                    "status": "available",
+                }
+            ]
+        }
+    )  # fmt: skip
+
+    id: int
+    code: str
+    plate: str
+    name: str
+    home_warehouse: WarehouseRef
+    capacity_kg: float
+    capacity_m3: float
+    capabilities: list[str]
+    required_licence: str
+    allowed_groups: list[GroupRef]
+    status: str
+
+
+class LocationManagers(BaseModel):
+    primary: PersonRef | None
+    deputy: PersonRef | None
+
+
+class LocationOut(BaseModel):
+    """06 mục 13.1 — cùng schema cho danh sách và chi tiết."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 7, "market": "SE", "type": "warehouse", "code": "STO", "name": "Stockholm DC",
+                    "address": "…", "lat": 59.3293, "lon": 18.0686, "loading_cutoff_time": "15:00",
+                    "is_active": True, "owner": {"employee_id": 40, "name": "…"},
+                    "managers": {"primary": {"employee_id": 40, "name": "…"}, "deputy": None},
+                }
+            ]
+        }
+    )  # fmt: skip
+
+    id: int
+    market: str
+    type: str
+    code: str
+    name: str
+    address: str | None
+    lat: float | None
+    lon: float | None
+    loading_cutoff_time: str | None
+    is_active: bool
+    owner: PersonRef | None
+    managers: LocationManagers
+
+
+@router.get(
+    "/employees", response_model=Page[EmployeeOut], response_model_exclude_unset=True, responses=_READ_ERRORS
+)
+async def list_employees(
+    user: AuthUser,
+    db: DbSession,
+    position_code: str | None = None,
+    location_id: int | None = None,
+    status: Annotated[str | None, Query(description="active | on_leave | terminated")] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    sort: SortParam = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> Page[EmployeeOut]:
+    """GET /employees — admin; dispatcher (market); warehouse (kho mình) — 06 mục 13.1."""
+    scope = await resolve_hr_scope(db, user)
+    items, total = await hr_read_service.list_employees(
+        db,
+        scope,
+        position_code=position_code,
+        location_id=location_id,
+        status=status,
+        q=q,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+    return Page[EmployeeOut](
+        items=[EmployeeOut.model_validate(i) for i in items], page=page, page_size=page_size, total=total
+    )
 
 
 @router.post("/employees")
@@ -23,34 +234,118 @@ async def create_employee() -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/employees/{employee_id}")
-async def get_employee(employee_id: int) -> dict[str, object]:
-    """GET /employees/{employee_id} — Theo phạm vi."""
-    raise NotImplementedError
+@router.get(
+    "/employees/{employee_id}",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_READ_ERRORS,
+)
+async def get_employee(employee_id: int, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """GET /employees/{employee_id} — theo phạm vi; ngoài phạm vi → 404."""
+    scope = await resolve_hr_scope(db, user)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 
-@router.post("/employees/{employee_id}/assignments")
-async def assign_employee(employee_id: int) -> dict[str, object]:
-    """POST /employees/{employee_id}/assignments — admin; đóng phân công cũ."""
-    raise NotImplementedError
+class AssignmentIn(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"location_id": 3, "start_date": "2026-11-20"}}
+    )
+    location_id: int
+    start_date: date
 
 
-@router.post("/employees/{employee_id}/terminate")
-async def terminate_employee(employee_id: int) -> dict[str, object]:
-    """POST /employees/{employee_id}/terminate — admin."""
-    raise NotImplementedError
+class ManagersIn(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"primary_employee_id": 40, "deputy_employee_id": 41}}
+    )
+    primary_employee_id: int
+    deputy_employee_id: int | None = None
 
 
-@router.get("/locations")
-async def list_locations() -> dict[str, object]:
-    """GET /locations — Theo phạm vi."""
-    raise NotImplementedError
+class OwnerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"owner_employee_id": 40}})
+    owner_employee_id: int
 
 
-@router.put("/locations/{location_id}/managers")
-async def set_managers(location_id: int) -> dict[str, object]:
-    """PUT /locations/{location_id}/managers — admin; một quản lý chính."""
-    raise NotImplementedError
+_WRITE_ERRORS: dict[int | str, dict[str, object]] = {
+    **_READ_ERRORS,
+    403: {"description": "FORBIDDEN — admin only"},
+    422: {"description": "VALIDATION_ERROR — details.field names the rule that failed"},
+}
+
+
+@router.post(
+    "/employees/{employee_id}/assignments",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_WRITE_ERRORS,
+)
+async def assign_employee(employee_id: int, body: AssignmentIn, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """POST /employees/{id}/assignments — admin; đóng phân công cũ (US-EMP-01 AC2)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.assign(db, scope, employee_id, body.location_id, body.start_date)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
+
+
+@router.post(
+    "/employees/{employee_id}/terminate",
+    response_model=EmployeeOut,
+    response_model_exclude_unset=True,
+    responses=_WRITE_ERRORS,
+)
+async def terminate_employee(employee_id: int, user: AuthUser, db: DbSession) -> EmployeeOut:
+    """POST /employees/{id}/terminate — admin; khóa tài khoản, giữ lịch sử (US-EMP-03 AC4)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.terminate(db, scope, employee_id)
+    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
+
+
+@router.get("/locations", response_model=Page[LocationOut], responses=_READ_ERRORS)
+async def list_locations(
+    user: AuthUser,
+    db: DbSession,
+    type: Annotated[
+        str | None, Query(description="warehouse | store | dispatch_center | head_office")
+    ] = None,
+    is_active: bool = True,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    sort: SortParam = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> Page[LocationOut]:
+    """GET /locations — admin, dispatcher (market), warehouse (nơi được phân công) — 06 mục 13.1."""
+    scope = await resolve_hr_scope(db, user)
+    items, total = await hr_read_service.list_locations(
+        db, scope, type_=type, is_active=is_active, q=q, sort=sort, page=page, page_size=page_size
+    )
+    return Page[LocationOut](
+        items=[LocationOut.model_validate(i) for i in items], page=page, page_size=page_size, total=total
+    )
+
+
+@router.get("/locations/{location_id}", response_model=LocationOut, responses=_READ_ERRORS)
+async def get_location(location_id: int, user: AuthUser, db: DbSession) -> LocationOut:
+    """GET /locations/{id} — như danh sách; ngoài phạm vi → 404."""
+    scope = await resolve_hr_scope(db, user)
+    return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
+
+
+@router.put("/locations/{location_id}/managers", response_model=LocationOut, responses=_WRITE_ERRORS)
+async def set_managers(location_id: int, body: ManagersIn, user: AuthUser, db: DbSession) -> LocationOut:
+    """PUT /locations/{id}/managers — admin; quản lý phải có phân công tại đó (US-EMP-01 AC3–AC5)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.set_managers(
+        db, scope, location_id, body.primary_employee_id, body.deputy_employee_id
+    )
+    return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
+
+
+@router.patch("/locations/{location_id}/owner", response_model=LocationOut, responses=_WRITE_ERRORS)
+async def set_owner(location_id: int, body: OwnerIn, user: AuthUser, db: DbSession) -> LocationOut:
+    """PATCH /locations/{id}/owner — admin gán lại owner (US-EMP-01 AC4)."""
+    scope = await resolve_hr_scope(db, user)
+    await hr_write_service.set_owner(db, scope, location_id, body.owner_employee_id)
+    return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
 
 
 @router.get("/warehouses/{warehouse_id}/attendance")
@@ -83,10 +378,39 @@ async def put_shift_templates(warehouse_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/vehicles")
-async def list_vehicles() -> dict[str, object]:
-    """GET /vehicles — admin; R dispatcher."""
-    raise NotImplementedError
+@router.get("/vehicles", response_model=Page[VehicleOut], responses=_READ_ERRORS)
+async def list_vehicles(
+    user: AuthUser,
+    db: DbSession,
+    home_warehouse_id: int | None = None,
+    status: Annotated[str | None, Query(description="available | maintenance | retired")] = None,
+    capability: Annotated[str | None, Query(max_length=50)] = None,
+    sort: SortParam = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> Page[VehicleOut]:
+    """GET /vehicles — admin; dispatcher (market); warehouse (xe có kho gốc thuộc kho mình) — 06 mục 13.1."""
+    scope = await resolve_hr_scope(db, user)
+    items, total = await hr_read_service.list_vehicles(
+        db,
+        scope,
+        home_warehouse_id=home_warehouse_id,
+        status=status,
+        capability=capability,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+    return Page[VehicleOut](
+        items=[VehicleOut.model_validate(i) for i in items], page=page, page_size=page_size, total=total
+    )
+
+
+@router.get("/vehicles/{vehicle_id}", response_model=VehicleOut, responses=_READ_ERRORS)
+async def get_vehicle(vehicle_id: int, user: AuthUser, db: DbSession) -> VehicleOut:
+    """GET /vehicles/{id} — theo phạm vi; ngoài phạm vi → 404."""
+    scope = await resolve_hr_scope(db, user)
+    return VehicleOut.model_validate(await hr_read_service.get_vehicle(db, scope, vehicle_id))
 
 
 @router.post("/vehicles")

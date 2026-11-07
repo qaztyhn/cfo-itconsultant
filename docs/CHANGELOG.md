@@ -10,6 +10,28 @@
 - FIFO hiển thị (`submitted_at,id`), không ép FIFO thực thi; bảo vệ committed của đơn cũ, cạnh tranh với đơn cũ chưa duyệt → Dispatcher.
 - Bổ sung hợp đồng mục tiêu và acceptance criteria; không có code/migration/test thực thi trong PR docs này. PR #37 cần đối chiếu trước khi merge.
 
+## [06 v1.3] — 2026-11-07 — **đã duyệt** (PR qaztyhn/cfo-itconsultant#12, comment của owner 2026-11-07)
+
+### Thêm
+- `06` mục 13.1: API đọc `/locations`, `/employees`, `/vehicles` (và `/{id}`): schema phản hồi, lọc, sắp xếp,
+  phân trang, lỗi 401/403/404/422.
+- Phạm vi: admin, dispatcher theo market; warehouse theo địa điểm có phân công hiệu lực; vai trò khác `403` (Q3 = A).
+- Kiểm theo **ngày hiệu lực** cho phân công (`start_date`/`end_date`) và quản lý địa điểm (`valid_from`/`valid_to`),
+  hôm nay theo múi giờ market (điều chỉnh Q1).
+- Hiển thị trường nhân viên theo vai trò, tối thiểu hóa dữ liệu: dispatcher thấy thêm `driver_staff` (bằng lái),
+  warehouse thấy thêm `warehouse_staff.role`, `counts_in_capacity`; thông tin liên hệ và hợp đồng chỉ admin (Q4 = C
+  có điều chỉnh). Trường không hiển thị được bỏ khỏi phản hồi; liệt kê trường nullable (điều chỉnh Q1).
+
+### Đổi
+- `06` mục 13: quyền đọc `/vehicles` theo ma trận mục 3 — dispatcher (market), warehouse (xe thuộc kho mình) (Q2 = A);
+  mô tả vai trò của `/employees`, `/locations` trỏ tới mục 13.1.
+
+### Ảnh hưởng
+- Backend: `app/api/v1/hr.py`, `app/services/hr_read_service.py`, phạm vi/phân trang dùng chung; test PostgreSQL
+  quyền, phạm vi, ngày hiệu lực, hiển thị trường.
+- Frontend (Dev 3): màn A9/A10 dùng schema mục 13.1; vai trò không phải admin nhận ít trường hơn.
+- Không đổi bảng, cột, enum hay endpoint khác.
+
 ## [06 v1.2.1] — 2026-11-06 — **chờ nhóm duyệt** (PR qaztyhn/cfo-itconsultant#8)
 
 ### Thêm
