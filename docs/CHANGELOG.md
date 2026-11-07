@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 Phụ lục A — `routing.fallback_retry_min`] — 2026-11-07 — review PR #65, chờ duyệt
+
+- Thêm khóa cấu hình `MarketConfig.routing.fallback_retry_min` (mặc định 60, phải > 0): fallback ORS không còn được lưu và dùng vô thời hạn; quá hạn thì thử ORS lại. Không đổi DDL/route/mã lỗi; `route_matrix.computed_at` sẵn có.
+- Test PostgreSQL: `backend/tests/integration/test_dev2_route_cache.py`.
+
+
 ## [Approved decision register] — 2026-11-07 — docs-only
 
 - Tập trung quyết định đã duyệt ở `docs/ASSUMPTIONS.md`: ASM-001/002/003/005/006/007; Sales confirmation, Q12/Q13/Q14 và giờ làm/nghỉ của kho/tài xế trong MVP Bắc Âu.
