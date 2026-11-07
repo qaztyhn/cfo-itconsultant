@@ -5,13 +5,12 @@
  */
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
+import { queryClient } from "./app/queryClient";
 import { router } from "./app/router";
 import "./i18n";
 import "./styles/index.css";
-
-const queryClient = new QueryClient({ defaultOptions: { queries: { refetchInterval: 20_000 } } });
 
 async function enableMocking(): Promise<void> {
   if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === "true") {
