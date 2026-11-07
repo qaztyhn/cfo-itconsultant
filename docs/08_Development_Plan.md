@@ -189,7 +189,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, **gợi ý lập lại tự động** (không giữ chỗ, không tính kế hoạch cũ), dispatcher duyệt (kế hoạch cũ `superseded`, `CONFIRMED` mới), giao thành công; hai POD; doanh thu tính một lần |
 | 13 | GPS | Simulator → bản đồ dispatcher; CS/khách `403`; mất tín hiệu 60 phút → alert; retention 30 ngày |
 | 14 | Hold hết hạn / gia hạn | Extend 2 lần, lần 3 bị từ chối; Approve sau hết hạn vẫn kiểm tra lại |
-| 15 | Phân quyền | CS không thấy GPS/điểm; sales không duyệt; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
+| 15 | Phân quyền | CS không thấy GPS/điểm; Sales chỉ duyệt rank-1 tiêu chuẩn ở cửa hàng mình, không được duyệt ngoại lệ/plan khác; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
 | 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
 | 18 | Tạm dừng chuẩn bị | Start prep (3 người) → Pause → Resume (2 người) → Goods ready; `improvement_log` có giờ nhân công thực tế và giờ/đơn vị theo nhóm |
