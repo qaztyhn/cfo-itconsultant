@@ -1,7 +1,8 @@
 # Dev 2 — M0 integration
 
-This branch integrates the Dev 1 handoff locally for verification. It does not
-approve pending contracts or merge those branches into main.
+This branch integrates the Dev 1 handoff and was updated with `origin/main`
+at `cff287b` before opening the Dev 2 PR. Its diff against main is limited to
+the seven Dev 2 files listed below; it does not approve pending contracts.
 
 ## Minimal account seed
 
@@ -43,6 +44,10 @@ Remaining M0 acceptance includes UI login.
 OpenAPI baselines and team approval of Dev 1's pending contracts remain separate.
 
 ## Verification — 2026-11-07
+
+The runtime results below were collected before updating to `cff287b`.
+That update brings additional backend code/tests; these counts are historical,
+not a claim that the updated head has passed. PR CI must verify the new head.
 
 - Final isolated stack: Compose config PASS, all five services start, CFO
   `alembic current` is `0008 (head)`, source/CFO health and web HTTP PASS.
