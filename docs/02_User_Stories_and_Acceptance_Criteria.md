@@ -170,7 +170,7 @@
 
 ---
 
-**US-WH-03 — Warehouse Manager lập lịch làm chính thức từng người (ASM-007/Q11)**
+**US-WH-06 — Warehouse Manager lập lịch làm chính thức từng người (ASM-007/Q11)**
 - AC1. Quản lý kho hợp lệ chọn người, ngày, ca và lưu lịch; danh sách `expected_staff` chỉ hiển thị so sánh, không tự xếp lại người, không tự đưa người dư vào ca cuối.
 - AC2. Người không thuộc kho, đã nghỉ, hoặc bị xếp ca trùng thời gian bị từ chối; thao tác sai kho → 404, sai quyền → 403.
 - AC3. Job `attendance_gen` chỉ sao từ lịch chính thức, không tạo ca dựa vào `expected_staff`. Thiếu lịch → cảnh báo thiếu dữ liệu thay vì tính công suất từ nhân viên giả định.
@@ -491,7 +491,7 @@
 | 2 | US-PRD-01..05 | FR-PRD-01..05, BR-PRD-01..05 |
 | 3 | US-ORD-01..05 | FR-ORD-01..05, BR-ORD-01..04, BR-DEL-05 |
 | 4 | US-ATP-01..03 | FR-ATP-01..03, BR-ATP-01..05 |
-| 5 | US-WH-01..05 (US-WH-03 đã bỏ) | FR-PRP-02, FR-PRP-04, FR-PRP-05, FR-EXE-01, BR-PRP-02, BR-PRP-04, BR-PRP-05, BR-EMP-03 |
+| 5 | US-WH-01..06 (US-WH-03 đã bỏ, US-WH-06 mới: lịch phân ca từng người) | FR-PRP-02, FR-PRP-04, FR-PRP-05, FR-EXE-01, BR-PRP-02, BR-PRP-04, BR-PRP-05, BR-EMP-03 |
 | 6 | US-PLN-01..08 | FR-PRP-01, FR-DEL-01..04, FR-RNK-01..03, BR-PRP-01, BR-DEL-01..05, BR-GATE-01, BR-RNK-01..05 |
 | 7 | US-RES-01, US-APR-01..04 | FR-APR-01..05, BR-RES-01..04, BR-APR-01..04 |
 | 8 | US-EXE-01..04, US-WH-04 | FR-EXE-01..04, BR-EXE-01..03, BR-DEL-05 |
