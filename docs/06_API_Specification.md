@@ -1,5 +1,7 @@
 # 06 — API Specification (CFO MVP)
 
+> **Phiên bản 1.3 (07/11/2026):** API đọc nhân sự, địa điểm, xe (mục 13.1): schema phản hồi, phạm vi theo vai trò và địa điểm, kiểm theo ngày hiệu lực, hiển thị trường theo vai trò; quyền đọc `/vehicles` theo ma trận mục 3. Duyệt ở PR qaztyhn/cfo-itconsultant#12 (Q1–Q4).
+>
 > **Phiên bản 1.2 (06/11/2026):** phương án có **nhiều xe** (`vehicles[]`); bỏ `MANUAL_PLANNING`, `result = manual`, `external-handoff`; kế hoạch tay nhận nhiều xe; gợi ý lập lại tự động (mục 6.6); sự kiện `PREP_PAUSED`/`PREP_RESUMED` và sự kiện theo từng xe (`trip_id`); doanh thu thành nhóm endpoint `/revenue/*` với `kpi_scopes` (mục 14.1); giữ chỗ chỉ khóa khi duyệt.
 >
 > Lịch sử **v1.1:** bỏ endpoint thiết bị kho; thêm `POST /orders/{id}/external-handoff`; đặc tả đóng kế hoạch khi lập lại/hủy; POD theo từng lần giao; quyền xem doanh thu qua `can_view_revenue`; mã lý do `LOWEST_SCORE_OF_3`; tách số đếm "unmapped" khỏi dòng bị loại ở Data integration.
@@ -355,11 +357,11 @@ Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`; các đơn
 
 | Phương thức | Đường dẫn | Vai trò | Mô tả |
 |---|---|---|---|
-| GET/POST | `/employees` | admin; R: dispatcher, warehouse (kho mình) | Lọc `position_code`, `location_id`, `status` |
+| GET/POST | `/employees` | admin; R: dispatcher (market), warehouse (kho mình) — mục 13.1 | Lọc `position_code`, `location_id`, `status`, `q` |
 | GET/PATCH | `/employees/{id}` | | |
 | POST | `/employees/{id}/assignments` | admin | Chuyển công tác `{ "location_id": 3, "start_date": "…" }` (đóng phân công cũ) |
 | POST | `/employees/{id}/terminate` | admin | Khóa tài khoản, giữ lịch sử |
-| GET | `/locations`, `/locations/{id}` | theo phạm vi | Kèm owner, quản lý |
+| GET | `/locations`, `/locations/{id}` | admin, dispatcher (market), warehouse (nơi được phân công) — mục 13.1 | Kèm owner, quản lý (theo ngày hiệu lực) |
 | PATCH | `/locations/{id}/owner` | admin | Gán owner |
 | PUT | `/locations/{id}/managers` | admin | `{ "primary_employee_id": 40, "deputy_employee_id": 41 }` |
 | GET | `/locations/{id}/staff` | admin, quản lý nơi đó | |
@@ -367,11 +369,65 @@ Hiệu ứng: `product_<cc>.mapping_status = confirmed`, `mapped_by`; các đơn
 | PUT | `/warehouses/{id}/attendance` | warehouse | `{ "date": "2026-11-12", "all_present": true, "items": [{ "employee_id": 120, "status": "absent" }] }`; ghi `ATTENDANCE_CHANGED` |
 | POST | `/absences` | warehouse, admin | Nghỉ phép |
 | GET/PUT | `/warehouses/{id}/shift-templates` | warehouse, admin | Ca mẫu |
-| GET/POST/PATCH | `/vehicles`, `/vehicles/{id}` | admin | Hồ sơ xe |
+| GET/POST/PATCH | `/vehicles`, `/vehicles/{id}` | admin; R: dispatcher (market), warehouse (xe có kho gốc thuộc kho mình) — mục 13.1 | Hồ sơ xe |
 | GET/POST | `/vehicles/{id}/availability` | admin, dispatcher | Bảo trì/không khả dụng |
 | GET/POST/PATCH | `/users`, `/users/{id}`; POST `/users/{id}/reset-password` | admin | Tài khoản |
 
 Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ một phân công hiệu lực; mỗi kho/cửa hàng đúng một quản lý chính; chỉ quản lý có `can_approve` mới xác nhận chuyển kho / sửa ca / đóng ngoại lệ của kho đó.
+
+### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
+
+Duyệt ở PR qaztyhn/cfo-itconsultant#12 (Q1 chấp nhận có điều chỉnh, Q2 phương án A, Q3 phương án A, Q4 phương án C có điều chỉnh).
+
+**Quy tắc chung**
+- Kiểm vai trò và phạm vi ở máy chủ. Thiếu/sai token → `401 AUTH_INVALID`; vai trò không được đọc nhóm endpoint → `403 FORBIDDEN`; bản ghi không tồn tại **hoặc** ngoài phạm vi → `404 NOT_FOUND` (không lộ sự tồn tại); tham số sai → `422 VALIDATION_ERROR`.
+- Vai trò được đọc: `admin`, `dispatcher`, `warehouse`. `sales`, `driver`, `customer_service`, `viewer` → `403`. Người có nhiều vai trò dùng vai trò rộng nhất theo thứ tự `admin` > `dispatcher` > `warehouse`.
+- **Phạm vi market:** dispatcher và warehouse chỉ thấy dữ liệu của market của nhân viên mình. Admin gắn nhân viên thấy market của mình; tài khoản admin hệ thống (không gắn nhân viên) thấy mọi market.
+- **Phạm vi địa điểm của warehouse:** các địa điểm có phân công **đang hiệu lực hôm nay** của người dùng (`location_ids` trong `/auth/me`).
+- **Ngày hiệu lực** (hôm nay theo `ref.market.timezone`): phân công hiệu lực khi `start_date ≤ hôm nay` và (`end_date` rỗng hoặc `≥ hôm nay`); quản lý địa điểm hiệu lực khi `valid_from ≤ hôm nay` và (`valid_to` rỗng hoặc `≥ hôm nay`).
+- Không tin `location_id` từ client: lọc theo nơi ngoài phạm vi trả danh sách rỗng.
+- Phân trang `?page=1&page_size=50` (`page ≥ 1`, `1 ≤ page_size ≤ 200`) → `{items, page, page_size, total}`; sắp xếp `?sort=` theo các trường liệt kê dưới đây (tiền tố `-` = giảm dần); trường lạ → `422`.
+- Trường không hiển thị cho vai trò được **bỏ hẳn** khỏi phản hồi (không trả `null`). Trường đánh dấu *nullable* có thể là `null`.
+- Tên, email, điện thoại nhân viên không ghi vào log kỹ thuật (`09` bất biến 16).
+
+**`GET /locations`, `GET /locations/{id}`** — admin, dispatcher (market), warehouse (nơi được phân công).
+Lọc: `type`, `is_active` (mặc định `true`), `q` (mã hoặc tên). Sắp xếp: `code` (mặc định), `name`, `type`. Danh sách và chi tiết cùng schema; mọi vai trò được phép nhận cùng trường.
+```json
+{ "id": 7, "market": "SE", "type": "warehouse", "code": "STO", "name": "Stockholm DC",
+  "address": "…", "lat": 59.3293, "lon": 18.0686, "loading_cutoff_time": "15:00", "is_active": true,
+  "owner": { "employee_id": 40, "name": "…" },
+  "managers": { "primary": { "employee_id": 40, "name": "…" }, "deputy": null } }
+```
+Nullable: `address`, `lat`, `lon`, `loading_cutoff_time` (chỉ kho bắt buộc), `owner`, `managers.primary`, `managers.deputy`. `managers` = bản ghi `hr.location_manager` hiệu lực hôm nay. Không trả `efficiency_factor`.
+
+**`GET /employees`, `GET /employees/{id}`** — admin; dispatcher (nhân viên của market); warehouse (nhân viên có phân công hiệu lực hôm nay tại nơi của mình).
+Lọc: `position_code`, `location_id` (phân công hiệu lực hôm nay), `status`, `q` (tên; admin thêm `employee_no`). Sắp xếp: `last_name` (mặc định `last_name,first_name`), `first_name`, `position_code`; admin thêm `employee_no`, `hire_date`. Dispatcher và warehouse không thấy nhân viên `terminated`.
+
+| Trường | admin | dispatcher | warehouse |
+|---|---|---|---|
+| `id`, `first_name`, `last_name`, `position {code, name}`, `assignment` | ✓ | ✓ | ✓ |
+| `driver_staff {licence_class, licence_expires_on, home_warehouse_id, adr}` | ✓ | ✓ | — |
+| `warehouse_staff {role, counts_in_capacity}` | ✓ | — | ✓ |
+| `sales_staff {role}`, `dispatcher_staff {can_send_delay_notice}`, `cs_staff {team}` | ✓ | — | — |
+| `employee_no`, `status`, `employment_type`, `hire_date`, `end_date`, `work_email`, `work_phone` | ✓ | — | — |
+| Chỉ chi tiết: `weekly_hours`, `reports_to_employee_id`, `assignment_history` | ✓ | — | — |
+
+```json
+{ "id": 55, "first_name": "Anna", "last_name": "Lind", "position": { "code": "DRIVER", "name": "Driver" },
+  "assignment": { "location_id": 7, "location_code": "STO", "location_name": "Stockholm DC", "start_date": "2025-03-01" },
+  "driver_staff": { "licence_class": "C", "licence_expires_on": "2027-01-31", "home_warehouse_id": 7, "adr": false } }
+```
+Nullable: `assignment` (không có phân công hiệu lực), các khối `*_staff` (không áp dụng), `end_date`, `work_email`, `work_phone`, `reports_to_employee_id`. `assignment_history` = mọi phân công, mới nhất trước: `[{location_id, location_code, start_date, end_date}]`. Không trả thông tin tài khoản (`roles`, `is_active`, email đăng nhập).
+
+**`GET /vehicles`, `GET /vehicles/{id}`** — admin; dispatcher (xe của market); warehouse (xe có `home_warehouse_id` thuộc nơi của mình).
+Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc định), `capacity_kg`, `status`.
+```json
+{ "id": 3, "code": "STO-CR-01", "plate": "…", "name": "Crane truck",
+  "home_warehouse": { "id": 7, "code": "STO", "name": "Stockholm DC" },
+  "capacity_kg": 8000.0, "capacity_m3": 30.0, "capabilities": ["crane"], "required_licence": "C",
+  "allowed_groups": [ { "id": 4, "code": "N4" } ], "status": "available" }
+```
+`allowed_groups: []` = chở được mọi nhóm. Lịch bận ở `GET /vehicles/{id}/availability`.
 
 ## 14. KPI
 
