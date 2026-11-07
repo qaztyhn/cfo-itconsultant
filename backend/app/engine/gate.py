@@ -19,6 +19,17 @@ def all_passed(checks: tuple[CheckResult, ...]) -> bool:
     return len(checks) == len(CHECK_ORDER) and all(c.passed for c in checks)
 
 
+def first_failure(checks: tuple[CheckResult, ...]) -> CheckResult | None:
+    """Check hỏng đầu tiên của một ứng viên (gate dừng ở lỗi đầu tiên)."""
+    return next((c for c in checks if not c.passed), None)
+
+
 def furthest_failed_check(reached: list[tuple[CheckResult, ...]]) -> CheckNameT | None:
-    """Check xa nhất trong thứ tự mà ít nhất một kho đã tới rồi hỏng. TODO(#M4-gate)."""
-    raise NotImplementedError
+    """Check xa nhất trong thứ tự mà ít nhất một kho đã tới rồi hỏng.
+
+    Mỗi phần tử của `reached` là các check một kho đã chạy (dừng ở lỗi đầu tiên).
+    """
+    failed = [f.name for f in (first_failure(checks) for checks in reached) if f is not None]
+    if not failed:
+        return None
+    return max(failed, key=CHECK_ORDER.index)
