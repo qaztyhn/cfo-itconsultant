@@ -128,3 +128,8 @@ def rejects(
     if constraint is not None:
         assert caught.value.constraint_name == constraint
     return caught.value
+
+
+def async_url(dsn: str) -> str:
+    """DSN cho SQLAlchemy async (asyncpg) từ DSN test bất kỳ dạng postgresql://."""
+    return "postgresql+asyncpg://" + _plain_dsn(dsn)[len("postgresql://") :]
