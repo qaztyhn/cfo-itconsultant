@@ -24,7 +24,8 @@ from app.core.logging import configure_logging
 def create_app() -> FastAPI:
     """Tạo ứng dụng FastAPI với middleware, lỗi chuẩn và router v1."""
     settings = get_settings()
-    clock.init_from_settings(settings.app_now)
+    if settings.app_now:  # chỉ cố định đồng hồ khi APP_NOW được đặt (08 mục 1.6)
+        clock.init_from_settings(settings.app_now)
     configure_logging(Path("logs") if settings.app_env == "local" else None)
     app = FastAPI(title="CFO API", version="0.1.0", docs_url="/docs")
     app.add_middleware(
