@@ -5,6 +5,7 @@ Only a uniquely named schema created by this test is removed during cleanup.
 
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from app.db import create_engine
 from app.init_db import initialize
 from app.main import create_app
 from app.models import Address, Customer, Order, Product
+from app.seed_reference import seed_customers
 
 
 @pytest.fixture
@@ -59,6 +61,32 @@ async def test_all_source_tables_and_timestamps_exist(
                 lambda sync, name=table: inspect(sync).get_columns(name, schema=schema)
             )
             assert {"created_at", "updated_at"} <= {column["name"] for column in columns}
+
+
+async def test_US_SRC_01_AC1_customer_reference_seed_preserves_existing_data(
+    database: tuple[AsyncEngine, str],
+) -> None:
+    engine, _ = database
+    now = datetime(2026, 11, 4, 9, 5, tzinfo=UTC)
+    async with engine.begin() as connection:
+        await seed_customers(connection, now=now)
+        customers = (await connection.execute(select(Customer.id, Customer.type))).all()
+        assert len(customers) == 40
+        assert sum(row.type == "business" for row in customers) == 30
+        before = (
+            await connection.execute(select(Address.id, Address.lat, Address.lon).order_by(Address.id))
+        ).all()
+        assert len(before) == 80
+        assert all(row.lat is not None and row.lon is not None for row in before)
+        await connection.execute(update(Customer).where(Customer.id == "DEMO-C001").values(name="Edited"))
+        await seed_customers(connection, now=now)
+        assert await connection.scalar(select(Customer.name).where(Customer.id == "DEMO-C001")) == "Edited"
+        assert (
+            before
+            == (
+                await connection.execute(select(Address.id, Address.lat, Address.lon).order_by(Address.id))
+            ).all()
+        )
 
 
 async def test_bootstrap_preserves_data_and_database_updates_timestamp(
