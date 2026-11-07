@@ -9,3 +9,9 @@ export const USE_MOCKS = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS =
 
 /** URL ứng dụng POS giả lập (03 mục 6) mở từ mục menu "New order". ASM-G: mặc định cổng 8100, cần Dev 2 xác nhận. */
 export const POS_URL = (import.meta.env.VITE_POS_URL ?? "http://localhost:8100").replace(/\/+$/, "");
+
+/** Môi trường chạy (APP_ENV, docs/09). Không đặt → "demo": thà hiện banner thừa còn hơn thiếu. */
+export const APP_ENV = import.meta.env.VITE_APP_ENV ?? "demo";
+
+/** Banner DEMO hiện ở mọi môi trường trừ production. Nhận env làm tham số để test được. */
+export const isDemoEnv = (env: string = APP_ENV): boolean => env !== "production";
