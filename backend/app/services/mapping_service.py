@@ -8,21 +8,18 @@ Owner: Dev 1 (A) — M2.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import Action
 from app.audit.recorder import ensure_reason, record_decision
 from app.core import clock
 from app.core.errors import DomainError
-from app.domain.enums import OrderStatus
-from app.domain.models.ops import CustomerOrder, OrderLine
 from app.domain.models.ref import HandlingGroup, MappingTask, Market, ProductGlobal, SpecialFlag
-from app.domain.transitions import SYSTEM_ROLE, transition
 from app.engine.mapping_candidates import build_candidates
 
 MAPPER_ROLE = "admin"  # BR-PRD-02: chỉ IT (vai trò admin) xác nhận/từ chối ánh xạ
@@ -141,8 +138,6 @@ class ConfirmInput:
 @dataclass(frozen=True)
 class ConfirmResult:
     global_product_id: int
-    ready_order_ids: tuple[int, ...] = ()  # đơn đã về SUBMITTED, đủ ánh xạ → caller lập kế hoạch (M4)
-    still_blocked_order_ids: tuple[int, ...] = field(default=())  # còn SKU khác chưa ánh xạ
 
 
 def _invalid(field_name: str, message: str) -> DomainError:
@@ -242,22 +237,6 @@ async def _create_global(session: AsyncSession, new: NewGlobal, employee_id: int
     return product.id
 
 
-async def _blocked_orders(session: AsyncSession, market_id: int, sku: str) -> list[int]:
-    query = (
-        select(CustomerOrder.id)
-        .where(
-            CustomerOrder.market_id == market_id,
-            CustomerOrder.status == OrderStatus.BLOCKED_UNMAPPED_SKU.value,
-            select(OrderLine.id)
-            .where(OrderLine.order_id == CustomerOrder.id, OrderLine.local_sku == sku)
-            .exists(),
-        )
-        .order_by(CustomerOrder.id)
-        .with_for_update()
-    )
-    return list((await session.scalars(query)).all())
-
-
 async def confirm(
     session: AsyncSession,
     task_id: int,
@@ -268,13 +247,11 @@ async def confirm(
 ) -> ConfirmResult:
     """Xác nhận ánh xạ (06 mục 12.1; US-PRD-02 AC1–AC4; BR-PRD-02/04).
 
-    product_<cc> → confirmed (global, units_to_base, mapped_by/mapped_at); task → done; các đơn
-    BLOCKED_UNMAPPED_SKU chứa SKU → SUBMITTED (transition, vai trò system) rồi kiểm lại ánh xạ: đủ thì
-    sẵn sàng lập kế hoạch (caller gọi PlanningService, M4), còn SKU khác thì bị chặn lại với lý do mới. Ghi
-    MAPPING_CONFIRMED kèm trước/sau. Một transaction của caller; không commit.
+    product_<cc> → confirmed (global, units_to_base, mapped_by/mapped_at); task → done; ghi MAPPING_CONFIRMED
+    kèm trước/sau. ASM-005 (PR #49): KHÔNG mở khóa, chuyển trạng thái, lập kế hoạch hay giữ chỗ cho đơn nào —
+    đơn thiếu SKU đã đi quy trình cũ; chỉ đơn MỚI có 100% SKU confirmed mới vào CFO. Một transaction của
+    caller; không commit.
     """
-    from app.services.order_service import prepare_for_planning  # tránh vòng import order ↔ mapping
-
     employee_id = _require_mapper(actor)
     if payload.units_to_base <= 0:
         raise _invalid("units_to_base", "units_to_base must be > 0.")
@@ -304,15 +281,6 @@ async def confirm(
             "sku": task.local_sku,
         },
     )
-    ready: list[int] = []
-    still_blocked: list[int] = []
-    for order_id in await _blocked_orders(session, task.market_id, task.local_sku):
-        await session.execute(
-            update(CustomerOrder).where(CustomerOrder.id == order_id).values(block_reason=None)
-        )
-        await transition(session, order_id, OrderStatus.SUBMITTED, SYSTEM_ROLE)
-        result = await prepare_for_planning(session, order_id)
-        (ready if result.status == OrderStatus.SUBMITTED else still_blocked).append(order_id)
     task.status, task.resolved_by, task.resolved_at = "done", employee_id, now
     await session.flush()
     await ensure_task(session, task.market_id, task.local_sku)
@@ -321,8 +289,6 @@ async def confirm(
         "global_product_id": global_id,
         "units_to_base": str(payload.units_to_base),
         "created_global": payload.create_global is not None,
-        "ready_order_ids": ready,
-        "still_blocked_order_ids": still_blocked,
     }
     await record_decision(
         session,
@@ -336,7 +302,7 @@ async def confirm(
         actor_employee_id=employee_id,
         actor_role=MAPPER_ROLE,
     )
-    return ConfirmResult(global_id, tuple(ready), tuple(still_blocked))
+    return ConfirmResult(global_id)
 
 
 async def reject(
@@ -349,10 +315,9 @@ async def reject(
 ) -> None:
     """Từ chối ánh xạ (06 mục 12; US-PRD-03 AC1/AC2; BR-GEN-04).
 
-    Thiếu lý do → 422 REASON_REQUIRED (kiểm trước mọi thay đổi). SKU → rejected; task → done; đơn liên quan
-    VẪN bị chặn, block_reason thêm lý do từ chối để dispatcher thấy. SKU đã confirmed không từ chối được
-    (ASM-005).
-    Ghi MAPPING_REJECTED. Không commit.
+    Thiếu lý do → 422 REASON_REQUIRED (kiểm trước mọi thay đổi). SKU → rejected; task → done; lý do lưu ở
+    MAPPING_REJECTED cho IT. ASM-005: không đụng tới đơn khách (đơn thiếu SKU đi quy trình cũ, không vào hàng
+    đợi Dispatcher). SKU đã confirmed không từ chối được. Không commit.
     """
     employee_id = _require_mapper(actor)
     ensure_reason(Action.MAPPING_REJECTED, None, reason_text)
@@ -371,13 +336,6 @@ async def reject(
                 "WHERE local_sku = :sku"
             ),
             {"now": now, "sku": task.local_sku},
-        )
-    note = f" | REJECTED {task.local_sku}: {reason}"
-    for order_id in await _blocked_orders(session, task.market_id, task.local_sku):
-        await session.execute(
-            update(CustomerOrder)
-            .where(CustomerOrder.id == order_id)
-            .values(block_reason=func.coalesce(CustomerOrder.block_reason, "").concat(note))
         )
     task.status, task.resolved_by, task.resolved_at = "done", employee_id, now
     await session.flush()

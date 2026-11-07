@@ -256,20 +256,20 @@ def test_counts_for_dispatcher(od: Api) -> None:
     r = od.get("/orders/counts", DISPATCHER)
     assert r.status_code == 200, r.text
     assert r.json() == {
-        "all": 5,
-        "needs_plan": 2,
+        "all": 4,  # đơn 5 BLOCKED_UNMAPPED_SKU là legacy (ASM-005), không đếm
+        "needs_plan": 1,
         "awaiting_approval": 1,
         "no_feasible_date": 0,
         "in_execution": 1,
         "replan_suggested": 0,
         "delivered_today": 1,
-        "nav": {"order_queue": 3, "exceptions": 1, "tracking_risk": 1},
+        "nav": {"order_queue": 2, "exceptions": 1, "tracking_risk": 1},
     }
 
 
 def test_counts_follow_scope(od: Api) -> None:
     sales = od.get("/orders/counts", SALES).json()
-    assert (sales["all"], sales["needs_plan"], sales["delivered_today"]) == (3, 2, 1)
+    assert (sales["all"], sales["needs_plan"], sales["delivered_today"]) == (2, 1, 1)
     assert sales["nav"] == {"order_queue": 0, "exceptions": 0, "tracking_risk": 0}
     driver = od.get("/orders/counts", DRIVER).json()
     assert (driver["all"], driver["in_execution"], driver["nav"]["exceptions"]) == (1, 1, 1)
