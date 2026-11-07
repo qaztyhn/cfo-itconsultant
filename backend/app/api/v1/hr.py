@@ -119,6 +119,47 @@ class EmployeeOut(BaseModel):
     assignment_history: list[AssignmentHistoryItem] | None = None
 
 
+class WarehouseRef(BaseModel):
+    id: int
+    code: str
+    name: str
+
+
+class GroupRef(BaseModel):
+    id: int
+    code: str
+
+
+class VehicleOut(BaseModel):
+    """06 mục 13.1. `allowed_groups: []` = chở được mọi nhóm."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 3, "code": "STO-CR-01", "plate": "…", "name": "Crane truck",
+                    "home_warehouse": {"id": 7, "code": "STO", "name": "Stockholm DC"},
+                    "capacity_kg": 8000.0, "capacity_m3": 30.0, "capabilities": ["crane"],
+                    "required_licence": "C", "allowed_groups": [{"id": 4, "code": "N4"}],
+                    "status": "available",
+                }
+            ]
+        }
+    )  # fmt: skip
+
+    id: int
+    code: str
+    plate: str
+    name: str
+    home_warehouse: WarehouseRef
+    capacity_kg: float
+    capacity_m3: float
+    capabilities: list[str]
+    required_licence: str
+    allowed_groups: list[GroupRef]
+    status: str
+
+
 class LocationManagers(BaseModel):
     primary: PersonRef | None
     deputy: PersonRef | None
@@ -282,10 +323,39 @@ async def put_shift_templates(warehouse_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/vehicles")
-async def list_vehicles() -> dict[str, object]:
-    """GET /vehicles — admin; R dispatcher."""
-    raise NotImplementedError
+@router.get("/vehicles", response_model=Page[VehicleOut], responses=_READ_ERRORS)
+async def list_vehicles(
+    user: AuthUser,
+    db: DbSession,
+    home_warehouse_id: int | None = None,
+    status: Annotated[str | None, Query(description="available | maintenance | retired")] = None,
+    capability: Annotated[str | None, Query(max_length=50)] = None,
+    sort: SortParam = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> Page[VehicleOut]:
+    """GET /vehicles — admin; dispatcher (market); warehouse (xe có kho gốc thuộc kho mình) — 06 mục 13.1."""
+    scope = await resolve_hr_scope(db, user)
+    items, total = await hr_read_service.list_vehicles(
+        db,
+        scope,
+        home_warehouse_id=home_warehouse_id,
+        status=status,
+        capability=capability,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+    return Page[VehicleOut](
+        items=[VehicleOut.model_validate(i) for i in items], page=page, page_size=page_size, total=total
+    )
+
+
+@router.get("/vehicles/{vehicle_id}", response_model=VehicleOut, responses=_READ_ERRORS)
+async def get_vehicle(vehicle_id: int, user: AuthUser, db: DbSession) -> VehicleOut:
+    """GET /vehicles/{id} — theo phạm vi; ngoài phạm vi → 404."""
+    scope = await resolve_hr_scope(db, user)
+    return VehicleOut.model_validate(await hr_read_service.get_vehicle(db, scope, vehicle_id))
 
 
 @router.post("/vehicles")

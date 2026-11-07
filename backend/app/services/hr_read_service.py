@@ -26,7 +26,7 @@ from app.domain.models.hr import (
     SalesStaff,
     WarehouseStaff,
 )
-from app.domain.models.ref import Location, Market
+from app.domain.models.ref import HandlingGroup, Location, Market, Vehicle
 from app.services.hr_scope import HrReadScope
 from app.services.query_utils import parse_sort
 
@@ -359,3 +359,92 @@ async def get_employee(session: AsyncSession, scope: HrReadScope, employee_id: i
     if row is None:
         raise not_found("Employee")
     return (await _employee_views(session, scope, [(row[0], row[1])], detail=True))[0]
+
+
+# --- xe (06 mục 13.1; Q2 = A) ----------------------------------------------------------------------------
+
+VEHICLE_STATUSES = frozenset({"available", "maintenance", "retired"})
+VEHICLE_SORT = {"code": Vehicle.code, "capacity_kg": Vehicle.capacity_kg, "status": Vehicle.status}
+
+
+def _vehicle_base() -> Select[Vehicle, Location]:
+    return select(Vehicle, Location).join(Location, Location.id == Vehicle.home_warehouse_id)
+
+
+def _vehicle_scope(query: Select[Vehicle, Location], scope: HrReadScope) -> Select[Vehicle, Location]:
+    if scope.market_id is not None:
+        query = query.where(Location.market_id == scope.market_id)
+    if scope.role == "warehouse":
+        query = query.where(Vehicle.home_warehouse_id.in_(scope.location_ids))
+    return query
+
+
+async def _vehicle_views(
+    session: AsyncSession, rows: Sequence[tuple[Vehicle, Location]]
+) -> list[dict[str, object]]:
+    group_ids = {g for v, _ in rows for g in v.allowed_group_ids}
+    codes: dict[int, str] = {}
+    if group_ids:
+        result = await session.execute(
+            select(HandlingGroup.id, HandlingGroup.code).where(HandlingGroup.id.in_(group_ids))
+        )
+        codes = {i: c for i, c in result.all()}
+    return [
+        {
+            "id": v.id,
+            "code": v.code,
+            "plate": v.plate,
+            "name": v.name,
+            "home_warehouse": {"id": wh.id, "code": wh.code, "name": wh.name},
+            "capacity_kg": float(v.capacity_kg),
+            "capacity_m3": float(v.capacity_m3),
+            "capabilities": list(v.capabilities),
+            "required_licence": v.required_licence,
+            "allowed_groups": [
+                {"id": g, "code": codes[g]} for g in sorted(v.allowed_group_ids) if g in codes
+            ],
+            "status": v.status,
+        }
+        for v, wh in rows
+    ]
+
+
+async def list_vehicles(
+    session: AsyncSession,
+    scope: HrReadScope,
+    *,
+    home_warehouse_id: int | None,
+    status: str | None,
+    capability: str | None,
+    sort: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, object]], int]:
+    """Danh sách xe trong phạm vi: dispatcher theo market, warehouse theo kho gốc thuộc nơi của mình."""
+    if status is not None and status not in VEHICLE_STATUSES:
+        raise DomainError("VALIDATION_ERROR", f"Unknown vehicle status '{status}'.")
+    order = parse_sort(sort, frozenset(VEHICLE_SORT), "code")
+    query = _vehicle_scope(_vehicle_base(), scope)
+    if home_warehouse_id is not None:
+        query = query.where(Vehicle.home_warehouse_id == home_warehouse_id)
+    if status is not None:
+        query = query.where(Vehicle.status == status)
+    if capability:
+        query = query.where(Vehicle.capabilities.contains([capability]))
+    columns = [VEHICLE_SORT[f].desc() if desc else VEHICLE_SORT[f].asc() for f, desc in order]
+    query = query.order_by(*columns, Vehicle.id)
+    total = (
+        await session.execute(select(func.count()).select_from(query.order_by(None).subquery()))
+    ).scalar_one()
+    rows = (await session.execute(query.limit(page_size).offset((page - 1) * page_size))).all()
+    return await _vehicle_views(session, [(v, wh) for v, wh in rows]), int(total)
+
+
+async def get_vehicle(session: AsyncSession, scope: HrReadScope, vehicle_id: int) -> dict[str, object]:
+    """Một xe trong phạm vi; không tồn tại hoặc ngoài phạm vi → 404."""
+    row = (
+        await session.execute(_vehicle_scope(_vehicle_base(), scope).where(Vehicle.id == vehicle_id))
+    ).first()
+    if row is None:
+        raise not_found("Vehicle")
+    return (await _vehicle_views(session, [(row[0], row[1])]))[0]
