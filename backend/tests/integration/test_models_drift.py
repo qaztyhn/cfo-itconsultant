@@ -5,7 +5,7 @@ So sánh trên PostgreSQL đã `upgrade head`:
 2. `alembic.autogenerate.compare_metadata`: không thiếu/thừa bảng, cột; kiểu, nullable, khóa ngoài khớp.
    Chỉ mục và UNIQUE/CHECK/EXCLUDE không khai báo ở model (DB thực thi; đã có test migration riêng).
 3. Nhãn enum của model == enum trong DB.
-MODEL_SCHEMAS = cả 6 schema (57 bảng) từ M1-C; khóa ngoài ops → plan đã được khai báo.
+MODEL_SCHEMAS = cả 6 schema (60 bảng: 57 từ M1-C + 3 bảng 0009); khóa ngoài ops → plan đã được khai báo.
 View chỉ đọc (VIEW_METADATA) so cột với information_schema của view.
 """
 
@@ -148,8 +148,8 @@ def test_drift_check_detects_a_missing_column(empty_db: str) -> None:
     assert any(d[0] == "add_column" and d[3].name == "efficiency_factor" for d in diff), diff
 
 
-def test_all_57_tables_are_modelled() -> None:
-    assert len(_model_tables()) == 57
+def test_all_60_tables_are_modelled() -> None:
+    assert len(_model_tables()) == 60
 
 
 def test_read_only_views_match_database(head_db: str) -> None:

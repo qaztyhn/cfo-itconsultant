@@ -27,6 +27,24 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [05 — migration 0010] — 2026-11-07 — quyết định phân luồng bất biến (Q14), chờ review
+
+- `ops.order_routing`: trigger `trg_guard_order_routing` (hàm `ops.guard_order_routing`) chặn UPDATE khóa, `route`, `reason_code`, `unmapped_skus`, `decided_at`, `decided_source_version`, `decided_by_user_id`, `created_at` và mọi DELETE; chỉ cho ghi riêng `acknowledged_by_user_id`/`acknowledged_at` **một lần** (NULL → giá trị). `ck_routing_ack`: hai trường xác nhận cùng có hoặc cùng NULL.
+- Tách thành migration riêng để DB đã chạy 0009 cũng nhận ràng buộc. Không đổi cột.
+- **Cần nhóm chốt (mâu thuẫn hợp đồng):** `06` mục 5.0.2 cho phép `manual_started` lưu `legacy` "kể cả khi đủ SKU", còn polling được phép quyết định trước khi Sales kiểm. Với trigger này, quyết định `cfo` do polling ghi trước sẽ **không** đổi được sang `legacy/manual_started`. Đề xuất: polling không ghi quyết định `cfo` (chỉ Sales check hoặc Dispatcher ghi), hoặc định nghĩa rõ một chuyển đổi duy nhất `cfo → legacy/manual_started` trước khi có hold.
+
+## [05 — migration 0009] — 2026-11-07 — DDL theo Q12/Q12b/Q14 đã duyệt (PR qaztyhn/cfo-itconsultant#53), chờ review PR migration
+
+### Thêm
+- `hr.employee_shift_schedule`: lịch ca chính thức của nhân viên kho và tài xế (giờ theo template hoặc giờ riêng, ca qua nửa đêm, giờ nghỉ, trạng thái `scheduled/cancelled`, người lập, lý do); `ux_shift_one_per_day` (Q12a).
+- `hr.driver_duty_log`: kỳ làm việc/lái của tài xế (`duty_start/end`, `driving_min`, `source`, `trip_id`) — nguồn kiểm nghỉ 11 giờ và giờ lái (Q12b).
+- `ops.order_routing`: quyết định luồng `cfo`/`legacy` một lần theo `(market_id, external_ref)`; `ck_routing_reason` (cfo ⇔ all_confirmed); `unresolved` không lưu được (Q14).
+- `ref.vehicle.max_permissible_mass_kg`, `ref.vehicle.regulation_561_scope` (`in_scope|out_of_scope|unknown`, mặc định `unknown` → engine fail closed).
+- Trigger `set_updated_at` cho ba bảng mới (ASM-001).
+
+### Ảnh hưởng
+- Không đổi bảng/cột cũ khác. Service/API dùng các bảng này (lịch ca, phân luồng, dựng ngữ cảnh engine) ở PR tiếp theo; Dev 2 seed lịch demo và phạm vi xe.
+
 ## [Q12–Q14 — lựa chọn nghiệp vụ đã duyệt] — 2026-11-07 — docs, DDL/API/engine chờ PR triển khai (PR qaztyhn/cfo-itconsultant#53)
 
 - Q12: lịch ca chính thức một bảng cho nhân viên kho **và tài xế**; 1 ca/người/ngày; quản lý chính/phó `can_approve` cập nhật; sửa quá khứ cần lý do; thiếu lịch → `schedule_verified=false`, công suất 0; giờ riêng, ca qua nửa đêm, giờ nghỉ, nghỉ giữa ca `driver_min_rest_hours` (MarketConfig mới, mặc định 11).

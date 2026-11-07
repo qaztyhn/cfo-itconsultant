@@ -201,6 +201,10 @@ class Vehicle(TimestampMixin, Base):
     required_licence: Mapped[str] = mapped_column(LICENCE_CLASS)
     allowed_group_ids: Mapped[list[int]] = mapped_column(ARRAY(SmallInteger), server_default=EMPTY_ARRAY)
     status: Mapped[str] = mapped_column(Text, server_default=text("'available'"))
+    max_permissible_mass_kg: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Q12b (0009)
+    regulation_561_scope: Mapped[str] = mapped_column(
+        Text, server_default=text("'unknown'")
+    )  # unknown → fail closed
 
 
 class VehicleAvailability(TimestampMixin, Base):
