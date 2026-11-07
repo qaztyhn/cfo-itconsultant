@@ -13,6 +13,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: { name: "CFO Driver", short_name: "CFO Driver", display: "standalone", theme_color: "#0B2E2B", start_url: "/driver" },
+      workbox: { globIgnores: ["**/mockServiceWorker.js"] },
     }),
   ],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },

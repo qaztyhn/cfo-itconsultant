@@ -6,9 +6,8 @@
  * Owner: Dev 3 (luồng C) — M0.
  */
 import { useAuthStore } from "../app/store";
+import { API_BASE_URL } from "./config";
 
-const DEFAULT_BASE_URL = "http://localhost:8000/api/v1";
-const BASE_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
 const LOGIN_PATH = "/auth/login";
 
 export class ApiError extends Error {
@@ -103,7 +102,7 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
 
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${path}`, { ...rest, headers });
+    response = await fetch(`${API_BASE_URL}${path}`, { ...rest, headers });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error; // TanStack Query hủy request: không phải lỗi API
