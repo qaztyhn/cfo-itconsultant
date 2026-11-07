@@ -12,6 +12,7 @@ from sqlalchemy.exc import ArgumentError
 class Settings:
     database_url: str = field(repr=False)
     source_schema: str
+    api_key: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -25,4 +26,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        return cls(os.environ.get("DATABASE_URL", ""), os.environ.get("SOURCE_SCHEMA", ""))
+        return cls(
+            os.environ.get("DATABASE_URL", ""),
+            os.environ.get("SOURCE_SCHEMA", ""),
+            os.environ.get("API_KEY", ""),
+        )
