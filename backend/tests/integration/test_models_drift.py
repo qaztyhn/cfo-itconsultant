@@ -35,7 +35,7 @@ from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_in
 
 pytestmark = pytest.mark.integration
 
-MODEL_SCHEMAS: tuple[str, ...] = ("ref", "hr")
+MODEL_SCHEMAS: tuple[str, ...] = ("ref", "hr", "stg", "ops")
 
 
 @pytest.fixture(scope="module")
@@ -64,6 +64,9 @@ def _include_name(name: str | None, type_: str, parent_names: dict[str, Any]) ->
 
 
 def _include_object(obj: Any, name: str | None, type_: str, reflected: bool, compare_to: Any) -> bool:
+    if type_ == "foreign_key_constraint":
+        # Khóa ngoài tới schema chưa có model (vd. ops → plan trước M1-C) được khai báo ở PR sau.
+        return getattr(obj.referred_table, "schema", None) in MODEL_SCHEMAS
     return type_ not in ("index", "unique_constraint")
 
 
