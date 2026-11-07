@@ -217,10 +217,29 @@ async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut:
     return OrderOut.model_validate(await order_read_service.get_order(db, scope, order_id))
 
 
-@router.get("/orders/{order_id}/timeline")
-async def order_timeline(order_id: int) -> dict[str, object]:
-    """GET /orders/{order_id}/timeline — dispatcher, warehouse, CS, admin."""
-    raise NotImplementedError
+class TimelineActor(BaseModel):
+    role: str | None
+    employee_id: int | None
+    name: str | None
+
+
+class TimelineItem(BaseModel):
+    at: datetime
+    kind: str
+    title: str
+    detail: dict[str, object]
+    actor: TimelineActor | None
+
+
+class TimelineOut(BaseModel):
+    items: list[TimelineItem]
+
+
+@router.get("/orders/{order_id}/timeline", response_model=TimelineOut, responses=_ERRORS)
+async def order_timeline(order_id: int, user: AuthUser, db: DbSession) -> TimelineOut:
+    """GET /orders/{id}/timeline — admin, dispatcher, warehouse, CS (06 mục 5.5); ngoài phạm vi → 404."""
+    scope = await order_read_service.resolve_order_scope(db, user)
+    return TimelineOut.model_validate(await order_read_service.timeline(db, scope, order_id))
 
 
 @router.get("/orders/{order_id}/eta-forecasts")

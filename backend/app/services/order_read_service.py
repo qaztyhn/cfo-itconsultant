@@ -23,10 +23,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import clock
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus as S
+from app.domain.models.audit import DecisionLog
 from app.domain.models.hr import Employee
-from app.domain.models.ops import Alert, CustomerOrder, DeliveryTrip, EtaForecast, OrderLine, TripStop
+from app.domain.models.ops import (
+    Alert,
+    CustomerOrder,
+    DeliveryTrip,
+    EtaForecast,
+    MilestoneEvent,
+    Notification,
+    OrderLine,
+    TripStop,
+)
 from app.domain.models.plan import FulfilmentPlan, PlanningRun
-from app.domain.models.ref import Customer, HandlingGroup, Location, Market, ProductGlobal
+from app.domain.models.ref import Customer, HandlingGroup, Location, Market, ProductGlobal, Vehicle
 from app.services.order_scope import LIVE_PLAN_STATUSES, warehouse_orders
 from app.services.query_utils import parse_sort
 
@@ -550,3 +560,124 @@ async def counts(session: AsyncSession, scope: OrderScope) -> dict[str, object]:
             "tracking_risk": at_risk,
         },
     }
+
+
+TIMELINE_ROLES = frozenset({"admin", "dispatcher", "warehouse", "customer_service"})
+_KIND_ORDER = {
+    "order_submitted": 0,
+    "planning_run": 1,
+    "decision": 2,
+    "milestone": 3,
+    "notification": 4,
+    "eta": 5,
+}
+
+
+def _title(text_: str) -> str:
+    return text_.replace("_", " ").capitalize()
+
+
+async def timeline(session: AsyncSession, scope: OrderScope, order_id: int) -> dict[str, object]:
+    """GET /orders/{id}/timeline (06 v1.4 mục 5.5; US-ORD-03 AC1/AC2).
+
+    Vai trò: admin, dispatcher, warehouse, customer_service; khác → 403; đơn ngoài phạm vi → 404.
+    CS không thấy lần chạy kế hoạch và quyết định nội bộ; không ai thấy điểm số, GPS, payload sự kiện,
+    người nhận thông báo, snapshot/before/after.
+    """
+    if scope.role not in TIMELINE_ROLES:
+        raise DomainError("FORBIDDEN", "Role cannot read the order timeline.")
+    order = await session.scalar(
+        select(CustomerOrder).where(CustomerOrder.id == order_id, scope_condition(scope))
+    )
+    if order is None:
+        raise _not_found()
+    cs = scope.role == "customer_service"
+    items: list[dict[str, object]] = [
+        {"at": order.submitted_at, "kind": "order_submitted", "title": "Order submitted", "detail": {},
+         "actor": None}  # fmt: skip
+    ]
+    if not cs:
+        for run in await session.scalars(select(PlanningRun).where(PlanningRun.order_id == order_id)):
+            items.append(
+                {
+                    "at": run.created_at,
+                    "kind": "planning_run",
+                    "title": f"Planning run {run.run_no} ({run.kind})",
+                    "detail": {
+                        "run_id": run.id,
+                        "run_no": run.run_no,
+                        "kind": run.kind,
+                        "result": run.result,
+                    },
+                    "actor": None,
+                }
+            )
+        decisions = await session.execute(
+            select(DecisionLog, Employee.first_name, Employee.last_name)
+            .outerjoin(Employee, Employee.id == DecisionLog.actor_employee_id)
+            .where(DecisionLog.order_id == order_id)
+        )
+        for log, first, last in decisions.all():
+            items.append(
+                {
+                    "at": log.ts,
+                    "kind": "decision",
+                    "title": _title(log.action),
+                    "detail": {
+                        "action": log.action,
+                        "plan_id": log.plan_id,
+                        "reason_code": log.reason_code,
+                        "reason_text": log.reason_text,
+                    },
+                    "actor": (
+                        None
+                        if log.actor_role is None and log.actor_employee_id is None
+                        else {
+                            "role": log.actor_role,
+                            "employee_id": log.actor_employee_id,
+                            "name": None if first is None else f"{first} {last}",
+                        }
+                    ),
+                }
+            )
+    events = await session.execute(
+        select(MilestoneEvent, Vehicle.code)
+        .outerjoin(DeliveryTrip, DeliveryTrip.id == MilestoneEvent.trip_id)
+        .outerjoin(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
+        .where(MilestoneEvent.order_id == order_id)
+    )
+    for event, vehicle_code in events.all():
+        items.append(
+            {
+                "at": event.occurred_at,
+                "kind": "milestone",
+                "title": _title(event.event_type),
+                "detail": {"type": event.event_type, "vehicle_code": vehicle_code},
+                "actor": None,
+            }
+        )
+    for note in await session.scalars(select(Notification).where(Notification.order_id == order_id)):
+        items.append(
+            {
+                "at": note.sent_at or note.scheduled_for,
+                "kind": "notification",
+                "title": f"Notification {note.template}",
+                "detail": {"template": note.template, "channel": note.channel, "status": note.status},
+                "actor": None,
+            }
+        )
+    for eta in await session.scalars(select(EtaForecast).where(EtaForecast.order_id == order_id)):
+        detail: dict[str, object] = {"forecast_eta": eta.forecast_eta, "risk_status": eta.risk_status}
+        if not cs:
+            detail |= {"version": eta.version, "risk_color": eta.risk_color, "trigger": eta.trigger}
+        items.append(
+            {
+                "at": eta.computed_at,
+                "kind": "eta",
+                "title": f"ETA v{eta.version}",
+                "detail": detail,
+                "actor": None,
+            }
+        )
+    items.sort(key=lambda i: (i["at"], _KIND_ORDER[str(i["kind"])]))
+    return {"items": items}
