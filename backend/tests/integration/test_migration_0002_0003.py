@@ -6,18 +6,11 @@ import asyncpg
 import pytest
 
 from alembic import command
-from tests.integration.conftest import alembic_config, execute, fetch
+from tests.integration.conftest import COLUMNS_SQL, alembic_config, execute, fetch, rejects, table_columns
 from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_in
 
 pytestmark = pytest.mark.integration
 
-COLUMNS_SQL = """
-SELECT table_schema || '.' || table_name AS name, column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_schema = ANY($1::text[])
-  AND table_name IN (SELECT table_name FROM information_schema.tables
-                     WHERE table_schema = ANY($1::text[]) AND table_type = 'BASE TABLE')
-"""
 
 # Dữ liệu tối thiểu, không PII thật (09 bất biến 25).
 BASE_ROWS = (
@@ -52,19 +45,13 @@ def seeded(db: str) -> str:
 
 
 def _columns(dsn: str) -> dict[str, dict[str, asyncpg.Record]]:
-    out: dict[str, dict[str, asyncpg.Record]] = {}
-    for row in fetch(dsn, COLUMNS_SQL, ["ref", "hr"]):
-        out.setdefault(row["name"], {})[row["column_name"]] = row
-    return out
+    return table_columns(dsn, "ref", "hr")
 
 
 def _rejects(
     dsn: str, error: type[asyncpg.IntegrityConstraintViolationError], constraint: str, *statements: str
 ) -> None:
-    """Lệnh phải bị từ chối bởi ĐÚNG loại vi phạm và ĐÚNG ràng buộc (không chấp nhận lỗi cú pháp/kiểu)."""
-    with pytest.raises(error) as caught:
-        execute(dsn, *statements)
-    assert caught.value.constraint_name == constraint
+    rejects(dsn, error, constraint, *statements)
 
 
 def test_migration_0002_0003_tables_and_columns_match_spec(db: str) -> None:
