@@ -23,6 +23,7 @@ from app.domain.enums import OrderStatus
 from app.domain.models.ops import CustomerOrder, OrderLine
 from app.domain.models.ref import HandlingGroup, MappingTask, Market, ProductGlobal, SpecialFlag
 from app.domain.transitions import SYSTEM_ROLE, transition
+from app.engine.mapping_candidates import build_candidates
 
 MAPPER_ROLE = "admin"  # BR-PRD-02: chỉ IT (vai trò admin) xác nhận/từ chối ánh xạ
 N6_CODE, FRAGILE = "N6", "FRAGILE"  # BR-PRD-04: N6 đã tính độ dễ vỡ trong định mức
@@ -39,16 +40,66 @@ RETURNING t.id
 """)
 
 
+NAME_SIM_THRESHOLD = Decimal("0.45")  # 04 mục 6.5: pg_trgm ≥ 0,45, cùng category
+
+_GTIN_MATCHES = text("SELECT id FROM ref.product_global WHERE gtin = :gtin")
+_NAME_SIMILAR = text("""
+SELECT id, round(similarity(name, :name)::numeric, 4) AS score FROM ref.product_global
+WHERE category = :category AND similarity(name, :name) >= :threshold
+""")
+
+
+async def _candidates(session: AsyncSession, market_code: str, sku: str) -> list[dict[str, object]]:
+    """Ứng viên ánh xạ (US-PRD-01 AC3/AC4): GTIN trùng, tên gần giống cùng category; engine gộp và sắp."""
+    product = (
+        (
+            await session.execute(
+                text(
+                    f"SELECT name, category, gtin FROM {_product_table(market_code)} WHERE local_sku = :sku"
+                ),
+                {"sku": sku},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if product is None:
+        return []
+    gtin = product["gtin"]
+    gtin_ids = [int(i) for i in (await session.scalars(_GTIN_MATCHES, {"gtin": gtin})).all()] if gtin else []
+    similar = [
+        (int(row.id), Decimal(row.score))
+        for row in await session.execute(
+            _NAME_SIMILAR,
+            {"name": product["name"], "category": product["category"], "threshold": NAME_SIM_THRESHOLD},
+        )
+    ]
+    built = build_candidates(gtin, gtin_ids, similar, NAME_SIM_THRESHOLD)
+    return [
+        {"global_product_id": c.global_product_id, "reason": c.reason, "score": float(c.score)} for c in built
+    ]
+
+
 async def ensure_task(session: AsyncSession, market_id: int, local_sku: str) -> int:
-    """Tạo hoặc cập nhật mapping_task cho (market, SKU); trả id (US-PRD-01 AC1/AC2).
+    """Tạo hoặc cập nhật mapping_task cho (market, SKU); trả id (US-PRD-01 AC1–AC4).
 
     blocked_order_count được TÍNH LẠI = số đơn đang BLOCKED_UNMAPPED_SKU của market có dòng chứa SKU chưa ánh
     xạ (global_product_id NULL; đơn còn bị chặn vì SKU khác không tính cho SKU đã xác nhận), thay vì
-    cộng dồn, nên gọi lại cho cùng một đơn (nhập lại, chạy lại) không đếm trùng. Gọi SAU khi đơn đã chuyển
-    trạng thái, trong cùng transaction. Không đổi status/assigned_to của task đã có. Không commit.
+    cộng dồn, nên gọi lại cho cùng một đơn (nhập lại, chạy lại) không đếm trùng. `candidates` được tính lại từ
+    danh mục hiện tại. Gọi SAU khi đơn đã chuyển trạng thái, trong cùng transaction. Không đổi
+    status/assigned_to của task đã có. Không commit.
     """
     result = await session.execute(_UPSERT_TASK, {"market_id": market_id, "local_sku": local_sku})
-    return int(result.scalar_one())
+    task_id = int(result.scalar_one())
+    market_code = await session.scalar(select(Market.code).where(Market.id == market_id))
+    if market_code and _MARKET_CODE.fullmatch(market_code):
+        await session.execute(
+            update(MappingTask)
+            .where(MappingTask.id == task_id)
+            .values(candidates=await _candidates(session, market_code, local_sku))
+            .execution_options(synchronize_session=False)
+        )
+    return task_id
 
 
 class Mapper(Protocol):
@@ -105,7 +156,10 @@ def _require_mapper(actor: Mapper) -> int:
     return actor.employee_id
 
 
-async def _load_task(session: AsyncSession, task_id: int) -> tuple[MappingTask, str]:
+async def _load_task(
+    session: AsyncSession, task_id: int, market_id: int | None = None
+) -> tuple[MappingTask, str]:
+    """Task theo id; `market_id` (phạm vi admin gắn market) khác → 404 như không tồn tại."""
     row = (
         await session.execute(
             select(MappingTask, Market.code)
@@ -114,7 +168,7 @@ async def _load_task(session: AsyncSession, task_id: int) -> tuple[MappingTask, 
             .with_for_update(of=MappingTask)
         )
     ).first()
-    if row is None:
+    if row is None or (market_id is not None and row[0].market_id != market_id):
         raise DomainError("NOT_FOUND", "Mapping task not found.")
     task, market_code = row
     if not _MARKET_CODE.fullmatch(market_code):
@@ -204,7 +258,14 @@ async def _blocked_orders(session: AsyncSession, market_id: int, sku: str) -> li
     return list((await session.scalars(query)).all())
 
 
-async def confirm(session: AsyncSession, task_id: int, actor: Mapper, payload: ConfirmInput) -> ConfirmResult:
+async def confirm(
+    session: AsyncSession,
+    task_id: int,
+    actor: Mapper,
+    payload: ConfirmInput,
+    *,
+    market_id: int | None = None,
+) -> ConfirmResult:
     """Xác nhận ánh xạ (06 mục 12.1; US-PRD-02 AC1–AC4; BR-PRD-02/04).
 
     product_<cc> → confirmed (global, units_to_base, mapped_by/mapped_at); task → done; các đơn
@@ -219,7 +280,7 @@ async def confirm(session: AsyncSession, task_id: int, actor: Mapper, payload: C
         raise _invalid("units_to_base", "units_to_base must be > 0.")
     if (payload.global_product_id is None) == (payload.create_global is None):
         raise _invalid("global_product_id", "Provide exactly one of global_product_id or create_global.")
-    task, market_code = await _load_task(session, task_id)
+    task, market_code = await _load_task(session, task_id, market_id)
     product = await _local_product(session, market_code, task.local_sku)
     if product is None:
         raise _invalid("local_sku", "Local product is not in the catalogue yet; sync products first.")
@@ -278,7 +339,14 @@ async def confirm(session: AsyncSession, task_id: int, actor: Mapper, payload: C
     return ConfirmResult(global_id, tuple(ready), tuple(still_blocked))
 
 
-async def reject(session: AsyncSession, task_id: int, actor: Mapper, reason_text: str | None) -> None:
+async def reject(
+    session: AsyncSession,
+    task_id: int,
+    actor: Mapper,
+    reason_text: str | None,
+    *,
+    market_id: int | None = None,
+) -> None:
     """Từ chối ánh xạ (06 mục 12; US-PRD-03 AC1/AC2; BR-GEN-04).
 
     Thiếu lý do → 422 REASON_REQUIRED (kiểm trước mọi thay đổi). SKU → rejected; task → done; đơn liên quan
@@ -289,7 +357,7 @@ async def reject(session: AsyncSession, task_id: int, actor: Mapper, reason_text
     employee_id = _require_mapper(actor)
     ensure_reason(Action.MAPPING_REJECTED, None, reason_text)
     reason = (reason_text or "").strip()
-    task, market_code = await _load_task(session, task_id)
+    task, market_code = await _load_task(session, task_id, market_id)
     if task.status == "done":
         raise _invalid("status", "Mapping task is already resolved.")
     product = await _local_product(session, market_code, task.local_sku)
