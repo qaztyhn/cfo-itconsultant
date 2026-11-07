@@ -42,10 +42,10 @@ def _raises_append_only(dsn: str, statement: str) -> None:
 # --- cấu trúc ----------------------------------------------------------------------------------------
 
 
-def test_head_has_all_57_cfo_tables_matching_spec(db: str) -> None:
+def test_head_has_all_60_cfo_tables_matching_spec(db: str) -> None:
     actual = table_columns(db, *ALL_SCHEMAS)
     spec = spec_tables()
-    assert len(spec) == 57 and set(actual) == set(spec)
+    assert len(spec) == 60 and set(actual) == set(spec)  # 57 + 3 bảng 0009
     for table, columns in spec_tables_in("plan", "audit").items():
         assert set(actual[table]) == columns | COMMON_COLUMNS, table
     # v1.2: fulfilment_plan không còn vehicle_id/driver_employee_id
@@ -307,4 +307,4 @@ def test_migration_head_downgrade_to_base_and_back(db: str) -> None:
     assert table_columns(db, *ALL_SCHEMAS) == {}
     assert fetch(db, "SELECT 1 FROM pg_proc WHERE proname IN ('set_updated_at','forbid_mutation')") == []
     command.upgrade(cfg, "head")
-    assert len(table_columns(db, *ALL_SCHEMAS)) == 57
+    assert len(table_columns(db, *ALL_SCHEMAS)) == 60

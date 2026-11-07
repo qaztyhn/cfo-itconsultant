@@ -195,7 +195,10 @@ CREATE TABLE ref.vehicle (
   capabilities text[] NOT NULL DEFAULT '{}',    -- 'crane','tail_lift','dump','long_bed'
   required_licence ref.licence_class NOT NULL,
   allowed_group_ids smallint[] NOT NULL DEFAULT '{}',   -- nhóm N chở được; rỗng = tất cả
-  status text NOT NULL DEFAULT 'available' CHECK (status IN ('available','maintenance','retired'))
+  status text NOT NULL DEFAULT 'available' CHECK (status IN ('available','maintenance','retired')),
+  max_permissible_mass_kg numeric(10,2) CHECK (max_permissible_mass_kg > 0),   -- Q12b (0009)
+  regulation_561_scope text NOT NULL DEFAULT 'unknown'                          -- Q12b: unknown → fail closed
+    CHECK (regulation_561_scope IN ('in_scope','out_of_scope','unknown'))
 );
 CREATE TABLE ref.vehicle_availability (         -- bận/rảnh theo khoảng thời gian
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -321,19 +324,42 @@ CREATE TABLE hr.shift_template (                -- ca mẫu của kho
   expected_staff smallint NOT NULL,
   UNIQUE (warehouse_id, weekday, start_time)
 );
--- Q12 (đã duyệt nghiệp vụ 07/11/2026, DDL chờ PR migration 0009): hr.employee_shift_schedule cho cả nhân viên kho
--- và tài xế — xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md (giờ riêng, qua nửa đêm, giờ nghỉ, 1 ca/người/ngày).
--- ASM-007 / Q11 — quyết định sản phẩm (chưa là DDL đã migrate):
--- Warehouse Manager là nguồn xác thực duy nhất cho lịch phân ca chính thức theo từng người/ngày.
--- Đề xuất cho PR migration riêng: hr.employee_shift_schedule
--- (employee_id, warehouse_id, work_date, shift_template_id, status, assigned_by,
---  assigned_at, updated_by, updated_at, [optional effective range]).
--- Phải có guard chống xếp trùng ca/giờ, kiểm nhân viên phân công tại đúng kho,
--- ghi decision_log SHIFT_CHANGED cùng transaction và giữ lịch sử trước/sau.
--- hr.attendance chỉ ghi thực tế, không phải dữ liệu chủ để tự suy ca.
--- expected_staff là chỉ tiêu dự kiến, KHÔNG là giới hạn hoặc thuật toán sinh lịch.
--- Không đưa người vượt dự kiến vào ca cuối; không tự động đổi ca.
--- Schema cuối cùng do Dev 1 đề xuất trong PR migration theo quy trình 09, không coi comment này là SQL triển khai.
+-- Q12 / Q12b (đã duyệt 07/11/2026, migration 0009): lịch ca chính thức cho nhân viên kho VÀ tài xế, do Warehouse
+-- Manager (quản lý chính/phó can_approve của kho) lập. expected_staff chỉ để so sánh, không tự chia/dồn ca.
+-- Đổi ca = hủy dòng cũ + thêm dòng mới (không UPDATE giờ, không DELETE), ghi SHIFT_CHANGED cùng transaction.
+CREATE TABLE hr.employee_shift_schedule (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  employee_id bigint NOT NULL REFERENCES hr.employee(id),
+  warehouse_id bigint NOT NULL REFERENCES ref.location(id),
+  work_date date NOT NULL,                        -- ngày bắt đầu ca (múi giờ market)
+  shift_template_id bigint REFERENCES hr.shift_template(id),
+  start_time time, end_time time,                 -- giờ riêng; end < start = ca qua nửa đêm
+  break_start time, break_end time,
+  status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','cancelled')),
+  assigned_by bigint NOT NULL REFERENCES hr.employee(id), assigned_at timestamptz NOT NULL,
+  cancelled_by bigint REFERENCES hr.employee(id), cancelled_at timestamptz,
+  reason_text text,                               -- bắt buộc khi sửa ngày đã qua (service)
+  CONSTRAINT ck_shift_source CHECK (shift_template_id IS NOT NULL OR start_time IS NOT NULL),
+  CONSTRAINT ck_shift_times CHECK ((start_time IS NULL) = (end_time IS NULL)),
+  CONSTRAINT ck_shift_break CHECK ((break_start IS NULL) = (break_end IS NULL)),
+  CONSTRAINT ck_shift_cancelled CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX ux_shift_one_per_day ON hr.employee_shift_schedule (employee_id, work_date)
+  WHERE status = 'scheduled';                     -- Q12a: tối đa 1 ca chính thức/người/ngày
+CREATE INDEX ix_shift_schedule_wh_date ON hr.employee_shift_schedule (warehouse_id, work_date);
+
+-- Q12b (migration 0009): kỳ làm việc/lái đã xảy ra hoặc đã cam kết của tài xế — nguồn kiểm nghỉ 11 giờ và giờ lái.
+CREATE TABLE hr.driver_duty_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  employee_id bigint NOT NULL REFERENCES hr.employee(id),
+  duty_start timestamptz NOT NULL, duty_end timestamptz NOT NULL,
+  driving_min int NOT NULL DEFAULT 0 CHECK (driving_min >= 0),
+  source text NOT NULL CHECK (source IN ('trip','shift','manual_record')),
+  trip_id bigint REFERENCES ops.delivery_trip(id),
+  recorded_by bigint REFERENCES hr.employee(id),
+  CONSTRAINT ck_duty_interval CHECK (duty_end > duty_start)
+);
+CREATE INDEX ix_driver_duty_log_emp ON hr.driver_duty_log (employee_id, duty_start);
 
 CREATE TABLE hr.attendance (                    -- điểm danh từng người (kho + tài xế) [C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -479,8 +505,20 @@ CREATE TABLE ops.order_transition (              -- bảng tra chuyển trạng 
   requires_reason boolean NOT NULL DEFAULT false, allowed_roles ref.user_role[] NOT NULL,
   PRIMARY KEY (from_status, to_status)
 );
--- Q14 (đã duyệt phương án A 07/11/2026, DDL chờ PR migration 0009): ops.order_routing — quyết định luồng cfo/legacy
--- không đổi theo (market_id, external_ref); 'unresolved' không được lưu. Xem docs/proposals/M3_M5_SCHEDULE_AUDIT_ROUTING.md.
+-- Q14 (đã duyệt phương án A 07/11/2026, migration 0009): quyết định luồng cfo/legacy, không đổi sau khi lưu.
+-- 'unresolved' KHÔNG được lưu. customer_order chỉ tạo khi route = 'cfo'. Không bảo đảm chặn điều phối tay ngoài CFO.
+CREATE TABLE ops.order_routing (
+  market_id smallint NOT NULL REFERENCES ref.market(id),
+  external_ref text NOT NULL,
+  route text NOT NULL CHECK (route IN ('cfo','legacy')),
+  reason_code text NOT NULL CHECK (reason_code IN ('all_confirmed','unmapped_sku','manual_started')),
+  unmapped_skus text[] NOT NULL DEFAULT '{}',
+  decided_at timestamptz NOT NULL, decided_source_version int NOT NULL,
+  decided_by_user_id bigint REFERENCES ref.app_user(id),
+  acknowledged_by_user_id bigint REFERENCES ref.app_user(id), acknowledged_at timestamptz,
+  PRIMARY KEY (market_id, external_ref),
+  CONSTRAINT ck_routing_reason CHECK ((route = 'cfo') = (reason_code = 'all_confirmed'))
+);
 CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khách đồng ý [S][C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
@@ -871,7 +909,7 @@ Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bư�
 
 ## 11. Thứ tự migration và seed
 
-1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role).
+1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role). → 9. `0009_schedule_routing_driver_rules` (lịch ca chính thức, nhật ký làm việc tài xế, phân luồng đơn, phạm vi 561/2006 của xe — Q12/Q12b/Q14).
 Seed dữ liệu mẫu (script `seed/generate_data.py`, cố định random seed): xem tài liệu 08 mục "Dữ liệu seed".
 
 **Định mức mẫu cho `ref.handling_group` (ví dụ minh họa, IT thay bằng số thật) [T][A]:**
