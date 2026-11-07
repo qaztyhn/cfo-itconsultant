@@ -61,7 +61,10 @@ def driver(
 ) -> DriverCtx:
     # ca thực tế mặc định 06:00–20:00 mỗi ngày có mặt (Q12, 04 mục 6.7)
     windows = tuple((at(d, 6), at(d, 20)) for d in sorted(days)) if shifts is None else shifts
-    return DriverCtx(eid, licence, expires, days, {THU12: Decimal(booked)}, busy, windows)  # type: ignore[arg-type]
+    return DriverCtx(
+        eid, licence, expires, days, {THU12: Decimal(booked)}, busy, windows,  # type: ignore[arg-type]
+        history_complete=True,
+    )  # fmt: skip
 
 
 def wh(vehicles: tuple[VehicleCtx, ...] = (), drivers: tuple[DriverCtx, ...] = ()) -> WarehouseCtx:

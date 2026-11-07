@@ -89,8 +89,28 @@ def within_shift(shifts: tuple[tuple[datetime, datetime], ...], start: datetime,
     return any(s_start <= start and end <= s_end for s_start, s_end in shifts)
 
 
+def _rest_ok(driver: DriverCtx, start: datetime, end: datetime, cfg: EngineConfig) -> bool:
+    """Nghỉ hằng ngày ≥ daily_rest_hours giữa chuyến và mọi kỳ làm việc khác, trừ khi cùng một ca (Q12b)."""
+    rest = timedelta(hours=cfg.daily_rest_hours)
+    for d_start, d_end in driver.duty_history:
+        same_shift = any(
+            s_start <= min(start, d_start) and max(end, d_end) <= s_end for s_start, s_end in driver.shifts
+        )
+        if same_shift:
+            continue  # cùng kỳ làm việc; trùng giờ được kiểm riêng qua `busy`
+        gap = start - d_end if d_end <= start else d_start - end
+        if gap < rest:
+            return False
+    return True
+
+
 def driver_problem(
-    driver: DriverCtx, vehicle: VehicleCtx, start: datetime, end: datetime, cfg: EngineConfig
+    driver: DriverCtx,
+    vehicle: VehicleCtx,
+    start: datetime,
+    end: datetime,
+    cfg: EngineConfig,
+    driving_min: int = 0,
 ) -> str | None:
     """Lý do tài xế KHÔNG chạy được chuyến [start, end) của xe; None = được.
 
@@ -108,19 +128,35 @@ def driver_problem(
     day = start.date()
     if driver.licence_expires_on < day:
         return "expired"
+    if not driver.history_complete:
+        return "history"
+    if not _rest_ok(driver, start, end, cfg):
+        return "rest"
     trip_hours = Decimal(int((end - start).total_seconds())) / 3600
     if driver.booked_hours_by_day.get(day, Decimal(0)) + trip_hours > cfg.driver_max_hours_day:
-        return "hours"
+        return "hours"  # tổng giờ làm việc, không phải giờ lái
+    if vehicle.regulation_561 and (
+        driver.driving_min_by_day.get(day, 0) + driving_min > cfg.driving_max_min_day
+        or driver.driving_min_week + driving_min > cfg.weekly_driving_max_min
+        or driver.driving_min_fortnight + driving_min > cfg.fortnight_driving_max_min
+    ):
+        return "driving"
     return None
 
 
-_SAFETY_CODES = {"outside_shift": "OUTSIDE_DRIVER_SHIFT", "hours": "DRIVER_HOURS_EXCEEDED",
-                 "expired": "LICENCE_EXPIRED"}  # fmt: skip
+_SAFETY_CODES = {
+    "outside_shift": "OUTSIDE_DRIVER_SHIFT",
+    "hours": "DRIVER_HOURS_EXCEEDED",
+    "expired": "LICENCE_EXPIRED",
+    "history": "DRIVER_HISTORY_MISSING",
+    "rest": "DRIVER_REST_INSUFFICIENT",
+    "driving": "DRIVING_TIME_EXCEEDED",
+}
 
 
 def _failure_code(problems: list[str]) -> tuple[str, str]:
     """(mã, lý do) khi không tài xế nào đạt: ưu tiên lỗi safety gần đạt nhất, sau đó NO_DRIVER kèm lý do."""
-    for problem in ("hours", "expired", "outside_shift"):
+    for problem in ("driving", "hours", "rest", "history", "expired", "outside_shift"):
         if problem in problems:
             return _SAFETY_CODES[problem], problem
     reason = "no_schedule" if "no_schedule" in problems else ("busy" if "busy" in problems else "licence")
@@ -128,7 +164,12 @@ def _failure_code(problems: list[str]) -> tuple[str, str]:
 
 
 def pick_driver(
-    wh: WarehouseCtx, vehicle: VehicleCtx, start: datetime, end: datetime, cfg: EngineConfig
+    wh: WarehouseCtx,
+    vehicle: VehicleCtx,
+    start: datetime,
+    end: datetime,
+    cfg: EngineConfig,
+    driving_min: int = 0,
 ) -> tuple[DriverCtx | None, str | None]:
     """Tài xế đầu tiên (id tăng) đủ điều kiện cho chuyến [start, end) của xe (04 mục 6.2 bước 2d, 6.7).
 
@@ -138,7 +179,7 @@ def pick_driver(
     """
     problems: list[str] = []
     for driver in sorted(wh.drivers, key=lambda d: d.employee_id):
-        problem = driver_problem(driver, vehicle, start, end, cfg)
+        problem = driver_problem(driver, vehicle, start, end, cfg, driving_min)
         if problem is None:
             return driver, None
         problems.append(problem)
@@ -150,6 +191,7 @@ def assign_drivers(
     vehicles: tuple[VehicleCtx, ...],
     intervals: list[tuple[datetime, datetime]],
     cfg: EngineConfig,
+    driving_min: int = 0,
 ) -> tuple[tuple[DriverCtx, ...] | None, str, str]:
     """Ghép mỗi xe một tài xế KHÁC nhau (bipartite, quay lui) — không tham lam (04 mục 6.7).
 
@@ -161,7 +203,7 @@ def assign_drivers(
         ok: list[DriverCtx] = []
         problems: list[str] = []
         for driver in sorted(drivers, key=lambda d: d.employee_id):
-            problem = driver_problem(driver, vehicle, start, end, cfg)
+            problem = driver_problem(driver, vehicle, start, end, cfg, driving_min)
             if problem is None:
                 ok.append(driver)
             else:
@@ -190,7 +232,7 @@ def assign_drivers(
             problem
             for vehicle, (start, end) in zip(vehicles, intervals, strict=True)
             for driver in drivers
-            if (problem := driver_problem(driver, vehicle, start, end, cfg)) is not None
+            if (problem := driver_problem(driver, vehicle, start, end, cfg, driving_min)) is not None
         ]
         code, reason = _failure_code(excluded)
         return None, code, ("not_enough_drivers" if code == "NO_DRIVER" else reason)
@@ -456,6 +498,16 @@ def plan_delivery(
             _check("site_date", "ROUTE_DATA_UNAVAILABLE", "No route data for this warehouse."),
         )
 
+    unknown_scope = [v.code for v in vehicle_set if v.regulation_561 is None]
+    driving_min = 2 * wh.route.drive_min  # lái đi + lái về
+    rule_failure: CheckResult | None = None
+    if unknown_scope:  # Q12b: chưa biết xe có thuộc 561/2006 → không khẳng định tuân thủ
+        rule_failure = _check("safety", "VEHICLE_SCOPE_UNKNOWN", "Driving-rule scope of vehicle is unknown.",
+                              vehicle_codes=unknown_scope)  # fmt: skip
+    elif any(v.regulation_561 for v in vehicle_set) and wh.route.drive_min > cfg.driving_break_after_min:
+        no_break = "A continuous drive exceeds 4h30; MVP does not schedule in-trip breaks."
+        rule_failure = _check("safety", "DRIVING_BREAK_REQUIRED", no_break)
+
     def busy(message: str) -> tuple[CheckResult, ...]:
         return (_check("truck", "TRUCK_BUSY", message, vehicle_codes=[v.code for v in vehicle_set]),)
 
@@ -522,8 +574,14 @@ def plan_delivery(
     if not isinstance(result[0], list):
         return None, result
     starts, trip_ends, arrival = result
+    if rule_failure is not None:
+        return None, (
+            _check("truck", "TRUCK_OK", f"{len(vehicle_set)} vehicle(s) fit the load."),
+            CheckResult("site_date", True, "DATE_OK", arrival.detail),
+            rule_failure,
+        )
     drivers, code, reason = assign_drivers(
-        wh.drivers, vehicle_set, list(zip(starts, trip_ends, strict=True)), cfg
+        wh.drivers, vehicle_set, list(zip(starts, trip_ends, strict=True)), cfg, driving_min
     )
     if drivers is None and arrival.eta_at is not None and latest_anchor(arrival.eta_at) > starts[0]:
         # Bước 2c mặc định lên hàng sớm nhất (giữ dự trữ). Nếu thời gian chờ làm khoảng làm việc của tài xế
@@ -532,7 +590,7 @@ def plan_delivery(
         if isinstance(retry[0], list):
             r_starts, r_ends, r_arrival = retry
             r_drivers, r_code, r_reason = assign_drivers(
-                wh.drivers, vehicle_set, list(zip(r_starts, r_ends, strict=True)), cfg
+                wh.drivers, vehicle_set, list(zip(r_starts, r_ends, strict=True)), cfg, driving_min
             )
             if r_drivers is not None:
                 starts, trip_ends, arrival, drivers = r_starts, r_ends, r_arrival, r_drivers

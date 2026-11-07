@@ -45,6 +45,15 @@ class EngineConfig:
     dz_fill: Decimal
     tie_eps: Decimal
     allow_route_fallback: bool
+    # Q12b — chính sách lái/nghỉ Bắc Âu cho MVP (MarketConfig.driver_rules; chưa xác nhận pháp lý).
+    # `driver_max_hours_day` ở trên là TỔNG GIỜ LÀM VIỆC/ngày, không phải giờ lái.
+    daily_rest_hours: int = 11  # nghỉ hằng ngày liên tục; nghỉ rút gọn 9 giờ TẮT trong MVP
+    driving_max_min_day: int = 540  # 561/2006: lái 9 giờ/ngày (10 giờ mở rộng TẮT)
+    driving_break_after_min: int = (
+        270  # sau 4h30 lái phải nghỉ 45'; MVP không chèn nghỉ → từ chối chặng dài hơn
+    )
+    weekly_driving_max_min: int = 3360
+    fortnight_driving_max_min: int = 5400
 
 
 @dataclass(frozen=True)
@@ -126,6 +135,8 @@ class VehicleCtx:
     required_licence: Literal["B", "C", "CE"]
     allowed_group_codes: frozenset[str]
     busy: tuple[tuple[datetime, datetime], ...]
+    # Q12b: xe thuộc phạm vi Quy định (EC) 561/2006 cho loại vận hành này? None = chưa biết → fail closed.
+    regulation_561: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +150,12 @@ class DriverCtx:
     # Ca làm việc THỰC TẾ từ lịch chính thức (Q12, 04 mục 6.7), đã trừ giờ nghỉ, có thể qua nửa đêm.
     # Rỗng = chưa có lịch → tài xế không dùng được (không mặc định 24/7).
     shifts: tuple[tuple[datetime, datetime], ...] = ()
+    # Q12b: các kỳ làm việc đã có / sắp tới (ca + chuyến đã nhận) để kiểm nghỉ hằng ngày; phút lái đã có.
+    duty_history: tuple[tuple[datetime, datetime], ...] = ()
+    driving_min_by_day: dict[date, int] = field(default_factory=dict)
+    driving_min_week: int = 0
+    driving_min_fortnight: int = 0
+    history_complete: bool = False  # thiếu lịch sử cho khoảng cần xét → không khẳng định tuân thủ
 
 
 @dataclass(frozen=True)
