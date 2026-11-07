@@ -11,7 +11,7 @@
 1. **Tích hợp trên hệ thống sẵn có, không thay thế [S].** CFO chỉ đọc từ hệ thống nguồn của từng nước, không ghi ngược.
 2. **Một lõi quyết định dùng chung, quy tắc từng nước là cấu hình [S].** Không có `if market == 'SE'` trong lõi. Nước mới = adapter/instance nguồn mới + dòng cấu hình + bảng sản phẩm riêng.
 3. **Mọi nước bình đẳng [C].** Thụy Điển chạy đúng đường mà nước khác sẽ chạy: hệ thống nguồn giả lập riêng, gọi qua `MarketAdapter`.
-4. **Người quyết định, hệ thống đề xuất [S].** Không bao giờ tự duyệt kế hoạch, không tự đổi ngày giao khi khách chưa đồng ý.
+4. **Người quyết định, hệ thống đề xuất [S].** Không bao giờ tự duyệt kế hoạch; Dispatcher có đầy đủ quyền, Sales được bấm xác nhận rank-1 tiêu chuẩn đủ điều kiện ở cửa hàng mình; không tự đổi ngày giao khi khách chưa đồng ý.
 5. **Engine là hàm thuần**, không đọc DB, không gọi mạng. Dữ liệu vào là object, dữ liệu ra là object. Dễ test, dễ thay bằng Drools/OR-Tools sau này.
 6. **Mọi quyết định để lại dấu vết** (`audit.decision_log`) và mọi dữ kiện có nguồn và độ tươi.
 7. **Modular monolith**: một ứng dụng FastAPI, một SPA React, một PostgreSQL. Không microservice.
@@ -118,6 +118,10 @@ class MarketAdapter(Protocol):
 7. **Hàng nhập:** chỉ hàng chưa về; hàng `received` hoặc biến mất khỏi nguồn thì đặt `received = true`. Hàng chuyển kho tạo bởi CFO (`source='transfer'`) không bị nguồn ghi đè.
 8. **Sau mỗi lượt tồn kho/hàng nhập/lịch xe thay đổi:** tìm các đơn đã duyệt bị ảnh hưởng và gọi `RiskService.recalculate(order, trigger='source_change')`.
 9. **Lộ trình:** với mỗi cặp (kho, toạ độ giao) chưa có trong `plan.route_matrix`, `RoutingProvider` tính (ORS, hoặc fallback) và ghi `provider`. Việc này diễn ra trước khi lập kế hoạch, không trong engine.
+
+### 5.3 Đồng bộ theo yêu cầu của Sales (Cách B)
+
+Sau khi Sales submit tại POS, Sales mở **CFO Web riêng** và gọi `POST /integration/orders/sync-now`. CFO chủ động GET đơn từ nguồn thông qua `MarketAdapter` (API danh sách đơn phân trang hiện có), xác minh market/store, dùng chung upsert theo version, rejection/idempotency/checkpoint với polling. Giữ **hai database riêng** và không ghi ngược nguồn. Polling mỗi 5 phút vẫn dự phòng. Nếu POS thật không trả dữ liệu mới kịp thì hiển thị Retry, không hứa thời gian tuyệt đối.
 
 ## 6. Đặc tả engine (hàm thuần, trong `engine/`)
 
@@ -291,6 +295,10 @@ Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất
 8. **Khóa đồng thời cho hàng và giờ công (quyết định nhóm):** xe/tài xế đã có EXCLUDE ở DB; hàng và giờ công thì không. **Lúc lập kế hoạch không khóa**, cho phép giữ chỗ `held` vượt tồn kho/công suất. **Chỉ khi duyệt**, service lấy `pg_advisory_xact_lock` theo key `stock:<kho>:<sản phẩm>` và `labour:<kho>:<ngày>`, theo thứ tự cố định **kho → sản phẩm → ngày → xe → tài xế** (id tăng dần), rồi đọc lại phần còn trống (trừ `committed` của đơn khác). Thiếu → `409 RESOURCE_CONFLICT` và rollback; đơn duyệt trước thắng. Không `FOR UPDATE` trên `ops.stock_snapshot` (job đồng bộ ghi đè bảng này).
 9. **Đơn nhiều xe khi thực thi:** mỗi xe một chuyến, một tài xế, một POD. Kho ghi `LOADED` theo từng xe; đơn `LOADED` khi mọi xe đã lên hàng; `DISPATCHED` khi xe đầu tiên xuất phát (thông báo `DISPATCHED` gửi một lần); `DELIVERED` khi mọi xe giao xong (thông báo `DELIVERED` một lần); nếu mọi chuyến đã kết thúc mà có xe thất bại → đơn `FAILED` (ghi phần đã giao), dispatcher xếp lại phần còn thiếu. Khách nhận một `CONFIRMED` cho cả đơn.
 10. **Gợi ý lập lại tự động:** khi đơn đã duyệt gặp một trong bốn tín hiệu — nguồn sửa đơn sau khi duyệt, tồn kho đổi làm kế hoạch không còn hợp lệ (`PLAN_INVALIDATED`), `VEHICLE_ISSUE`, giao `FAILED` — `PlanningService` chạy `planning_run(kind='replan_suggestion')`, **coi như kế hoạch hiện tại của chính đơn không tồn tại** (cộng lại hàng, giờ công, xe, tài xế của nó vào phần khả dụng) và **không tạo giữ chỗ**; tạo alert `REPLAN_SUGGESTED` cho dispatcher kèm `run_id`. Dispatcher duyệt phương án gợi ý → trong một transaction: đóng kế hoạch cũ (quy tắc 7) rồi khóa, kiểm tra lại, commit kế hoạch mới, đơn → `APPROVED`, gửi `CONFIRMED` mới; hoặc giữ kế hoạch cũ (lý do, đóng alert). Không bao giờ tự duyệt (09 bất biến 1). Đơn đã `DISPATCHED` chỉ nhận alert.
+
+### 7.1 Nhánh Sales xác nhận đơn tiêu chuẩn
+
+Reuse PlanningService/ReservationService/ApprovalService; Sales cùng cửa hàng chỉ lập plan mặc định và approve rank 1 với 5 gate pass, reserve safe, một xe, dữ liệu tươi, hold còn hạn, không đổi ngày/transfer/manual/replan. ApprovalService dùng chính thứ tự lock và transaction hiện tại, ghi audit actor Sales. `held` của stock/labour có thể vượt, không phải cam kết: đơn cũ chưa duyệt có tranh chấp chưa chứng minh đủ công suất thì chuyển Dispatcher. Các đơn cũ đã duyệt được bảo vệ bằng `committed`. Không thay engine thành thuật toán tối ưu đa đơn.
 
 ## 8. Cấu hình `MarketConfig` (JSON trong `ref.market.config`, mặc định [A])
 

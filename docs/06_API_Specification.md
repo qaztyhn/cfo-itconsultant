@@ -40,6 +40,8 @@
 
 **Mã lỗi nghiệp vụ:** `AUTH_INVALID`, `FORBIDDEN`, `VALIDATION_ERROR`, `ILLEGAL_TRANSITION`, `REASON_REQUIRED`, `SKU_UNMAPPED`, `HOLD_EXPIRED`, `HOLD_EXTENSION_LIMIT`, `RESOURCE_CONFLICT` (xe, tài xế, tồn kho, công suất đã đổi khi duyệt), `PLAN_NOT_APPROVABLE`, `DATE_AGREEMENT_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `GPS_DISABLED`, `NOT_ON_TRIP`, `LICENCE_EXPIRED`, `ORDER_LOCKED_AFTER_DISPATCH`, `DUPLICATE_EVENT`, `SYNC_IN_PROGRESS`.
 
+**Mã lỗi kỹ thuật (v1.2.1 — đề xuất, chờ nhóm duyệt; xem `CHANGELOG`):** `NOT_FOUND` (404: không tồn tại, ngoài phạm vi hoặc route không có), `INTERNAL_ERROR` (500: lỗi không bắt; thông báo cố định "Internal server error.", không stack trace, không thông điệp gốc). Lỗi kiểm tra dữ liệu của framework (422) và 4xx kỹ thuật khác (400, 405…) dùng `VALIDATION_ERROR`; `details.errors` chỉ gồm `loc`, `type`, `msg`, không trả lại giá trị đầu vào. `GET /health` khi phụ thuộc lỗi trả `503` với chính thân health (`status = "error"`), không dùng định dạng lỗi. Header `X-Correlation-ID` không phải UUID hợp lệ thì server thay bằng UUID mới và trả lại giá trị đó.
+
 ## 2. Vai trò (`roles` trong JWT)
 
 `admin` (IT) · `dispatcher` · `warehouse` (quản lý, phó, trưởng ca) · `sales` (nhân viên bán, quản lý cửa hàng) · `driver` · `customer_service` · `viewer` (Business owner, Project Lead — phân biệt bằng `kpi_scopes`: `revenue_all` / `ops`).
@@ -49,7 +51,8 @@
 | Nhóm endpoint | admin | dispatcher | warehouse | sales | driver | customer_service | viewer |
 |---|---|---|---|---|---|---|---|
 | Đơn (đọc, danh sách, timeline) | R | R (cả market) | R (đơn của kho mình) | R (đơn của cửa hàng mình) | R (đơn trên chuyến mình, rút gọn) | R (rút gọn, không GPS) | — |
-| Lập kế hoạch, duyệt, lập lại, hủy, ghi nhận xử lý ngoài CFO | — | **W** | — | — | — | — | — |
+| Lập kế hoạch và duyệt phương án tiêu chuẩn | — | **W** | — | **W** (đúng cửa hàng; rank 1/đủ điều kiện) | — | — | — |
+| Lập lại, hủy, đổi tiêu chí, chọn phương án khác, lập tay, xử lý ngoài CFO | — | **W** | — | — | — | — | — |
 | Thương lượng ngày | — | **W** | — | — | — | — | — |
 | Chuyển kho: duyệt / hủy | — | **W** | — | — | — | — | — |
 | Chuyển kho: xác nhận kho nguồn / nhận | — | — | **W** (kho nguồn / kho đích, cần `can_approve`) | — | — | — | — |
@@ -92,6 +95,13 @@ Không thêm vai trò mới. `kpi_scopes` trong token phân biệt: `revenue_all
 Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
 ## 5. Đơn hàng
+
+**Cách B:** POS/WMS/ERP giữ DB riêng; CFO chỉ GET nguồn. Sales có thể yêu cầu đồng bộ theo mã đơn từ giao diện CFO, không cần chờ polling 5 phút; polling vẫn dự phòng.
+
+### 5.0.1 Sales sync-now — endpoint mới
+
+`POST /api/v1/integration/orders/sync-now`, role `sales`, header `Idempotency-Key` bắt buộc, body `{ "external_ref": "POS-SE-88120" }`. CFO dùng MarketAdapter GET nguồn, kiểm market/store, upsert theo source version, trả `200 { "order_id": 4021, "external_ref": "POS-SE-88120", "sync_status": "synced", "source_version": 1 }`, `already_current` nếu đã có. Sai quyền 403, khác cửa hàng/không tồn tại 404, xung đột 409, nguồn lỗi 503, dữ liệu không hợp lệ 422. Không ghi POS. Trạng thái endpoint chỉ là **hợp đồng mục tiêu**, chưa có code.
+
 
 | Phương thức | Đường dẫn | Vai trò | Ghi chú |
 |---|---|---|---|
@@ -140,6 +150,8 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 | POST | `/orders/{id}/date-negotiations` | Ghi kết quả thương lượng ngày (mục 6.5) |
 | GET | `/orders/{id}/date-negotiations` | Lịch sử |
 | GET | `/orders/{id}/transfer-suggestions` | Gợi ý chuyển kho khi thiếu hàng (mục 7) |
+
+**Sales planning (mở rộng):** Chỉ role `sales` đúng cửa hàng mới được gọi `POST /orders/{id}/plan` với body mặc định `{}` cho lần lập plan hợp lệ; không thay ngày, kho, trọng số hay lựa chọn plan khác. `GET /planning-runs/{id}` và `GET /plans/{id}` cho Sales phải rút gọn còn rank-1/ETA/hold/`sales_approvable`/`sales_block_reason`, không lộ scores/GPS/decision log. Dispatcher giữ đủ quyền.
 
 ### 6.1 `POST /orders/{id}/plan`
 
@@ -198,6 +210,10 @@ Khi `result = "infeasible"`: `plans = []`, có `failed_check`, `earliest_feasibl
 Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "2026-11-13", "promise_start": "…", "promise_end": "…" } }, "plan": { … "status": "approved" }, "trip_ids": [930, 931], "notifications": [ { "id": 77, "template": "CONFIRMED", "status": "queued" } ] }`.
 Khóa: chỉ khi duyệt, theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi mọi xe → mọi tài xế của phương án), kiểm tra lại sau khi có khóa. Lúc lập kế hoạch giữ chỗ không khóa và có thể vượt; đơn duyệt trước thắng.
 Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `409 RESOURCE_CONFLICT` (xe/tài xế/hàng/công suất đã bị đơn khác chiếm, kèm `details.conflict` và gợi ý chạy lại), `422 REASON_REQUIRED`, `409 DATE_AGREEMENT_REQUIRED`, `409 ILLEGAL_TRANSITION`.
+
+### 6.3a Sales approve (mở rộng endpoint đã có)
+
+`POST /plans/{id}/approve` cho Sales **chỉ** khi đúng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, version/dữ liệu nguồn còn mới, giữ chỗ hợp lệ, không transfer/manual/replan/date change, không làm trễ đơn cũ. Dùng chính ApprovalService, locks/transaction/audit với actor Sales. Thiếu quyền 403; ngoài cửa hàng 404; không đủ điều kiện hoặc đơn đặt trước chưa duyệt có cạnh tranh chưa chứng minh đủ năng lực: 409 `PLAN_NOT_APPROVABLE`; nguồn lực đổi: 409 `RESOURCE_CONFLICT`; hold hết: 409 `HOLD_EXPIRED`. Không auto-approve.
 
 ### 6.4 `POST /orders/{id}/manual-plan`
 
@@ -430,6 +446,8 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 | GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer có `ops` | Nhật ký quyết định (chỉ đọc) |
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
 | POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
+
+**Cách B:** Hệ thống nguồn giữ nguyên thao tác POS create/validate/submit và database riêng. CFO đọc API nguồn theo yêu cầu Sales bằng các GET sẵn có, không thay POS. Nếu API nguồn thực tế không thể truy vấn đơn vừa nộp nhanh, trả Retry/Wait; không mặc định mọi POS có khả năng real-time.
 
 ## 16. Hợp đồng hệ thống nguồn giả lập (`source-<cc>`, mọi nước giống nhau)
 

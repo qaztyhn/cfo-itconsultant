@@ -49,6 +49,24 @@ flowchart LR
 
 **Nhánh:** POS cảnh báo vàng nếu SKU chưa được IT ánh xạ (không chặn nộp). **Kết quả:** đơn `SUBMITTED` hoặc `BLOCKED_UNMAPPED_SKU` hoặc đã sang `PLANNED`/`NO_FEASIBLE_DATE`.
 
+## 2a. Sales xác nhận tại quầy bằng CFO riêng
+
+1. Sales tạo/submit đơn trong POS cũ, không thay POS. 2. Sales mở CFO, nhập mã đơn nguồn và bấm `Sync now`; CFO GET nguồn qua adapter và upsert đơn. 3. Sales bấm `Check feasibility`; CFO lập phương án mặc định + hold 15 phút. 4. Nếu đủ điều kiện Sales (rank 1, 5 gate pass, safe, một xe, đúng cửa hàng, nguồn mới, không gây chậm đơn cũ), Sales bấm `Confirm`. 5. ApprovalService kiểm tra/khóa/commit nguồn lực, ghi actor và chuyển APPROVED. Chỉ lúc này mới thông báo cam kết cho khách. Nếu không đạt → Retry/Dispatcher. Polling 5 phút vẫn dự phòng; không ghi ngược POS.
+
+```mermaid
+flowchart TD
+  A[Sales submit đơn tại POS] --> B[Sales mở CFO và Sync now]
+  B --> C{Nguồn có đơn, đúng cửa hàng?}
+  C -- Không --> X[Retry hoặc chờ polling]
+  C -- Có --> D[CFO import và lập plan + hold]
+  D --> E{Sales đủ điều kiện xác nhận?}
+  E -- Không --> F[Chuyển Dispatcher]
+  E -- Có --> G[Sales bấm Confirm]
+  G --> H{Recheck và commit thành công?}
+  H -- Không --> F
+  H -- Có --> I[APPROVED và xác nhận khách]
+```
+
 ## 3. Luồng ánh xạ SKU (IT)
 
 **Tác nhân:** SYS, IT · **Màn:** Product mapping (5.A7) · **Quy tắc:** BR-PRD-01..03
@@ -104,7 +122,7 @@ flowchart TD
   N --> Q["Đơn NO_FEASIBLE_DATE"]
 ```
 
-## 5. Luồng duyệt kế hoạch (dispatcher)
+## 5. Luồng duyệt kế hoạch (Dispatcher đầy đủ; Sales nhánh tiêu chuẩn mục 2a)
 
 **Tác nhân:** DISP · **Màn:** Plan review (5.2) · **Quy tắc:** BR-APR, BR-RES
 
@@ -420,7 +438,7 @@ stateDiagram-v2
 | Dispatcher | Order queue | Mở đơn `PLANNED` → Plan review → Approve | Tracking & risk khi có cảnh báo; Exceptions khi có đơn không khả thi |
 | Warehouse | Prep queue | Điểm danh → bấm mốc chuẩn bị → báo ngoại lệ | Attendance & shifts, Transfers |
 | Driver | Today's trips | Mark dispatched → Delivered/Failed | — |
-| Sales | POS: New order | Nhập đơn, theo dõi đơn của cửa hàng | My store orders |
+| Sales | My store orders / Sync & confirm trong CFO | Submit ở POS cũ, sync-now, check feasibility, confirm nếu đủ điều kiện | Thành công → APPROVED; ngoại lệ → Dispatcher |
 | Store manager | My store orders | Theo dõi đơn; xem doanh thu cửa hàng mình nếu là owner | Revenue · my location |
 | Customer service | Order lookup | Tra cứu, ghi liên hệ | — |
 | IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi, nhân sự | Product mapping, Market config & GPS |

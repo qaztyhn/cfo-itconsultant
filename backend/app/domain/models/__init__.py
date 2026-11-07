@@ -4,6 +4,7 @@ Tên bảng/cột y hệt 05. Mỗi schema một module. Base dùng chung ở ba
 Owner: Dev 1 (luồng A) — M1.
 """
 
+from app.domain.models import audit, hr, ops, plan, ref, stg, views
 from app.domain.models.base import Base
 
-__all__ = ["Base"]
+__all__ = ["Base", "audit", "hr", "ops", "plan", "ref", "stg", "views"]

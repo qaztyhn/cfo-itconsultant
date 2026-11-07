@@ -8,7 +8,7 @@
 
 ## 1. Dự án trong ba câu
 
-CFO là lớp điều phối giao hàng đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước: nó nhận đơn, kiểm tra tồn kho theo thời gian, công suất kho và xe, đề xuất **3 phương án**, để **dispatcher duyệt**, rồi theo dõi thực thi, ETA, GPS và báo trễ (do dispatcher gửi). MVP là **ứng dụng web chạy thật** (FastAPI + React + PostgreSQL) pilot ở Thụy Điển bằng dữ liệu giả lập, nhưng kiến trúc coi mọi nước bình đẳng. Hệ thống **đề xuất, con người quyết định**.
+CFO là lớp điều phối giao hàng đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước: nó nhận đơn, kiểm tra tồn kho theo thời gian, công suất kho và xe, đề xuất **3 phương án**, để **Dispatcher hoặc Sales đủ điều kiện bấm duyệt**, rồi theo dõi thực thi, ETA, GPS và báo trễ (do dispatcher gửi). MVP là **ứng dụng web chạy thật** (FastAPI + React + PostgreSQL) pilot ở Thụy Điển bằng dữ liệu giả lập, nhưng kiến trúc coi mọi nước bình đẳng. Hệ thống **đề xuất, con người quyết định**.
 
 ## 2. Nguồn sự thật và thứ tự ưu tiên
 
@@ -40,11 +40,11 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 
 ## 4. Bất biến (không bao giờ vi phạm)
 
-1. **Không tự duyệt.** Mọi code path dẫn tới `APPROVED` đều xuất phát từ hành động của dispatcher (hoặc kế hoạch tay của dispatcher). Không job, không engine, không "tiện thể" nào được duyệt thay.
+1. **Không tự duyệt.** Chỉ người dùng có quyền bấm duyệt: Dispatcher xử lý đầy đủ; Sales chỉ rank-1 tiêu chuẩn trong cửa hàng mình, đủ điều kiện theo `docs/DECISION_SALES_CONFIRMATION.md`. Không job/engine tự duyệt.
 2. **Không tự đổi ngày giao.** Ngày yêu cầu (`date_from/date_to`) chỉ đổi khi tồn tại `ops.date_negotiation` với `outcome = 'agreed'` do dispatcher ghi.
 3. **Báo trễ cho khách do dispatcher gửi.** Hệ thống chỉ tạo `notification` trạng thái `draft` cho mẫu `DELAY`. Bốn mẫu còn lại (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) tự động.
 4. **GPS chỉ dispatcher xem.** Mọi endpoint trả vị trí xe kiểm vai trò `dispatcher` ở máy chủ; `customer_service`, `sales`, `warehouse`, `viewer`, khách: `403`. Không thêm GPS vào thông báo, log kỹ thuật, báo cáo tổng hợp theo tài xế, hay phản hồi của endpoint nào khác.
-5. **CFO chỉ đọc từ hệ thống nguồn.** Không ghi ngược sang POS/WMS/ERP.
+5. **CFO chỉ đọc từ hệ thống nguồn.** Không ghi ngược sang POS/WMS/ERP. Sync-now là CFO GET nguồn theo yêu cầu Sales, polling 5 phút dự phòng.
 6. **Engine là hàm thuần.** Trong `engine/` không import `sqlalchemy`, `httpx`, `requests`, `datetime.now`, không đọc env/file, không ghi log, không gọi mạng. Mọi dữ liệu và "bây giờ" truyền vào qua tham số.
 7. **Giờ công đơn như nhau ở mọi kho.** Không dùng giờ công làm tiêu chí so sánh giữa các kho; định mức là **một bộ chung** do IT quản lý (`efficiency_factor` mặc định 1,0, không có UI).
 8. **Xếp hạng = 0,5 × `n_km` + 0,5 × `n_fill`** (min–max trong các phương án khả thi của cùng đơn, có vùng bỏ qua). **Không quy ra tiền, không dùng "cost/SEK" làm tiêu chí hay hiển thị xếp hạng.** KPI "cost per delivery" là giờ công và km.
@@ -65,6 +65,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 23. **Không có quản lý thiết bị kho trong MVP.** Không tạo bảng, endpoint, check hay mã `PREP_NO_EQUIPMENT`; năng lực cẩu/ben chỉ là thuộc tính xe.
 24. **Giờ công theo đơn vị cơ sở nhỏ nhất.** `prep_qty = qty_base / base_units_per_prep_unit` (không làm tròn); hàng không chia nhỏ được thì làm tròn lên; `line` = 1.
 25. **Không bí mật trong file.** Không mật khẩu (kể cả mật khẩu demo), khóa API, token hay dữ liệu mật trong mã, README, seed, tài liệu nộp; đọc từ biến môi trường.
+
+26. **Sales chỉ duyệt có điều kiện.** Cùng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, không transfer/manual/replan/date change, dữ liệu mới, hold còn hạn; dùng chung ApprovalService, lock và audit. Nếu đơn cũ chưa duyệt tranh công suất chưa chứng minh đủ nguồn lực, Sales phải chuyển Dispatcher.
+27. **FIFO hiển thị, không FIFO thực thi bắt buộc.** Danh sách theo `submitted_at,id` tăng dần; chèn đơn giao sớm vào lịch nếu không lấn `committed` của đơn cũ. `held` stock/labour có thể vượt, không được hứa cam kết trước khi duyệt.
 
 ## 5. Quy ước backend (Python)
 
@@ -164,7 +167,7 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - Tắt kiểm tra quyền, trigger, ràng buộc DB hoặc test "cho nhanh".
 - Ghi PII vào log, ảnh chụp màn hình, dữ liệu seed thật của người thật.
 - Thêm GPS vào bất kỳ chỗ nào khách/CS/sales thấy được.
-- Thêm lại quản lý/xếp lịch thiết bị kho, hoặc thuật toán nhiều xe cho một đơn (đều ngoài MVP).
+- Thêm lại quản lý/xếp lịch thiết bị kho (ngoài MVP); không được xóa thuật toán nhiều xe cho một đơn đã nằm trong MVP.
 - Dùng chữ hay mã "cheapest/cost/SEK" cho xếp hạng (dùng `LOWEST_SCORE_OF_3`, "rank score").
 - Tự quyết các điểm mơ hồ của nghiệp vụ mà không ghi giả định (mục 14).
 

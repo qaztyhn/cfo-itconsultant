@@ -72,7 +72,7 @@ Mức xanh/vàng/cam/đỏ lấy từ `eta_forecast.risk_color`; nhãn chữ l�
 |---|---|---|
 | **DISPATCHER** | Order queue (huy hiệu: đơn cần xử lý) · Plan review (đơn chờ duyệt) · Exceptions (NO_FEASIBLE_DATE, BLOCKED_UNMAPPED_SKU, gợi ý lập lại đang chờ) · Tracking & risk (đơn cam/đỏ) · Transfers · KPIs & decision log | dispatcher; `viewer` có `ops` (Project lead) chỉ thấy KPIs & decision log |
 | **REVENUE** | Revenue (Business owner, admin) · Revenue · my location (owner kho/cửa hàng) | `viewer` có `revenue_all` (chỉ thấy mục này), owner của một nơi, admin |
-| **SALES** | New order (mở ứng dụng POS giả lập) · My store orders (chỉ xem) | sales, store manager |
+| **SALES** | New order (POS hiện có/giả lập) · My store orders · **Sync & confirm delivery** trong CFO | sales, store manager |
 | **WAREHOUSE** | Prep queue · Attendance & shifts · Transfers (kho nguồn/đích) | quản lý/phó/trưởng ca kho (thiết kế gộp "Prep queue & mapping"; phần mapping chuyển sang ADMIN, xem #15) |
 | **CUSTOMER SERVICE** | Order lookup · Contact log | customer_service |
 | **ADMIN (IT)** | Data integration · Product mapping · Handling groups & norms · Employees & locations · Vehicles & drivers · Users · Market config & GPS · Notification inbox | admin; dispatcher và CS đọc Notification inbox |
@@ -114,7 +114,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Dữ liệu:** `GET /orders` + `GET /orders/counts` + `GET /alerts?resolved=false` + trạng thái nguồn (`GET /integration/overview`).
 - **Bố cục:** cột trái rộng (bảng đơn), cột phải 330px (Risk alerts, Source data).
 - **Mô tả dưới H1:** "Wednesday 4 November 2026 · Every order moves from intake to goods received through one plan you approve." (ngày lấy từ `clock.now()` theo múi giờ market).
-- **Bảng "Orders — Sorted by requested date"**, cột theo thiết kế: ORDER (mã mono xuống dòng + kho nguồn bên dưới; đơn chưa có nguồn hiện "No source yet"; PLANNED hiện "3 feasible plans"; SUBMITTED hiện "Submitted 09:41") · **CUSTOMER · SITE** (một cột: tên khách đậm, dòng dưới địa điểm) · REQUESTED (ngày: `Today`/`Thu 5 Nov` + khung giờ mono hoặc "Site hours" nếu chỉ có ngày) · STATUS (chip) · JOURNEY (journey bar; NO_FEASIBLE_DATE hiện "Earliest **Thu 12 Nov**"). **Bổ sung** (không có trong thiết kế): cột cuối hẹp hiện chip rủi ro (cho người không phân biệt màu nền hàng). Đơn Predicted late có nền hàng `#FFF4EE`. Chân bảng có chú giải Journey.
+- **Bảng "Orders — Oldest submitted first"**, cột theo thiết kế: ORDER (mã mono xuống dòng + kho nguồn bên dưới; đơn chưa có nguồn hiện "No source yet"; PLANNED hiện "3 feasible plans"; SUBMITTED hiện "Submitted 09:41") · **CUSTOMER · SITE** (một cột: tên khách đậm, dòng dưới địa điểm) · REQUESTED (ngày: `Today`/`Thu 5 Nov` + khung giờ mono hoặc "Site hours" nếu chỉ có ngày) · STATUS (chip) · JOURNEY (journey bar; NO_FEASIBLE_DATE hiện "Earliest **Thu 12 Nov**"). **Bổ sung** (không có trong thiết kế): cột cuối hẹp hiện chip rủi ro (cho người không phân biệt màu nền hàng). Đơn Predicted late có nền hàng `#FFF4EE`. Chân bảng có chú giải Journey.
 - **Panel Risk alerts (n open):** thẻ cảnh báo màu theo mức: `Predicted late` (giờ, tiêu đề `SE-… · ETA 13:15 vs close 12:30`, mô tả nguyên nhân), `At risk`, và thẻ trung tính cho sự kiện hệ thống (ví dụ `PLAN_INVALIDATED`: "Malmö DC stock update — 2 approved plans re-checked; SE-… still passes. No action needed."). Bấm thẻ → màn 04. **Thẻ `REPLAN_SUGGESTED` (v1.2):** "SE-… · Suggested replan — stock changed at Malmö DC" với nút "Review suggested plan" → màn 02 có banner gợi ý.
 - **Panel Source data:** POS orders, WMS stock & inbound, Fleet calendar, ERP products kèm giờ đồng bộ cuối (lấy `data_as_of` thật; ảnh thiết kế có Fleet 09:00 và ERP 06:00 vì chạy theo giờ/ngày, MVP chạy mọi nguồn theo `sync.interval_min`, xem #31); liên kết "View integration runs".
 - **Tương tác:** bấm hàng → màn 02 (PLANNED), 03 (NO_FEASIBLE_DATE), 04 (APPROVED trở đi). Chip lọc đổi `status`. Tìm kiếm theo mã đơn, khách, SKU.
@@ -237,7 +237,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 **A10. Vehicles & drivers (IT):** xe (tải, thể tích, năng lực, nhóm chở được, hạng bằng yêu cầu), lịch bận; tài xế (hạng bằng, hạn bằng, kho gốc; cảnh báo hết hạn trong 30 ngày). **A11. Users:** tài khoản, vai trò, kích hoạt, đặt lại mật khẩu.
 **A12. Market config & GPS (IT):** form `MarketConfig` nhóm theo mục (có chú thích đơn vị, giá trị mặc định, nút "Reset"); thẻ **GPS & compliance**: công tắc `gps_enabled`, chu kỳ, mất tín hiệu, thời gian lưu; bảng `compliance_record` (DPIA, tham vấn nhân viên, thông báo GPS) với trạng thái; biểu ngữ vàng "No DPIA on file — demo only".
 **A14. CS · Order lookup:** ô tìm (mã đơn, tên, điện thoại); thẻ trạng thái (trạng thái, khung giờ cam kết, ETA, lịch sử thông báo); khối "Log a contact" (kênh, lý do, ghi chú). **Không** có GPS, điểm số, quyết định nội bộ.
-**A15. My store orders (sales/store manager):** danh sách chỉ xem đơn của cửa hàng (trạng thái, ETA), chip rủi ro; store manager là owner thì có liên kết "Revenue · my location" (A16).
+**A15. My store orders (sales/store manager):** danh sách đơn của cửa hàng theo `submitted_at,id` tăng dần, cho phép xem và mở **A17 Sync & confirm delivery**. Sales không sửa đơn tại CFO; store manager là owner thì có liên kết "Revenue · my location" (A16).
 
 **A16. Revenue (v1.2, chỉ đọc).** Menu REVENUE: Business owner chỉ thấy mục này; owner kho/cửa hàng thấy "Revenue · my location"; admin thấy tất cả. Dùng token chung (nền stone, card trắng bo 16px, số lớn mono).
 - **Banner:** "Illustrative values from seeded orders. Revenue = unit price × quantity of goods; delivery and packaging fees are not included."
@@ -249,6 +249,8 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Định dạng:** số tiền cách nghìn bằng khoảng hẹp, kèm mã tiền tệ (`1 284 500 SEK`).
 - **Trạng thái:** rỗng "No delivered orders in this period"; skeleton đúng kích thước; lỗi có `correlation_id` và Retry; `403` hiện "You do not have access to revenue". Tự làm mới mỗi 60 giây khi đang mở.
 - **Dữ liệu:** `/revenue/summary`, `/revenue/daily`, `/revenue/by-location`, `/revenue/orders`, `/revenue/export.csv` (`06` mục 14.1).
+
+**A17. Sales — Sync & confirm delivery (màn CFO riêng, không thay POS):** Sales sau khi submit tại POS mở CFO, nhập `external_ref` và bấm **Sync now**. CFO hiển thị kết quả nạp đơn từ POS hoặc Retry nếu nguồn chưa có. **Check feasibility** lập phương án mặc định với hold 15 phút; hiển thị kho/ETA/ngày giao và nhãn **Khả thi — chưa xác nhận**. Nút **Confirm** chỉ bật nếu backend trả `sales_approvable=true`, sử dụng API approve có Idempotency-Key; chỉ thông báo **Delivery confirmed** khi nhận APPROVED. Nếu reserve không safe, đơn nhiều xe, thiếu mapping, stale, hold hết hạn hoặc có tranh chấp công suất, chuyển Dispatcher. Không hiển thị GPS, score hay thông tin nội bộ; tuân thủ loading/empty/error/Retry, correlation ID, i18n và a11y.
 
 ## 6. Nội dung thư và tin nhắn (mẫu)
 
