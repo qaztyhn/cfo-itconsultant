@@ -94,12 +94,12 @@
   3. `GET /health` khi DB lỗi trả `503` với thân health (`status = "error"`, `db = "unavailable"`), không dùng
      định dạng lỗi, để công cụ uptime/smoke đọc được (06 mục 15).
 
-## ASM-005 — Quy tắc xác nhận / từ chối ánh xạ chưa ghi trong `06` mục 12
+## ASM-005 — Quy tắc xác nhận / từ chối ánh xạ và phạm vi đơn CFO
 
 - **Ngày:** 2026-11-07
-- **Trạng thái:** đề xuất của Dev 1 (M2-B), chờ nhóm xác nhận trong review PR. Không sửa `05`/`06`.
-- **Bối cảnh:** `06` mục 12/12.1 và US-PRD-02/03 không nói rõ trạng thái task cho phép xác nhận/từ chối, ai
-  được ghi `mapped_by`, và dispatcher "thấy lý do từ chối" ở đâu.
+- **Trạng thái:** chủ dự án chốt **quy tắc phân luồng** ngày 2026-11-07: đơn có bất kỳ SKU chưa mapping confirmed không dùng CFO, tiếp tục quy trình cũ. Quy tắc xử lý task xác nhận/từ chối chi tiết bên dưới vẫn cần rà soát và được triển khai bằng PR code riêng.
+- **Quyết định phạm vi:** ban đầu IT xác nhận khoảng 100 SKU để phục vụ pilot, sau đó mở rộng dần. Mỗi đơn chỉ đủ điều kiện **đưa vào luồng điều phối CFO nếu 100% SKU của đơn đã mapping confirmed**; số 100 là phạm vi danh mục pilot, không phải giới hạn cố định. Nếu thiếu dù chỉ một SKU, **toàn bộ đơn tiếp tục theo quy trình xử lý cũ**, không chờ IT trong CFO, không giữ chỗ, không lập kế hoạch và không được CFO duyệt/xác nhận.
+- **Bối cảnh phần mapping:** `06` mục 12/12.1 và US-PRD-02/03 chưa mô tả đủ trạng thái task xác nhận/từ chối, ai ghi `mapped_by` và lý do từ chối được trình bày ở đâu.
 - **Diễn giải:**
   1. Chỉ `admin` **có hồ sơ nhân viên** được xác nhận/từ chối: `ck_se_confirmed` bắt buộc `mapped_by`
      (FK `hr.employee`). Admin hệ thống không có nhân viên → `403 FORBIDDEN`.
@@ -108,13 +108,13 @@
      `confirmed` không từ chối được (`details.field = mapping_status`), vì đơn đã lập kế hoạch đang dùng ánh xạ đó.
   4. Task đã từ chối **vẫn xác nhận được** (nguồn có thể bổ sung dữ liệu sản phẩm); thay đổi được ghi
      `MAPPING_CONFIRMED` với trước/sau.
-  5. Từ chối nối ` | REJECTED <sku>: <lý do>` vào `block_reason` của các đơn đang bị chặn bởi SKU đó, để
-     dispatcher thấy lý do (US-PRD-03 AC2); lý do đầy đủ nằm trong `decision_log MAPPING_REJECTED`.
-  6. `blocked_order_count` = số đơn `BLOCKED_UNMAPPED_SKU` có dòng chứa SKU **chưa ánh xạ**, tính lại mỗi lần
-     (không cộng dồn).
+  5. IT ghi lý do từ chối trong `decision_log MAPPING_REJECTED` và trên mapping task/SKU cho đội IT. **Không** gắn đơn chưa mapping vào hàng đợi Dispatcher để chờ xử lý; đơn đó tiếp tục quy trình cũ. Cách hiển thị chi tiết lý do từ chối tại IT cần chốt trong contract API.
+  6. `blocked_order_count` hiện là trường legacy gắn với đơn `BLOCKED_UNMAPPED_SKU`; với quyết định mới **không được dùng làm hàng đợi chờ đơn CFO**. Dev phải đề xuất cách thể hiện số SKU/tần suất đơn không đủ điều kiện nếu cần KPI, không tự tái sử dụng trường này như số đơn đang chờ lập kế hoạch.
   7. SKU chưa có trong `product_<cc>` không xác nhận được (`details.field = local_sku`): cần đồng bộ sản phẩm
      trước, vì các cột tên/đơn vị bán là NOT NULL.
-- **Cần nhóm xác nhận:** các mục 1, 3, 4, 5.
+- **Quy tắc chống trùng và ranh giới:** phân luồng phải xảy ra **trước khi CFO tạo planning run/hold hoặc cam kết nguồn lực**. Dữ liệu POS/WMS/ERP giữ nguyên, CFO chỉ GET; việc xử lý theo quy trình cũ vẫn do hệ thống/quy trình hiện tại đảm nhiệm. Việc IT mapping sau này **không tự chuyển** đơn đã đi quy trình cũ vào CFO. Cần cơ chế bền vững để nhận diện đơn đã được xử lý ở luồng cũ và ngăn hai luồng xử lý cùng một đơn; chưa có hợp đồng dữ liệu đầy đủ cho cơ chế này, Dev phải đề xuất ở PR triển khai và kiểm tra khả năng API POS cung cấp trạng thái/owner luồng.
+- **Chưa thay đổi triển khai:** logic hiện có `BLOCKED_UNMAPPED_SKU → SUBMITTED` và `mapping_service.confirm()` còn khác quyết định mới. Không dùng `HANDLED_EXTERNALLY` đã bỏ ở v1.2. Không được cho agent tự đưa đơn cũ về CFO bằng logic mở khóa hiện tại.
+- **Còn cần nhóm rà soát:** chi tiết các mục 1, 3, 4 và thiết kế trạng thái/quyền sở hữu luồng để bảo vệ một đơn chỉ có một hệ thống điều phối.
 
 ## ASM-006 — Quy tắc ghi nhân sự chưa ghi trong `06` mục 13
 
