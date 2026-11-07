@@ -387,6 +387,8 @@ class OrderRouting(TimestampMixin, Base):
     unmapped_skus: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
     decided_at: Mapped[datetime] = mapped_column(TSTZ)
     decided_source_version: Mapped[int] = mapped_column(Integer)
-    decided_by_user_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    decided_by_user_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.app_user.id"))  # 0011
+    decided_by_role: Mapped[str] = mapped_column(Text)  # 0011: sales | dispatcher (không có "system")
+    reason_text: Mapped[str | None] = mapped_column(Text)  # 0011: bắt buộc khi reason_code = manual_started
     acknowledged_by_user_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
     acknowledged_at: Mapped[datetime | None] = mapped_column(TSTZ)
