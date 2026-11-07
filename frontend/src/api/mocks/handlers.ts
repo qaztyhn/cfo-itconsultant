@@ -6,123 +6,6 @@ import { http, HttpResponse } from "msw";
 
 const BASE = "http://localhost:8000";
 
-// ─── Auth ───────────────────────────────────────────────────────────────────
-
-const DEMO_ACCOUNTS: Record<string, { password: string; user: object }> = {
-  "dispatcher@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 1,
-      email: "dispatcher@cfo.demo",
-      display_name: "Anna Lindqvist",
-      role: "dispatcher",
-      kpi_scopes: ["ops"],
-      location_ids: [1, 2, 3],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "admin@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 2,
-      email: "admin@cfo.demo",
-      display_name: "Erik Svensson",
-      role: "admin",
-      kpi_scopes: ["ops", "revenue_all"],
-      location_ids: [],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "wm.got@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 3,
-      email: "wm.got@cfo.demo",
-      display_name: "Lars Johansson",
-      role: "warehouse",
-      kpi_scopes: ["ops"],
-      location_ids: [1],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "sales@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 4,
-      email: "sales@cfo.demo",
-      display_name: "Maria Nilsson",
-      role: "sales",
-      kpi_scopes: [],
-      location_ids: [101],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "driver1@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 5,
-      email: "driver1@cfo.demo",
-      display_name: "Björn Eriksson",
-      role: "driver",
-      kpi_scopes: [],
-      location_ids: [1],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "cs@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 6,
-      email: "cs@cfo.demo",
-      display_name: "Sara Gustafsson",
-      role: "customer_service",
-      kpi_scopes: [],
-      location_ids: [],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "owner@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 7,
-      email: "owner@cfo.demo",
-      display_name: "Henrik Andersson",
-      role: "viewer",
-      kpi_scopes: ["revenue_all"],
-      location_ids: [],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-  "projectlead@cfo.demo": {
-    password: "demo",
-    user: {
-      employee_id: 8,
-      email: "projectlead@cfo.demo",
-      display_name: "Ingrid Larsson",
-      role: "viewer",
-      kpi_scopes: ["ops"],
-      location_ids: [],
-      market_code: "SE",
-      market_timezone: "Europe/Stockholm",
-      currency: "SEK",
-    },
-  },
-};
-
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
 const ORDERS = [
@@ -340,17 +223,25 @@ const ORDERS = [
   },
 ];
 
+const needsPlan = ORDERS.filter((o) => o.status === "SUBMITTED").length;
+const noFeasibleDate = ORDERS.filter((o) => o.status === "NO_FEASIBLE_DATE").length;
+const blockedUnmapped = ORDERS.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU").length;
+const replanSuggested = 0;
+
+// Hình dạng theo docs/06 mục 5 (`all` + `nav`); số liệu suy ra từ ORDERS để nhất quán với danh sách.
 const COUNTS = {
-  total: ORDERS.length,
-  needs_plan: 0,
+  all: ORDERS.length,
+  needs_plan: needsPlan,
   awaiting_approval: ORDERS.filter((o) => o.status === "PLANNED").length,
-  no_feasible_date: ORDERS.filter((o) => o.status === "NO_FEASIBLE_DATE").length,
-  in_execution: ORDERS.filter((o) =>
-    ["PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"].includes(o.status),
-  ).length,
-  replan_suggested: 0,
+  no_feasible_date: noFeasibleDate,
+  in_execution: ORDERS.filter((o) => ["PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"].includes(o.status)).length,
+  replan_suggested: replanSuggested,
   delivered_today: ORDERS.filter((o) => o.status === "DELIVERED").length,
-  blocked_unmapped: ORDERS.filter((o) => o.status === "BLOCKED_UNMAPPED_SKU").length,
+  nav: {
+    order_queue: needsPlan,
+    exceptions: noFeasibleDate + blockedUnmapped + replanSuggested,
+    tracking_risk: ORDERS.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length,
+  },
 };
 
 const PLAN_CANDIDATES = [
@@ -816,24 +707,10 @@ const REVENUE_DAILY = Array.from({ length: 30 }, (_, i) => {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
+import { authHandlers } from "./authHandlers"
+
 export const handlers = [
-  // Auth
-  http.post(`${BASE}/api/v1/auth/login`, async ({ request }) => {
-    const body = (await request.json()) as { email: string; password: string };
-    const account = DEMO_ACCOUNTS[body.email];
-    if (!account || account.password !== body.password) {
-      return HttpResponse.json(
-        { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password.", correlation_id: "mock-001" } },
-        { status: 401 },
-      );
-    }
-    return HttpResponse.json({ access_token: "mock-jwt-token", token_type: "bearer", user: account.user });
-  }),
-
-  http.get(`${BASE}/api/v1/auth/me`, () => {
-    return HttpResponse.json(DEMO_ACCOUNTS["dispatcher@cfo.demo"].user);
-  }),
-
+  ...authHandlers,
   // Orders
   http.get(`${BASE}/api/v1/orders`, ({ request }) => {
     const url = new URL(request.url);
