@@ -111,7 +111,11 @@ def test_Q14_routing_is_one_decision_per_source_order(db: str) -> None:
 def test_new_tables_maintain_updated_at(db: str) -> None:
     execute(db, routing("POS-1", "cfo", "all_confirmed"))
     before = fetch(db, "SELECT updated_at FROM ops.order_routing")[0]["updated_at"]
-    execute(db, "UPDATE ops.order_routing SET acknowledged_at = now() + interval '1 second'")
+    execute(
+        db,
+        "UPDATE ops.order_routing SET acknowledged_by_user_id = 1, "
+        "acknowledged_at = now() + interval '1 second'",
+    )
     assert fetch(db, "SELECT updated_at FROM ops.order_routing")[0]["updated_at"] >= before
     triggers = fetch(
         db,

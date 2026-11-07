@@ -27,6 +27,12 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [05 — migration 0010] — 2026-11-07 — quyết định phân luồng bất biến (Q14), chờ review
+
+- `ops.order_routing`: trigger `trg_guard_order_routing` (hàm `ops.guard_order_routing`) chặn UPDATE khóa, `route`, `reason_code`, `unmapped_skus`, `decided_at`, `decided_source_version`, `decided_by_user_id`, `created_at` và mọi DELETE; chỉ cho ghi riêng `acknowledged_by_user_id`/`acknowledged_at` **một lần** (NULL → giá trị). `ck_routing_ack`: hai trường xác nhận cùng có hoặc cùng NULL.
+- Tách thành migration riêng để DB đã chạy 0009 cũng nhận ràng buộc. Không đổi cột.
+- **Cần nhóm chốt (mâu thuẫn hợp đồng):** `06` mục 5.0.2 cho phép `manual_started` lưu `legacy` "kể cả khi đủ SKU", còn polling được phép quyết định trước khi Sales kiểm. Với trigger này, quyết định `cfo` do polling ghi trước sẽ **không** đổi được sang `legacy/manual_started`. Đề xuất: polling không ghi quyết định `cfo` (chỉ Sales check hoặc Dispatcher ghi), hoặc định nghĩa rõ một chuyển đổi duy nhất `cfo → legacy/manual_started` trước khi có hold.
+
 ## [05 — migration 0009] — 2026-11-07 — DDL theo Q12/Q12b/Q14 đã duyệt (PR qaztyhn/cfo-itconsultant#53), chờ review PR migration
 
 ### Thêm

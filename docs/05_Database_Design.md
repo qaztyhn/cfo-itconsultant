@@ -517,8 +517,11 @@ CREATE TABLE ops.order_routing (
   decided_by_user_id bigint REFERENCES ref.app_user(id),
   acknowledged_by_user_id bigint REFERENCES ref.app_user(id), acknowledged_at timestamptz,
   PRIMARY KEY (market_id, external_ref),
-  CONSTRAINT ck_routing_reason CHECK ((route = 'cfo') = (reason_code = 'all_confirmed'))
+  CONSTRAINT ck_routing_reason CHECK ((route = 'cfo') = (reason_code = 'all_confirmed')),
+  CONSTRAINT ck_routing_ack CHECK ((acknowledged_by_user_id IS NULL) = (acknowledged_at IS NULL))   -- 0010
 );
+-- 0010: trigger ops.trg_guard_order_routing (BEFORE UPDATE OR DELETE) — quyết định BẤT BIẾN: không đổi khóa, route,
+-- reason_code, unmapped_skus, decided_*; không DELETE; chỉ ghi MỘT LẦN cặp acknowledged_by_user_id/acknowledged_at.
 CREATE TABLE ops.date_negotiation (              -- chỉ đổi ngày khi khách đồng ý [S][C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
@@ -909,7 +912,7 @@ Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bư�
 
 ## 11. Thứ tự migration và seed
 
-1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role). → 9. `0009_schedule_routing_driver_rules` (lịch ca chính thức, nhật ký làm việc tài xế, phân luồng đơn, phạm vi 561/2006 của xe — Q12/Q12b/Q14).
+1. `0001_extensions_schemas_enums` → 2. `0002_ref` → 3. `0003_hr` (và các `ALTER … ADD CONSTRAINT` chéo) → 4. `0004_stg` → 5. `0005_ops` → 6. `0006_plan` → 7. `0007_audit_views_triggers` → 8. `0008_seed_reference` (market SE, handling_group N1–N6, special_flag, position, order_transition, user_role). → 9. `0009_schedule_routing_driver_rules` (lịch ca chính thức, nhật ký làm việc tài xế, phân luồng đơn, phạm vi 561/2006 của xe — Q12/Q12b/Q14) → 10. `0010_order_routing_immutable` (quyết định phân luồng bất biến, xác nhận bàn giao ghi một lần).
 Seed dữ liệu mẫu (script `seed/generate_data.py`, cố định random seed): xem tài liệu 08 mục "Dữ liệu seed".
 
 **Định mức mẫu cho `ref.handling_group` (ví dụ minh họa, IT thay bằng số thật) [T][A]:**
