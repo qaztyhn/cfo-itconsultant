@@ -1,6 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
-## [06 Phụ lục A — `routing.fallback_retry_min`] — 2026-11-07 — review PR #65, chờ duyệt
+## [DEC-ORS-001 + DEC-NOTIFY-001 — owner approvals] — 2026-11-07 — docs-only
+
+- Owner chấp nhận retry ORS fallback sau **60 phút** mặc định theo market, gắn nhãn tuyến ước lượng; TTL đã triển khai trong #67.
+- Owner chốt **chỉ gửi email thử nghiệm qua Mailpit hoặc staging kiểm soát với địa chỉ demo**, không gửi khách thật khi chưa có chống trùng/đối soát. Quyết định chưa có guard đầy đủ trong code SMTP; Dev 2 phải bổ sung test/chặn người nhận ở staging.
+- #68–#70 đã merge vào các nhánh trung gian, **chưa có đầy đủ code trên `main`**. Tạo PR tích hợp riêng và chạy CI trước khi kết luận đã hoàn tất.
+- Phê duyệt này chỉ ghi vào `docs/ASSUMPTIONS.md` và cập nhật trạng thái changelog; không tự kích hoạt email gửi khách thật.
+
+## [06 Phụ lục A — `routing.fallback_retry_min`] — 2026-11-07 — đã duyệt DEC-ORS-001
 
 - Thêm khóa cấu hình `MarketConfig.routing.fallback_retry_min` (mặc định 60, phải > 0): fallback ORS không còn được lưu và dùng vô thời hạn; quá hạn thì thử ORS lại. Không đổi DDL/route/mã lỗi; `route_matrix.computed_at` sẵn có.
 - Test PostgreSQL: `backend/tests/integration/test_dev2_route_cache.py`.
