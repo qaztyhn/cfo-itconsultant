@@ -381,7 +381,7 @@ Hai lớp (chi tiết cột ở `05_Database_Design.md`): **nhật ký quyết �
 ## 13. Triển khai
 
 - **Local:** `docker compose up -d` → `make migrate seed` → web `:5173`, API `:8000`, Mailpit `:8025`, POS giả lập `:8100`.
-- **Staging:** Supabase (CFO DB; hệ thống nguồn dùng schema `src_se` trong cùng database), Render (cfo-api, source-se), Vercel (web). Biến môi trường: `DATABASE_URL`, `ORS_API_KEY`, `JWT_SECRET`, `SMTP_HOST/PORT/USER/PASSWORD`, `SOURCE_SE_BASE_URL`, `SOURCE_SE_API_KEY`, `INTERNAL_TICK_KEY`, `APP_ENV`. Ping 5 phút tới `/health` và `/internal/tick`. Giới hạn free-tier (Render ngủ, Supabase tạm dừng sau ~1 tuần, Vercel Hobby phi thương mại, quota ORS) cần kiểm tra lại trước khi deploy.
+- **Staging:** Supabase (CFO DB; hệ thống nguồn dùng schema `src_se` trong cùng database), Render (cfo-api, source-se), Vercel (web). Biến môi trường: `DATABASE_URL`, `ORS_API_KEY`, `JWT_SECRET`, `SMTP_HOST/PORT/USER/PASSWORD`, `SMTP_ALLOWED_RECIPIENT_DOMAINS` (mặc định `test`; SMTP ngoài Mailpit/localhost chỉ gửi tới các miền thử nghiệm này, địa chỉ khác bị từ chối trước khi kết nối — DEC-NOTIFY-001), `SOURCE_SE_BASE_URL`, `SOURCE_SE_API_KEY`, `INTERNAL_TICK_KEY`, `APP_ENV`. Ping 5 phút tới `/health` và `/internal/tick`. Giới hạn free-tier (Render ngủ, Supabase tạm dừng sau ~1 tuần, Vercel Hobby phi thương mại, quota ORS) cần kiểm tra lại trước khi deploy.
 - **CI:** ruff + mypy + pytest + build frontend + openapi diff.
 
 ## 14. Yêu cầu phi chức năng

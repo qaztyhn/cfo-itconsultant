@@ -2,6 +2,12 @@
 
 US-NOT-01 AC3/4, US-NOT-03 AC1..3. Caller owns transaction and supplies transports.
 One attempt per invocation; failed attempts remain queued until the configured cap.
+
+DEC-NOTIFY-001: a recipient refused by the transport policy (outside the allowed test domains) is
+`suppressed` with reason `recipient_not_allowed` and audited; it is never retried or counted as an attempt.
+Known risk: delivery is at-least-once. SMTP is called inside the transaction and `sent` is committed
+afterwards, so if SMTP accepts the message but the DB commit fails, the next run sends it again. Do not send
+to real customer inboxes until a dedupe key, a committed claim before sending and reconciliation exist.
 """
 
 import os
@@ -19,7 +25,7 @@ from app.core.config import MarketConfig, get_settings
 from app.core.db import get_sessionmaker
 from app.domain.models.ops import CustomerOrder, Notification
 from app.domain.models.ref import Market
-from app.providers.email_smtp import EmailDeliveryError, SmtpEmailProvider
+from app.providers.email_smtp import EmailDeliveryError, EmailRecipientNotAllowed, SmtpEmailProvider
 from app.providers.sms_sim import SimulatedSmsProvider
 
 
@@ -110,6 +116,20 @@ async def deliver_queued(
                 await sms.send(recipient=notification.recipient, body=notification.body)
             else:
                 raise ValueError("Unsupported notification channel")
+        except EmailRecipientNotAllowed:
+            notification.attempts -= 1  # nothing was sent; policy refusal is not a delivery attempt
+            notification.status, notification.suppressed_reason = "suppressed", "recipient_not_allowed"
+            notification.last_error = "Recipient not allowed in this environment."
+            await record_decision(
+                session,
+                Action.NOTIFICATION_SUPPRESSED,
+                "notification",
+                str(notification.id),
+                order_id=notification.order_id,
+                plan_id=notification.plan_id,
+                reason_code="recipient_not_allowed",
+                after={"status": "suppressed"},
+            )
         except (EmailDeliveryError, ValueError):
             notification.last_error = "Delivery failed."
             if notification.attempts >= config.max_attempts:
@@ -139,6 +159,7 @@ async def process_outbox() -> int:
         username=os.environ.get("SMTP_USER"),
         password=os.environ.get("SMTP_PASSWORD"),
         starttls=os.environ.get("SMTP_STARTTLS", "false").lower() == "true",
+        allowed_recipient_domains=os.environ.get("SMTP_ALLOWED_RECIPIENT_DOMAINS", "test").split(","),
     )
     async with get_sessionmaker()() as session, session.begin():
         return await deliver_queued(session, now=clock.now(), email=email, sms=SimulatedSmsProvider())
