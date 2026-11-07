@@ -28,6 +28,8 @@ Theo `09` mục 14.3–14.4, đây là quyết định về hợp đồng và ph
 | **Q7** | Schema `GET /orders` và bucket của `/orders/counts` | Mục 4 | Sửa tên trường / cách chia bucket |
 | **Q8** | Schema `/mapping/tasks*`, `/products/local`, phản hồi confirm/reject | Mục 5 | — |
 | **Q9** | Schema timeline; CS thấy gì | Mục 6 | **B.** CS không xem timeline (ma trận §5 chỉ ghi "dispatcher, warehouse, CS, admin") |
+| **Q10** | Phản hồi `GET/PUT /warehouses/{id}/attendance`, `GET /warehouses/{id}/capacity` (M3) | Mục 8 | Sửa tên trường |
+| **Q11** | `attendance_gen`: kho có nhiều ca/ngày thì nhân viên vào ca nào (`05` không có bảng gán người–ca) | **A.** Mọi người vào ca sớm nhất của ngày. **B.** Chia đều theo `expected_staff` của từng ca, theo `employee_no`. **C.** Thêm cột/bảng gán ca (thay đổi `05`) | Ảnh hưởng công suất theo ca; Dev 1 không tự chốt |
 
 Quy tắc chung (giống `06` v1.3 mục 13.1 đã duyệt):
 - Kiểm vai trò và phạm vi **ở máy chủ**. Vai trò không có quyền đọc → `403 FORBIDDEN`. Đơn hoặc task tồn tại
@@ -155,6 +157,29 @@ Không phân trang; sắp xếp theo `at` tăng dần, cùng thời điểm thì
 
 Không có điểm số, GPS hay `snapshot`/`before`/`after` của decision log trong timeline. Ai cần các trường đó dùng
 `/audit/decisions` theo quyền riêng.
+
+## 8. Q10 — Điểm danh và công suất (M3)
+
+Service đã có: qaztyhn/cfo-itconsultant#39 (`set_attendance`, quy tắc ASM-007).
+
+`GET /warehouses/{id}/attendance?date=` (warehouse của kho đó, dispatcher và admin trong market; ngoài phạm vi → `404`).
+Phản hồi của `PUT` dùng cùng schema này:
+```json
+{ "warehouse_id": 1, "date": "2026-11-12",
+  "counts": { "planned": 0, "present": 10, "absent": 2, "leave": 0 },
+  "items": [ { "employee_id": 120, "name": "…", "position": "WAREHOUSE_OPERATOR", "counts_in_capacity": true,
+               "shift": { "id": 4, "start": "07:00", "end": "15:00" }, "status": "present",
+               "on_approved_leave": false } ] }
+```
+
+`GET /warehouses/{id}/capacity?from=&to=` (cùng phạm vi; tối đa 31 ngày; theo Phụ lục A):
+```json
+{ "warehouse_id": 1, "days": [ { "date": "2026-11-12", "holiday": false,
+    "shifts": [ { "start": "07:00", "end": "15:00", "present": 8, "useful_hours": 7.0 } ],
+    "labour_cap_hours": 50.4, "booked_hours": { "committed": 22.0, "held": 8.0 }, "free_hours": 20.4 } ] }
+```
+`labour_cap_hours` = Σ người × giờ hữu ích × `delivery_share` (US-WH-02 AC1). Ngày lễ trả `0` (AC3).
+`booked_hours` gồm giờ của mọi đơn (AC2).
 
 ## 7. Thứ tự triển khai sau khi chốt
 1. `06` mục 5 và 12 + `CHANGELOG` (một PR docs, giống `06` v1.3).
