@@ -213,6 +213,25 @@
   3. **Warehouse Manager** có phân công quản lý hợp lệ tại đúng kho lập/sửa lịch phân ca. Điểm danh thực tế do tài khoản warehouse được phép của chính kho đó ghi theo phân quyền hiện hành; admin/dispatcher chỉ đọc điểm danh thường, không được tự phân ca thay Warehouse Manager. Ngoài kho → `404`, không đủ quyền → `403`. Cần chốt rõ guard theo chức danh ở API trước khi code.
   4. Mỗi lần ghi điểm danh phải có `ATTENDANCE_CHANGED` với before/after, changed employee IDs (không PII). Mỗi lần Warehouse Manager lập/đổi lịch nhân viên phải ghi `SHIFT_CHANGED`, actor, trước/sau, ngày hiệu lực. Mọi ghi log trong **cùng transaction** với thay đổi.
   5. Lịch phân ca chính thức cho tương lai do Warehouse Manager lập/sửa; điểm danh ghi đúng ngày làm, người được ủy quyền ở kho có thể ghi `present`/`absent`/`leave`. **Sửa dữ liệu quá khứ** chỉ với quyền hợp lệ, lý do bắt buộc và log, không sửa âm thầm. Việc `all_present` chỉ tác động những người có trong lịch ca chính thức, không tự thêm/đổi ca.
+- **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** hiện còn quy tắc Q11=B chia theo `expected_staff`/đẩy dư vào ca cuối; phải sửa/rebase trước khi merge.
+
+## ASM-008 — Giả định giao diện M0 (Dev 3): phân quyền menu, đăng nhập, môi trường demo
+
+- **Ngày:** 2026-11-07
+- **Trạng thái:** chờ Dev 1/Dev 2 xác nhận các điểm đánh dấu "cần xác nhận". Chỉ điều khiển trải nghiệm giao diện; máy chủ vẫn kiểm quyền mọi endpoint (`06` mục 3, `09`).
+- **Giả định (mã A–I khớp chú thích trong `frontend/src/app/access.ts`, `menu.ts`, `config.ts`):**
+  1. ASM-B: khi tài khoản có nhiều vai trò, màn hình sau đăng nhập ưu tiên theo thứ tự admin → dispatcher → warehouse → driver → customer_service → sales → revenue_all → ops; menu gộp nhóm của mọi vai trò để chuyển qua lại.
+  2. ASM-C: vai trò `sales` vào `/store/orders` sau đăng nhập.
+  3. ASM-D: KPI vận hành mở cho admin hoặc `kpi_scopes` có `ops`; doanh thu toàn thị trường mở cho admin hoặc `revenue_all`.
+  4. ASM-E: owner kho/cửa hàng (xem doanh thu "my location") chờ tín hiệu từ backend (Dev 1); hiện chưa hiện (`it.todo` trong `access.test.ts`).
+  5. ASM-F: huy hiệu "Plan review" lấy từ `awaiting_approval` của `GET /orders/counts`; huy hiệu ẩn khi counts chưa tải và khi bằng 0.
+  6. ASM-G: mục "New order" của Sales mở POS giả lập ở `http://localhost:8100` (biến `VITE_POS_URL`), **cần Dev 2 xác nhận cổng**.
+  7. ASM-H: mục "Contact log" của Customer service chỉ là chỗ giữ chỗ, chưa có màn hình.
+  8. ASM-I: chip trạng thái PLANNED, PREPARING, GOODS_READY, LOADED, DISPATCHED, SUBMITTED, BLOCKED_UNMAPPED_SKU, CANCELLED dùng màu chip mặc định, không viền.
+  9. `GET /auth/me` trả cùng object `user` như login; `GET /locations` trả `{ items: [{ id, code, name, type }] }` để sidebar lập danh sách kho — cả hai **cần Dev 1 xác nhận** (chưa có schema trong `06`).
+  10. `VITE_APP_ENV` không đặt ⇒ coi là demo (banner DEMO hiện); chỉ giá trị `production` mới ẩn banner.
+  11. Màn Sign in có 7 thẻ demo (không có Project lead); thẻ chỉ điền email, không hard-code mật khẩu (`09` bất biến 25).
+- **Ảnh hưởng:** `frontend/src/app/*`, `components/Sidebar.tsx`, `components/ScopePicker.tsx`, `components/DemoBanner.tsx`, `features/auth/SignIn.tsx`, `api/config.ts`.
 - **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** đã được Dev 1 báo cập nhật Q11 theo ASM-007 trong comment, nhưng vẫn phải review/rebase trước khi merge; không áp dụng lại Q11=B cũ.
 
 ## DEC-SALES-001 — Sales xác nhận có điều kiện và sync-now
