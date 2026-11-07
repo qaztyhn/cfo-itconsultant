@@ -8,7 +8,14 @@ cùng transaction (09 bất biến 21, 05 mục 6). v1.2: không còn MANUAL_PLA
 Owner: Dev 1 (luồng A) — M0 (bảng), M5 (đóng kế hoạch).
 """
 
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.errors import DomainError
 from app.domain.enums import OrderStatus as S
+from app.domain.models.ops import CustomerOrder, OrderTransition
+
+SYSTEM_ROLE = "system"  # ASM-002: allowed_roles rỗng trong ops.order_transition = chỉ hệ thống
 
 # Bản sao bảng seed ops.order_transition (05 mục 6) — dùng cho kiểm tra sớm và test.
 ALLOWED: dict[tuple[S, S], tuple[bool, tuple[str, ...]]] = {
@@ -65,17 +72,48 @@ def is_allowed(from_status: S, to_status: S) -> bool:
 
 
 async def transition(
-    session: object, order_id: int, to_status: S, actor_role: str, reason_text: str | None = None
-) -> None:
-    """Đổi trạng thái đơn; thiếu lý do khi bắt buộc → REASON_REQUIRED; sai → ILLEGAL_TRANSITION.
+    session: AsyncSession, order_id: int, to_status: S, actor_role: str, reason_text: str | None = None
+) -> S:
+    """Đổi trạng thái đơn trong transaction của caller; trả trạng thái cũ.
 
-    Nếu cặp thuộc CLOSES_ACTIVE_PLAN thì gọi close_active_plan() trước khi UPDATE.
-    TODO(#M5-lifecycle).
+    Tra ops.order_transition (nguồn sự thật; trigger trg_check_transition là lớp thứ hai):
+    cặp không có → 409 ILLEGAL_TRANSITION; vai trò không được phép → 403 FORBIDDEN (allowed_roles rỗng = chỉ
+    "system", ASM-002); cần lý do mà thiếu → 422 REASON_REQUIRED. Cặp thuộc CLOSES_ACTIVE_PLAN gọi
+    close_active_plan() trước khi UPDATE (M5). Không ghi decision_log: caller ghi mã hành động của use case
+    (ORDER_REPLAN, ORDER_CANCELLED, MAPPING_CONFIRMED…) trong cùng transaction (09 bất biến 14).
+    Không commit.
     """
-    raise NotImplementedError
+    current = await session.scalar(
+        select(CustomerOrder.status).where(CustomerOrder.id == order_id).with_for_update()
+    )
+    if current is None:
+        raise DomainError("NOT_FOUND", "Order not found.")
+    from_status = S(current)
+    rule = await session.scalar(
+        select(OrderTransition).where(
+            OrderTransition.from_status == from_status.value, OrderTransition.to_status == S(to_status).value
+        )
+    )
+    if rule is None:
+        raise DomainError(
+            "ILLEGAL_TRANSITION",
+            "Transition is not allowed.",
+            {"from_status": from_status.value, "to_status": S(to_status).value},
+        )
+    allowed = set(rule.allowed_roles) or {SYSTEM_ROLE}
+    if actor_role not in allowed:
+        raise DomainError("FORBIDDEN", "Role may not perform this transition.")
+    if rule.requires_reason and not (reason_text and reason_text.strip()):
+        raise DomainError("REASON_REQUIRED", "This transition requires a reason.")
+    if (from_status, S(to_status)) in CLOSES_ACTIVE_PLAN:
+        await close_active_plan(session, order_id)
+    await session.execute(
+        update(CustomerOrder).where(CustomerOrder.id == order_id).values(status=S(to_status).value)
+    )
+    return from_status
 
 
-async def close_active_plan(session: object, order_id: int) -> None:
+async def close_active_plan(session: AsyncSession, order_id: int) -> None:
     """Đóng kế hoạch cũ (05 mục 6): plan → superseded, giữ chỗ → released, trip_stop/trip → cancelled,
     xóa approved_plan_id/committed_date/promise_*. Cùng transaction với transition(). TODO(#M5-lifecycle).
     """
