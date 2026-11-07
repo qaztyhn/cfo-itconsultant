@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
 from app.deps import AuthUser, DbSession
-from app.services import hr_read_service, hr_write_service
+from app.services import hr_read_service, hr_service, hr_write_service
 from app.services.hr_scope import resolve_hr_scope
 
 router = APIRouter(tags=["hr"])
@@ -348,16 +348,109 @@ async def set_owner(location_id: int, body: OwnerIn, user: AuthUser, db: DbSessi
     return LocationOut.model_validate(await hr_read_service.get_location(db, scope, location_id))
 
 
-@router.get("/warehouses/{warehouse_id}/attendance")
-async def get_attendance(warehouse_id: int) -> dict[str, object]:
-    """GET /warehouses/{warehouse_id}/attendance — warehouse (kho mình), dispatcher, admin."""
-    raise NotImplementedError
+class AttendanceItemIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    employee_id: int
+    status: str
 
 
-@router.put("/warehouses/{warehouse_id}/attendance")
-async def put_attendance(warehouse_id: int) -> dict[str, object]:
-    """PUT /warehouses/{warehouse_id}/attendance — warehouse; ATTENDANCE_CHANGED."""
-    raise NotImplementedError
+class AttendanceIn(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "date": "2026-11-12",
+                "all_present": True,
+                "items": [{"employee_id": 120, "status": "absent"}],
+            }
+        },
+    )
+    date: date
+    all_present: bool = False
+    items: list[AttendanceItemIn] = []
+
+
+class ShiftRef(BaseModel):
+    id: int
+    start: str
+    end: str
+
+
+class AttendanceRow(BaseModel):
+    employee_id: int
+    name: str
+    position: str
+    counts_in_capacity: bool
+    shift: ShiftRef | None
+    status: str
+    on_approved_leave: bool
+
+
+class AttendanceOut(BaseModel):
+    warehouse_id: int
+    date: date
+    counts: dict[str, int]
+    items: list[AttendanceRow]
+
+
+class ShiftCapacityOut(BaseModel):
+    start: str
+    end: str
+    present: int
+    useful_hours: float
+
+
+class DayCapacityOut(BaseModel):
+    date: date
+    holiday: bool
+    shifts: list[ShiftCapacityOut]
+    labour_cap_hours: float
+    booked_hours: dict[str, float]
+    free_hours: float
+
+
+class CapacityOut(BaseModel):
+    warehouse_id: int
+    days: list[DayCapacityOut]
+
+
+@router.get("/warehouses/{warehouse_id}/attendance", response_model=AttendanceOut, responses=_READ_ERRORS)
+async def get_attendance(
+    warehouse_id: int, user: AuthUser, db: DbSession, work_date: Annotated[date, Query(alias="date")]
+) -> AttendanceOut:
+    """GET /warehouses/{id}/attendance?date= — warehouse (kho mình), dispatcher, admin (06 mục 13.2)."""
+    scope = await resolve_hr_scope(db, user)
+    return AttendanceOut.model_validate(await hr_service.get_attendance(db, scope, warehouse_id, work_date))
+
+
+@router.put("/warehouses/{warehouse_id}/attendance", response_model=AttendanceOut, responses=_WRITE_ERRORS)
+async def put_attendance(
+    warehouse_id: int, body: AttendanceIn, user: AuthUser, db: DbSession
+) -> AttendanceOut:
+    """PUT /warehouses/{id}/attendance — chỉ warehouse của kho đó; ghi ATTENDANCE_CHANGED (US-WH-01)."""
+    await hr_service.set_attendance(
+        db,
+        user,
+        warehouse_id,
+        body.date,
+        all_present=body.all_present,
+        items=[(i.employee_id, i.status) for i in body.items],
+    )
+    scope = await resolve_hr_scope(db, user)
+    return AttendanceOut.model_validate(await hr_service.get_attendance(db, scope, warehouse_id, body.date))
+
+
+@router.get("/warehouses/{warehouse_id}/capacity", response_model=CapacityOut, responses=_READ_ERRORS)
+async def get_capacity(
+    warehouse_id: int,
+    user: AuthUser,
+    db: DbSession,
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+) -> CapacityOut:
+    """GET /warehouses/{id}/capacity?from=&to= — tối đa 31 ngày (06 mục 13.2; US-WH-02)."""
+    scope = await resolve_hr_scope(db, user)
+    return CapacityOut.model_validate(await hr_service.capacity(db, scope, warehouse_id, date_from, date_to))
 
 
 @router.post("/absences")
