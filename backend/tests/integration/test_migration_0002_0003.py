@@ -7,7 +7,7 @@ import pytest
 
 from alembic import command
 from tests.integration.conftest import COLUMNS_SQL, alembic_config, execute, fetch, rejects, table_columns
-from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_in
+from tests.integration.spec05 import COMMON_COLUMNS, spec_tables_before_0009
 
 pytestmark = pytest.mark.integration
 
@@ -55,7 +55,7 @@ def _rejects(
 
 
 def test_migration_0002_0003_tables_and_columns_match_spec(db: str) -> None:
-    spec = spec_tables_in("ref", "hr")
+    spec = spec_tables_before_0009("ref", "hr")  # test chạy tới 0003
     actual = _columns(db)
     assert set(actual) == set(spec)  # 14 bảng ref + 12 bảng hr, không bảng thiết bị
     assert len(spec) == 26

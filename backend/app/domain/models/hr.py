@@ -9,7 +9,7 @@ Owner: Dev 1 (luồng A) — M1.
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, Date, ForeignKey, Numeric, SmallInteger, Text, Time, text
+from sqlalchemy import BigInteger, Boolean, Date, ForeignKey, Integer, Numeric, SmallInteger, Text, Time, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -175,3 +175,42 @@ class Absence(TimestampMixin, Base):
     type: Mapped[str] = mapped_column(ABSENCE_TYPE)
     approved: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     approved_by: Mapped[int | None] = mapped_column(BigInteger, _employee_fk())
+
+
+class EmployeeShiftSchedule(TimestampMixin, Base):
+    """Lịch ca chính thức của nhân viên kho và tài xế (Q12, 0009). Đổi ca = hủy dòng cũ + thêm dòng mới."""
+
+    __tablename__ = "employee_shift_schedule"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    employee_id: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("ref.location.id"))
+    work_date: Mapped[date] = mapped_column(Date)
+    shift_template_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("hr.shift_template.id"))
+    start_time: Mapped[time | None] = mapped_column(Time)
+    end_time: Mapped[time | None] = mapped_column(Time)
+    break_start: Mapped[time | None] = mapped_column(Time)
+    break_end: Mapped[time | None] = mapped_column(Time)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'scheduled'"))
+    assigned_by: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    assigned_at: Mapped[datetime] = mapped_column(TSTZ)
+    cancelled_by: Mapped[int | None] = mapped_column(BigInteger, _employee_fk())
+    cancelled_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    reason_text: Mapped[str | None] = mapped_column(Text)
+
+
+class DriverDutyLog(TimestampMixin, Base):
+    """Kỳ làm việc/lái của tài xế (Q12b, 0009) — nguồn kiểm nghỉ 11 giờ và giờ lái."""
+
+    __tablename__ = "driver_duty_log"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    employee_id: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    duty_start: Mapped[datetime] = mapped_column(TSTZ)
+    duty_end: Mapped[datetime] = mapped_column(TSTZ)
+    driving_min: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    source: Mapped[str] = mapped_column(Text)
+    trip_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ops.delivery_trip.id"))
+    recorded_by: Mapped[int | None] = mapped_column(BigInteger, _employee_fk())
