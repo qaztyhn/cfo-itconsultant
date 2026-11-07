@@ -120,3 +120,21 @@
   7. Các thay đổi này **không ghi `decision_log`**: `04` mục 10 không có mã hành động cho phân công / quản lý, và
      thêm mã là thay đổi hợp đồng.
 - **Cần nhóm xác nhận:** các mục 2 (cấm ngày quá khứ), 3, 4 và 7.
+
+## ASM-007 — Quy tắc điểm danh chưa ghi trong `06` mục 13
+
+- **Ngày:** 2026-11-07
+- **Trạng thái:** đề xuất của Dev 1 (M3-B), chờ nhóm xác nhận. Không sửa `05`/`06`.
+- **Diễn giải** cho `PUT /warehouses/{id}/attendance` (tầng service `hr_service.set_attendance`):
+  1. **Roster** của kho trong ngày là các dòng `hr.attendance` của ngày đó mà nhân viên có phân công hiệu lực tại kho
+     hôm đó và chưa `terminated` (US-WH-01 AC3). Service **không tạo dòng mới**: dòng `planned` do job
+     `attendance_gen` sinh. Nhân viên trong `items` mà không có dòng trong roster → `422` (`details.field = items`).
+  2. `all_present` đặt mọi dòng của roster **trừ `leave`** thành `present` bằng một câu UPDATE, rồi `items` ghi đè.
+     Trạng thái hợp lệ trong `items`: `present`, `absent`, `leave` (`planned` chỉ do job sinh).
+  3. Chỉ vai trò `warehouse` của chính kho đó được ghi (06 mục 13). Admin/dispatcher chỉ đọc → `403`. Kho khác,
+     cửa hàng hoặc id không tồn tại → `404`.
+  4. `ATTENDANCE_CHANGED` ghi mỗi lần lưu: trước/sau là số đếm theo trạng thái, `snapshot.changed_employee_ids` chỉ
+     chứa id (không có tên).
+  5. Không giới hạn ngày (quá khứ / tương lai). Đây là câu hỏi mở cho nhóm.
+- **Câu hỏi mở cho `attendance_gen`** (chưa làm): kho có nhiều ca trong một ngày thì nhân viên được xếp vào ca nào?
+  `05` không có bảng gán nhân viên–ca. Cần nhóm chốt trước khi viết job.
