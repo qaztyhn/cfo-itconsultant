@@ -18,10 +18,10 @@ export interface LoginRequest {
 
 export interface AuthUser {
   id: number;
-  employee_id: number;
-  name: string;
+  employee_id: number | null;
+  name: string | null;
   roles: UserRole[];
-  market: string;
+  market: string | null;
   location_ids: number[];
   locale: string;
   kpi_scopes: KpiScope[];

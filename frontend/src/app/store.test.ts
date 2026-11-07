@@ -54,6 +54,27 @@ describe("auth store", () => {
     expect(isAuthUser(null)).toBe(false);
   });
 
+  it("accepts nullable employee_id, name and market like backend UserOut", () => {
+    expect(isAuthUser({ ...user, employee_id: null, name: null, market: null })).toBe(true);
+    expect(isAuthUser({ ...user, employee_id: "55" })).toBe(false);
+    expect(isAuthUser({ ...user, name: 123 })).toBe(false);
+    expect(isAuthUser({ ...user, market: undefined })).toBe(false);
+  });
+
+  it("keeps the session after reload when employee_id, name and market are null", () => {
+    const nullableUser = { ...user, employee_id: null, name: null, market: null };
+    useAuthStore.getState().setAuth(
+      { access_token: "t-null", token_type: "bearer", expires_in: 28_800, user: nullableUser },
+      "nullable@cfo.demo",
+    );
+
+    const restored = readStoredSession();
+
+    expect(restored.token).toBe("t-null");
+    expect(restored.user).toEqual(nullableUser);
+    useAuthStore.getState().clearAuth();
+  });
+
   it("isSessionValid requires token, user and an unexpired timestamp", () => {
     const now = 1_000;
     expect(isSessionValid({ token: "t", user, email: "a", expiresAt: now + 1 }, now)).toBe(true);

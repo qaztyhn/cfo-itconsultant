@@ -31,11 +31,11 @@ export function isAuthUser(value: unknown): value is AuthUser {
   const v = value as Record<string, unknown>;
   return (
     typeof v.id === "number" &&
-    typeof v.employee_id === "number" &&
-    typeof v.name === "string" &&
+    (v.employee_id === null || typeof v.employee_id === "number") &&
+    (v.name === null || typeof v.name === "string") &&
     Array.isArray(v.roles) &&
     v.roles.every((role) => (USER_ROLES as readonly string[]).includes(role)) &&
-    typeof v.market === "string" &&
+    (v.market === null || typeof v.market === "string") &&
     typeof v.locale === "string" &&
     Array.isArray(v.location_ids) &&
     v.location_ids.every((id) => typeof id === "number") &&
