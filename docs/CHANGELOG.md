@@ -27,6 +27,18 @@
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
 
+## [Q12–Q14 — lựa chọn nghiệp vụ đã duyệt] — 2026-11-07 — docs, DDL/API/engine chờ PR triển khai (PR qaztyhn/cfo-itconsultant#53)
+
+- Q12: lịch ca chính thức một bảng cho nhân viên kho **và tài xế**; 1 ca/người/ngày; quản lý chính/phó `can_approve` cập nhật; sửa quá khứ cần lý do; thiếu lịch → `schedule_verified=false`, công suất 0; giờ riêng, ca qua nửa đêm, giờ nghỉ, nghỉ giữa ca `driver_min_rest_hours` (MarketConfig mới, mặc định 11).
+- Yêu cầu mới của chủ dự án: phương án chỉ hợp lệ khi lên hàng trong ca kho chính thức có người và khoảng làm việc của từng tài xế nằm trọn trong ca thực tế; không mặc định 24/7. Engine: `WarehouseCtx.loading_windows`, `DriverCtx.shifts`, ghép tài xế bipartite, ràng buộc nhóm/năng lực theo dòng trên từng xe; mã `NO_WAREHOUSE_SHIFT`, `OUTSIDE_DRIVER_SHIFT` (`04` mục 6.7, `06` mục 13.0b).
+- Q12b (chính sách Bắc Âu cho MVP, duyệt hướng 07/11/2026, không phải xác nhận pháp lý):
+  - nghỉ hằng ngày 11 giờ; tắt nghỉ rút gọn 9 giờ;
+  - tách thời gian lái (561/2006: 9 giờ/ngày, nghỉ 45 phút sau 4 giờ 30, giới hạn tuần/hai tuần) khỏi tổng giờ làm `driver_max_hours_day`;
+  - phạm vi theo market/xe/loại vận hành (`ref.vehicle.regulation_561_scope`);
+  - fail closed khi thiếu lịch sử hoặc phạm vi;
+  - mã mới `DRIVER_REST_INSUFFICIENT`, `DRIVING_TIME_EXCEEDED`, `DRIVING_BREAK_REQUIRED`, `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`.
+- Q13: mã audit `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`, chỉnh hồi tố `EMPLOYEE_ASSIGNMENT_CHANGED`/`retroactive`.
+- Q14: `ops.order_routing` (cfo/legacy, không đổi), trạng thái `unresolved` riêng, Sales kiểm CFO trước điều phối tay, `routing-ack` (`legacy_acknowledged`/`manual_started`), polling không tự tạo hold; nêu rõ bảng nội bộ không bảo đảm chặn điều phối tay (`06` mục 5.0.2).
 ## [06 v1.4] — 2026-11-07 — **đã duyệt** (Q5–Q10, PR qaztyhn/cfo-itconsultant#37; chủ dự án trả lời trong phiên làm việc 2026-11-07; Q11 thay bằng ASM-007, PR qaztyhn/cfo-itconsultant#50)
 
 Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, Q10 = A. **Q11 = B bị thay thế** bởi ASM-007: lịch phân ca từng người do Warehouse Manager lập; không chia theo `expected_staff`, không dồn người dư vào ca cuối. Q7 được chốt lại theo nguyên tắc "ưu tiên đơn đặt trước, linh hoạt chèn đơn giao sớm, nhưng mọi đơn phải đúng hạn đã cam kết", khớp `docs/DECISION_SALES_CONFIRMATION.md` mục 5.
