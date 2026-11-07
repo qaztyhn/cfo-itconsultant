@@ -13,12 +13,9 @@ from sqlalchemy import ColumnElement, Select, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import DomainError
-from app.domain.enums import OrderStatus
-from app.domain.models.ops import CustomerOrder, OrderLine
 from app.domain.models.ref import HandlingGroup, HandlingGroupRule, MappingTask, Market, ProductGlobal
 from app.engine.mapping_candidates import suggest_group
 from app.services.hr_scope import HrReadScope
-from app.services.order_scope import warehouse_orders
 from app.services.query_utils import parse_sort
 
 TASK_STATUSES = frozenset({"open", "in_progress", "done"})
@@ -117,7 +114,8 @@ async def list_tasks(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    """GET /mapping/tasks — mặc định status=open; sắp `-blocked_order_count,local_sku`."""
+    """GET /mapping/tasks — mặc định status=open; sắp theo `id` (task cũ trước). `blocked_order_count` là
+    trường legacy (ASM-005): không dùng làm thứ tự mặc định hay hàng đợi đơn chờ CFO."""
     wanted = status or "open"
     if wanted not in TASK_STATUSES:
         raise _invalid("status", "Unknown task status.")
@@ -129,7 +127,7 @@ async def list_tasks(
     columns = {"blocked_order_count": MappingTask.blocked_order_count, "local_sku": MappingTask.local_sku,
                "id": MappingTask.id}  # fmt: skip
     order = [columns[f].desc() if desc else columns[f].asc() for f, desc in parse_sort(sort, TASK_SORT,
-             "-blocked_order_count,local_sku")]  # fmt: skip
+             "id")]  # fmt: skip
     total = int(
         (
             await session.execute(select(func.count()).select_from(query.order_by(None).subquery()))
@@ -144,7 +142,7 @@ async def list_tasks(
 
 
 async def get_task(session: AsyncSession, scope: HrReadScope, task_id: int) -> dict[str, Any]:
-    """GET /mapping/tasks/{id}: + suggested_handling_group, blocked_orders (warehouse: đơn trong phạm vi)."""
+    """GET /mapping/tasks/{id}: + suggested_handling_group. Không liệt kê đơn khách (ASM-005)."""
     row = (await session.execute(_task_base(scope).where(MappingTask.id == task_id))).first()
     if row is None:
         raise DomainError("NOT_FOUND", "Mapping task not found.")
@@ -175,24 +173,6 @@ async def get_task(session: AsyncSession, scope: HrReadScope, task_id: int) -> d
         view["suggested_handling_group"] = suggest_group(
             weight.category, Decimal(weight.weight_kg or 0), rules
         )
-    orders = (
-        select(CustomerOrder.id, CustomerOrder.order_no)
-        .where(
-            CustomerOrder.market_id == task.market_id,
-            CustomerOrder.status == OrderStatus.BLOCKED_UNMAPPED_SKU.value,
-            select(OrderLine.id)
-            .where(
-                OrderLine.order_id == CustomerOrder.id,
-                OrderLine.local_sku == task.local_sku,
-                OrderLine.global_product_id.is_(None),
-            )
-            .exists(),
-        )
-        .order_by(CustomerOrder.submitted_at, CustomerOrder.id)
-    )
-    if scope.role == "warehouse":
-        orders = orders.where(warehouse_orders(scope.location_ids))
-    view["blocked_orders"] = [{"id": i, "order_no": n} for i, n in (await session.execute(orders)).all()]
     return view
 
 
