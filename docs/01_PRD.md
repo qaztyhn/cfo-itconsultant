@@ -130,7 +130,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-PRP-02 (M)** Công suất ngày = số người có mặt (điểm danh) × giờ hữu ích × **90%** tỷ lệ dành cho đơn giao − việc đã đặt. [S][C]
 - **FR-PRP-03 (đã bỏ ở v1.1)** ~~Thiết bị kho được ép buộc~~. Ngoài MVP theo slide; giả định mọi kho có đủ thiết bị [C][A].
 - **FR-PRP-04 (M)** Nếu chuẩn bị xong sau giờ cắt lên hàng, lên hàng ở ca đầu của ngày làm việc kế tiếp. [S]
-- **FR-PRP-05 (M)** Quản lý/trưởng ca điểm danh từng người (nút "tất cả có mặt"), sửa ca; công nhân không có tài khoản.
+- **FR-PRP-05 (M)** Warehouse Manager lập/sửa lịch phân ca chính thức cho **từng nhân viên**; warehouse ghi điểm danh thực tế (có mặt/vắng/nghỉ) trong phạm vi được cấp quyền. `expected_staff` chỉ là số dự kiến, CFO không tự phân/đổi ca. Sửa dữ liệu quá khứ phải có quyền, lý do và audit; công nhân không có tài khoản.
 
 ### 5.6 Xe, giao hàng, gate
 - **FR-DEL-01 (M)** Xe thuộc kho; chọn xe đủ tải/thể tích, được chở nhóm hàng, đủ khả năng, rảnh; tài xế đủ bằng và còn hạn, trong giờ làm. [S][C]
@@ -215,6 +215,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-PRP-04** Quá giờ cắt lên hàng thì lên hàng ca đầu ngày làm việc kế. [S]
 - **BR-PRP-05** Một nhân viên tại một thời điểm chỉ ở một nơi; manager/supervisor mặc định không tính vào công suất nhặt hàng. [C]
 
+- **BR-PRP-06** Lịch làm việc chính thức do Warehouse Manager nhập/xác nhận, không suy ra từ `shift_template.expected_staff`. Công suất theo từng ngày/ca sử dụng lịch người–ca và điểm danh thực tế; lịch tương lai chưa có danh sách nhân viên thì không được tự dựng ca giả. Thay đổi lịch/điểm danh có audit; sửa hồi tố cần lý do.
+
 ### 6.5 Giao hàng và gate
 - **BR-DEL-01** Xe phải đủ tải trọng và thể tích, được chở nhóm hàng, đủ khả năng (crane, dump…) và rảnh. [S]
 - **BR-DEL-02** Tài xế cùng kho, có mặt, bằng đủ hạng và còn hạn, tổng giờ trong ngày ≤ 9 giờ [A], không trùng chuyến.
@@ -258,6 +260,8 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-EMP-02** Mỗi kho/cửa hàng có đúng một quản lý chính; owner mặc định là quản lý. [C]
 - **BR-EMP-03** Duyệt chuyển kho (nguồn), sửa ca, đóng ngoại lệ chỉ do quản lý có `can_approve` của kho đó. [C]
 - **BR-EMP-04** Nhân viên thôi việc: khóa tài khoản, giữ lịch sử, ẩn danh sau hạn lưu giữ. [A]
+- **BR-EMP-05** Trước khi quản lý chuyển công tác/nghỉ việc, phải có người thay thế phù hợp; tài khoản nghỉ việc bị khóa và lưu lịch sử. Thay đổi phân công, quản lý, owner và nghỉ việc ghi audit; điều chỉnh hồi tố chỉ admin đủ quyền và có lý do.
+
 - **BR-KPI-01** Không thêm vai trò; Business owner và Project lead đều là `viewer`, phân biệt bằng `kpi_scopes` (`revenue_all` / `ops`). **Doanh thu:** Business owner (mọi nơi, hai góc nhìn), owner cửa hàng (chỉ cửa hàng đó, góc nhìn store), owner kho (chỉ kho đó, góc nhìn warehouse), admin; người khác không xem; Business owner không xem KPI vận hành, nhật ký quyết định hay thông tin khách. **KPI vận hành:** admin, dispatcher, quản lý kho, Project lead (`ops`). Doanh thu ghi nhận = Σ `total_amount` của đơn `DELIVERED` theo ngày giao ở múi giờ market; đơn thất bại rồi giao lại chỉ tính một lần; mỗi nước tiền tệ riêng. **Giả định [A]:** chi phí giao hàng, lương nhân viên, ưu đãi giữa các nước khác nhau và nhóm thiếu số liệu, nên doanh thu chỉ là tổng giá trị đơn, không phải lợi nhuận. "Cost per delivery" của slide được thay bằng giờ công và km mỗi lần giao (KPI vận hành); so sánh "chi phí" giữa các phương án của một đơn do điểm xếp hạng đảm nhận (FR-RNK-01). [C]
 
 ---
