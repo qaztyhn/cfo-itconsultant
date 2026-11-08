@@ -14,7 +14,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
 from app.adapters.base import (
     AddressDTO,
@@ -115,6 +115,30 @@ class RestMarketAdapter:
         page_size: int = 50,
         filters: dict[str, str] | None = None,
     ) -> AsyncIterator[T]:
+        wire_keys = tuple({"start": "from", "end": "to"}.get(field, field) for field in key_fields)
+        async for row in self.raw_pages(
+            entity, since, key_fields=wire_keys, page_size=page_size, filters=filters
+        ):
+            try:
+                yield cast(T, model.model_validate(row))
+            except ValueError:
+                raise SourceReadError("Source reference item is invalid") from None
+
+    async def raw_pages(
+        self,
+        entity: str,
+        since: datetime | None,
+        *,
+        key_fields: tuple[str, ...],
+        page_size: int = 50,
+        filters: dict[str, str] | None = None,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Structural feed guard. Typed ingestion may reject individual malformed records safely.
+
+        Never checkpoint a feed until this iterator finishes. Invalid identity/time is rejected
+        by the typed decoder and prevents checkpoint advancement; valid identity ordering still
+        guards duplicates/regressions. HTTP/page failures abort the entire run.
+        """
         if (
             since is not None and (since.tzinfo is None or since.utcoffset() is None)
         ) or not 1 <= page_size <= 500:
@@ -157,24 +181,35 @@ class RestMarketAdapter:
                     raise SourceReadError("Source reference page is incomplete")
                 for row in batch.items:
                     try:
-                        item = model.model_validate(row)
-                    except ValueError:
-                        raise SourceReadError("Source reference item is invalid") from None
-                    parts = [getattr(item, field) for field in key_fields]
+                        updated_at = TypeAdapter(AwareDatetime).validate_python(row.get("updated_at"))
+                        parts = [row[field] for field in key_fields]
+                        if not all(isinstance(value, str) and value for value in parts):
+                            raise ValueError("Invalid source identity")
+                        parts = [
+                            (
+                                TypeAdapter(AwareDatetime).validate_python(value)
+                                if field in {"from", "to"}
+                                else value
+                            )
+                            for field, value in zip(key_fields, parts, strict=True)
+                        ]
+                    except (KeyError, ValueError):
+                        yield row
+                        continue
                     key = tuple(
                         value.astimezone(UTC).isoformat() if isinstance(value, datetime) else str(value)
                         for value in parts
                     )
-                    current = (item.updated_at, key)
+                    current = (updated_at, key)
                     if (
                         key in seen
-                        or (since is not None and item.updated_at < since)
+                        or (since is not None and updated_at < since)
                         or (last is not None and current <= last)
                     ):
                         raise SourceReadError("Source reference keys/checkpoint ordering is invalid")
                     seen.add(key)
                     last = current
-                    yield cast(T, item)  # model_validate returns the runtime model passed above.
+                    yield row
                 if page * page_size >= total:
                     return
         raise SourceReadError("Source reference page safety limit exceeded")
