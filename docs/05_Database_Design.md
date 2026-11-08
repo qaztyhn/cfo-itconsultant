@@ -592,7 +592,10 @@ CREATE TABLE ops.proof_of_delivery (           -- v1.1: MỘT bản ghi cho MỖ
   CHECK ((result = 'failed') = (failure_reason IS NOT NULL))
 );
 CREATE INDEX ix_pod_order ON ops.proof_of_delivery (order_id, completed_at);
-CREATE UNIQUE INDEX ux_pod_one_delivered ON ops.proof_of_delivery (order_id) WHERE result = 'delivered';
+-- SUPERSEDED TARGET CONTRACT (DEC-OWNER-20261109 M6-1): migration 0005 still creates
+-- ux_pod_one_delivered(order_id); a NEW forward migration must DROP that index safely.
+-- In the target schema, successful delivery is unique BY trip_stop, not by order:
+CREATE UNIQUE INDEX ux_pod_one_delivered_trip_stop ON ops.proof_of_delivery (trip_stop_id) WHERE result = 'delivered';
 CREATE TABLE ops.eta_forecast (                  -- mỗi lần tính lại một dòng (phiên bản ETA)
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
@@ -1008,3 +1011,18 @@ Quy tắc và hạn chế đã biết [A]:
 - **Tính theo đơn vị nhỏ nhất (v1.2):** định mức ghi theo đơn vị chuẩn bị (pallet, bó…) nhưng hệ thống quy về **đơn vị cơ sở** để dễ scale: `giờ/đơn vị cơ sở = labour_hours_per_unit / base_units_per_prep_unit` (N3: 0,15 / 40 bao = 0,00375 giờ/bao; 20 bao = 0,075 giờ). Hàng **không chia nhỏ được** (không có `base_units_per_prep_unit`: một kiện cửa, một bó bán nguyên bó) thì số đơn vị **làm tròn lên** số nguyên; `line` luôn là 1. Ghi vào báo cáo như một quyết định của nhóm.
 - Định mức đã bao gồm thời gian dùng thiết bị (xe nâng, máy xúc…) vì MVP không quản lý thiết bị kho.
 - Paint & chemicals trong ảnh thiết kế không là nhóm riêng: sơn lon thuộc N1 kèm cờ `HAZARDOUS` hoặc `SPECIAL_STORAGE` khi cần; "Tiles & heavy" gộp vào N2.
+
+## 12. Approved target DB contracts — DEC-OWNER-20261109
+
+**Source:** [owner decision record](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). This section defines **future migration requirements**, not already applied DDL. Never edit applied migrations. Preserve old historic migration files and implement forward migration/tests.
+
+- **S1–5:** effective, versioned **market-wide** SKU scope (pilot SE), explicit revocable market-specific Admin grants; author cannot approve own scope and warehouse-evidence submitter cannot approve own evidence. Warehouse Manager submits verifiable WMS proof; immutable audit records actor/approver/version/before/after. Bind stock run to scope/evidence versions effective at its trusted batch `as_of` (not sync time). Persist expected warehouse × in-scope SKU coverage: missing row rejects complete CFO write; explicit reported zero is zero. Independent evidence expires within **30 days maximum** in pilot; mapping/unit/conversion/scope change auto-revokes and never silently reactivates it. No partial stock writes or implicit independence.
+- **T18-1–3:** track transfer-to-WMS snapshot content inclusion (batch/reference/warehouse/SKU/quantity), not merely snapshot `as_of`; if lacking proof, do not add pending inbound to available stock. Manager receipt closes operational transfer. Store source of approved market-default lead; reversal after `source_confirmed` blocked until a separately reviewed contract.
+- **D7-1–4:** versioned and verified 56-day *daily* driver coverage (including explicit off-duty vs missing), qualified reviewer and source hash/version, separate duty/driving/rest/break segments, immutable correction/revocation and rolling revalidation. Manager-approved future shifts remain independent of past evidence. A real driver with unknown licence/permissible vehicle mass/Regulation 561 context fails the safety gate. Synthetic demo proof cannot qualify as real-worker verification.
+- **M6-1:** One successful POD per **`trip_stop_id`**, not `order_id`. Existing deployed `ux_pod_one_delivered(order_id)` must be dropped by a **new forward migration**, with multi-vehicle regression tests; target partial per-stop unique index can be used alongside the current `UNIQUE(trip_stop_id)`. Do not claim multi-vehicle POD supported before the installed DB index is removed.
+- **G1–5:** a versioned, auditable **one active primary Dispatcher per trip** assignment with market-scoped authorizer and revocation/handover; separate per-driver, per-notice-version delivery+ack proof and privacy/legal pilot authorization. GPS point batch ≤100, event-coupled terminal/duty purge, simulator origin from authenticated separate producer. No raw 30-day GPS retention.
+- **N1–5:** approval/version of DELAY start/end window, immutable template version and typed allowlisted variable snapshot, and queued notification/outbox identity in the caller's event/risk DB transaction. External transport after commit only; preserve test-only recipients and approved retry cap.
+- **API/KPI:** stored `checks.<gate>.passed`; rejected candidate flat `warehouse_id/vehicle_code/failed_check/code/detail`; 10 published metrics, nullable unsupported diagnostics and approved market-local cohort dates.
+
+**Implementation handoff:** Dev 1 owns DDL/migrations/approval/transfer/POD and Dev 2 reviews Source/WMS evidence, GPS and outbox storage; each PR must include rollback, authorization, idempotency and PostgreSQL tests. No unreviewed schema insertion or legal sign-off claims.
+

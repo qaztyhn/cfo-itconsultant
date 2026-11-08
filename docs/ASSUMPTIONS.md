@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-08)
+## Sổ quyết định đã chốt (cập nhật 2026-11-09)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -39,6 +39,8 @@
 | [DEC-DEV2-D4-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d4--dec-dev2-d4-001-approved) | D4 thông báo theo template + biến allowlist, không được free-text | 08/11 | Chủ dự án: “Chọn cơ chế template có biến thay thế, không cho phép free-text tùy ý” | Approved; templates/API/tests pending |
 | [DEC-GDPR-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 phải GDPR by design; policy giờ có số cụ thể, chưa chứng minh tuân thủ GDPR thực tế | 08/11 | Chủ dự án: “D5 tôi muốn tuân thủ gdpr” | Approved direction; legal assessment outstanding (PR #86 has overlapping draft) |
 | [DEC-DEV2-D5-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 mốc 90/365/30/90 ngày theo loại, ngoại lệ tài xế/kế toán; **GPS xoá khi trip kết thúc**, không giữ 30 ngày | 08/11 | Chủ dự án: “d2, d5 tôi đồng ý với bạn”; GPS điều chỉnh D3 | Owner-approved product policy, legal/implementation pending; no production GDPR claim |
+
+| [DEC-OWNER-20261109](#dec-owner-20261109--27-quyết-định-liên-workstream-đã-duyệt-ngày-09112026) | 27 quyết định chốt: S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2 | 09/11 | Owner xác nhận rõ ràng 09/11; [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) | **Approved contract; code/migration/E2E pending** |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -492,3 +494,17 @@
 - **Demo accounts:** UI hiện 7 thẻ không bao gồm Project Lead như `03` mục 5.0. M0 seed chỉ có 5 account; `wm.got`, `driver1`, `cs` cần đúng seed M1 mới đăng nhập thật. Chỉ điền email, không hard-code mật khẩu.
 - **Q11:** tiếp tục tuân theo ASM-007/DEC-SHIFTS-001; không cấp ca chỉ dựa vào `expected_staff`.
 - **Phạm vi:** `frontend/src/app`, `frontend/src/api`, `Sidebar`, `ScopePicker`, `DemoBanner`, `SignIn`; Dev 1 cần chuẩn hóa `owned_location_ids`, Dev 2 cần xác nhận POS URL/seed, Dev 3 cần smoke test backend thật. Mục này chỉ ghi nhận hiện trạng và phụ thuộc kỹ thuật, **chưa chốt owner assumptions mới**.
+
+## DEC-OWNER-20261109 — 27 quyết định liên workstream đã duyệt ngày 09/11/2026
+
+- **Người phê duyệt/ngày:** Chủ dự án ITConsultant, 2026-11-09, xác nhận toàn bộ 27 mã S/T18/D7/G/N/M6/API/KPI trong cuộc trò chuyện. **Bản ghi chi tiết và biên giới triển khai:** [OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md).
+- **S1–S5 (stock):** S1 — Admin phải có grant rõ và đang hiệu lực theo market. S2 — người tạo scope khác người duyệt; Warehouse Manager nộp evidence WMS và admin có quyền, khác người nộp, phê duyệt. S3 — scope market-wide trong pilot SE, version có hiệu lực sau duyệt, batch dùng version theo `as_of`, có binding lưu lại. S4 — mỗi warehouse × in-scope SKU phải có dòng thật trong batch đầy đủ, thiếu ⇒ unknown và từ chối cả CFO stock write (0 phải được gửi tường minh). S5 — evidence độc lập tối đa **30 ngày pilot**, gia hạn bằng version được duyệt mới; mapping/unit/conversion/scope đổi ⇒ tự thu hồi, WMS anomaly cần review.
+- **T18-1–3:** T18-1 — không cộng thêm inbound vào stock available khi chưa có chứng cứ nội dung WMS đã phản ánh đúng lượng chuyển; chỉ `snapshot.as_of` là chưa đủ, Warehouse Manager xác nhận nhận hàng theo nghiệp vụ. T18-2 — lead-time default theo market chỉ dùng khi được cấu hình/phê duyệt và lưu provenance, thiếu thì fail closed. T18-3 — không cho hủy/reversal sau `source_confirmed` trước khi có contract riêng.
+- **D7-1–4:** D7-1 — dữ liệu HR/tachograph thực phải do người đủ thẩm quyền vận tải/compliance kiểm chứng; synthetic chỉ demo. D7-2 — bằng chứng cho **56 ngày lịch**, ngày nghỉ có chứng cứ khác ngày unknown, kiểm lại khi lập kế hoạch/duyệt/dispatch. D7-3 — nghỉ liên tục mặc định **11h**, tách duty/driving/rest và ca chính thức. D7-4 — thiếu bằng lái, permissible mass, phạm vi Regulation 561/bối cảnh xe/rơ-moóc ⇒ không cho tự duyệt/giao, không suy từ nhãn xe.
+- **G1–G5:** G1 — admin/supervisor có quyền theo market phân **một Dispatcher chính/trip**, bàn giao có audit. G2 — chỉ đúng Dispatcher được giao xem GPS khi assignment+trip+ca còn hợp lệ. G3 — thông báo/ack từng tài xế theo notice version và phải có privacy/legal/DPIA sign-off để dùng dữ liệu thật. G4 — device mỗi **30 phút**, upload **≤100 điểm/batch** trong ca/chuyến, xóa GPS sau trip hoặc hết ca (đến trước), không giữ 30 ngày. G5 — simulator có danh tính producer và synthetic provenance riêng.
+- **N1–N5:** N1 — Dispatcher có quyền duyệt DELAY window, đổi ngày phải có thỏa thuận khách hợp lệ. N2 — start/end/version/approver/effective time rõ, không suy từ ETA instant. N3 — pin template version + typed allowlist variables, không free-text. N4 — event/risk/queued notification/outbox cùng caller DB transaction; gửi bên ngoài sau commit. N5 — giữ retry cap hiện có, chỉ Mailpit/test recipients.
+- **M6-1:** Thành công POD unique **theo `trip_stop`** chứ không toàn `order`; phải migration bỏ unique index theo order đang có.
+- **API-1/2:** Gate dùng `checks.*.passed` (không phải `pass`); rejected candidates flat `warehouse_id, vehicle_code, failed_check, code, detail`. UI đã merge #136 sửa trong **PR mới**.
+- **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
+- **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
+
