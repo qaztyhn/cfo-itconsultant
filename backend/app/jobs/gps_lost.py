@@ -16,6 +16,7 @@ from app.core.logging import log_event
 from app.domain.models.ops import Alert, DeliveryTrip, VehiclePosition
 from app.domain.models.ref import Location, Market
 from app.services.alert_service import raise_alert, resolve
+from app.services.gps_duty import active_duty
 
 
 async def check_lost(session: AsyncSession, *, now: datetime) -> int:
@@ -23,7 +24,11 @@ async def check_lost(session: AsyncSession, *, now: datetime) -> int:
         raise ValueError("GPS check time must have a timezone")
     latest = (
         select(func.max(VehiclePosition.recorded_at))
-        .where(VehiclePosition.trip_id == DeliveryTrip.id)
+        .where(
+            VehiclePosition.trip_id == DeliveryTrip.id,
+            VehiclePosition.recorded_at <= now,
+            VehiclePosition.recorded_at >= DeliveryTrip.depart_actual_at,
+        )
         .scalar_subquery()
     )
     result = await session.execute(
@@ -33,11 +38,15 @@ async def check_lost(session: AsyncSession, *, now: datetime) -> int:
         .where(DeliveryTrip.status == "on_road", Market.gps_enabled.is_(True))
     )
     created = 0
+    duty = await active_duty(session, now=now)
     for trip, market, last_position in result:
+        if trip.id not in duty:
+            continue
         lost_min = MarketConfig.model_validate(market.config).gps.lost_min
         if lost_min <= 0:
             raise ValueError("GPS loss threshold must be positive")
-        last_signal = last_position or trip.depart_actual_at
+        begins, _ = duty[trip.id]
+        last_signal = max(last_position, begins) if last_position is not None else begins
         if last_signal is not None and last_signal >= now - timedelta(minutes=lost_min):
             await resolve(session, _dedupe(trip.id), now=now)  # tín hiệu đã phục hồi
             continue
@@ -52,7 +61,7 @@ async def check_lost(session: AsyncSession, *, now: datetime) -> int:
                 target_roles=["dispatcher"],
             )
             created += int(alert_id is not None)
-    await _resolve_stale(session, now=now)
+    await _resolve_stale(session, now=now, active=set(duty))
     return created
 
 
@@ -60,7 +69,7 @@ def _dedupe(trip_id: int) -> str:
     return f"GPS_LOST:trip:{trip_id}"
 
 
-async def _resolve_stale(session: AsyncSession, *, now: datetime) -> None:
+async def _resolve_stale(session: AsyncSession, *, now: datetime, active: set[int]) -> None:
     """Đóng GPS_LOST đang mở của chuyến không còn on_road hoặc market đã tắt GPS (không còn chờ tín hiệu)."""
     open_keys = (
         await session.scalars(
@@ -73,13 +82,7 @@ async def _resolve_stale(session: AsyncSession, *, now: datetime) -> None:
     ).all()
     for key in open_keys:
         trip_id = int(key.rsplit(":", 1)[1])
-        still_tracked = await session.scalar(
-            select(DeliveryTrip.id)
-            .join(Location, Location.id == DeliveryTrip.warehouse_id)
-            .join(Market, Market.id == Location.market_id)
-            .where(DeliveryTrip.id == trip_id, DeliveryTrip.status == "on_road", Market.gps_enabled.is_(True))
-        )
-        if still_tracked is None:
+        if trip_id not in active:
             await resolve(session, key, now=now)
 
 

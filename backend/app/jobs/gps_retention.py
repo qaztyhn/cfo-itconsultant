@@ -1,51 +1,37 @@
-"""US-GPS-03 AC2: expire positions by trip end, using each market's retention.
+"""D3 / US-GPS-03 AC2: retain raw GPS only within a currently authorized on-road duty session.
 
-Trips that ended (completed/cancelled) with `ended_at` set expire by trip end. A finished trip without
-`ended_at` (e.g. cancelled before departure or a data gap) must not keep GPS forever: its positions expire by
-their own `recorded_at`, so no point older than the retention period survives.
+Repair/cleanup callable, not a promise of immediate terminal-workflow integration. Dev 1 must call
+cleanup in the completion transaction; scheduler D8 and device/backup erasure are separate handoffs.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock
-from app.core.config import MarketConfig
 from app.core.db import get_sessionmaker
 from app.core.logging import log_event
-from app.domain.models.ops import DeliveryTrip, VehiclePosition
-from app.domain.models.ref import Location, Market
+from app.domain.models.ops import VehiclePosition
+from app.services.gps_duty import active_duty
 
 
 async def purge_positions(session: AsyncSession, *, now: datetime) -> int:
-    if now.tzinfo is None:
-        raise ValueError("Retention time must have a timezone")
-    count = 0
-    for market in (await session.scalars(select(Market))).all():
-        days = MarketConfig.model_validate(market.config).gps.retention_days
-        if days <= 0:
-            raise ValueError("GPS retention must be positive")
-        cutoff = now - timedelta(days=days)
-        finished = (
-            select(DeliveryTrip.id)
-            .join(Location, Location.id == DeliveryTrip.warehouse_id)
-            .where(Location.market_id == market.id, DeliveryTrip.status.in_(("completed", "cancelled")))
-        )
-        ended_long_ago = finished.where(DeliveryTrip.ended_at < cutoff)
-        no_end_time = finished.where(DeliveryTrip.ended_at.is_(None))
-        deleted = await session.scalars(
-            delete(VehiclePosition)
-            .where(
-                or_(
-                    VehiclePosition.trip_id.in_(ended_long_ago),
-                    and_(VehiclePosition.trip_id.in_(no_end_time), VehiclePosition.recorded_at < cutoff),
-                )
+    duty = await active_duty(session, now=now)
+    authorized = or_(
+        False,
+        *(
+            and_(
+                VehiclePosition.trip_id == trip_id,
+                VehiclePosition.recorded_at >= begins,
+                VehiclePosition.recorded_at < ends,
+                VehiclePosition.recorded_at <= now,
             )
-            .returning(VehiclePosition.id)
-        )
-        count += len(deleted.all())
-    return count
+            for trip_id, (begins, ends) in duty.items()
+        ),
+    )
+    deleted = await session.scalars(delete(VehiclePosition).where(~authorized).returning(VehiclePosition.id))
+    return len(deleted.all())
 
 
 async def run() -> int:

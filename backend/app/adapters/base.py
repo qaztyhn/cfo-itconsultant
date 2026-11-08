@@ -42,6 +42,16 @@ class OrderDTO:
     sales_code: str | None
     store_code: str | None
     lines: tuple[OrderLineDTO, ...]
+    address_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class CancellationDTO:
+    external_ref: str
+    version: int
+    updated_at: datetime
+    cancel_reason: dict[str, str | None] | None
+    cancelled_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -55,10 +65,21 @@ class CustomerDTO:
 
 
 @dataclass(frozen=True)
+class AddressDTO:
+    external_ref: str
+    customer_ref: str
+    address: str
+    lat: float | None
+    lon: float | None
+    receiving_hours: dict[str, list[tuple[str, str]]] | None
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
 class ProductDTO:
     sku: str
     name: str
-    category: str
+    category: str | None
     gtin: str | None
     sale_unit: str
     units_to_base: Decimal
@@ -90,6 +111,8 @@ class InboundDTO:
     qty: Decimal
     eta_date: date
     confirmed: bool
+    received: bool = False
+    updated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +121,7 @@ class FleetBlockDTO:
     start: datetime
     end: datetime
     kind: str
+    updated_at: datetime | None = None
 
 
 class MarketAdapter(Protocol):
@@ -106,8 +130,14 @@ class MarketAdapter(Protocol):
     market_code: str
 
     def fetch_orders(self, updated_since: datetime, page_size: int = 200) -> AsyncIterator[OrderDTO]: ...
+    def fetch_cancelled_orders(
+        self, updated_since: datetime, page_size: int = 200
+    ) -> AsyncIterator[CancellationDTO]: ...
     def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]: ...
     def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]: ...
+    def fetch_addresses(self, updated_since: datetime) -> AsyncIterator[AddressDTO]: ...
     async def fetch_stock(self) -> StockSnapshotDTO: ...
-    async def fetch_inbound(self) -> list[InboundDTO]: ...
-    async def fetch_fleet(self, date_from: date, date_to: date) -> list[FleetBlockDTO]: ...
+    async def fetch_inbound(self, *, updated_since: datetime | None = None) -> list[InboundDTO]: ...
+    async def fetch_fleet(
+        self, date_from: date, date_to: date, *, updated_since: datetime | None = None
+    ) -> list[FleetBlockDTO]: ...

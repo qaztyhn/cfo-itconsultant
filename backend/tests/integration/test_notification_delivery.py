@@ -27,6 +27,12 @@ def add_notification(
         f"VALUES (1,'{template}','{channel}','synthetic@cfo.test',"
         f"'Status and ETA','2026-11-04T00:00Z',{actor},'test')",
     )
+    if template == "DELAY":
+        execute(
+            dsn,
+            "UPDATE ops.notification SET eta_window="
+            '\'{"start":"2026-11-05T09:00:00Z","end":"2026-11-05T11:00:00Z"}\'::jsonb',
+        )
 
 
 def prepare(dsn: str) -> None:
@@ -180,3 +186,49 @@ def test_DEC_NOTIFY_001_staging_suppresses_real_recipient_without_calling_smtp(e
             == 0
         )
         smtp.assert_not_called()
+
+
+@pytest.mark.parametrize("channel", ["email", "sms_sim"])
+def test_D4_outbox_never_forwards_legacy_free_text(empty_db: str, channel: str) -> None:
+    prepare(empty_db)
+    add_notification(empty_db, channel=channel)
+    execute(
+        empty_db,
+        "UPDATE ops.notification SET subject='private-driver-name',body='private-coordinates-CS-notes',"
+        'eta_window=\'{"start":"untrusted","end":"untrusted"}\'::jsonb',
+    )
+    email, sms = AsyncMock(), AsyncMock()
+    assert (
+        transact(
+            empty_db,
+            lambda s: deliver_queued(s, now=datetime(2026, 11, 4, 11, tzinfo=UTC), email=email, sms=sms),
+        )
+        == 1
+    )
+    expected = (
+        "Order ZZ-000001: Delivery dispatched.\n\n"
+        "For questions, contact your store and quote the order number."
+        if channel == "email"
+        else "CFO demo: order ZZ-000001: on its way."
+    )
+    if channel == "email":
+        assert email.send.call_args.kwargs["text"] == expected
+        assert email.send.call_args.kwargs["subject"] == "Your order is on its way"
+    else:
+        assert sms.send.call_args.kwargs["body"] == expected
+    assert fetch(empty_db, "SELECT body FROM ops.notification")[0][0] == expected
+
+
+def test_D4_invalid_delay_variables_fail_closed_without_transport_or_pii_error(empty_db: str) -> None:
+    prepare(empty_db)
+    add_notification(empty_db, "DELAY", actor="1")
+    execute(empty_db, 'UPDATE ops.notification SET eta_window=\'{"body":"private-content"}\'::jsonb')
+    email, sms = AsyncMock(), AsyncMock()
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 1
+    email.send.assert_not_called()
+    sms.send.assert_not_called()
+    assert fetch(empty_db, "SELECT status,attempts,last_error FROM ops.notification")[0] == (
+        "failed",
+        0,
+        "Notification template data is invalid.",
+    )
