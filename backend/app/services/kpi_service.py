@@ -3,11 +3,11 @@
 No revenue data, raw customer fields, or unapproved default KPI numbers are used.
 All market, warehouse and audit scopes are enforced before aggregation/pagination.
 """
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-import re
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Date, and_, cast, func, or_, select
@@ -246,7 +246,9 @@ async def _collect(
                 current["planning_time_min"].add(None)
             else:
                 seconds = (row.approved_at - row.submitted_at).total_seconds()
-                current["planning_time_min"].add(Decimal(str(seconds)) / Decimal(60) if seconds >= 0 else None)
+                current["planning_time_min"].add(
+                    Decimal(str(seconds)) / Decimal(60) if seconds >= 0 else None
+                )
             if row.plan_id is None:
                 current["plan_acceptance_rate"].add(None)
             else:
@@ -522,15 +524,23 @@ async def decision_log(
             "ts": entry.ts.isoformat(),
             "correlation_id": str(entry.correlation_id),
             "action": entry.action if CODE.fullmatch(entry.action) else None,
-            "actor_role": entry.actor_role
-            if entry.actor_role in {"admin", "dispatcher", "warehouse", "sales", "driver", "customer_service", "viewer"} else None,
+            "actor_role": (
+                entry.actor_role
+                if entry.actor_role in {
+                    "admin", "dispatcher", "warehouse", "sales", "driver",
+                    "customer_service", "viewer",
+                }
+                else None
+            ),
             "entity": entry.entity if entry.entity in {
                 "order", "plan", "stock", "transfer", "kpi_baseline", "reservation",
                 "notification", "mapping", "employee", "location", "routing",
             } else None,
             "order_id": entry.order_id,
             "plan_id": entry.plan_id,
-            "reason_code": entry.reason_code if entry.reason_code and CODE.fullmatch(entry.reason_code) else None,
+            "reason_code": (
+                entry.reason_code if entry.reason_code and CODE.fullmatch(entry.reason_code) else None
+            ),
         }
         for entry in records
     ]
