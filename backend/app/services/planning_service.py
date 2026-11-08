@@ -36,6 +36,7 @@ from app.engine.workload import compute_workload
 from app.services import reservation_service
 from app.services.planning_inputs import PlanningInputs, load_inputs
 
+
 def _dec(value: float | int) -> Decimal:
     """float của JSON cấu hình → Decimal qua chuỗi (tránh sai số nhị phân)."""
     return Decimal(str(value))
@@ -425,7 +426,9 @@ async def _plan_out(
     session: AsyncSession, row: FulfilmentPlan, *, compact: bool
 ) -> dict[str, object]:
     allocations = (
-        await session.scalars(select(PlanVehicle).where(PlanVehicle.plan_id == row.id).order_by(PlanVehicle.seq))
+        await session.scalars(
+            select(PlanVehicle).where(PlanVehicle.plan_id == row.id).order_by(PlanVehicle.seq)
+        )
     ).all()
     basic: dict[str, object] = {
         "id": row.id,
