@@ -145,6 +145,31 @@ def test_US_GPS_01_AC2_unauthenticated_and_other_drivers_trip_are_denied(gps: Ap
     assert_error(submit(gps, [position("2026-11-10T07:00:00Z")], trip=999), 404, "NOT_FOUND")
 
 
+def test_US_GPS_01_AC2_two_markets_never_share_driver_trip_scope(gps: Api) -> None:
+    execute(
+        gps.dsn,
+        "UPDATE ref.app_user SET roles='{driver}' WHERE id=10",
+        "INSERT INTO hr.driver_staff(employee_id,home_warehouse_id,licence_class,"
+        "licence_expires_on) VALUES (10,4,'C','2027-12-01')",
+        "INSERT INTO ref.vehicle (home_warehouse_id,code,plate,name,capacity_kg,"
+        "capacity_m3,required_licence) VALUES (4,'GPS-ZZ','ZZ-GPS','Synthetic',1000,10,'C')",
+        "INSERT INTO ops.delivery_trip(warehouse_id,vehicle_id,driver_employee_id,"
+        "depart_planned_at,status,depart_actual_at) VALUES "
+        "(4,3,10,'2026-11-10T07:00Z','on_road','2026-11-10T07:00Z')",
+        "INSERT INTO hr.employee_shift_schedule(employee_id,warehouse_id,work_date,"
+        "start_time,end_time,assigned_by,assigned_at) VALUES "
+        "(10,4,'2026-11-10','07:00','17:00',10,'2026-11-08T09:00Z')",
+        "UPDATE ref.market SET gps_enabled=true WHERE id=2",
+        "INSERT INTO ref.compliance_record(market_id,type,status,approved_on) "
+        "VALUES(2,'GPS_NOTICE','approved','2026-11-01')",
+    )
+    point = position("2026-11-10T07:00:00Z")
+    assert_error(submit(gps, [point], user=10, trip=1), 404, "NOT_FOUND")
+    assert_error(submit(gps, [point], user=DRIVER, trip=4), 404, "NOT_FOUND")
+    result = submit(gps, [point], user=10, trip=4)
+    assert result.status_code == 202 and result.json()["accepted"] == 1
+
+
 def test_US_GPS_01_AC5_no_collection_before_departure_or_after_completion(gps: Api) -> None:
     assert_error(submit(gps, [position("2026-11-10T08:00:00Z")], trip=2), 409, "NOT_ON_TRIP")
     execute(
