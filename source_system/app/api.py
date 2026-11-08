@@ -83,7 +83,12 @@ async def list_products(paging: lists.PagingDep) -> lists.ProductPage:
 @router.get(
     "/stock",
     response_model=StockSnapshot,
-    responses={503: {"model": ErrorEnvelope, "description": "STOCK_UNAVAILABLE: no complete published batch (never zero stock)."}},
+    responses={
+        503: {
+            "model": ErrorEnvelope,
+            "description": "STOCK_UNAVAILABLE: no complete published batch (never zero stock).",
+        }
+    },
 )
 async def stock_snapshot(request: Request) -> StockSnapshot:
     """Latest complete published batch; 503 STOCK_UNAVAILABLE when none (DEC-SRC-Q9-ERROR-001)."""
