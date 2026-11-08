@@ -38,10 +38,7 @@ def _market_config(market: Market) -> MarketConfig:
     try:
         cfg = MarketConfig.model_validate(market.config or {})
         approved = MarketConfig().gps
-        if (
-            cfg.gps.interval_min != approved.interval_min
-            or cfg.gps.lost_min != approved.lost_min
-        ):
+        if cfg.gps.interval_min != approved.interval_min or cfg.gps.lost_min != approved.lost_min:
             raise ValueError("Unapproved GPS collection or loss frequency")
         return cfg
     except ValueError as exc:
