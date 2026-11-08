@@ -6,6 +6,11 @@
 - `POST /transfers/{id}/cancel` đã triển khai (thay cho 409 fail-closed tạm thời); `receive` không còn tái dùng `TRANSFER_CONFIRMED`; audit của confirm/receive/cancel có `before`/`after`.
 - Không đổi route/payload/enum; hủy sau `source_confirmed`/`received` vẫn fail closed (chưa có contract hoàn nguyên WMS).
 
+## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
+
+- `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.
+- Adapter `SourceRisk` **chưa có**: `risk_service.recalculate` còn là stub trên `main` (M7 #131 đang mở) và watermark tín hiệu nguồn chưa có contract. Không đổi route/DDL/mã lỗi.
+
 
 ## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review
 
