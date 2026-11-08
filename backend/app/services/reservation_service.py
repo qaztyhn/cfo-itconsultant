@@ -28,6 +28,7 @@ from app.domain.models.plan import (
     VehicleReservation,
 )
 from app.domain.models.ref import Market
+from app.domain.transitions import reset_expired_hold_order
 
 _RESERVATIONS = (StockReservation, PrepReservation, VehicleReservation)
 _ACTIVE = ("held", "committed")
@@ -111,6 +112,9 @@ async def _hold(session: AsyncSession, run_id: int) -> None:
     now = clock.now()
     if run.kind == "replan_suggestion" or run.result != "feasible":
         raise _error("PLAN_NOT_APPROVABLE", "This planning run cannot hold resources.")
+    # DEC-HOLD-001: a timed-out run can never acquire a second hold.
+    if run.hold_expires_at is not None and run.hold_expires_at <= now:
+        raise _error("HOLD_EXPIRED", "Planning hold expired. Plan Again.", run_id=run.id)
     order, _, cfg = await _config(session, run.order_id)
     if order.version != run.order_version or order.status not in ("SUBMITTED", "PLANNED"):
         raise _error("ILLEGAL_TRANSITION", "Planning run is not current.")
@@ -278,20 +282,35 @@ async def extend(run_id: int, actor: object, *, session: AsyncSession | None = N
 
 
 async def _expire_due(session: AsyncSession) -> int:
+    """Expire due holds and reset only the latest unapproved PLANNED order.
+
+    Lock order before run to match Planning/Approval services; SKIP LOCKED lets
+    competing workers retry the busy order next tick. Recheck the deadline after
+    row lock so an extension racing the job is not overwritten.
+    """
     now = clock.now()
-    runs = (
-        await session.scalars(
-            select(PlanningRun)
+    due = (
+        await session.execute(
+            select(PlanningRun.id, PlanningRun.order_id)
             .where(
                 PlanningRun.hold_expires_at <= now,
                 PlanningRun.kind != "replan_suggestion",
             )
-            .order_by(PlanningRun.id)
-            .with_for_update(skip_locked=True)
+            .order_by(PlanningRun.order_id, PlanningRun.run_no, PlanningRun.id)
         )
     ).all()
     processed = 0
-    for run in runs:
+    for run_id, order_id in due:
+        order = await session.scalar(
+            select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update(skip_locked=True)
+        )
+        if order is None:
+            continue
+        run = await session.scalar(
+            select(PlanningRun).where(PlanningRun.id == run_id).with_for_update(skip_locked=True)
+        )
+        if run is None or run.hold_expires_at is None or run.hold_expires_at > clock.now():
+            continue
         counts: dict[str, int] = {}
         for name, model in (
             ("stock", StockReservation),
@@ -317,7 +336,8 @@ async def _expire_due(session: AsyncSession) -> int:
                 .execution_options(synchronize_session=False)
             )
         ).all()
-        if plans or any(counts.values()):
+        reset = await reset_expired_hold_order(session, order_id, run.id)
+        if plans or any(counts.values()) or reset:
             processed += 1
             await record_decision(
                 session,
@@ -325,10 +345,15 @@ async def _expire_due(session: AsyncSession) -> int:
                 "planning_run",
                 str(run.id),
                 order_id=run.order_id,
-                after={"expired_plans": sorted(plans), "resources": counts},
+                before={"order_status": "PLANNED"} if reset else None,
+                after={
+                    "expired_plans": sorted(plans),
+                    "resources": counts,
+                    "order_status": "SUBMITTED" if reset else order.status,
+                    "plan_again_required": True,
+                },
             )
     return processed
-
 
 async def expire_due(*, session: AsyncSession | None = None) -> int:
     """Expire holds and proposed plans atomically; retries are idempotent."""
@@ -343,6 +368,9 @@ async def _commit_plan(session: AsyncSession, plan_id: int, resources_validated:
     if plan is None:
         raise _error("NOT_FOUND", "Plan not found.")
     run = await _locked_run(session, plan.run_id)
+    # DEC-HOLD-001: an expired proposal is never approvable by any actor.
+    if plan.status == "expired":
+        raise _error("HOLD_EXPIRED", "Planning hold expired. Plan Again.", run_id=run.id)
     if not resources_validated or plan.status not in ("approved", "manual"):
         raise _error("PLAN_NOT_APPROVABLE", "Approval must first validate and lock resources.")
     if run.kind == "replan_suggestion":
