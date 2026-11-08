@@ -46,3 +46,31 @@ is in T07; no new internal-tick HTTP contract, GPS/outbox/nightly schedules or c
 
 Assumptions: reviewed; DEC-SRC-D1-001, DEC-SRC-Q10-SKU-001, DEC-SRC-Q9-ERROR-001,
 DEC-ROUTING-002; none new. No migrations, auth, source writes or automatic merge.
+
+## Delivery B: reference feed persistence
+
+Customers upsert by market/external ref, preserve notification preferences/receiving settings and
+refuse to rehydrate anonymised records. Products use each market's existing product table, retain
+IT mapping ownership/status, ignore stale `source_updated_at`, create pending mapping tasks without
+marking the run partial, and reject changes to the fixed SKU unit/conversion. Nullable source
+category cannot satisfy 05's NOT NULL column and is rejected without inventing a category.
+
+Inbound uses confirmed mapping/base units, market-scoped warehouses and exact NUMERIC quantities;
+received deltas update ERP rows. CFO transfers and cross-warehouse/global-key collisions are protected.
+05's inbound identity omits source SKU and warehouse: several local SKUs mapping to one global product
+cannot safely overwrite that identity, so these records are rejected until target provenance is reviewed.
+Fleet upserts source intervals only, scoped through vehicle home warehouse; manual rows and EXCLUDE
+constraints stay active. Conflicting overlapping source/manual intervals are partial, never overwritten.
+
+Incremental absence is not an upstream tombstone. Source contract currently has no deletion/version
+provenance for customer/inbound/fleet rows and no transactionally frozen full list. This implementation
+does not infer a receipt or delete busy time merely because a row is absent from a delta. Reliable removal
+reconciliation needs a reviewed source tombstone/full-snapshot handoff; it is not claimed complete.
+Per-row stale skipping is supported by orders' version and products' source_updated_at; other target
+tables lack source timestamps, and their stale-record provenance requires a schema handoff.
+
+Changes to inbound/fleet with approved/in-flight orders require a trusted transactional risk callback.
+Without it, data is saved, the run is explicitly partial and the feed checkpoint is pinned for retry;
+no fake risk recalculation, plan replacement or approval is performed. Reference tests cover mapping
+preservation, pending products, stale versions, unit drift, invalid/foreign rows, transfers and calendar
+idempotency/collisions. Results are tracked in the reference PR.
