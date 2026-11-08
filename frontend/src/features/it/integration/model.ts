@@ -124,14 +124,15 @@ export function normalizeSources(overview: OverviewResponse | null, runs: RunVie
     const success = recent.find((run) => run.status === "ok" && run.finishedAt);
     return {
       ...feed,
-      status: feed.entity === "stock" ? "blocked" : safeStatus(entry.status ?? latest?.status),
+      status: feed.entity === "stock" ? "blocked" : latest && latest.status !== "ok" && latest.status !== "unknown"
+        ? latest.status : safeStatus(entry.status ?? latest?.status),
       rows: feed.entity === "stock" ? null : safeCount(entry.rows),
       rejected: feed.entity === "stock" ? null : safeCount(entry.rejected),
       unmapped: feed.entity === "products" ? safeCount(entry.unmapped) : null,
       lastRunAt: timestamp(entry.last_run_at) ?? latest?.startedAt ?? null,
       dataAsOf: feed.entity === "stock" ? null : timestamp(entry.data_as_of),
       latestStatus: latest?.status ?? safeStatus(entry.status),
-      lastSuccessfulAt: success?.finishedAt ?? null,
+      lastSuccessfulAt: feed.entity === "stock" ? null : success?.finishedAt ?? null,
       reportedIntervalMin: safeCount(entry.interval_min),
     };
   });
@@ -170,7 +171,8 @@ export function normalizeScheduler(overview: OverviewResponse | null): Scheduler
     lastTickAt: timestamp(scheduler?.last_tick_at),
     lastTickStatus: typeof scheduler?.last_tick_status === "string" &&
       known.has(scheduler.last_tick_status) ? scheduler.last_tick_status : null,
-    reportedIntervalMin: safeCount(scheduler?.tick_interval_min),
+    reportedIntervalMin: (safeCount(scheduler?.tick_interval_min) ?? 0) > 0
+      ? safeCount(scheduler?.tick_interval_min) : null,
     // Avoid rendering arbitrary job names from free-text responses or inferring
     // that an advertised job is actually running.
     jobs: Array.isArray(scheduler?.jobs) ? scheduler.jobs.filter(
