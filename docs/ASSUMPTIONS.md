@@ -30,7 +30,10 @@
 | [DEC-CFO-STOCK-SCOPE-001](#dec-cfo-stock-scope-001--phạm-vi-sku-đồng-bộ-tồn-kho-cfo-được-chốt-trước) | Chọn B: chỉ đồng bộ SKU trong phạm vi CFO đã xác định trước; SKU chưa mapping trong phạm vi làm batch cập nhật CFO không hợp lệ | 08/11 | Chủ dự án chốt trong hội thoại 08/11/2026 | Đã duyệt nghiệp vụ; scope, ingestion, tests còn cần triển khai |
 | [DEC-CFO-STOCK-INDEPENDENCE-001](#dec-cfo-stock-independence-001--chỉ-cộng-nhiều-sku-cùng-global-product-khi-tồn-kho-độc-lập-đã-xác-minh) | Chọn A: chỉ cộng nhiều SKU cùng global product sau khi xác minh lượng tồn độc lập; chưa xác minh thì từ chối | 08/11 | Chủ dự án chốt trong hội thoại 08/11/2026 | Đã duyệt nghiệp vụ; bằng chứng xác minh, normalization, tests còn cần triển khai |
 | [DEC-SRC-Q9-ERROR-001](#dec-src-q9-error-001--duyệt-503-stock_unavailable-của-source-api) | Q9: `GET /stock` khi **không có batch nào đã publish hoàn chỉnh** trả `503 STOCK_UNAVAILABLE` theo phong bì lỗi chuẩn Source, không coi tồn=0 | 08/11 | Chủ dự án xác nhận “ĐƯỢC. CẬP NHẬT 101 PR ĐI” sau khi được đề xuất chọn A `503 STOCK_UNAVAILABLE` | **Owner-approved mã lỗi Source API**; OpenAPI/code/tests chờ triển khai trong PR kỹ thuật |
-
+| [DEC-DEV1-D1-01](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Hủy chuyển kho dùng TRANSFER_CANCELLED, actor/lý do/ts/before/after; không dùng TRANSFER_APPROVED | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #127, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Audit contract duyệt; code/tests pending |
+| [DEC-DEV1-D1-02](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | TRANSFER_CONFIRMED chỉ kho nguồn; TRANSFER_RECEIVED riêng cho kho đích | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #127, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Audit contract duyệt; code/tests pending |
+| [DEC-DEV1-D1-03](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Admin có thẩm quyền quản trị scope SKU theo market/pilot, version/hiệu lực/audit, không suy từ mapping | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #121, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Policy duyệt; DDL/API/tests chờ review |
+| [DEC-DEV1-D1-04](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Warehouse Manager cung cấp chứng cứ độc lập từ kho/WMS; admin có thẩm quyền duyệt, lưu evidence/approver/version/hiệu lực/audit; thiếu thì chặn | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #120, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Policy duyệt; DDL/API/tests chờ review |
 | [DEC-DEV2-D2-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d2--dec-dev2-d2-001-approved) | D2 CSV UTF-8/schema versioned, stable rows, idempotent hash, lỗi/retry có kiểm soát | 08/11 | Chủ dự án: “d2 ... tôi đồng ý với bạn” | Approved policy; adapter/schema/tests pending |
 | [DEC-DEV2-D3-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d3--dec-dev2-d3-001-approved-policy-dto-implementation-details-need-contract-tests) | D3 GPS 30 phút, offline có điều kiện, chỉ trong ca/chuyến, Dispatcher chỉ xem tài xế/chuyến được phân công; xoá GPS ngay sau trip/shift | 08/11 | Chủ dự án nêu 4 lựa chọn GPS cụ thể | Approved policy; GPS DTO/DB/cleanup/tests pending |
 | [DEC-DEV2-D4-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d4--dec-dev2-d4-001-approved) | D4 thông báo theo template + biến allowlist, không được free-text | 08/11 | Chủ dự án: “Chọn cơ chế template có biến thay thế, không cho phép free-text tùy ý” | Approved; templates/API/tests pending |
@@ -439,7 +442,7 @@
 - **Điều kiện fail closed:** chỉ cần **một SKU trong phạm vi** chưa mapping confirmed, mapping không nhất quán hoặc thiếu dữ liệu bắt buộc, phải từ chối **toàn bộ lần ghi snapshot tồn kho CFO thuộc phạm vi/batch đó**, không âm thầm bỏ dòng lỗi, không công bố snapshot thiếu hàng như hoàn chỉnh. Giữ lịch sử để audit; dữ liệu stale/unknown không dùng để cam kết giao.
 - **Ranh giới Source:** Source vẫn phải xuất bản toàn bộ batch hoàn chỉnh theo Q9/Q10 và đáp ứng các quy tắc published-empty/503 đã duyệt; phạm vi CFO là quy tắc **tiêu thụ phía CFO**, không phải quyền bỏ dòng trong batch Source, không sửa Source API hay HTTP 503 STOCK_UNAVAILABLE. Snapshot CFO rỗng trong phạm vi pilot không chứng minh toàn bộ Source không còn hàng.
 - **Phân luồng đơn giữ nguyên:** ASM-005 và DEC-ROUTING-002 tiếp tục áp dụng: đơn chỉ vào CFO khi tất cả SKU trong đơn đã mapping confirmed và Sales/Dispatcher ghi quyết định routing; SKU mới mapping về sau không tự đưa đơn legacy trở lại CFO.
-- **Phụ thuộc chưa chốt về kỹ thuật:** Dev 1/Dev 2 cần đề xuất nơi khai báo/phê duyệt phạm vi (theo market/pilot), version và hiệu lực; cách đối chiếu phạm vi với batch_id, item_count, as_of, kiểm tính đầy đủ, freshness, cảnh báo, migration và mở rộng phạm vi. Đây **không** phải phê duyệt field, schema, API, mã lỗi hay lịch chạy mới.
+- **Bổ sung đã duyệt DEC-DEV1-D1-03:** quản trị viên có thẩm quyền quản lý/phê duyệt scope theo market/pilot với version, hiệu lực và audit; không được suy scope từ mapping. **Chưa chốt kỹ thuật**: bảng/field/API, ủy quyền chi tiết, binding batch_id/as_of, tính đầy đủ, migration và tests; Dev 1/2 phải review trước code.
 - **Trạng thái:** owner-approved policy, **chưa triển khai/kiểm thử E2E**. T07 và Dev 1/2 phải cập nhật 05/06/09, chuẩn hóa/ghi tồn kho CFO và kiểm thử: SKU ngoài phạm vi không chặn; SKU trong phạm vi chưa mapping chặn trọn lần ghi; tuyệt đối không có partial write.
 
 ## DEC-CFO-STOCK-INDEPENDENCE-001 — Chỉ cộng nhiều SKU cùng global product khi tồn kho độc lập đã xác minh
@@ -448,8 +451,32 @@
 - **Quy tắc:** khi nhiều SKU nguồn **cùng kho** mapping vào cùng một global_product_id, chỉ được cộng on_hand và reserved sau khi **xác minh đáng tin cậy rằng số lượng từng SKU là tồn vật lý độc lập, không chồng lấn/đếm trùng**. Mapping từng SKU phải confirmed và lượng tồn phải được quy đổi **một lần** sang đơn vị cơ sở theo đơn vị tồn chuẩn cố định SKU (DEC-SRC-Q10-SKU-001). Không suy ra độc lập từ SKU khác mã, cùng sản phẩm hay tỷ lệ quy đổi.
 - **Khi thiếu/không chắc bằng chứng:** fail closed cho lần chuẩn hóa và ghi snapshot CFO liên quan; không cộng, không lấy giá trị max, không last-row-wins, không coi dữ liệu thiếu là tồn 0 và không publish snapshot partial như hoàn chỉnh. Nếu xác minh có chồng lấn thì **không cộng** và phải làm rõ mapping/nguồn trước khi sử dụng; không quay lại physical_stock_pool_id.
 - **Ranh giới:** batch Source theo SKU vẫn có thể hợp lệ; lỗi chỉ phát sinh tại gate mapping/aggregation của CFO. Không thay quyết định Q9 về published batch và HTTP 503; không cộng tồn giữa các kho.
-- **Phụ thuộc chưa chốt về kỹ thuật:** Dev 1/Dev 2 cần đề xuất **nguồn bằng chứng/tiêu chí xác minh tồn độc lập, người có thẩm quyền xác nhận, cách lưu audit/version, hiệu lực khi mapping hoặc tồn nguồn thay đổi**, và kiểm tra atomicity. Chủ dự án **chưa chốt** cơ chế/bảng/field/API cụ thể.
+- **Bổ sung đã duyệt DEC-DEV1-D1-04:** Warehouse Manager cung cấp chứng cứ từ kho/WMS; quản trị viên có thẩm quyền phê duyệt; lưu evidence, approver, version, hiệu lực, audit; thiếu xác minh thì fail closed. **Chưa chốt kỹ thuật**: tiêu chí/provenance, bảng/field/API, thu hồi khi mapping/Source thay đổi và transaction tests; Dev 1/2 phải review.
 - **Trạng thái:** owner-approved policy, **chưa triển khai/kiểm thử E2E**. Hàm chuẩn hóa hiện tại đang từ chối tất cả trường hợp nhiều SKU cùng kho cùng global product; cần cho phép **chỉ** trường hợp đã xác minh độc lập, có test dữ liệu độc lập được cộng sau quy đổi và mọi ca chưa xác minh/chồng lấn đều không ghi một phần.
+
+## DEC-DEV1-D1-01 — TRANSFER_CANCELLED khi hủy chuyển kho
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Có. Ghi người thực hiện, lý do, thời điểm, trạng thái trước/sau. Không dùng TRANSFER_APPROVED cho hành động hủy.”
+- **Ràng buộc:** `POST /transfers/{id}/cancel` ghi `TRANSFER_CANCELLED` trong `audit.decision_log` cùng transaction với chuyển trạng thái, actor, reason bắt buộc, ts, before/after; không được dùng `TRANSFER_APPROVED`. Ngoài trạng thái hợp lệ/không có contract hoàn nguyên WMS thì fail-closed.
+- **Nguồn:** [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) và [PR #127](https://github.com/qaztyhn/cfo-itconsultant/pull/127). Docs approved; code/migration/tests còn chờ.
+
+## DEC-DEV1-D1-02 — TRANSFER_RECEIVED cho kho đích
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Tạo TRANSFER_RECEIVED riêng. CONFIRMED dành cho kho nguồn xác nhận xuất; RECEIVED dành cho kho đích nhận.”
+- **Ràng buộc:** kho nguồn `confirm-source` ghi `TRANSFER_CONFIRMED`; kho đích `receive` ghi `TRANSFER_RECEIVED` với actor, ts, before/after, trong cùng transaction với receipt. Không tái dùng `TRANSFER_CONFIRMED`/snapshot stage để biểu diễn nhận hàng. Scope kho và idempotency bắt buộc.
+- **Nguồn:** [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) và [PR #127](https://github.com/qaztyhn/cfo-itconsultant/pull/127). Code/tests chưa hoàn tất.
+
+## DEC-DEV1-D1-03 — Scope SKU có admin thẩm quyền, version và audit
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Quản trị viên có thẩm quyền quản lý phạm vi theo market/pilot, có version, ngày hiệu lực và audit. Không tự suy phạm vi từ mapping.”
+- **Ràng buộc:** quản trị viên có thẩm quyền theo market/pilot được quản lý/phê duyệt scope CFO trước lần sync; lưu version, effective time, actor/approver, before/after audit và lịch sử; không suy từ mappings/Source batch. SKU ngoài scope không chặn, trong scope mapping sai thì chặn toàn batch. Giữ DEC-CFO-STOCK-SCOPE-001.
+- **Chờ kỹ thuật:** nơi lưu/field/endpoint/chi tiết quyền và binding effective version với batch chưa chốt; Dev 1/2 review. [Biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md); [PR #121](https://github.com/qaztyhn/cfo-itconsultant/pull/121).
+
+## DEC-DEV1-D1-04 — Bằng chứng tồn độc lập do Warehouse Manager cung cấp và admin duyệt
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Warehouse Manager cung cấp bằng chứng từ kho/WMS; quản trị viên có thẩm quyền phê duyệt. Lưu bằng chứng, người duyệt, phiên bản và hiệu lực; thiếu xác minh thì chặn.”
+- **Ràng buộc:** chứng cứ warehouse/SKU/global-product từ kho/WMS do Warehouse Manager cung cấp, admin có thẩm quyền phê duyệt; lưu evidence/provenance, approver, version, hiệu lực và audit trước/sau. Thiếu/hết hiệu lực/chồng lấn => fail closed, không cộng/ghi snapshot CFO một phần; giữ DEC-CFO-STOCK-INDEPENDENCE-001.
+- **Chờ kỹ thuật:** schema/route, tiêu chí thu hồi khi mapping/stock thay đổi và E2E; Dev 1/2 review. [Biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md); [PR #120](https://github.com/qaztyhn/cfo-itconsultant/pull/120).
 
 ## ASM-008 — Giả định giao diện M0 (Dev 3; đề xuất chưa duyệt)
 
