@@ -366,9 +366,9 @@ def test_T28_concurrent_hold_extensions_stop_at_market_cap(db: str) -> None:
             await engine.dispose()
 
     asyncio.run(concurrent())
-    deadline, count = fetch(
-        db, "SELECT hold_expires_at, hold_extensions FROM plan.planning_run WHERE id=1"
-    )[0]
+    deadline, count = fetch(db, "SELECT hold_expires_at, hold_extensions FROM plan.planning_run WHERE id=1")[
+        0
+    ]
     assert count == 2 and deadline - original == timedelta(minutes=30)
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='HOLD_EXTENDED'")[0][0] == 2
     with pytest.raises(DomainError) as denied:
@@ -389,9 +389,7 @@ def test_T28_two_expiry_workers_emit_one_audit_and_do_not_reexpire(db: str) -> N
                 return await reservation.expire_due(session=session)
 
         try:
-            return list(
-                await asyncio.wait_for(asyncio.gather(expire_once(), expire_once()), timeout=20)
-            )
+            return list(await asyncio.wait_for(asyncio.gather(expire_once(), expire_once()), timeout=20))
         finally:
             await engine.dispose()
 
