@@ -392,3 +392,65 @@ class OrderRouting(TimestampMixin, Base):
     reason_text: Mapped[str | None] = mapped_column(Text)  # 0011: bắt buộc khi reason_code = manual_started
     acknowledged_by_user_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
     acknowledged_at: Mapped[datetime | None] = mapped_column(TSTZ)
+
+
+class StockScopeVersion(TimestampMixin, Base):
+    """S2/S3: market-wide immutable SKU scope; author <> approver; effective from approval."""
+
+    __tablename__ = "stock_scope_version"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    market_id: Mapped[int] = mapped_column(SmallInteger, _fk("ref.market.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
+    skus: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    warehouse_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger))
+    reason_text: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    approved_by: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    effective_from: Mapped[datetime | None] = mapped_column(TSTZ)
+    superseded_at: Mapped[datetime | None] = mapped_column(TSTZ)
+
+
+class StockIndependenceEvidence(TimestampMixin, Base):
+    """S2/S5: Warehouse Manager evidence approved by a different Admin; at most 30 days."""
+
+    __tablename__ = "stock_independence_evidence"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    market_id: Mapped[int] = mapped_column(SmallInteger, _fk("ref.market.id"))
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.location.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    scope_version_id: Mapped[int] = mapped_column(BigInteger, _fk("ops.stock_scope_version.id"))
+    local_skus: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    mapping_fingerprint: Mapped[str] = mapped_column(Text)
+    evidence_ref: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'submitted'"))
+    submitted_by: Mapped[int] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    approved_by: Mapped[int | None] = mapped_column(BigInteger, _fk("ref.app_user.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    valid_from: Mapped[datetime | None] = mapped_column(TSTZ)
+    valid_to: Mapped[datetime | None] = mapped_column(TSTZ)
+    revoked_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    revoke_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class StockWriteRun(TimestampMixin, Base):
+    """S3/S4: append-only binding of one stock write attempt to scope/evidence versions and batch `as_of`."""
+
+    __tablename__ = "stock_write_run"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    market_id: Mapped[int] = mapped_column(SmallInteger, _fk("ref.market.id"))
+    source_batch_id: Mapped[int] = mapped_column(BigInteger)
+    as_of: Mapped[datetime] = mapped_column(TSTZ)
+    scope_version_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ops.stock_scope_version.id"))
+    evidence_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), server_default=text("'{}'"))
+    expected_rows: Mapped[int] = mapped_column(Integer)
+    recorded_rows: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text)
+    reject_code: Mapped[str | None] = mapped_column(Text)
