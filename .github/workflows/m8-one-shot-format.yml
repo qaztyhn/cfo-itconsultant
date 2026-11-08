@@ -1,0 +1,30 @@
+name: M8 one-shot code formatting
+on:
+  push:
+    branches: [feat/m8-kpi-backend]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Format only M8 files then self-remove
+        shell: bash
+        run: |
+          python -m pip install "black==26.10.1" "ruff==0.17.4"
+          cd backend
+          ruff check --select I --fix app/services/kpi_service.py app/api/v1/kpi.py tests/unit/test_m8_kpi.py tests/integration/test_m8_kpi_api.py
+          black --line-length 110 app/services/kpi_service.py app/api/v1/kpi.py tests/unit/test_m8_kpi.py tests/integration/test_m8_kpi_api.py
+          cd ..
+          git rm .github/workflows/m8-one-shot-format.yml
+          git add backend/app/services/kpi_service.py backend/app/api/v1/kpi.py backend/tests/unit/test_m8_kpi.py backend/tests/integration/test_m8_kpi_api.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(kpi): format M8 owned files"
+          git push origin HEAD:feat/m8-kpi-backend
