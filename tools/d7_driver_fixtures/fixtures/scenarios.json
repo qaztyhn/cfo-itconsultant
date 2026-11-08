@@ -25,7 +25,8 @@
           "driving_min": 60,
           "duty_end": "2026-11-08T23:00+01:00",
           "duty_start": "2026-11-08T20:00+01:00"
-        }
+        },
+        "supersedes_verified_off_duty_on": "2026-11-08"
       },
       "legal_compliance_certified": false,
       "proposed_driving_min": 180,
