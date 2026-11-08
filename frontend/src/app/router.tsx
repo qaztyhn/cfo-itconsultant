@@ -1,13 +1,8 @@
 /**
- * Route theo vai trò (docs/04 mục 11): /dispatcher/*, /warehouse/*, /store/*, /it/*, /cs/*, /kpi, /driver/*, /admin/*.
- * Mục menu lọc theo vai trò (docs/03 mục 3.2); máy chủ vẫn kiểm quyền.
+ * Router trình duyệt. Bảng route nằm ở routes.tsx để test được bằng memory router.
  * Owner: Dev 3 (luồng C) — M0.
  */
 import { createBrowserRouter } from "react-router-dom";
-import { AppShell } from "../components/AppShell";
-import { SignIn } from "../features/auth/SignIn";
+import { appRoutes } from "./routes";
 
-export const router = createBrowserRouter([
-  { path: "/login", element: <SignIn /> },
-  { path: "/", element: <AppShell />, children: [] },
-]);
+export const router = createBrowserRouter(appRoutes);
