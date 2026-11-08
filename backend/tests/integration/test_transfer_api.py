@@ -251,3 +251,15 @@ def test_US_ATP_02_nonshortage_order_has_no_transfer_suggestions(transfer_api: A
         "'2026-11-04T09:00:00Z','PLANNED')",
     )
     assert transfer_api.get("/orders/2/transfer-suggestions", DISPATCHER).json() == {"items": []}
+
+
+def test_T18_mutations_require_valid_idempotency_header(transfer_api: Api) -> None:
+    body = selection(transfer_api)
+    for headers in ({}, {"Idempotency-Key": "not-a-uuid"}):
+        response = transfer_api.client.post(
+            "/api/v1/orders/1/transfers",
+            headers={"Authorization": "Bearer " + issue_token(DISPATCHER, {}), **headers},
+            json=body,
+        )
+        assert_error(response, 422, "VALIDATION_ERROR")
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.stock_transfer")[0]["n"] == 0
