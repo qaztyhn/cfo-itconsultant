@@ -49,8 +49,14 @@ def execution_api(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F8
         clock.set_now(None)
 
 
-def send(client: Api, actor: int, kind: str, at: str, payload: dict[str, object] | None = None,
-         key: str | None = None):
+def send(
+    client: Api,
+    actor: int,
+    kind: str,
+    at: str,
+    payload: dict[str, object] | None = None,
+    key: str | None = None,
+):
     return client.client.post(
         "/api/v1/orders/1/events",
         headers={
@@ -91,32 +97,43 @@ def test_US_WH_04_AC1_AC3_start_prep_and_idempotent_replay(
     assert first.json()["order_status"] == "PREPARING"
     again = send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}, key)
     assert again.status_code == 200 and again.json() == first.json()
-    assert_error(send(execution_api, WAREHOUSE, "START_PREP",
-                      "2026-11-10T07:00:00Z", {"crew_size": 4}, key), 409, "IDEMPOTENCY_CONFLICT")
+    assert_error(
+        send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 4}, key),
+        409,
+        "IDEMPOTENCY_CONFLICT",
+    )
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 1
 
 
-def test_US_WH_04_AC5_AC6_AC8_labour_pause_resume(execution_api: Api,
-                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+def test_US_WH_04_AC5_AC6_AC8_labour_pause_resume(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
-    assert_error(send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z"),
-                 422, "VALIDATION_ERROR")
-    assert send(execution_api, WAREHOUSE, "START_PREP",
-                "2026-11-10T07:00:00Z", {"crew_size": 3}).status_code == 200
-    assert send(execution_api, WAREHOUSE, "PREP_PAUSED",
-                "2026-11-10T09:00:00Z").status_code == 200
-    assert_error(send(execution_api, WAREHOUSE, "PREP_PAUSED",
-                      "2026-11-10T09:10:00Z"), 409, "ILLEGAL_TRANSITION")
-    assert_error(send(execution_api, WAREHOUSE, "PREP_RESUMED",
-                      "2026-11-10T13:00:00Z"), 422, "VALIDATION_ERROR")
-    assert send(execution_api, WAREHOUSE, "PREP_RESUMED",
-                "2026-11-10T13:00:00Z", {"crew_size": 2}).status_code == 200
+    assert_error(
+        send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z"), 422, "VALIDATION_ERROR"
+    )
+    assert (
+        send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}).status_code
+        == 200
+    )
+    assert send(execution_api, WAREHOUSE, "PREP_PAUSED", "2026-11-10T09:00:00Z").status_code == 200
+    assert_error(
+        send(execution_api, WAREHOUSE, "PREP_PAUSED", "2026-11-10T09:10:00Z"), 409, "ILLEGAL_TRANSITION"
+    )
+    assert_error(
+        send(execution_api, WAREHOUSE, "PREP_RESUMED", "2026-11-10T13:00:00Z"), 422, "VALIDATION_ERROR"
+    )
+    assert (
+        send(execution_api, WAREHOUSE, "PREP_RESUMED", "2026-11-10T13:00:00Z", {"crew_size": 2}).status_code
+        == 200
+    )
     response = send(execution_api, WAREHOUSE, "GOODS_READY", "2026-11-10T14:30:00Z")
     assert response.status_code == 200, response.text
     assert response.json()["order_status"] == "GOODS_READY"
     assert response.json()["actual_labour_hours"] == "9.000"
-    payload = fetch(execution_api.dsn,
-                    "SELECT payload FROM ops.milestone_event WHERE event_type='GOODS_READY'")[0]["payload"]
+    payload = fetch(
+        execution_api.dsn, "SELECT payload FROM ops.milestone_event WHERE event_type='GOODS_READY'"
+    )[0]["payload"]
     assert payload["actual_labour_hours"] == "9.000"
     assert len(payload["labour_segments"]) == 2
 
@@ -125,24 +142,25 @@ def test_US_WH_04_AC2_ordering_and_multi_vehicle_loading(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
-    assert_error(send(execution_api, WAREHOUSE, "LOADED",
-                      "2026-11-10T07:00:00Z", {"trip_id": 1}), 409, "ILLEGAL_TRANSITION")
+    assert_error(
+        send(execution_api, WAREHOUSE, "LOADED", "2026-11-10T07:00:00Z", {"trip_id": 1}),
+        409,
+        "ILLEGAL_TRANSITION",
+    )
     send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3})
-    assert_error(send(execution_api, WAREHOUSE, "GOODS_READY",
-                      "2026-11-10T06:00:00Z"), 409, "ILLEGAL_TRANSITION")
+    assert_error(
+        send(execution_api, WAREHOUSE, "GOODS_READY", "2026-11-10T06:00:00Z"), 409, "ILLEGAL_TRANSITION"
+    )
     send(execution_api, WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z")
-    one = send(execution_api, WAREHOUSE, "LOADED",
-               "2026-11-10T08:00:00Z", {"trip_id": 1})
+    one = send(execution_api, WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1})
     assert one.status_code == 200 and one.json()["order_status"] == "GOODS_READY"
-    two = send(execution_api, WAREHOUSE, "LOADED",
-               "2026-11-10T08:05:00Z", {"trip_id": 2})
+    two = send(execution_api, WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2})
     assert two.status_code == 200 and two.json()["order_status"] == "LOADED"
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 4
 
 
 def test_US_WH_04_AC4_missing_risk_dependency_rolls_back(execution_api: Api) -> None:
-    response = send(execution_api, WAREHOUSE, "START_PREP",
-                    "2026-11-10T07:00:00Z", {"crew_size": 3})
+    response = send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3})
     assert_error(response, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 0
     status = fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.customer_order")
@@ -152,14 +170,16 @@ def test_US_WH_04_AC4_missing_risk_dependency_rolls_back(execution_api: Api) -> 
 
 def test_US_WH_04_AC2_AC5_RBAC_and_timestamp_guards(execution_api: Api) -> None:
     body = {"crew_size": 3}
-    assert_error(send(execution_api, SALES, "START_PREP", "2026-11-10T07:00:00Z", body),
-                 403, "FORBIDDEN")
-    assert_error(send(execution_api, ZZ_WAREHOUSE, "START_PREP",
-                      "2026-11-10T07:00:00Z", body), 404, "NOT_FOUND")
-    assert_error(send(execution_api, WAREHOUSE, "START_PREP",
-                      "2026-11-10T15:06:00Z", body), 422, "VALIDATION_ERROR")
-    assert_error(send(execution_api, WAREHOUSE, "START_PREP",
-                      "2026-11-10T07:00:00", body), 422, "VALIDATION_ERROR")
+    assert_error(send(execution_api, SALES, "START_PREP", "2026-11-10T07:00:00Z", body), 403, "FORBIDDEN")
+    assert_error(
+        send(execution_api, ZZ_WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", body), 404, "NOT_FOUND"
+    )
+    assert_error(
+        send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T15:06:00Z", body), 422, "VALIDATION_ERROR"
+    )
+    assert_error(
+        send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00", body), 422, "VALIDATION_ERROR"
+    )
 
 
 def test_US_WH_04_AC1_prep_queue_scoped(execution_api: Api) -> None:
@@ -169,8 +189,7 @@ def test_US_WH_04_AC1_prep_queue_scoped(execution_api: Api) -> None:
     assert "contact_name" not in response.text
     assert_error(execution_api.get("/warehouses/3/prep-queue", WAREHOUSE), 404, "NOT_FOUND")
     assert_error(execution_api.get("/warehouses/1/prep-queue", DRIVER), 403, "FORBIDDEN")
-    assert_error(execution_api.get("/prep-queue", WAREHOUSE, warehouse_id=1), 409,
-                 "PLAN_NOT_APPROVABLE")
+    assert_error(execution_api.get("/prep-queue", WAREHOUSE, warehouse_id=1), 409, "PLAN_NOT_APPROVABLE")
 
 
 def test_US_EXE_02_AC4_outside_shift_and_incomplete_history_denied(
@@ -181,26 +200,44 @@ def test_US_EXE_02_AC4_outside_shift_and_incomplete_history_denied(
     send(execution_api, WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z")
     send(execution_api, WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1})
     send(execution_api, WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2})
-    assert_error(send(execution_api, DISPATCHER, "DISPATCHED",
-                      "2026-11-10T08:10:00Z", {"trip_id": 1}), 403, "FORBIDDEN")
-    assert_error(send(execution_api, DRIVER, "DISPATCHED",
-                      "2026-11-10T08:10:00Z", {"trip_id": 1}), 409, "PLAN_NOT_APPROVABLE")
+    assert_error(
+        send(execution_api, DISPATCHER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        403,
+        "FORBIDDEN",
+    )
+    assert_error(
+        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        409,
+        "PLAN_NOT_APPROVABLE",
+    )
     execute(
         execution_api.dsn,
         "INSERT INTO hr.employee_shift_schedule "
         "(employee_id, warehouse_id, work_date, start_time, end_time, status, assigned_by, assigned_at) "
         "VALUES (5, 1, '2026-11-10', '07:00', '16:00', 'scheduled', 3, '2026-11-04T08:00Z')",
     )
-    assert_error(send(execution_api, DRIVER, "DISPATCHED",
-                      "2026-11-10T08:10:00Z", {"trip_id": 1}), 409, "PLAN_NOT_APPROVABLE")
+    assert_error(
+        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        409,
+        "PLAN_NOT_APPROVABLE",
+    )
     trip_state = fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.delivery_trip")
     assert trip_state[0]["status"] == "loading"
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
 
 
 def test_US_EXE_02_AC3_failure_reason_is_required(execution_api: Api) -> None:
-    assert_error(send(execution_api, DRIVER, "FAILED",
-                      "2026-11-10T10:00:00Z", {"trip_id": 1}), 422, "VALIDATION_ERROR")
-    assert_error(send(execution_api, DRIVER, "FAILED",
-                      "2026-11-10T10:00:00Z", {"trip_id": 1, "failure_reason": "custom_reason"}),
-                 422, "VALIDATION_ERROR")
+    assert_error(
+        send(execution_api, DRIVER, "FAILED", "2026-11-10T10:00:00Z", {"trip_id": 1}), 422, "VALIDATION_ERROR"
+    )
+    assert_error(
+        send(
+            execution_api,
+            DRIVER,
+            "FAILED",
+            "2026-11-10T10:00:00Z",
+            {"trip_id": 1, "failure_reason": "custom_reason"},
+        ),
+        422,
+        "VALIDATION_ERROR",
+    )

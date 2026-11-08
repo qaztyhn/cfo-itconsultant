@@ -43,13 +43,29 @@ from app.engine.actuals import LabourSegment, actual_labour_hours
 from app.services import alert_service, notify_service, planning_service, risk_service
 
 WAREHOUSE_EVENTS = frozenset(
-    {"START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY", "LOADED",
-     "SHORTAGE", "BREAKAGE", "VEHICLE_ISSUE", "SHIFT_CHANGE"}
+    {
+        "START_PREP",
+        "PREP_PAUSED",
+        "PREP_RESUMED",
+        "GOODS_READY",
+        "LOADED",
+        "SHORTAGE",
+        "BREAKAGE",
+        "VEHICLE_ISSUE",
+        "SHIFT_CHANGE",
+    }
 )
 DRIVER_EVENTS = frozenset({"DISPATCHED", "DELIVERED", "FAILED"})
 FAILURE_CODES = frozenset(
-    {"customer_absent", "site_inaccessible", "refused", "wrong_address",
-     "vehicle_breakdown", "goods_damaged", "other"}
+    {
+        "customer_absent",
+        "site_inaccessible",
+        "refused",
+        "wrong_address",
+        "vehicle_breakdown",
+        "goods_damaged",
+        "other",
+    }
 )
 
 
@@ -92,8 +108,10 @@ async def _warehouse(session: AsyncSession, actor: object, warehouse_id: int, ma
         raise DomainError("NOT_FOUND", "Warehouse not found.")
     warehouse = await session.scalar(
         select(Location).where(
-            Location.id == warehouse_id, Location.market_id == market.id,
-            Location.type == "warehouse", Location.is_active.is_(True)
+            Location.id == warehouse_id,
+            Location.market_id == market.id,
+            Location.type == "warehouse",
+            Location.is_active.is_(True),
         )
     )
     if warehouse is None:
@@ -108,7 +126,8 @@ async def _warehouse(session: AsyncSession, actor: object, warehouse_id: int, ma
             LocationManager.location_id == warehouse_id,
             LocationManager.valid_from <= local_day,
             or_(LocationManager.valid_to.is_(None), LocationManager.valid_to >= local_day),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if authorised is None:
         raise DomainError("FORBIDDEN", "Active warehouse manager or supervisor required.")
@@ -128,13 +147,17 @@ async def _order(session: AsyncSession, actor: object, order_id: int) -> tuple[C
 
 
 async def _trips(session: AsyncSession, order_id: int) -> list[tuple[DeliveryTrip, TripStop]]:
-    return list((await session.execute(
-        select(DeliveryTrip, TripStop)
-        .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
-        .where(TripStop.order_id == order_id)
-        .order_by(DeliveryTrip.id)
-        .with_for_update(of=(DeliveryTrip, TripStop))
-    )).all())
+    return list(
+        (
+            await session.execute(
+                select(DeliveryTrip, TripStop)
+                .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+                .where(TripStop.order_id == order_id)
+                .order_by(DeliveryTrip.id)
+                .with_for_update(of=(DeliveryTrip, TripStop))
+            )
+        ).all()
+    )
 
 
 def _require_positive(value: object, name: str) -> int:
@@ -196,13 +219,22 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
 
 
 async def _claim(
-    session: AsyncSession, actor: object, key: str, order_id: int,
-    event_type: str, occurred_at: datetime, payload: dict[str, object]
+    session: AsyncSession,
+    actor: object,
+    key: str,
+    order_id: int,
+    event_type: str,
+    occurred_at: datetime,
+    payload: dict[str, object],
 ) -> tuple[IdempotencyKey, dict[str, object] | None]:
     endpoint = f"POST /orders/{order_id}/events"
-    digest = hashlib.sha256(json.dumps({
-        "event_type": event_type, "occurred_at": occurred_at.isoformat(), "payload": payload
-    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    digest = hashlib.sha256(
+        json.dumps(
+            {"event_type": event_type, "occurred_at": occurred_at.isoformat(), "payload": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     # milestone_event.key is globally unique, not merely scoped by actor.
     existing_event = await session.scalar(
         select(MilestoneEvent.id)
@@ -212,13 +244,15 @@ async def _claim(
     if existing_event is not None:
         raise DomainError("IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used.")
     await session.execute(
-        insert(IdempotencyKey).values(
-            key=key, user_id=_actor_id(actor), endpoint=endpoint, request_hash=digest
-        ).on_conflict_do_nothing(index_elements=["key", "user_id"])
+        insert(IdempotencyKey)
+        .values(key=key, user_id=_actor_id(actor), endpoint=endpoint, request_hash=digest)
+        .on_conflict_do_nothing(index_elements=["key", "user_id"])
     )
-    row = await session.scalar(select(IdempotencyKey).where(
-        IdempotencyKey.key == key, IdempotencyKey.user_id == _actor_id(actor)
-    ).with_for_update())
+    row = await session.scalar(
+        select(IdempotencyKey)
+        .where(IdempotencyKey.key == key, IdempotencyKey.user_id == _actor_id(actor))
+        .with_for_update()
+    )
     if row is None or row.endpoint != endpoint or row.request_hash != digest:
         raise DomainError("IDEMPOTENCY_CONFLICT", "Idempotency-Key belongs to a different request.")
     if row.response_status == 200 and row.response_body is not None:
@@ -228,15 +262,19 @@ async def _claim(
     return row, None
 
 
-def _labour(history: list[MilestoneEvent], event_type: str,
-            occurred_at: datetime, payload: dict[str, object]) -> tuple[list[LabourSegment], bool]:
+def _labour(
+    history: list[MilestoneEvent], event_type: str, occurred_at: datetime, payload: dict[str, object]
+) -> tuple[list[LabourSegment], bool]:
     """Derive exact crew segments from append-only event history; no staff scheduling assumption."""
     segments: list[LabourSegment] = []
     started: datetime | None = None
     crew = 0
     for kind, at, data in [
-        *((e.event_type, e.occurred_at, e.payload) for e in history
-          if e.event_type in ("START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY")),
+        *(
+            (e.event_type, e.occurred_at, e.payload)
+            for e in history
+            if e.event_type in ("START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY")
+        ),
         (event_type, occurred_at, payload),
     ]:
         if kind in ("START_PREP", "PREP_RESUMED"):
@@ -259,8 +297,9 @@ def _labour(history: list[MilestoneEvent], event_type: str,
     return segments, started is not None
 
 
-async def _driver_gate(session: AsyncSession, actor: object, trip: DeliveryTrip,
-                       market: Market, occurred_at: datetime) -> None:
+async def _driver_gate(
+    session: AsyncSession, actor: object, trip: DeliveryTrip, market: Market, occurred_at: datetime
+) -> None:
     """Official shift and licence checks; missing 56-day completeness marker never authorizes duty."""
     if not _has_role(actor, "driver") or trip.driver_employee_id != _employee(actor):
         raise DomainError("FORBIDDEN", "Driver is not assigned to this trip.")
@@ -277,24 +316,28 @@ async def _driver_gate(session: AsyncSession, actor: object, trip: DeliveryTrip,
         raise DomainError("PLAN_NOT_APPROVABLE", "Vehicle regulatory scope is unverified.")
     if employee.market_id != market.id:
         raise DomainError("FORBIDDEN", "Driver is outside the market.")
-    assigned = await session.scalar(select(EmployeeAssignment.id).where(
-        EmployeeAssignment.employee_id == employee.id,
-        EmployeeAssignment.location_id == trip.warehouse_id,
-        EmployeeAssignment.start_date <= local.date(),
-        or_(EmployeeAssignment.end_date.is_(None), EmployeeAssignment.end_date >= local.date())
-    ))
+    assigned = await session.scalar(
+        select(EmployeeAssignment.id).where(
+            EmployeeAssignment.employee_id == employee.id,
+            EmployeeAssignment.location_id == trip.warehouse_id,
+            EmployeeAssignment.start_date <= local.date(),
+            or_(EmployeeAssignment.end_date.is_(None), EmployeeAssignment.end_date >= local.date()),
+        )
+    )
     if assigned is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "Driver has no effective warehouse assignment.")
-    rows = (await session.execute(
-        select(EmployeeShiftSchedule, ShiftTemplate)
-        .outerjoin(ShiftTemplate, ShiftTemplate.id == EmployeeShiftSchedule.shift_template_id)
-        .where(
-            EmployeeShiftSchedule.employee_id == employee.id,
-            EmployeeShiftSchedule.warehouse_id == trip.warehouse_id,
-            EmployeeShiftSchedule.status == "scheduled",
-            EmployeeShiftSchedule.work_date.in_((local.date(), local.date() - timedelta(days=1)))
+    rows = (
+        await session.execute(
+            select(EmployeeShiftSchedule, ShiftTemplate)
+            .outerjoin(ShiftTemplate, ShiftTemplate.id == EmployeeShiftSchedule.shift_template_id)
+            .where(
+                EmployeeShiftSchedule.employee_id == employee.id,
+                EmployeeShiftSchedule.warehouse_id == trip.warehouse_id,
+                EmployeeShiftSchedule.status == "scheduled",
+                EmployeeShiftSchedule.work_date.in_((local.date(), local.date() - timedelta(days=1))),
+            )
         )
-    )).all()
+    ).all()
     valid_shift = False
     for row, template in rows:
         start = row.start_time or (template.start_time if template else None)
@@ -305,21 +348,22 @@ async def _driver_gate(session: AsyncSession, actor: object, trip: DeliveryTrip,
             continue
         begin = datetime.combine(row.work_date, start, zone)
         finish = datetime.combine(row.work_date + timedelta(days=int(end < start)), end, zone)
-        if any(t.replace(fold=0).utcoffset() != t.replace(fold=1).utcoffset()
-               for t in (begin, finish)):
+        if any(t.replace(fold=0).utcoffset() != t.replace(fold=1).utcoffset() for t in (begin, finish)):
             continue
         if begin <= local < finish:
             valid_shift = True
     if not valid_shift:
         raise DomainError("PLAN_NOT_APPROVABLE", "Event is outside the verified official driver shift.")
-    history = (await session.scalars(select(DriverDutyLog).where(
-        DriverDutyLog.employee_id == employee.id,
-        DriverDutyLog.duty_end >= occurred_at - timedelta(days=56),
-        DriverDutyLog.duty_start < occurred_at
-    ))).all()
-    if history and any(
-        0 <= (occurred_at - duty.duty_end).total_seconds() < 11 * 3600 for duty in history
-    ):
+    history = (
+        await session.scalars(
+            select(DriverDutyLog).where(
+                DriverDutyLog.employee_id == employee.id,
+                DriverDutyLog.duty_end >= occurred_at - timedelta(days=56),
+                DriverDutyLog.duty_start < occurred_at,
+            )
+        )
+    ).all()
+    if history and any(0 <= (occurred_at - duty.duty_end).total_seconds() < 11 * 3600 for duty in history):
         raise DomainError("PLAN_NOT_APPROVABLE", "Required 11-hour driver rest is not verified.")
     # Database stores observed duty intervals, but has no evidence that the
     # last 56 days were reported completely (see planning_inputs.py §Q12b).
@@ -327,9 +371,15 @@ async def _driver_gate(session: AsyncSession, actor: object, trip: DeliveryTrip,
     raise DomainError("PLAN_NOT_APPROVABLE", "Driver 56-day history completeness is not verified.")
 
 
-async def record_event(session: AsyncSession, order_id: int, actor: object, event_type: str,
-                       occurred_at: datetime, payload: dict[str, object],
-                       idempotency_key: str) -> dict[str, object]:
+async def record_event(
+    session: AsyncSession,
+    order_id: int,
+    actor: object,
+    event_type: str,
+    occurred_at: datetime,
+    payload: dict[str, object],
+    idempotency_key: str,
+) -> dict[str, object]:
     """Transaction owned by caller; no commit until mandatory ETA/outbox effects succeed."""
     if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
         raise DomainError("VALIDATION_ERROR", "occurred_at must have a timezone offset.")
@@ -341,9 +391,7 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
     if not (_has_role(actor, "warehouse") if event_type in WAREHOUSE_EVENTS else _has_role(actor, "driver")):
         raise DomainError("FORBIDDEN", "Event role not permitted.")
     order, market = await _order(session, actor, order_id)
-    record, replay = await _claim(
-        session, actor, idempotency_key, order_id, event_type, occurred_at, payload
-    )
+    record, replay = await _claim(session, actor, idempotency_key, order_id, event_type, occurred_at, payload)
     if replay is not None:
         return replay
     if order.approved_plan_id is None:
@@ -365,10 +413,14 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         trip, stop = pair
         if event_type in DRIVER_EVENTS:
             await _driver_gate(session, actor, trip, market, occurred_at)
-    previous = (await session.scalars(select(MilestoneEvent)
-        .where(MilestoneEvent.order_id == order_id)
-        .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id)
-        .with_for_update())).all()
+    previous = (
+        await session.scalars(
+            select(MilestoneEvent)
+            .where(MilestoneEvent.order_id == order_id)
+            .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id)
+            .with_for_update()
+        )
+    ).all()
     if previous and occurred_at < previous[-1].occurred_at:
         raise DomainError("ILLEGAL_TRANSITION", "Event occurred before the last recorded event.")
     segments: list[LabourSegment] = []
@@ -413,16 +465,21 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         outcome = "delivered" if event_type == "DELIVERED" else "failed"
         stop.status, stop.completed_at = outcome, occurred_at
         trip.status, trip.ended_at = "completed", occurred_at
-        session.add(ProofOfDelivery(
-            trip_stop_id=stop.id, order_id=order.id, result=outcome, completed_at=occurred_at,
-            recipient_name=(
-                payload.get("recipient_name") if isinstance(payload.get("recipient_name"), str) else None
-            ),
-            failure_reason=(
-                payload.get("failure_reason") if isinstance(payload.get("failure_reason"), str) else None
-            ),
-            note=payload.get("note") if isinstance(payload.get("note"), str) else None,
-        ))
+        session.add(
+            ProofOfDelivery(
+                trip_stop_id=stop.id,
+                order_id=order.id,
+                result=outcome,
+                completed_at=occurred_at,
+                recipient_name=(
+                    payload.get("recipient_name") if isinstance(payload.get("recipient_name"), str) else None
+                ),
+                failure_reason=(
+                    payload.get("failure_reason") if isinstance(payload.get("failure_reason"), str) else None
+                ),
+                note=payload.get("note") if isinstance(payload.get("note"), str) else None,
+            )
+        )
         if all(s.status in ("delivered", "failed") for _, s in trips):
             if all(s.status == "delivered" for _, s in trips):
                 await transition(session, order.id, OrderStatus.DELIVERED, "driver")
@@ -444,36 +501,57 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         if not any(t.vehicle_id == payload["vehicle_id"] for t, _ in trips):
             raise DomainError("NOT_FOUND", "Vehicle not assigned to this order.")
         await alert_service.raise_alert(
-            session, market_id=market.id, order_id=order.id, type_="EXCEPTION",
-            level="warning", message="Vehicle issue reported for dispatcher review.",
-            target_roles=["dispatcher"], dedupe_key=f"vehicle-issue:{order.id}:{payload['vehicle_id']}"
+            session,
+            market_id=market.id,
+            order_id=order.id,
+            type_="EXCEPTION",
+            level="warning",
+            message="Vehicle issue reported for dispatcher review.",
+            target_roles=["dispatcher"],
+            dedupe_key=f"vehicle-issue:{order.id}:{payload['vehicle_id']}",
         )
         await planning_service.suggest_replan(order.id, "vehicle_issue", session=session)
     elif event_type in ("SHORTAGE", "BREAKAGE"):
         await alert_service.raise_alert(
-            session, market_id=market.id, order_id=order.id, type_="EXCEPTION",
-            level="warning", message="Warehouse exception reported.",
-            target_roles=["dispatcher"], dedupe_key=f"warehouse-exception:{order.id}:{event_type}"
+            session,
+            market_id=market.id,
+            order_id=order.id,
+            type_="EXCEPTION",
+            level="warning",
+            message="Warehouse exception reported.",
+            target_roles=["dispatcher"],
+            dedupe_key=f"warehouse-exception:{order.id}:{event_type}",
         )
-    session.add(MilestoneEvent(
-        order_id=order.id, plan_id=order.approved_plan_id,
-        trip_id=trip.id if trip else None, event_type=event_type, occurred_at=occurred_at.astimezone(UTC),
-        actor_user_id=_actor_id(actor), actor_employee_id=_employee(actor),
-        payload=event_data, idempotency_key=idempotency_key,
-    ))
+    session.add(
+        MilestoneEvent(
+            order_id=order.id,
+            plan_id=order.approved_plan_id,
+            trip_id=trip.id if trip else None,
+            event_type=event_type,
+            occurred_at=occurred_at.astimezone(UTC),
+            actor_user_id=_actor_id(actor),
+            actor_employee_id=_employee(actor),
+            payload=event_data,
+            idempotency_key=idempotency_key,
+        )
+    )
     await session.flush()
     await session.refresh(order, attribute_names=["status"])
-    new_event = await session.scalar(select(MilestoneEvent).where(
-        MilestoneEvent.idempotency_key == idempotency_key
-    ))
+    new_event = await session.scalar(
+        select(MilestoneEvent).where(MilestoneEvent.idempotency_key == idempotency_key)
+    )
     assert new_event is not None
     try:
         risk = await risk_service.recalculate(order.id, f"event:{event_type}")
         if order.status in ("DISPATCHED", "DELIVERED", "FAILED"):
             current_type = (
-                "DISPATCHED" if event_type == "DISPATCHED" else
-                "DELIVERED" if order.status == "DELIVERED" else
-                "FAILED" if order.status == "FAILED" else None
+                "DISPATCHED"
+                if event_type == "DISPATCHED"
+                else (
+                    "DELIVERED"
+                    if order.status == "DELIVERED"
+                    else "FAILED" if order.status == "FAILED" else None
+                )
             )
             if current_type is not None:
                 await notify_service.enqueue(order.id, current_type, plan_id=order.approved_plan_id)
@@ -483,57 +561,74 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         ) from exc
     if risk is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result.")
-    result: dict[str, object] = {
-        "event_id": new_event.id, "order_status": order.status, "risk": risk
-    }
+    result: dict[str, object] = {"event_id": new_event.id, "order_status": order.status, "risk": risk}
     if event_type == "GOODS_READY":
         result["actual_labour_hours"] = event_data["actual_labour_hours"]
     record.response_status, record.response_body = 200, result
     return result
 
 
-async def driver_trips(session: AsyncSession, actor: object, day: date | None = None,
-                       trip_id: int | None = None) -> dict[str, object]:
+async def driver_trips(
+    session: AsyncSession, actor: object, day: date | None = None, trip_id: int | None = None
+) -> dict[str, object]:
     """Only trips assigned to authenticated driver; no totals, scores, coordinates or GPS."""
     if not _has_role(actor, "driver"):
         raise DomainError("FORBIDDEN", "Driver role required.")
     market = await _market(session, actor)
     zone = ZoneInfo(market.timezone)
     day = day or clock.now().astimezone(zone).date()
-    stmt = (select(DeliveryTrip, TripStop, CustomerOrder, Vehicle, Location)
-            .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
-            .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
-            .join(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
-            .join(Location, Location.id == DeliveryTrip.warehouse_id)
-            .where(DeliveryTrip.driver_employee_id == _employee(actor),
-                   CustomerOrder.market_id == market.id, Location.market_id == market.id))
+    stmt = (
+        select(DeliveryTrip, TripStop, CustomerOrder, Vehicle, Location)
+        .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+        .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
+        .join(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
+        .join(Location, Location.id == DeliveryTrip.warehouse_id)
+        .where(
+            DeliveryTrip.driver_employee_id == _employee(actor),
+            CustomerOrder.market_id == market.id,
+            Location.market_id == market.id,
+        )
+    )
     if trip_id is not None:
         stmt = stmt.where(DeliveryTrip.id == trip_id)
     else:
         stmt = stmt.where(cast(func.timezone(market.timezone, DeliveryTrip.depart_planned_at), Date) == day)
     result: dict[int, dict[str, object]] = {}
-    for trip, stop, order, vehicle, warehouse in (await session.execute(
-        stmt.order_by(DeliveryTrip.id, TripStop.seq)
-    )).all():
-        row = result.setdefault(trip.id, {
-            "trip_id": trip.id, "warehouse_id": warehouse.id,
-            "warehouse_code": warehouse.code, "vehicle_code": vehicle.code,
-            "status": trip.status, "depart_planned_at": trip.depart_planned_at.isoformat(),
-            "depart_actual_at": trip.depart_actual_at.isoformat() if trip.depart_actual_at else None,
-            "stops": [],
-        })
+    for trip, stop, order, vehicle, warehouse in (
+        await session.execute(stmt.order_by(DeliveryTrip.id, TripStop.seq))
+    ).all():
+        row = result.setdefault(
+            trip.id,
+            {
+                "trip_id": trip.id,
+                "warehouse_id": warehouse.id,
+                "warehouse_code": warehouse.code,
+                "vehicle_code": vehicle.code,
+                "status": trip.status,
+                "depart_planned_at": trip.depart_planned_at.isoformat(),
+                "depart_actual_at": trip.depart_actual_at.isoformat() if trip.depart_actual_at else None,
+                "stops": [],
+            },
+        )
         stops = row["stops"]
         assert isinstance(stops, list)
-        stops.append({
-            "trip_stop_id": stop.id, "order_id": order.id, "order_no": order.order_no,
-            "status": stop.status, "eta_planned_at": stop.eta_planned_at.isoformat(),
-            "delivery_address": order.delivery_address,
-            "contact_name": order.contact_name, "contact_phone": order.contact_phone,
-            "receiving_window": {
-                "start": order.window_start.isoformat() if order.window_start else None,
-                "end": order.window_end.isoformat() if order.window_end else None,
-            }, "special_requirements": order.special_requirements,
-        })
+        stops.append(
+            {
+                "trip_stop_id": stop.id,
+                "order_id": order.id,
+                "order_no": order.order_no,
+                "status": stop.status,
+                "eta_planned_at": stop.eta_planned_at.isoformat(),
+                "delivery_address": order.delivery_address,
+                "contact_name": order.contact_name,
+                "contact_phone": order.contact_phone,
+                "receiving_window": {
+                    "start": order.window_start.isoformat() if order.window_start else None,
+                    "end": order.window_end.isoformat() if order.window_end else None,
+                },
+                "special_requirements": order.special_requirements,
+            }
+        )
     if trip_id is not None:
         if trip_id not in result:
             raise DomainError("NOT_FOUND", "Trip not found.")
@@ -541,29 +636,46 @@ async def driver_trips(session: AsyncSession, actor: object, day: date | None = 
     return {"items": list(result.values())}
 
 
-async def prep_queue(session: AsyncSession, warehouse_id: int, day: date | None,
-                     actor: object) -> dict[str, object]:
+async def prep_queue(
+    session: AsyncSession, warehouse_id: int, day: date | None, actor: object
+) -> dict[str, object]:
     """Market and manager scoped warehouse queue; never guesses staffing or attendance."""
     market = await _market(session, actor)
     await _warehouse(session, actor, warehouse_id, market)
     day = day or clock.now().astimezone(ZoneInfo(market.timezone)).date()
-    stmt = (select(CustomerOrder, FulfilmentPlan)
-            .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
-            .where(FulfilmentPlan.warehouse_id == warehouse_id,
-                   FulfilmentPlan.target_date == day,
-                   CustomerOrder.market_id == market.id,
-                   CustomerOrder.status.in_(("APPROVED", "PREPARING", "GOODS_READY", "LOADED")))
-            .order_by(CustomerOrder.submitted_at, CustomerOrder.id))
+    stmt = (
+        select(CustomerOrder, FulfilmentPlan)
+        .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
+        .where(
+            FulfilmentPlan.warehouse_id == warehouse_id,
+            FulfilmentPlan.target_date == day,
+            CustomerOrder.market_id == market.id,
+            CustomerOrder.status.in_(("APPROVED", "PREPARING", "GOODS_READY", "LOADED")),
+        )
+        .order_by(CustomerOrder.submitted_at, CustomerOrder.id)
+    )
     items: list[dict[str, object]] = []
     for order, plan in (await session.execute(stmt)).all():
-        milestones = (await session.scalars(select(MilestoneEvent)
-            .where(MilestoneEvent.order_id == order.id)
-            .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id))).all()
-        items.append({
-            "order_id": order.id, "order_no": order.order_no, "status": order.status,
-            "planned_prep_hours": str(plan.prep_hours), "workload": plan.workload,
-            "goods_ready_planned_at": plan.goods_ready_at.isoformat(),
-            "events": [{"event_type": m.event_type, "occurred_at": m.occurred_at.isoformat()}
-                       for m in milestones if m.event_type in WAREHOUSE_EVENTS],
-        })
+        milestones = (
+            await session.scalars(
+                select(MilestoneEvent)
+                .where(MilestoneEvent.order_id == order.id)
+                .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id)
+            )
+        ).all()
+        items.append(
+            {
+                "order_id": order.id,
+                "order_no": order.order_no,
+                "status": order.status,
+                "planned_prep_hours": str(plan.prep_hours),
+                "workload": plan.workload,
+                "goods_ready_planned_at": plan.goods_ready_at.isoformat(),
+                "events": [
+                    {"event_type": m.event_type, "occurred_at": m.occurred_at.isoformat()}
+                    for m in milestones
+                    if m.event_type in WAREHOUSE_EVENTS
+                ],
+            }
+        )
     return {"warehouse_id": warehouse_id, "date": day.isoformat(), "items": items}

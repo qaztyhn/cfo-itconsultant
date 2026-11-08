@@ -34,8 +34,13 @@ async def record_event(
     body: Annotated[ExecutionEventIn, Body()],
 ) -> dict[str, object]:
     return await execution_service.record_event(
-        db, order_id, user, body.event_type.value, body.occurred_at,
-        body.payload, str(idempotency_key),
+        db,
+        order_id,
+        user,
+        body.event_type.value,
+        body.occurred_at,
+        body.payload,
+        str(idempotency_key),
     )
 
 
@@ -66,9 +71,7 @@ async def prep_queue_v2(
 
 
 @router.get("/driver/trips")
-async def driver_trips(
-    user: AuthUser, db: DbSession, date_value: RequestedDate = None
-) -> dict[str, object]:
+async def driver_trips(user: AuthUser, db: DbSession, date_value: RequestedDate = None) -> dict[str, object]:
     return await execution_service.driver_trips(db, user, day=date_value)
 
 
