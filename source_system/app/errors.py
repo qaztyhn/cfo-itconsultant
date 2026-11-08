@@ -5,6 +5,41 @@ from uuid import UUID, uuid4
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
+
+
+class ErrorItem(BaseModel):
+    loc: list[str | int]
+    type: str
+    msg: str
+
+
+class ErrorDetails(BaseModel):
+    errors: list[ErrorItem] | None = None
+
+
+class ErrorBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    message: str
+    details: ErrorDetails
+    correlation_id: UUID
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorBody
+
+
+def request_id(request: Request) -> str:
+    value = getattr(request.state, "correlation_id", None)
+    if isinstance(value, str):
+        return value
+    try:
+        value = str(UUID(request.headers.get("X-Correlation-ID", "")))
+    except ValueError:
+        value = str(uuid4())
+    request.state.correlation_id = value
+    return value
 
 
 class SourceOrderError(Exception):
@@ -25,10 +60,7 @@ def invalid(field: str, kind: str) -> SourceOrderError:
 
 async def order_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, SourceOrderError)
-    try:
-        correlation_id = str(UUID(request.headers.get("X-Correlation-ID", "")))
-    except ValueError:
-        correlation_id = str(uuid4())
+    correlation_id = request_id(request)
     return JSONResponse(
         status_code=exc.status,
         headers={"X-Correlation-ID": correlation_id},
@@ -45,10 +77,7 @@ async def order_error(request: Request, exc: Exception) -> JSONResponse:
 
 async def validation_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
-    try:
-        correlation_id = str(UUID(request.headers.get("X-Correlation-ID", "")))
-    except ValueError:
-        correlation_id = str(uuid4())
+    correlation_id = request_id(request)
     errors = [
         {"loc": list(err.get("loc", ())), "type": err.get("type"), "msg": err.get("msg")}
         for err in exc.errors()

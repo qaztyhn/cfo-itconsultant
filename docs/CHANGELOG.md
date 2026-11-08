@@ -233,3 +233,9 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   --complete-snapshot` publisher. No existing environment was reset; tests use isolated schemas only.
 - 05/06 define batch markers, retry/capture behavior and legacy UNKNOWN. CFO pool normalization and
   persistence remain a separate reviewed integration task.
+# Dev 2 implemented source OpenAPI candidate (2026-11-08)
+
+- Generate full D1 candidate from implemented read/write/batch routes; document real standard errors,
+  ISO dates, health availability, API-key protection and page-count headers. Add consistent request IDs.
+- Exercise source lifecycle and stock on SE and shadow instances and compare generated contract exactly.
+  Review by Dev 1/3 remains separate from CI drift equality; CFO contract and end-to-end acceptance remain pending.

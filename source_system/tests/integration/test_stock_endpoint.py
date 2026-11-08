@@ -22,12 +22,12 @@ from app.stock_batches import StockInput, publish
 KEY = "stock-test-key-not-a-secret"
 
 
-@pytest.fixture
-async def client() -> AsyncIterator[tuple[AsyncClient, AsyncEngine]]:
+@pytest.fixture(params=("se", "shadow"))
+async def client(request: pytest.FixtureRequest) -> AsyncIterator[tuple[AsyncClient, AsyncEngine]]:
     url = os.environ.get("SOURCE_TEST_DATABASE_URL")
     if not url:
         pytest.fail("SOURCE_TEST_DATABASE_URL is required for real PostgreSQL integration tests")
-    schema = "src_test_" + uuid4().hex
+    schema = f"src_test_{request.param}_" + uuid4().hex
     settings = Settings(url, schema, KEY)
     engine = create_engine(settings)
     await initialize(engine, schema)

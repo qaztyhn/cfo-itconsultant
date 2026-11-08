@@ -5,7 +5,7 @@ upserts idempotently), stable order `(updated_at, id)`, envelope `{items,page,pa
 `X-Total-Count`. Address/contact fields are the snapshot stored on the order, never the live customer record.
 """
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal
 
@@ -57,8 +57,8 @@ class OrderOut(BaseModel):
     lon: Decimal | None
     contact: Contact
     date_mode: str
-    date_from: str | None
-    date_to: str | None
+    date_from: date | None
+    date_to: date | None
     window_start: str | None
     window_end: str | None
     receiving_restrictions: str | None
@@ -98,8 +98,8 @@ def _view(order: Order, lines: list[OrderLine]) -> OrderOut:
         lon=order.lon,
         contact=Contact(name=order.contact_name, phone=order.contact_phone, email=order.contact_email),
         date_mode=order.date_mode,
-        date_from=None if order.date_from is None else order.date_from.isoformat(),
-        date_to=None if order.date_to is None else order.date_to.isoformat(),
+        date_from=order.date_from,
+        date_to=order.date_to,
         window_start=_hhmm(order.window_start),
         window_end=_hhmm(order.window_end),
         receiving_restrictions=order.receiving_restrictions,

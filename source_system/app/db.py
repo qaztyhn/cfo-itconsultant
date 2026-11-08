@@ -13,6 +13,7 @@ def create_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(
         settings.database_url,
         pool_pre_ping=True,
+        hide_parameters=True,
         connect_args={"timeout": 3, "command_timeout": 3},
         execution_options={"schema_translate_map": {"source": settings.source_schema}},
     )
