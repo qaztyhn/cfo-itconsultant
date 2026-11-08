@@ -37,7 +37,7 @@ from app.domain.models.ops import (
     TripStop,
     VehiclePosition,
 )
-from app.domain.models.plan import FulfilmentPlan
+from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import Location, Market, Vehicle
 from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
@@ -156,19 +156,31 @@ async def _order(session: AsyncSession, actor: object, order_id: int) -> tuple[C
     return order, market
 
 
-async def _trips(session: AsyncSession, order_id: int) -> list[tuple[DeliveryTrip, TripStop]]:
+async def _trips(
+    session: AsyncSession, order_id: int, plan_id: int
+) -> list[tuple[DeliveryTrip, TripStop]]:
+    """Only trips attached to the order's CURRENT approved plan may change its status.
+
+    Previously completed or cancelled trips from superseded plans must not enter
+    multi-vehicle aggregation, even though their historical trip_stop rows remain.
+    """
     return list(
         (
             await session.execute(
                 select(DeliveryTrip, TripStop)
                 .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
-                .where(TripStop.order_id == order_id)
+                .join(PlanVehicle, PlanVehicle.id == DeliveryTrip.plan_vehicle_id)
+                .where(
+                    TripStop.order_id == order_id,
+                    PlanVehicle.plan_id == plan_id,
+                    DeliveryTrip.status != "cancelled",
+                    TripStop.status != "cancelled",
+                )
                 .order_by(DeliveryTrip.id)
                 .with_for_update(of=(DeliveryTrip, TripStop))
             )
         ).all()
     )
-
 
 def _require_positive(value: object, name: str) -> int:
     if type(value) is not int or value <= 0:
@@ -411,7 +423,7 @@ async def record_event(
         raise DomainError("PLAN_NOT_APPROVABLE", "Approved plan is unavailable.")
     if event_type in WAREHOUSE_EVENTS:
         await _warehouse(session, actor, plan.warehouse_id, market)
-    trips = await _trips(session, order.id)
+    trips = await _trips(session, order.id, plan.id)
     if event_type in {"LOADED", "DISPATCHED", "DELIVERED", "FAILED"} and not trips:
         raise DomainError("ILLEGAL_TRANSITION", "No approved trips are assigned.")
     trip: DeliveryTrip | None = None
@@ -571,16 +583,20 @@ async def record_event(
     assert new_event is not None
     try:
         risk = await risk_service.recalculate(order.id, f"event:{event_type}")
-        # Notify only when the *order* crosses a notification boundary.
-        # A second vehicle dispatch cannot generate a second DISPATCHED notice.
+        if risk is None:
+            raise DomainError(
+                "PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result."
+            )
+        # Notify only when the *order* changes, after a verified risk update.
+        # Second-vehicle dispatch must not duplicate the DISPATCHED notification.
         if changed_to is not None:
-            await notify_service.enqueue(order.id, changed_to, plan_id=order.approved_plan_id)
+            await notify_service.enqueue(
+                order.id, changed_to, plan_id=order.approved_plan_id
+            )
     except NotImplementedError as exc:
         raise DomainError(
             "PLAN_NOT_APPROVABLE", "Mandatory ETA or notification integration is not available."
         ) from exc
-    if risk is None:
-        raise DomainError("PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result.")
     result: dict[str, object] = {"event_id": new_event.id, "order_status": order.status, "risk": risk}
     if event_type == "GOODS_READY":
         result["actual_labour_hours"] = event_data["actual_labour_hours"]
