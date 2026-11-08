@@ -64,6 +64,8 @@ class D7FixtureTests(unittest.TestCase):
         self.assertEqual(actual_hours, 8)
         self.assertLess(actual_hours, 11)
         self.assertEqual(scenario["expected_reason_codes"], ["DRIVER_REST_INSUFFICIENT"])
+        self.assertEqual(scenario["input_overrides"]["supersedes_verified_off_duty_on"],
+                         "2026-11-08")
         self.assertFalse(any("reduced_rest" in str(x) for x in self.payloads.values()))
 
     def test_D7_duty_driving_are_independent_and_consistent(self) -> None:
@@ -92,7 +94,7 @@ class D7FixtureTests(unittest.TestCase):
         rows = self.payloads["history_week_06.json"]["records"]
         night = next(x for x in rows if x["driver_code"] == "D09"
                      and x["work_date"] == "2026-10-25")
-        self.assertEqual((instant(night["duty_end"]) - instant(night["duty_start"])) .total_seconds(),
+        self.assertEqual((instant(night["duty_end"]) - instant(night["duty_start"])).total_seconds(),
                          5 * 3600)
         self.assertEqual(night["driving_min"], 120)
         self.assertIn("+02:00", night["duty_start"])
@@ -147,6 +149,22 @@ class D7FixtureTests(unittest.TestCase):
                 for key in ("duty_start", "duty_end"):
                     if row[key] is not None:
                         self.assertIsNotNone(datetime.fromisoformat(row[key]).utcoffset())
+
+    def test_D7_validator_refuses_candidate_from_unknown_vehicle(self) -> None:
+        corrupted = copy.deepcopy(self.payloads)
+        row = next(x for x in corrupted["scenarios.json"]["records"]
+                   if x["scenario_id"] == "valid_candidate")
+        row["vehicle_code"] = "GBG-03-02"
+        with self.assertRaises(FixtureError):
+            validate(corrupted)
+
+    def test_D7_validator_refuses_undocumented_off_duty_override(self) -> None:
+        corrupted = copy.deepcopy(self.payloads)
+        row = next(x for x in corrupted["scenarios.json"]["records"]
+                   if x["scenario_id"] == "insufficient_rest")
+        del row["input_overrides"]["supersedes_verified_off_duty_on"]
+        with self.assertRaises(FixtureError):
+            validate(corrupted)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,10 @@ def require(ok: bool, explanation: str) -> None:
 def read_payloads(directory: Path = FIXTURES) -> dict[str, dict[str, Any]]:
     expected = set(build())
     actual = {path.name for path in directory.glob("*.json")}
-    require(expected == actual, f"Fixture filenames differ: missing={expected - actual}, extra={actual - expected}")
+    require(
+        expected == actual,
+        f"Fixture filenames differ: missing={expected - actual}, extra={actual - expected}",
+    )
     return {name: json.loads((directory / name).read_text(encoding="utf-8"))
             for name in sorted(expected)}
 
@@ -55,7 +58,8 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
         require(v["market"] == "SE", "Only Sweden vehicle fixtures allowed")
         require(v["regulation_561_scope"] in ("in_scope", "out_of_scope", "unknown"),
                 "Invalid Regulation 561 scope")
-        require(v["scope_evidence"] is None if v["regulation_561_scope"] == "unknown" else bool(v["scope_evidence"]),
+        scope_known = v["regulation_561_scope"] != "unknown"
+        require(bool(v["scope_evidence"]) == scope_known,
                 "Known and unknown scope must have distinct provenance")
         payload, gross = v["capacity_kg"], v["max_permissible_mass_kg"]
         require(isinstance(payload, int) and isinstance(gross, int) and 0 < payload < gross,
@@ -107,8 +111,8 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
                 if (rest := row["rest_before_duty"]) is not None:
                     require(instant(rest["start"]) < instant(rest["end"]) <= start,
                             "Rest must precede duty")
-                    require(elapsed_minutes(instant(rest["start"]), instant(rest["end"])) == rest["elapsed_min"],
-                            "Rest elapsed time inconsistent")
+                    rest_minutes = elapsed_minutes(instant(rest["start"]), instant(rest["end"]))
+                    require(rest_minutes == rest["elapsed_min"], "Rest elapsed time inconsistent")
             else:
                 rest = row["verified_rest_window"]
                 require(row["verified_off_duty"] and row["driving_min"] == 0 and rest is not None,
@@ -117,6 +121,29 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
                         == rest["elapsed_min"], "Off-day duration incorrect across DST")
             history_rows.append(row)
     require(len(seen) == len(dmap) * HISTORY_DAYS, "Not all 56 days recorded per driver")
+
+    # Rest claims must be anchored to the preceding actually known duty,
+    # never manufactured across a missing coverage day.
+    for driver_code in dmap:
+        rows = sorted((row for row in history_rows if row["driver_code"] == driver_code),
+                      key=lambda row: row["work_date"])
+        previous_end: str | None = None
+        gap = False
+        for row in rows:
+            if row["coverage_status"] == "missing":
+                gap = True
+                continue
+            if row["duty_start"] is None:
+                continue
+            rest = row["rest_before_duty"]
+            if previous_end is None or gap:
+                require(rest is None, "Missing or pre-window rest cannot be treated as proven")
+            else:
+                require(rest is not None, "Known consecutive duties need rest evidence")
+                require(rest["start"] == previous_end and rest["end"] == row["duty_start"],
+                        "Rest evidence does not match adjacent duties")
+            previous_end = row["duty_end"]
+            gap = False
 
     shifts = payloads["future_shifts.json"]["records"]
     shift_keys: set[tuple[str, str]] = set()
@@ -149,8 +176,30 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
                 "Proposed driving exceeds elapsed duty")
         require(scenario["legal_compliance_certified"] is False,
                 "Fixture may not certify legal compliance")
+        overrides = scenario["input_overrides"]
+        if "additional_duty" in overrides:
+            extra = overrides["additional_duty"]
+            day = extra["duty_start"][:10]
+            require(overrides.get("supersedes_verified_off_duty_on") == day,
+                    "Added duty must explicitly supersede off-duty evidence")
+            require(instant(extra["duty_start"]) < instant(extra["duty_end"]),
+                    "Added duty interval invalid")
         if scenario["expected_outcome"] == "unknown_fail_closed":
             require(bool(scenario["expected_reason_codes"]), "Unknown cannot be an eligible candidate")
+        if scenario["expected_outcome"] == "candidate_for_planner_review":
+            driver, vehicle = dmap[scenario["driver_code"]], vmap[scenario["vehicle_code"]]
+            require(driver["warehouse_code"] == vehicle["warehouse_code"],
+                    "Candidate driver and vehicle warehouse mismatch")
+            require(vehicle["regulation_561_scope"] != "unknown", "Unknown vehicle cannot be candidate")
+            require(date.fromisoformat(driver["licence_expires_on"]) >= date.fromisoformat(
+                scenario["proposed_duty_start"][:10]), "Expired licence cannot be candidate")
+            require(not any(row["coverage_status"] == "missing" for row in history_rows
+                            if row["driver_code"] == scenario["driver_code"]),
+                    "Candidate history cannot contain a missing day")
+            require(any(shift["driver_code"] == scenario["driver_code"]
+                        and instant(shift["shift_start"]) <= instant(scenario["proposed_duty_start"])
+                        and instant(scenario["proposed_duty_end"]) <= instant(shift["shift_end"])
+                        for shift in shifts), "Candidate lacks covering offline shift fixture")
         require(scenario["expected_outcome"] in (
             "candidate_for_planner_review", "block_automatic_approval", "unknown_fail_closed",
             "historical_evidence_only"), "Unexpected outcome classification")
