@@ -573,7 +573,7 @@ async def receive(
         )
     ).all()
     if not lines or {(i.global_product_id, i.qty) for i in inbound} != {
-        (l.global_product_id, l.qty) for line in lines
+        (line.global_product_id, line.qty) for line in lines
     }:
         raise _error("RESOURCE_CONFLICT", "Transfer inbound rows are missing or inconsistent.")
     for row in inbound:
