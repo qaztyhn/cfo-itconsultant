@@ -7,12 +7,21 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.services.alert_service import raise_alert
+from tests.integration import rows
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.hr_fixture import (
-    ADMIN, CS, DISPATCHER, DRIVER, SALES, SETUP, SYSTEM_ADMIN, VIEWER, WAREHOUSE, ZZ_WAREHOUSE,
+    ADMIN,
+    CS,
+    DISPATCHER,
+    DRIVER,
+    SALES,
+    SETUP,
+    SYSTEM_ADMIN,
+    VIEWER,
+    WAREHOUSE,
+    ZZ_WAREHOUSE,
 )
-from tests.integration import rows
 
 pytestmark = pytest.mark.integration
 
@@ -116,7 +125,9 @@ def test_US_RSK_03_AC2_AC3_concurrent_raise_keeps_single_open_record(alerts: Api
     one, two = asyncio.run(same_key())
     assert (one is None) != (two is None)
     assert fetch(
-        alerts.dsn, "SELECT count(*) AS n FROM ops.alert WHERE dedupe_key='risk-concurrent' AND resolved_at IS NULL"
+        alerts.dsn,
+        "SELECT count(*) AS n FROM ops.alert WHERE dedupe_key='risk-concurrent' "
+        "AND resolved_at IS NULL",
     )[0]["n"] == 1
 
 
