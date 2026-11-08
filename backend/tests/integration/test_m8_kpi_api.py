@@ -4,8 +4,6 @@ Every test creates a fresh migrated database through the existing API harness.
 All data is synthetic and uses the approved market/warehouse schema.
 """
 
-from decimal import Decimal
-
 import pytest
 
 from tests.integration import rows
