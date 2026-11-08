@@ -7,7 +7,7 @@
 | Job name | Scope | Proposal cadence | Guard / effect |
 |---|---|---|---|
 | `ingest_orders` | market | every **5 min**, plus Sales explicit sync-now | read source `SUBMITTED_FOR_PLANNING` and `CANCELLED` versions with durable independent checkpoints; never decide CFO/legacy routing automatically |
-| `refresh_stock` | market | every **5 min** | only published coherent snapshot `as_of`, check data freshness; no last-row-wins and no double-counted stock aliases (SRC-Q9/Q10 gated by D1 contract) |
+| `refresh_stock` | market | every **5 min** | only published coherent snapshot `as_of`, check data freshness; no last-row-wins and no double-counted stock aliases (SRC-Q9/Q10 approved under DEC-SRC-D1-001; publish and pool/adapter code still pending) |
 | `stock_freshness` | market | every **5 min** | raise stale alert if latest stock `as_of` older than **15 min** market-configured; no fabricated zero stock |
 | `hold_expiry` | global single owner (idempotent across markets) | every **1 min** | expire *only* 15-min unapproved holds; `PLANNED → SUBMITTED` only if latest eligible run; Plan Again is manual; no automatic approve/rehold |
 | `notify_outbox` | market (or globally scoped DB worker honoring each market timezone) | every **1 min** | status/ETA allowlisted templates, market quiet hours **21:00–07:00** except Dispatcher-triggered DELAY exception; no real-customer send per DEC-NOTIFY-001 |
