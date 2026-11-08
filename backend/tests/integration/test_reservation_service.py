@@ -71,10 +71,7 @@ def _run[T](dsn: str, fn: Callable[[AsyncSession], Coroutine[Any, Any, T]]) -> T
 
 
 def _rows(db: str, table: str, columns: str) -> list[tuple[Any, ...]]:
-    return [
-        tuple(r)
-        for r in fetch(db, f"SELECT {columns} FROM plan.{table} ORDER BY id")
-    ]
+    return [tuple(r) for r in fetch(db, f"SELECT {columns} FROM plan.{table} ORDER BY id")]
 
 
 def _actor(role: str = "dispatcher", locations: tuple[int, ...] = (1,)) -> CurrentUser:
