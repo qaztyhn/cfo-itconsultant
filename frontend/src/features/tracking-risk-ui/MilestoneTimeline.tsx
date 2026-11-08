@@ -29,7 +29,10 @@ export function MilestoneTimeline({ model, loadState, errorReference, className 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-caption text-inkMuted">
             <span>Times in {model.timeZone}</span>
             {model.asOf && (
-              <span>Data as of <TimeValue datum={model.asOf} timeZone={model.timeZone} /></span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Data as of</span>
+                <TimeValue datum={model.asOf} timeZone={model.timeZone} />
+              </div>
             )}
           </div>
           <ol className="space-y-2">
