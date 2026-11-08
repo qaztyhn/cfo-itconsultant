@@ -7,7 +7,7 @@ Owner: Dev 1 (A) — M7.
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -183,5 +183,7 @@ async def acknowledge(session: AsyncSession, alert_id: int, actor: object) -> di
     return {
         "id": alert.id,
         "acknowledged_by": alert.acknowledged_by,
-        "acknowledged_at": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+        "acknowledged_at": (
+            alert.acknowledged_at.astimezone(UTC).isoformat() if alert.acknowledged_at else None
+        ),
     }
