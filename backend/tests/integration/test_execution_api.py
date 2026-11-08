@@ -1,5 +1,6 @@
 """M6 PostgreSQL lifecycle, RBAC and fail-closed integration (US-WH-04/05, US-EXE-01/02)."""
 
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -134,6 +135,7 @@ def test_US_WH_04_AC5_AC6_AC8_labour_pause_resume(
     payload = fetch(
         execution_api.dsn, "SELECT payload FROM ops.milestone_event WHERE event_type='GOODS_READY'"
     )[0]["payload"]
+    payload = json.loads(payload) if isinstance(payload, str) else payload
     assert payload["actual_labour_hours"] == "9.000"
     assert len(payload["labour_segments"]) == 2
 
