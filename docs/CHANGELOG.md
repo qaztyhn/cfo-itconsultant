@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
+
+- Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.
+- Ghi rõ các diễn giải kỹ thuật (cận `from`/`to` tùy chọn, `q` chỉ khớp văn bản địa chỉ, kiểu số/chuỗi) để review. Không đổi route/enum/mã lỗi, không migration.
+
+
 ## [DEC-SRC-D1-001 — owner-approved detailed Source D1-A–D] — 2026-11-08 — docs-only
 
 - Owner trả lời **“ĐƯỢC ĐỒNG Ý”** với toàn bộ D1-A/B/C/D trong [PR #84](https://github.com/qaztyhn/cfo-itconsultant/pull/84). Ghi `DEC-SRC-D1-001` tại `ASSUMPTIONS` và hồ sơ quyết định `docs/decisions/DEC_SRC_D1_APPROVED_20261108.md`.
@@ -186,9 +192,3 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   `tests/unit/test_core_correlation.py`, `tests/integration/test_recorder_health.py`.
 - Frontend (Dev 3): hiển thị lỗi chung theo `correlation_id`; có thể gặp `INTERNAL_ERROR`, `NOT_FOUND`.
 - Nếu nhóm **không** duyệt: chọn mã khác cho 500 trước khi merge PR #8 (code hiện dùng `INTERNAL_ERROR`).
-# Dev 2 D1-A reference read feeds (2026-11-08)
-
-- Implement the approved customer/address/product/inbound/fleet source GET feeds with paginated
-  inclusive checkpoints, deterministic composite keys and authenticated access. Clarify wire types in 06.
-- PostgreSQL contract tests exercise two isolated source schemas, auth, privacy errors, filters and
-  half-open fleet intervals. Source write/stock-batch contracts and the full OpenAPI baseline remain pending.
