@@ -291,7 +291,9 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
             if not all(stock[source.id][p] >= q for p, q in shortage.items()):
                 continue
             path = routes.get((source.id, dest.lat, dest.lon))
-            if path is None or (path.provider != "ors" and not allow_fallback):
+            if path is None or path.provider not in ("ors", "fallback"):
+                continue
+            if path.provider == "fallback" and not allow_fallback:
                 continue
             distances[(source.id, dest.id)] = path.distance_km
             sources.append(
@@ -381,6 +383,17 @@ async def approve(
     )
     if match is None:
         raise _error("PLAN_NOT_APPROVABLE", "Transfer is not an eligible current suggestion.")
+    # Multiple keys must not approve the same order's shortages twice.
+    existing = await session.scalar(
+        select(StockTransfer.id)
+        .where(
+            StockTransfer.order_id == order.id,
+            StockTransfer.status.in_(("approved", "source_confirmed", "received")),
+        )
+        .limit(1)
+    )
+    if existing is not None:
+        raise _error("RESOURCE_CONFLICT", "An active transfer already exists for this order.")
     lead = int(match["lead_days"])
     arrival = await _arrival(session, market, lead)
     transfer = StockTransfer(
