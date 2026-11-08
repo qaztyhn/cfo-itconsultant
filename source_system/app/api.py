@@ -17,9 +17,11 @@ from app.auth import require_api_key
 from app.db import database_ready
 from app.models import Stock
 from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderPage, OrderStatus, list_orders
+from app.reference_read import router as reference_router
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 health_router = APIRouter()
+router.include_router(reference_router)
 
 
 @router.get("/orders", response_model=OrderPage)
@@ -37,18 +39,6 @@ async def list_orders_endpoint(
     )
     response.headers["X-Total-Count"] = str(result.total)
     return result
-
-
-@router.get("/customers")
-async def list_customers(updated_since: str | None = None) -> dict[str, object]:
-    """Khách."""
-    raise NotImplementedError
-
-
-@router.get("/products")
-async def list_products(updated_since: str | None = None) -> dict[str, object]:
-    """Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích)."""
-    raise NotImplementedError
 
 
 def _number(value: Decimal) -> int | float:
@@ -92,18 +82,6 @@ async def stock_snapshot(request: Request) -> StockSnapshot:
     )
 
 
-@router.get("/inbound")
-async def inbound() -> dict[str, object]:
-    """Hàng nhập chưa về (inbound_ref, warehouse_code, sku, qty, eta_date, confirmed)."""
-    raise NotImplementedError
-
-
-@router.get("/fleet/calendar")
-async def fleet_calendar(date_from: str, date_to: str) -> dict[str, object]:
-    """Khoảng bận của xe."""
-    raise NotImplementedError
-
-
 @router.post("/orders")
 async def create_order() -> dict[str, object]:
     """POS: tạo đơn nháp (DRAFT)."""
@@ -131,12 +109,6 @@ async def submit_order(order_id: str) -> dict[str, object]:
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str) -> dict[str, object]:
     """Hủy đơn ở nguồn."""
-    raise NotImplementedError
-
-
-@router.get("/addresses")
-async def addresses(q: str = "") -> dict[str, object]:
-    """Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật)."""
     raise NotImplementedError
 
 

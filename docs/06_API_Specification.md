@@ -740,6 +740,15 @@ Mọi danh sách trừ `/stock`/`/health` trả `200 ` với **`{items,page,page
 
 ### 16.2 D1-B — POS ghi đơn và validate
 
+**D1-A wire types (reference feeds):** customers trả `id,name,email,phone,type,updated_at`;
+addresses trả `id,customer_id,address,lat,lon,updated_at` (tọa độ JSON number/null, `q` tìm literal
+substring không phân biệt hoa thường trong address hoặc customer name); products trả các trường
+`src_product` trong 05 §10 và `updated_at`, `unit_price` là chuỗi hai số thập phân, các quantity/weight/volume
+là JSON number. Inbound trả các trường `src_inbound` và `updated_at` (qty JSON number, eta_date ISO date);
+fleet trả `vehicle_code,from_ts,to_ts,kind,updated_at`. `from`/`to` của fleet bắt buộc aware và `from < to`.
+Không trả `created_at` hoặc dữ liệu đơn/nhân sự trong các feed này. Count/items cùng snapshot trong một
+request; các trang qua nhiều request vẫn cần overlap/idempotency khi đồng bộ.
+
 | Phương thức | Path | Thành công | Bất biến |
 |---|---|---|---|
 | `POST` | `/orders` | **201**, order DTO | Sinh ID nguồn, `status=DRAFT`, `version=1`; draft persist cần customer_id, address_id, store_code, date_mode |
