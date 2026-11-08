@@ -43,12 +43,18 @@ SEED = (
     "UPDATE ops.customer_order SET approved_plan_id=id, origin_store_id=2, "
     "submitted_at='2026-11-10T08:00Z', approved_at='2026-11-10T08:15Z', "
     "committed_date='2026-11-10', promise_end='2026-11-10T23:00Z' WHERE id IN (1,2,3,4)",
+    # Exercise the actual approved transition graph; do not bypass DB triggers.
+    "UPDATE ops.customer_order SET status='PLANNED' WHERE id IN (1,2,3,4)",
+    "UPDATE ops.customer_order SET status='APPROVED' WHERE id IN (1,2,3,4)",
+    "UPDATE ops.customer_order SET status='PREPARING' WHERE id IN (1,2,3)",
+    "UPDATE ops.customer_order SET status='GOODS_READY' WHERE id IN (1,2,3)",
+    "UPDATE ops.customer_order SET status='LOADED' WHERE id IN (1,2,3)",
+    "UPDATE ops.customer_order SET status='DISPATCHED' WHERE id IN (1,2,3)",
     "UPDATE ops.customer_order SET status='DELIVERED', delivered_at='2026-11-10T22:50Z', "
     "closed_at='2026-11-10T22:50Z' WHERE id=1",
     "UPDATE ops.customer_order SET status='DELIVERED', delivered_at='2026-11-10T23:50Z', "
     "closed_at='2026-11-10T23:50Z' WHERE id=2",
     "UPDATE ops.customer_order SET status='FAILED', closed_at='2026-11-11T10:00Z' WHERE id=3",
-    "UPDATE ops.customer_order SET status='APPROVED' WHERE id=4",
     "INSERT INTO audit.improvement_log (order_id, warehouse_id, handling_groups, "
     "prep_error_min, eta_error_min, accepted_unchanged, delivered_at) VALUES "
     "(1, 1, '{N1}', 5, 10, true, '2026-11-10T22:50Z'), "
