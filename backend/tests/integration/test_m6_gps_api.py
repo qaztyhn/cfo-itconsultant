@@ -1,13 +1,20 @@
 """D3 GPS API: real PostgreSQL duty, privacy, cadence, replay and retention tests."""
 
+import asyncio
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.core.errors import DomainError
+from app.deps import CurrentUser
 from app.domain.models.ops import DeliveryTrip
 from app.services import gps_service
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
-from tests.integration.conftest import execute, fetch
+from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.hr_fixture import (
     ADMIN,
@@ -233,3 +240,62 @@ def test_US_GPS_03_AC1_lost_signal_dedupes_and_resolves_after_recovery(gps: Api)
     )[0][0] == 0
     alert = fetch(gps.dsn, "SELECT message FROM ops.alert WHERE type='GPS_LOST'")[0]
     assert "59" not in alert["message"] and "driver" not in alert["message"].lower()
+
+
+def test_US_GPS_03_AC2_concurrent_terminal_commit_prevents_late_offline_upload(gps: Api) -> None:
+    """The trip row lock serializes the terminal hook and device write."""
+
+    async def scenario() -> tuple[int, str]:
+        engine = create_async_engine(async_url(gps.dsn), poolclass=NullPool)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        locked, release = asyncio.Event(), asyncio.Event()
+        actor = CurrentUser(id=DRIVER, employee_id=DRIVER, roles=("driver",), market="SE")
+
+        async def finish() -> int:
+            async with maker() as session, session.begin():
+                trip = await session.scalar(
+                    select(DeliveryTrip).where(DeliveryTrip.id == 1).with_for_update()
+                )
+                assert trip is not None
+                trip.status = "completed"
+                trip.ended_at = NOW
+                await session.flush()
+                locked.set()
+                await release.wait()
+                return await gps_service.purge_trip_on_terminal(session, 1, now=NOW)
+
+        async def upload() -> str:
+            await locked.wait()
+            try:
+                async with maker() as session, session.begin():
+                    await gps_service.ingest_positions(
+                        1,
+                        actor,
+                        [{
+                            "lat": Decimal("59.30000"),
+                            "lon": Decimal("18.10000"),
+                            "accuracy_m": Decimal("12.5"),
+                            "recorded_at": datetime(2026, 11, 10, 7, tzinfo=UTC),
+                            "source": "device",
+                        }],
+                        session=session,
+                        now=NOW,
+                    )
+            except DomainError as exc:
+                return exc.code
+            return "unexpected_acceptance"
+
+        try:
+            completion = asyncio.create_task(finish())
+            await locked.wait()
+            upload_task = asyncio.create_task(upload())
+            await asyncio.sleep(0)
+            release.set()
+            return await completion, await upload_task
+        finally:
+            await engine.dispose()
+
+    purged, result = asyncio.run(scenario())
+    assert purged == 0
+    assert result == "NOT_ON_TRIP"
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
