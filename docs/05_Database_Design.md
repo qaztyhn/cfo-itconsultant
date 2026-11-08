@@ -697,7 +697,7 @@ Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt
 
 **Gợi ý lập lại tự động (v1.2).** Khi một đơn đã duyệt gặp một trong bốn tín hiệu — (a) nguồn sửa đơn sau khi duyệt, (b) tồn kho đổi làm kế hoạch không còn hợp lệ, (c) `VEHICLE_ISSUE`, (d) giao `FAILED` — hệ thống tạo `planning_run(kind='replan_suggestion', trigger=…)`. Engine chạy **coi như kế hoạch hiện tại của chính đơn này không tồn tại** (giữ chỗ hàng, giờ công, xe, tài xế của nó được cộng lại vào phần khả dụng) để không tính sai nhân công, công suất, tồn kho. Lần chạy này **không tạo giữ chỗ** (tránh trùng chỉ mục với giữ chỗ `committed` của chính đơn). Hệ thống tạo alert `REPLAN_SUGGESTED` cho dispatcher. Dispatcher: **duyệt** (đóng kế hoạch cũ theo 5 bước trên rồi khóa, kiểm tra lại và commit kế hoạch mới trong cùng transaction; `409 RESOURCE_CONFLICT` nếu tài nguyên đã bị chiếm), **giữ kế hoạch cũ** (lý do), hoặc lập lại thủ công. Không bao giờ tự duyệt. Đơn đã `DISPATCHED` chỉ nhận alert.
 
-### 6.x Contract versioned scope SKU và evidence (DEC-DEV1-D1-03/04)
+### 6.1 Contract versioned scope SKU và evidence (DEC-DEV1-D1-03/04)
 
 **Đã duyệt nghiệp vụ, chưa chốt DDL:** scope SKU CFO phải do quản trị viên có thẩm quyền theo **market/pilot** quản lý/phê duyệt, có **version, hiệu lực và audit**; không suy từ mapping hoặc Source batch. Chứng cứ tồn độc lập do **Warehouse Manager** cung cấp từ kho/WMS; quản trị viên có thẩm quyền phê duyệt; lưu **bằng chứng/provenance, approver, version, hiệu lực và audit**. Thiếu/hết hiệu lực/chồng lấn thì không cộng và không ghi một phần vào `ops.stock_snapshot`.
 
