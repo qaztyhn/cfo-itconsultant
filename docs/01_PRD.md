@@ -171,7 +171,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ### 5.11 KPI, log, quản trị
 - **FR-KPI-01 (M)** Dashboard 6 KPI của slide (thời gian lập kế hoạch, giao đúng hạn, giờ công và km mỗi lần giao thay cho "cost per delivery", sai số chuẩn bị, sai số ETA, tỷ lệ chấp nhận kế hoạch) + tỷ lệ giao thất bại + mức dùng công suất; so với baseline nhập tay. [S][C]
-- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (ngoài 8 KPI vận hành): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn theo cửa hàng và theo kho, **không cộng với nhau**; xuất CSV có ghi nhật ký. Chỉ tiền hàng, không phí giao/đóng gói/nhân công/giá vốn/lợi nhuận. [C][A]
+- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (ngoài 10 KPI vận hành): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn theo cửa hàng và theo kho, **không cộng với nhau**; xuất CSV có ghi nhật ký. Chỉ tiền hàng, không phí giao/đóng gói/nhân công/giá vốn/lợi nhuận. [C][A]
 - **FR-LOG-01 (M)** Nhật ký quyết định trong DB (chỉ thêm) và log kỹ thuật JSONL; không PII trong log.
 - **FR-ADM-01 (M)** IT xem lịch sử đồng bộ, dòng bị loại, cấu hình market, bật/tắt GPS, ghi nhận DPIA.
 
@@ -363,7 +363,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | Tích hợp | API polling ~5 phút, dự phòng CSV qua SFTP | API hệ thống nguồn giả lập; dự phòng tải CSV lên |
 | Công suất kho | Người × giờ năng suất − việc đã đặt | Thêm tỷ lệ 90% dành cho đơn giao |
 | Báo trễ | Gửi khi thay đổi có ý nghĩa | Hệ thống tạo nháp, **dispatcher bấm gửi**; ngưỡng lệch ≥ 30 phút |
-| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; trang 10 thêm manual interventions/order, rollout effort, shared component reuse | 8 KPI (6 của slide + giao thất bại + mức dùng công suất); manual interventions ≈ `manual_plan_count`; rollout effort và component reuse đo ở giai đoạn mở rộng (MVP chỉ một nước) |
+| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; trang 10 thêm manual interventions/order, rollout effort, shared component reuse | 10 KPI đã duyệt (KPI-1, DEC-OWNER-20261109: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`); manual interventions ≈ `manual_plan_count`; rollout effort và component reuse đo ở giai đoạn mở rộng (MVP chỉ một nước) |
 | Chuyển kho | Không nhắc | Gợi ý chuyển kho bằng quy tắc (vẫn một kho xử lý trọn đơn) |
 | Giờ công | Theo đơn vị chuẩn bị | Quy về đơn vị cơ sở nhỏ nhất; hàng không chia nhỏ được thì làm tròn lên |
 | Dữ liệu cho AI | Học từ thực tế | Giờ nhân công/đơn vị cơ sở theo nhóm, thu qua bắt đầu/tạm dừng/tiếp tục/xong |

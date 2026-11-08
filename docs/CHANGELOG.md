@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M8 KPI-1 — sửa chữ "8 KPI" thành 10] — 2026-11-09 — Dev 1 (#143)
+
+- docs/01 FR-KPI-02/bảng KPI và docs/05 ghi **10** KPI đã duyệt (KPI-1); backend giữ đủ 10 key, hai chẩn đoán chưa hỗ trợ trả `null`. Cohort theo KPI-2: ngày duyệt (kế hoạch), ngày giao (giao hàng), `work_date` kho (công suất), theo múi giờ IANA của market. Định nghĩa các metric còn mơ hồ cần review riêng, không đoán.
+
 ## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
 
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.

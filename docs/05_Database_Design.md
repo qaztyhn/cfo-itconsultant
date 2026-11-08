@@ -867,7 +867,7 @@ CREATE TABLE audit.kpi_baseline (               -- baseline thủ công trước
 
 **Quyền xem KPI vận hành:** `admin` và người có `'ops'` trong `kpi_scopes` (dispatcher, quản lý/phó kho, Project Lead). Business owner (`revenue_all`) **không** xem KPI vận hành. CS không xem KPI.
 
-**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc 8 KPI vận hành).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
+**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc 10 KPI vận hành).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
 
 | Chỉ số | Định nghĩa |
 |---|---|

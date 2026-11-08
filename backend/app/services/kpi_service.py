@@ -27,8 +27,8 @@ from app.domain.models.ops import CustomerOrder
 from app.domain.models.plan import FulfilmentPlan, PrepReservation
 from app.domain.models.ref import Location, Market, MarketHoliday
 
-# The current docs call these "8 KPI", but docs/05 and the docs/06 JSON
-# individually name ten keys. Keep all ten as written; owner must reconcile count.
+# KPI-1 (DEC-OWNER-20261109): exactly these ten published keys. The two unsupported diagnostics
+# (`hard_constraint_violations`, `event_to_alert_latency_s_median`) are null, never an invented zero.
 METRICS: tuple[str, ...] = (
     "planning_time_min",
     "on_time_rate",
