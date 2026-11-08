@@ -8,7 +8,7 @@ import pytest
 
 from app.core import clock
 from app.core.security import issue_token
-from app.services import risk_service
+from app.services import execution_service, notify_service, planning_service, risk_service
 from tests.integration import rows
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import execute, fetch
@@ -20,6 +20,14 @@ SEED = (
     *SETUP,
     "INSERT INTO ref.customer (market_id, external_ref, type, name) VALUES "
     "(1, 'EXE-CLIENT', 'business', 'Synthetic client')",
+    "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, position_code, hire_date) "
+    "VALUES (1, 'SE-M6-D2', 'Synthetic', 'DriverTwo', 'DRIVER', '2025-01-01')",
+    "INSERT INTO hr.employee_assignment (employee_id, location_id, start_date) "
+    "VALUES (11, 1, '2025-01-01')",
+    "INSERT INTO hr.driver_staff (employee_id, home_warehouse_id, licence_class, licence_expires_on) "
+    "VALUES (11, 1, 'CE', '2027-01-31')",
+    "INSERT INTO ref.app_user (employee_id, email, password_hash, roles) "
+    "VALUES (11, 'driver-two@cfo.test', 'not-a-real-hash', '{driver}')",
     "INSERT INTO ref.vehicle (home_warehouse_id, code, plate, name, capacity_kg, capacity_m3,"
     " required_licence, max_permissible_mass_kg, regulation_561_scope) VALUES "
     "(1, 'V-EX-1', 'SYN-1', 'Synthetic truck 1', 9000, 30, 'C', 12000, 'in_scope'), "
@@ -34,7 +42,7 @@ SEED = (
     "UPDATE ops.customer_order SET approved_plan_id=1 WHERE id=1",
     "INSERT INTO ops.delivery_trip (warehouse_id, vehicle_id, driver_employee_id,"
     " depart_planned_at) VALUES "
-    "(1, 1, 5, '2026-11-10T08:00Z'), (1, 2, 5, '2026-11-10T08:00Z')",
+    "(1, 1, 5, '2026-11-10T08:00Z'), (1, 2, 11, '2026-11-10T08:00Z')",
     "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) VALUES "
     "(1, 1, 1, '2026-11-10T10:00Z'), (2, 1, 1, '2026-11-10T10:30Z')",
 )
@@ -77,8 +85,12 @@ def test_US_EXE_01_AC1_driver_trip_list_only_own_safe_fields(execution_api: Api)
     response = execution_api.get("/driver/trips", DRIVER, date="2026-11-10")
     assert response.status_code == 200, response.text
     trips = response.json()["items"]
-    assert len(trips) == 2
-    assert {row["vehicle_code"] for row in trips} == {"V-EX-1", "V-EX-2"}
+    assert len(trips) == 1
+    assert {row["vehicle_code"] for row in trips} == {"V-EX-1"}
+    other = execution_api.get("/driver/trips", 15, date="2026-11-10")
+    assert other.status_code == 200
+    assert [row["vehicle_code"] for row in other.json()["items"]] == ["V-EX-2"]
+    assert_error(execution_api.get("/driver/trips/2", DRIVER), 404, "NOT_FOUND")
     assert trips[0]["stops"][0]["delivery_address"] == "Synthetic delivery site"
     assert "total_amount" not in response.text
     assert "latitude" not in response.text and "gps" not in response.text
@@ -243,3 +255,71 @@ def test_US_EXE_02_AC3_failure_reason_is_required(execution_api: Api) -> None:
         422,
         "VALIDATION_ERROR",
     )
+
+
+def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bypass missing external gate *only in this integration test* to test order aggregation."""
+    async def test_driver_gate(*_args: object) -> None:
+        return None
+
+    messages: list[str] = []
+    triggers: list[str] = []
+
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+        assert order_id == 1 and plan_id == 1
+        messages.append(template)
+        return len(messages)
+
+    async def test_replan(order_id: int, trigger: str, **_kwargs: object) -> int:
+        assert order_id == 1
+        triggers.append(trigger)
+        return 2
+
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    monkeypatch.setattr(notify_service, "enqueue", test_enqueue)
+    monkeypatch.setattr(execution_service, "_driver_gate", test_driver_gate)
+    monkeypatch.setattr(planning_service, "suggest_replan", test_replan)
+
+    steps = (
+        (WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        (WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+        (DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        (15, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2}),
+    )
+    for actor, kind, at, data in steps:
+        response = send(execution_api, actor, kind, at, data)
+        assert response.status_code == 200, response.text
+    assert messages == ["DISPATCHED"]
+
+    execute(
+        execution_api.dsn,
+        "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'simulator'), "
+        "(2, 2, 59, 18, '2026-11-10T08:31Z', 'simulator')",
+    )
+    first = send(
+        execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z",
+        {"trip_id": 1, "recipient_name": "Synthetic recipient"},
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["order_status"] == "DISPATCHED"
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
+    assert messages == ["DISPATCHED"]
+
+    second = send(
+        execution_api, 15, "FAILED", "2026-11-10T09:35:00Z",
+        {"trip_id": 2, "failure_reason": "customer_absent"},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["order_status"] == "FAILED"
+    assert messages == ["DISPATCHED", "FAILED"]
+    assert triggers == ["delivery_failed"]
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 0
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 2
+    assert fetch(
+        execution_api.dsn, "SELECT count(*) AS n FROM ops.alert WHERE type='EXCEPTION'"
+    )[0]["n"] == 1
