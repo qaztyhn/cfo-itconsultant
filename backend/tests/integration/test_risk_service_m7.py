@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import TypeVar
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,16 +11,15 @@ from sqlalchemy.pool import NullPool
 from app.core.errors import DomainError
 from app.services import risk_service
 from tests.integration import rows
-from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.api_harness import Api, api  # noqa: F401
+from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.hr_fixture import SETUP
 
 pytestmark = pytest.mark.integration
-T = TypeVar("T")
 NOW = datetime(2026, 11, 10, 8, 45, tzinfo=UTC)
 
 
-def run(dsn: str, action: Callable[[AsyncSession], Awaitable[T]]) -> T:
+def run[T](dsn: str, action: Callable[[AsyncSession], Awaitable[T]]) -> T:
     async def go() -> T:
         engine = create_async_engine(async_url(dsn), poolclass=NullPool)
         try:
@@ -74,7 +72,9 @@ def _recalc(dsn: str, *, at: datetime, trigger: str = "source_change") -> dict[s
     )
 
 
-def test_US_RSK_01_AC1_no_unverified_trigger_no_extra_version(risk_db: tuple[str, dict[str, datetime]]) -> None:
+def test_US_RSK_01_AC1_no_unverified_trigger_no_extra_version(
+    risk_db: tuple[str, dict[str, datetime]],
+) -> None:
     dsn, state = risk_db
     first = _recalc(dsn, at=NOW - timedelta(minutes=1))
     assert first is not None
