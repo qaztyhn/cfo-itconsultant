@@ -128,6 +128,26 @@ def test_US_GPS_01_AC1_rejects_high_frequency_sampling_without_partial_insert(gp
     )
 
 
+@pytest.mark.parametrize(
+    "gps_config",
+    ['{"interval_min":1,"lost_min":60}', '{"interval_min":30,"lost_min":1}'],
+)
+def test_US_GPS_01_AC1_unapproved_gps_cadence_fails_closed(
+    gps: Api, gps_config: str
+) -> None:
+    execute(
+        gps.dsn,
+        "UPDATE ref.market SET config=jsonb_build_object('gps', "
+        f"'{gps_config}'::jsonb) WHERE id=1",
+    )
+    assert_error(
+        submit(gps, [position("2026-11-10T07:00:00Z")]),
+        422,
+        "VALIDATION_ERROR",
+    )
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+
+
 def test_US_GPS_01_AC2_disabled_market_rejects_without_storing(gps: Api) -> None:
     execute(gps.dsn, "UPDATE ref.market SET gps_enabled=false WHERE id=1")
     assert_error(submit(gps, [position("2026-11-10T07:00:00Z")]), 403, "GPS_DISABLED")
