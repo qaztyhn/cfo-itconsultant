@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-07)
+## Sổ quyết định đã chốt (cập nhật 2026-11-08)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -22,6 +22,8 @@
 | [DEC-AUDIT-001](#dec-audit-001--q13-mã-nhật-ký-nhân-sự) | Q13 chấp thuận 3 mã audit mới và quy tắc hồi tố | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Chờ cập nhật contract/code |
 | [DEC-DRIVER-001](#dec-driver-001--khung-giờ-làm-nghỉ-và-giới-hạn-lái-xe) | Kiểm ca tài xế và nhân viên kho; nghỉ mặc định 11h; lái xe/nghỉ theo phạm vi pháp luật | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54) | Quy tắc MVP đã duyệt; engine/schema cần nghiệm thu |
 | [DEC-NOTIFY-001](#dec-notify-001--giới-hạn-email-thử-nghiệm-và-ngăn-gửi-trùng) | Email MVP chỉ qua Mailpit hoặc staging kiểm soát với địa chỉ demo; chưa gửi khách thật khi thiếu chống trùng/đối soát | 07/11 | Chủ dự án xác nhận sau review [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69) | Quyết định đã duyệt; #68–#70 đã lên `main` (#74); chặn người nhận staging bằng code trong PR `fix/notify-staging-recipient-guard` (chờ review); chống trùng/đối soát chưa có |
+| [DEC-HOLD-001](#dec-hold-001--hết-hạn-hold-phải-lập-kế-hoạch-mới) | Hold hết hạn ⇒ phương án cũ không được duyệt lại; giải phóng giữ chỗ; người dùng chọn Plan Again để tạo planning_run mới trên **cùng order**, kiểm tra đầy đủ và giữ chỗ lại | 08/11 | Chủ dự án chốt trong phiên review PR #78 (08/11/2026) | Cần đồng bộ T14/T15/T16, job hết hạn, API/UI và regression tests; PR #78 chưa thể tuyên bố E2E |
+| [DEC-SRC-001](#dec-src-001--source-contract-src-q1q10) | Phê duyệt hướng giải quyết SRC-Q1–Q10 cho hệ thống nguồn: snapshot, API ghi, lỗi, lifecycle, phân trang, tăng dần, lịch nhận, tồn kho, local/global SKU | 08/11 | Chủ dự án xác nhận trong phiên làm việc 08/11; [proposal](proposals/M1_SOURCE_CONTRACT.md) | Đã duyệt nguyên tắc; 05/06, migration, contract test và code chưa cập nhật trong quyết định này |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -51,7 +53,7 @@
   đây là fixtures tham chiếu, chưa phải seed định lượng cho các kịch bản engine.
 - **Nguồn:** 40 khách tổng hợp (30 doanh nghiệp, 10 consumer), mỗi khách 2 địa chỉ quanh ba vùng,
   email chỉ thuộc miền `.test`, không tạo số điện thoại thật. Chưa seed giờ nhận vì schema nguồn
-  hiện thiếu trường này và SRC-Q8 chưa được duyệt.
+  hiện thiếu trường này; SRC-Q8 đã được duyệt hướng bổ sung lịch nguồn và giờ nhận theo địa chỉ (DEC-SRC-001), nhưng schema/seed chưa triển khai.
 - **Catalog nguồn:** đóng gói độc lập 100 SKU trong `source_system/seed/se`; test đối chiếu mọi trường
   sản phẩm với seed CFO để phát hiện lệch fixture. Không import ứng dụng CFO lúc chạy nguồn, không đọc
   dữ liệu vận hành CFO để ghi ngược; không đổi trạng thái mapping, không seed tồn kho/đơn kịch bản.
@@ -213,25 +215,6 @@
   3. **Warehouse Manager** có phân công quản lý hợp lệ tại đúng kho lập/sửa lịch phân ca. Điểm danh thực tế do tài khoản warehouse được phép của chính kho đó ghi theo phân quyền hiện hành; admin/dispatcher chỉ đọc điểm danh thường, không được tự phân ca thay Warehouse Manager. Ngoài kho → `404`, không đủ quyền → `403`. Cần chốt rõ guard theo chức danh ở API trước khi code.
   4. Mỗi lần ghi điểm danh phải có `ATTENDANCE_CHANGED` với before/after, changed employee IDs (không PII). Mỗi lần Warehouse Manager lập/đổi lịch nhân viên phải ghi `SHIFT_CHANGED`, actor, trước/sau, ngày hiệu lực. Mọi ghi log trong **cùng transaction** với thay đổi.
   5. Lịch phân ca chính thức cho tương lai do Warehouse Manager lập/sửa; điểm danh ghi đúng ngày làm, người được ủy quyền ở kho có thể ghi `present`/`absent`/`leave`. **Sửa dữ liệu quá khứ** chỉ với quyền hợp lệ, lý do bắt buộc và log, không sửa âm thầm. Việc `all_present` chỉ tác động những người có trong lịch ca chính thức, không tự thêm/đổi ca.
-- **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** hiện còn quy tắc Q11=B chia theo `expected_staff`/đẩy dư vào ca cuối; phải sửa/rebase trước khi merge.
-
-## ASM-008 — Giả định giao diện M0 (Dev 3): phân quyền menu, đăng nhập, môi trường demo
-
-- **Ngày:** 2026-11-07
-- **Trạng thái:** chờ Dev 1/Dev 2 xác nhận các điểm đánh dấu "cần xác nhận". Chỉ điều khiển trải nghiệm giao diện; máy chủ vẫn kiểm quyền mọi endpoint (`06` mục 3, `09`).
-- **Giả định (mã A–I khớp chú thích trong `frontend/src/app/access.ts`, `menu.ts`, `config.ts`):**
-  1. ASM-B: khi tài khoản có nhiều vai trò, màn hình sau đăng nhập ưu tiên theo thứ tự admin → dispatcher → warehouse → driver → customer_service → sales → revenue_all → ops; menu gộp nhóm của mọi vai trò để chuyển qua lại.
-  2. ASM-C: vai trò `sales` vào `/store/orders` sau đăng nhập.
-  3. ASM-D: KPI vận hành mở cho admin hoặc `kpi_scopes` có `ops`; doanh thu toàn thị trường mở cho admin hoặc `revenue_all`.
-  4. ASM-E: owner kho/cửa hàng (xem doanh thu "my location") chờ tín hiệu từ backend (Dev 1); hiện chưa hiện (`it.todo` trong `access.test.ts`).
-  5. ASM-F: huy hiệu "Plan review" lấy từ `awaiting_approval` của `GET /orders/counts`; huy hiệu ẩn khi counts chưa tải và khi bằng 0.
-  6. ASM-G: mục "New order" của Sales mở POS giả lập ở `http://localhost:8100` (biến `VITE_POS_URL`), **cần Dev 2 xác nhận cổng**.
-  7. ASM-H: mục "Contact log" của Customer service chỉ là chỗ giữ chỗ, chưa có màn hình.
-  8. ASM-I: chip trạng thái PLANNED, PREPARING, GOODS_READY, LOADED, DISPATCHED, SUBMITTED, BLOCKED_UNMAPPED_SKU, CANCELLED dùng màu chip mặc định, không viền.
-  9. `GET /auth/me` trả cùng object `user` như login; `GET /locations` trả `{ items: [{ id, code, name, type }] }` để sidebar lập danh sách kho — cả hai **cần Dev 1 xác nhận** (chưa có schema trong `06`).
-  10. `VITE_APP_ENV` không đặt ⇒ coi là demo (banner DEMO hiện); chỉ giá trị `production` mới ẩn banner.
-  11. Màn Sign in có 7 thẻ demo (không có Project lead); thẻ chỉ điền email, không hard-code mật khẩu (`09` bất biến 25).
-- **Ảnh hưởng:** `frontend/src/app/*`, `components/Sidebar.tsx`, `components/ScopePicker.tsx`, `components/DemoBanner.tsx`, `features/auth/SignIn.tsx`, `api/config.ts`.
 - **Q11 đã chốt:** `expected_staff` ở `shift_template` chỉ là **số lượng kế hoạch để so sánh**, không phải quota tự phân ca; không tự chia đều, không đưa nhân viên dư vào ca cuối. `attendance_gen` chỉ được tạo dòng `planned` từ **lịch người–ca đã được Warehouse Manager xác nhận**, không được tự suy lịch. Thiếu lịch chính thức → báo thiếu dữ liệu/công suất chưa xác minh, không làm giả danh sách nhân viên. **PR #37** đã được Dev 1 báo cập nhật Q11 theo ASM-007 trong comment, nhưng vẫn phải review/rebase trước khi merge; không áp dụng lại Q11=B cũ.
 
 ## DEC-SALES-001 — Sales xác nhận có điều kiện và sync-now
@@ -329,3 +312,49 @@
 - **Trước khi gửi thật:** cần thiết kế và review riêng việc claim trạng thái trước gửi, định danh/dedupe ổn định, đối soát kết quả nhà cung cấp, xử lý trạng thái không chắc chắn và regression test mô phỏng SMTP thành công nhưng DB commit thất bại. Không tự mặc định hệ thống bảo đảm exactly-once.
 - **Tài liệu/code liên quan:** `backend/app/providers/email_smtp.py`, `backend/app/services/notification_delivery.py`, [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69), `docs/05_Database_Design.md` và `docs/06_API_Specification.md` nếu sau này thay đổi giao kèo notification.
 - **Tình trạng:** quyết định nghiệp vụ **đã chốt**. Code #68–#70 đã lên `main` qua #74. Chặn người nhận staging: `SmtpEmailProvider` với host ngoài Mailpit/localhost chỉ chấp nhận đúng một địa chỉ thuộc `SMTP_ALLOWED_RECIPIENT_DOMAINS` (mặc định `test`, rỗng → từ chối khởi tạo); địa chỉ khác bị từ chối **trước khi mở kết nối SMTP**, dòng notification chuyển `suppressed` với `suppressed_reason = recipient_not_allowed`, ghi `NOTIFICATION_SUPPRESSED`, không tính là lần thử và không retry (PR `fix/notify-staging-recipient-guard`, chờ review). **Chống trùng/đối soát vẫn chưa có**; chưa cho phép gửi email khách thật. Không đưa miền email thật (ví dụ miền của khách) vào danh sách cho phép.
+
+
+## DEC-SRC-001 — Source contract SRC-Q1–Q10
+
+- **Ngày chốt:** 2026-11-08. **Duyệt bởi:** chủ dự án trong cuộc trò chuyện 2026-11-08 sau khi xem bảng SRC-Q1–Q10 tại [M1_SOURCE_CONTRACT.md](proposals/M1_SOURCE_CONTRACT.md); xác nhận “đc tôi đồng ý”.
+- **Phạm vi:** contract **hệ thống nguồn giả lập/POS và adapter đọc vào CFO**. Không thay đổi nguyên tắc CFO chỉ đọc từ nguồn, không thay thế POS cũ. Quyết định này **không** phải xác nhận rằng code, API hay migration đã triển khai.
+- **SRC-Q1 — Snapshot:** lưu trong đơn bản chụp `address, lat, lon`, tên/điện thoại/email liên hệ; `receiving_restrictions` và `special_requirements` nullable. Thay đổi hồ sơ khách/địa chỉ sau đó không tự ghi đè bản chụp đơn cũ.
+- **SRC-Q2 — Ghi đơn:** `POST/PUT` nhận `customer_id, address_id`, liên hệ, ngày/khung giờ, mã sales/store, yêu cầu đặc biệt, dòng hàng; server tự snapshot địa chỉ/toạ độ từ địa chỉ được chọn, không tin toạ độ client; từ chối field lạ.
+- **SRC-Q3 — Response:** `POST` trả `201`; `PUT/validate/submit/cancel` trả `200`, dùng cùng order representation. Tiền dạng string, số lượng numeric, thời điểm có timezone; schema chi tiết còn phải đặc tả.
+- **SRC-Q4 — Validation errors:** `422 VALIDATION_ERROR`, `details.errors` có đường dẫn field và reason ổn định; tuyệt đối không phản chiếu dữ liệu cá nhân. Dev 2 và Dev 3 chốt danh sách reason/path trong contract.
+- **SRC-Q5 — Lifecycle:** `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh sửa đơn đã validate đưa về `DRAFT`; submit kiểm tra lại trong transaction/row lock; xử lý version/cancel/retry theo proposal, cần contract test. Chỉnh sửa/hủy sau khi đã đồng bộ và sau duyệt CFO phải xét tương tác với `ORDER_CHANGED_AFTER_APPROVAL`, không tự suy đoán.
+- **SRC-Q6 — Pagination:** danh sách nguồn dùng `{items,page,page_size,total}`, `page=1`, `page_size=50`, max `500`, header `X-Total-Count`; endpoint snapshot `/stock` giữ `{as_of,items}`. Danh sách endpoint thuộc phạm vi phải được liệt kê đầy đủ trong `06`.
+- **SRC-Q7 — Đồng bộ gia tăng:** điều kiện `updated_at >= updated_since`, thứ tự tăng ổn định theo timestamp rồi natural key: đơn dùng `id`, sản phẩm dùng `sku`, thực thể khóa ghép dùng toàn bộ key; adapter upsert/idempotent để không bỏ sót bản ghi trùng timestamp.
+- **SRC-Q8 — Lịch nhận:** chọn hướng **bổ sung** cấu hình lịch làm việc theo source instance/market và giờ nhận theo địa chỉ; không tự đoán ngày nghỉ, ngày lễ hay 24/7. Lịch nhận phải được kiểm tra cùng với quy tắc ca nhân viên kho và tài xế đã duyệt tại DEC-SHIFTS-001 / DEC-DRIVER-001 khi lập kế hoạch. Lịch/giờ nhận ở nguồn và ca kho/tài xế trong CFO là các dữ liệu khác nhau.
+- **SRC-Q9 — Stock batch:** mỗi snapshot tồn kho là một batch nhất quán với một `as_of`, bao gồm cả snapshot rỗng; không dùng timestamp từng dòng làm thay thế batch marker. Storage/seed/transaction và ý nghĩa snapshot rỗng cần đặc tả kỹ trước triển khai.
+- **SRC-Q10 — Local/global SKU:** normalize số lượng theo `units_to_base` và phân biệt các row có đại diện cho **tồn vật lý độc lập** hay không; không ghi đè hàng trước bằng hàng sau, cũng không cộng vô điều kiện khi nhiều local SKU ánh xạ một global product. Khóa nguồn: warehouse/local SKU; khóa CFO: warehouse/global product. Dev 1 + Dev 2 chốt quy tắc conversion/uniqueness và test chống đếm tồn hai lần.
+
+**Ranh giới phê duyệt / còn cần chốt bằng contract:** danh sách đầy đủ field bắt buộc/nullable của draft, schema money/quantity/time, lỗi/field path, giá bằng 0, special requirements dạng cấu trúc hay free text; sửa/hủy đơn sau submit, cách phát thay đổi/hủy tới CFO; danh sách endpoint phân trang; nguồn lịch/holiday theo market và default khi thiếu; cách lưu và seed batch tồn rỗng; kiểm tra `units_to_base` và tính độc lập tồn kho. Những chi tiết này **chưa được phép Dev tự mặc định** chỉ vì 10 hướng ở trên đã duyệt.
+
+**Phụ thuộc triển khai:** Dev 2 soạn/sửa schema nguồn tại `05`, OpenAPI/source contract tại `06`, upgrade/seed bảo toàn dữ liệu, backend source, adapter, test giao kèo nhiều instance; Dev 1 review DTO/ingestion và normalize stock; Dev 3 review POS request/response và lỗi. PR triển khai phải cập nhật `05`/`06`/`CHANGELOG`, migration và kiểm thử cùng nhau theo `09`; không tự mở rộng scope của DEC-ROUTING-002 / ASM-005 (đơn SKU chưa confirmed vẫn ở luồng cũ, không tự chuyển về CFO).
+
+## DEC-HOLD-001 — Hết hạn hold phải lập kế hoạch mới
+
+- **Ngày chốt:** 2026-11-08. **Phê duyệt:** chủ dự án, trong cuộc trò chuyện khi review [PR #78](https://github.com/qaztyhn/cfo-itconsultant/pull/78).
+- **Ý quyết định:** “Hết hold thì trả về trạng thái bình thường. Nếu muốn lặp lại thì lại kiểm tra lại một lần nữa, như một đơn khác.” Diễn giải để triển khai: *đơn nguồn/CFO vẫn là một `customer_order` duy nhất*, không sao chép order và không tạo fulfillment trùng; chỉ **lần chạy kế hoạch** mới (`planning_run` mới, candidate/hold mới) được coi như lập kế hoạch một đơn chưa giữ nguồn lực.
+- **Khi hold hết hạn (không có approval):** `held → expired`, `proposed → expired`, tất cả nguồn lực quay về khả dụng. Nếu order vẫn `PLANNED` **do chính run hết hạn** và không có run/plan được duyệt hoặc giữ chỗ mới hơn, đưa order về trạng thái chờ lập kế hoạch `SUBMITTED` bằng chuyển trạng thái/audit hợp lệ; không ghi đè order đã chuyển sang run/plan khác.
+- **Không duyệt hồi sinh:** Dispatcher lẫn Sales **đều không** thể gọi Approve trên plan/`planning_run` đã hết hạn, **kể cả nguồn lực vẫn còn**. Trả `409 HOLD_EXPIRED` và hướng dẫn chạy lại. Quy tắc cũ trong `04` §7 mục 3 (“Dispatcher có thể Approve plan hết hạn sau khi kiểm tra lại”) bị **thay thế** bởi DEC-HOLD-001.
+- **Plan Again:** là hành động riêng do người dùng yêu cầu, tạo `planning_run` mới cho **cùng** `order_id`. Đọc lại dữ liệu nguồn/phiên bản/mapping/route, hàng, lịch chính thức của kho, công suất, xe/tài xế, ca và giờ nghỉ, tuân thủ 5 gate; tạo tối đa ba phương án với hold TTL mới chỉ khi đạt. Không tự nối dài, tái sử dụng hoặc “approve lại” plan expired; quyết định phân luồng `cfo/legacy` đã chốt vẫn bất biến theo DEC-ROUTING-002.
+- **Tình huống biên:** timeout job chạy trễ cũng không biến hold quá hạn thành hợp lệ; retry Plan Again phải idempotent/concurrency-safe để không tạo nhiều run/hold do double click; job timeout không được đưa về `SUBMITTED` một order đã có plan/run mới hoặc đã phê duyệt. Không tự gửi CONFIRMED khi hold hết hạn/chạy lại.
+- **Phạm vi áp dụng:** hold của **phương án chưa duyệt**; không tự giải phóng reservation đã `committed` của kế hoạch đã duyệt. Không thay thế cơ chế `replan_suggestion` dành riêng cho **đơn đã duyệt**.
+- **Theo dõi triển khai:** `backend/app/services/reservation_service.py`, `backend/app/jobs/hold_expiry.py`, T14 `planning_service`, T16 `approval_service`, frontend trạng thái/Plan Again, `docs/04_Tech_Stack_and_Architecture.md` §7, `docs/05_Database_Design.md` §7, `docs/06_API_Specification.md` §6. Chưa có thay đổi code trong PR tài liệu này; yêu cầu test timeout→reset→new run→new hold, từ chối approve plan expired, và race với run/approval mới.
+
+## ASM-008 — Giả định giao diện M0 (Dev 3; đề xuất chưa duyệt)
+
+- **Ngày đề xuất:** 2026-11-07; **trạng thái:** đề xuất kỹ thuật UX của Dev 3, **không phải quyết định owner đã duyệt**. Mọi quyền ở frontend chỉ hỗ trợ hiển thị; backend vẫn là nơi kiểm tra RBAC.
+- **ASM-B/C:** người dùng nhiều vai trò được gộp menu; thứ tự màn hình đầu tiên admin → dispatcher → warehouse → driver → customer_service → sales → revenue_all → ops. Sales bắt đầu tại `/store/orders`. Cần nghiệm thu thực tế theo quyền nhiều vai trò trước khi xem là quy tắc sản phẩm chính thức.
+- **ASM-D/E:** KPI vận hành theo admin hoặc `ops`, Revenue toàn thị trường theo admin hoặc `revenue_all`. Revenue tại địa điểm owner cần tín hiệu `owned_location_ids` (vị trí có `location.owner_employee_id = user.employee_id`); frontend hỗ trợ trường này dạng **optional** và chỉ hiện khi backend thực sự trả. Dev 1 chưa xuất trường trong `UserOut` / `GET /auth/me`; không tự suy owner từ `roles` hoặc `location_ids`.
+- **ASM-F:** badge Plan review lấy `awaiting_approval` từ `GET /orders/counts`, không hiển thị số 0 giả khi chưa có dữ liệu.
+- **ASM-G:** New order của Sales mở POS riêng qua `VITE_POS_URL`, giá trị local ví dụ `http://localhost:8100`; cổng/URL triển khai phải do Dev 2 xác nhận, không hard-code vào production.
+- **ASM-H:** Customer Service Contact log hiện là placeholder, không được báo là đã hoàn thành nghiệp vụ.
+- **ASM-I:** trạng thái chip dùng token thiết kế mặc định; đơn legacy `BLOCKED_UNMAPPED_SKU` phải nằm ngoài các endpoint CFO orders/counts/detail theo DEC-ROUTING-002.
+- **Auth/Locations đã có code:** `GET /auth/me` trả cùng `UserOut` như login; `GET /locations` trả `{items:[{id,code,name,type}]}` có phân trang; frontend đọc các trang và filter scope. Kiểm E2E với backend thật vẫn cần bằng chứng.
+- **Môi trường:** `VITE_APP_ENV` không đặt → mặc định **production-safe**, không hiện thẻ demo; chỉ bật demo bằng cấu hình môi trường có chủ đích. Mô tả cũ “không đặt → demo” đã được sửa trong frontend và phải coi là superseded.
+- **Demo accounts:** UI hiện 7 thẻ không bao gồm Project Lead như `03` mục 5.0. M0 seed chỉ có 5 account; `wm.got`, `driver1`, `cs` cần đúng seed M1 mới đăng nhập thật. Chỉ điền email, không hard-code mật khẩu.
+- **Q11:** tiếp tục tuân theo ASM-007/DEC-SHIFTS-001; không cấp ca chỉ dựa vào `expected_staff`.
+- **Phạm vi:** `frontend/src/app`, `frontend/src/api`, `Sidebar`, `ScopePicker`, `DemoBanner`, `SignIn`; Dev 1 cần chuẩn hóa `owned_location_ids`, Dev 2 cần xác nhận POS URL/seed, Dev 3 cần smoke test backend thật. Mục này chỉ ghi nhận hiện trạng và phụ thuộc kỹ thuật, **chưa chốt owner assumptions mới**.
