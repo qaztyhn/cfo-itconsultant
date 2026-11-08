@@ -18,7 +18,7 @@ from typing import Literal
 @dataclass(frozen=True)
 class MilestoneState:
     planned_goods_ready: datetime
-    planned_start_prep: datetime
+    planned_start_prep: datetime | None
     planned_depart: datetime
     drive_min: int
     loading_min: int
@@ -68,6 +68,8 @@ def _pre_loaded_depart(state: MilestoneState, now: datetime) -> datetime:
     else:
         delay = timedelta(0)
         if state.actual_start_prep is not None:
+            if state.planned_start_prep is None:
+                raise ValueError("Approved planned prep start is missing")
             delay = max(timedelta(0), state.actual_start_prep - state.planned_start_prep)
         goods_ready = state.planned_goods_ready + delay
         if state.paused or now > goods_ready:
@@ -80,9 +82,9 @@ def _pre_loaded_depart(state: MilestoneState, now: datetime) -> datetime:
 
 def forecast_eta(state: MilestoneState, now: datetime, eta_round_min: int, after_loaded_min: int) -> datetime:
     """ETA dự báo theo mốc hiện có (một xe), làm tròn lên `eta_round_min` (04 mục 6.3)."""
-    _require_aware(
-        now, state.planned_goods_ready, state.planned_start_prep, state.planned_depart
-    )
+    _require_aware(now, state.planned_goods_ready, state.planned_depart)
+    if state.planned_start_prep is not None:
+        _require_aware(state.planned_start_prep)
     if state.drive_min < 0 or state.loading_min < 0 or after_loaded_min < 0:
         raise ValueError("Forecast durations cannot be negative")
     if (state.gps_recorded_at is None) != (state.gps_remaining_min is None):
