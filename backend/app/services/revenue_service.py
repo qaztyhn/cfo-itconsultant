@@ -12,19 +12,28 @@ REVENUE_EXPORTED. Không PII trong log/file xuất của Business owner.
 Owner: Dev 1 (A) — M8.
 """
 
+import csv
 from dataclasses import dataclass
 from datetime import date, timedelta
+from io import StringIO
+from zoneinfo import ZoneInfo
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 
-from sqlalchemy import ColumnElement, Table, func, select
+from sqlalchemy import ColumnElement, Date, Table, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.actions import Action
+from app.audit.recorder import record_decision
+from app.core import clock
 from app.core.errors import DomainError
-from app.domain.models.ref import Location, Market
+from app.domain.models.ops import CustomerOrder
+from app.domain.models.plan import FulfilmentPlan
+from app.domain.models.ref import Customer, Location, Market
 from app.domain.models.views import v_revenue_daily, v_revenue_pending
 
 VIEWS = ("store", "warehouse")
+BOOKED_STATUSES = ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
 DEFAULT_DAYS = 30
 MAX_DAYS = 366
 UNASSIGNED_STORE = "Unassigned store"
@@ -42,6 +51,12 @@ class RevenueViewer(Protocol):
 
     @property
     def employee_id(self) -> int | None: ...
+
+    @property
+    def market(self) -> str: ...
+
+    @property
+    def id(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -273,11 +288,17 @@ async def daily(
 
 
 async def by_location(
-    session: AsyncSession, viewer: RevenueViewer, *, market_id: int, view: str, period: Period
+    session: AsyncSession,
+    viewer: RevenueViewer,
+    *,
+    market_id: int,
+    view: str,
+    period: Period,
+    location_id: int | None = None,
 ) -> RevenueByLocation:
     """GET /revenue/by-location — một dòng mỗi nơi của góc nhìn (owner chỉ nơi mình; 'Unassigned store')."""
     scope = await resolve_revenue_scope(session, viewer, market_id)
-    targets = await _targets(session, scope, market_id, view, None)
+    targets = await _targets(session, scope, market_id, view, location_id)
     d, p = v_revenue_daily, v_revenue_pending
     rec = {
         loc: (Decimal(amount), int(n))
@@ -305,7 +326,8 @@ async def by_location(
     else:
         location_query = location_query.where(Location.is_active.is_(True))
     locations = (await session.execute(location_query)).scalars().all()
-    total = sum((amount for amount, _ in rec.values()), Decimal(0))
+    # Market share must include the unassigned-store bucket, not only locations in the table.
+    total = (await _totals(session, market_id, view, period, None))[0] if scope.all else Decimal(0)
     built: list[RevenueRow] = []
     for loc in locations:
         amount, n = rec.get(loc.id, (Decimal(0), 0))
@@ -322,11 +344,161 @@ async def by_location(
     return RevenueByLocation(view, await _currency(session, market_id), tuple(built))
 
 
-async def orders(user: object, params: dict[str, object]) -> dict[str, object]:
-    """TODO(#revenue-orders)."""
-    raise NotImplementedError
+
+async def resolve_market_period(
+    session: AsyncSession, viewer: RevenueViewer, start: date | None, end: date | None
+) -> tuple[int, Period]:
+    """Use the authenticated market to prevent cross-currency aggregation.
+
+    The API contract has no market selector. A system admin without a market context
+    must not silently combine currencies; the caller must use a market-scoped account.
+    """
+    if not viewer.market:
+        raise DomainError("VALIDATION_ERROR", "Revenue requires a market-scoped account.")
+    market = await session.scalar(select(Market).where(Market.code == viewer.market))
+    if market is None:
+        raise DomainError("FORBIDDEN", "Your account has no valid market.")
+    today = clock.now().astimezone(ZoneInfo(market.timezone)).date()
+    return market.id, Period.resolve(start, end, today)
 
 
-async def export_csv(user: object, params: dict[str, object]) -> bytes:
-    """TODO(#revenue-export_csv)."""
-    raise NotImplementedError
+async def orders(
+    session: AsyncSession,
+    viewer: RevenueViewer,
+    *,
+    market_id: int,
+    view: str,
+    location_id: int,
+    period: Period,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, object]], int]:
+    """GET /revenue/orders: only recognised or booked orders in the selected period.
+
+    Never query customer PII for the Business owner. Both time and location filters
+    are applied in SQL, before pagination, independent of T07/T14.
+    """
+    scope = await resolve_revenue_scope(session, viewer, market_id)
+    targets = await _targets(session, scope, market_id, view, location_id)
+    local_day = cast(func.timezone(Market.timezone, CustomerOrder.delivered_at), Date)
+    in_period = or_(
+        and_(CustomerOrder.status == "DELIVERED", local_day.between(period.start, period.end)),
+        and_(CustomerOrder.status.in_(BOOKED_STATUSES),
+             CustomerOrder.committed_date.between(period.start, period.end)),
+    )
+    location_col = CustomerOrder.origin_store_id if view == "store" else FulfilmentPlan.warehouse_id
+    filters = [
+        CustomerOrder.market_id == market_id,
+        in_period,
+        location_col.in_(targets if targets is not None else frozenset({location_id})),
+    ]
+    show_customer = "admin" in viewer.roles or (not scope.all and location_id in (
+        scope.store_ids if view == "store" else scope.warehouse_ids
+    ))
+    fields = [
+        CustomerOrder.order_no,
+        CustomerOrder.delivered_at,
+        CustomerOrder.total_amount.label("amount"),
+        CustomerOrder.currency,
+        CustomerOrder.status,
+    ]
+    if show_customer:
+        fields.append(Customer.name.label("customer_name"))
+    stmt = (
+        select(*fields)
+        .select_from(CustomerOrder)
+        .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
+        .join(Market, Market.id == CustomerOrder.market_id)
+    )
+    if show_customer:
+        stmt = stmt.join(Customer, Customer.id == CustomerOrder.customer_id)
+    stmt = stmt.where(*filters)
+    total = int((await session.execute(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )).scalar_one())
+    records = (await session.execute(
+        stmt.order_by(CustomerOrder.order_no, CustomerOrder.id)
+        .limit(page_size).offset((page - 1) * page_size)
+    )).mappings().all()
+    result: list[dict[str, object]] = []
+    for row in records:
+        item: dict[str, object] = {
+            "order_no": row["order_no"],
+            "delivered_at": row["delivered_at"],
+            "amount": row["amount"],
+            "currency": row["currency"],
+            "status": row["status"],
+        }
+        if show_customer:
+            item["customer_name"] = row["customer_name"]
+        result.append(item)
+    return result, total
+
+
+async def export_csv(
+    session: AsyncSession,
+    viewer: RevenueViewer,
+    *,
+    market_id: int,
+    view: str,
+    location_id: int | None,
+    period: Period,
+) -> bytes:
+    """One day/location per row; audit the exact filters and row count in the same transaction."""
+    scope = await resolve_revenue_scope(session, viewer, market_id)
+    targets = await _targets(session, scope, market_id, view, location_id)
+
+    # Keyed by day/location/currency. Each view is selected independently, never
+    # summed across store and warehouse, and never across markets.
+    totals: dict[tuple[date, int | None, str], list[int | Decimal]] = {}
+    for table, amount_column, count_column, amount_index in (
+        (v_revenue_daily, "revenue_recognised", "orders_delivered", 1),
+        (v_revenue_pending, "revenue_booked", "orders_pending", 2),
+    ):
+        loc_col = _column(table, view)
+        rows = (await session.execute(
+            select(table.c.day, loc_col, table.c.currency,
+                   func.sum(table.c[count_column]), func.sum(table.c[amount_column]))
+            .where(*_filtered(table, view, market_id, period, targets))
+            .group_by(table.c.day, loc_col, table.c.currency)
+        )).all()
+        for day, loc_id, currency, count, amount in rows:
+            key = (day, loc_id, currency)
+            values = totals.setdefault(key, [0, Decimal(0), Decimal(0)])
+            if amount_index == 1:
+                values[0] = int(count)
+            values[amount_index] = Decimal(amount)
+
+    ids = {loc_id for _, loc_id, _ in totals if loc_id is not None}
+    loc_names: dict[int, tuple[str, str]] = {}
+    if ids:
+        locations = (await session.execute(
+            select(Location.id, Location.code, Location.name).where(
+                Location.market_id == market_id, Location.type == view, Location.id.in_(ids)
+            )
+        )).all()
+        loc_names = {i: (code, name) for i, code, name in locations}
+
+    output = StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow(("day", "view", "location_code", "location_name", "orders_delivered",
+                     "revenue_recognised", "revenue_booked", "currency"))
+    for (day, loc_id, currency), (count, recognised, booked) in sorted(
+        totals.items(), key=lambda item: (item[0][0], item[0][1] is None, item[0][1] or 0)
+    ):
+        code, name = loc_names.get(loc_id, ("", UNASSIGNED_STORE if view == "store" else ""))
+        # Quote risky spreadsheet-formula prefixes in free-text location labels.
+        safe = lambda value: "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
+        writer.writerow((day.isoformat(), view, safe(code), safe(name), count,
+                         str(Decimal(recognised).quantize(_CENT)),
+                         str(Decimal(booked).quantize(_CENT)), currency))
+
+    await record_decision(
+        session, Action.REVENUE_EXPORTED, entity="revenue", entity_id=str(market_id),
+        snapshot={"view": view, "location_id": location_id, "from": period.start.isoformat(),
+                  "to": period.end.isoformat(), "row_count": len(totals)},
+        actor_user_id=viewer.id, actor_employee_id=viewer.employee_id,
+        actor_role=viewer.roles[0] if viewer.roles else None,
+    )
+    return output.getvalue().encode("utf-8-sig")
+
