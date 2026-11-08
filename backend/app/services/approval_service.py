@@ -10,9 +10,8 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text, update
@@ -191,7 +190,9 @@ async def _reserve_locks(
             raise _fail("RESOURCE_CONFLICT", "Vehicle is no longer available.", conflict="vehicle")
     for driver in drivers:
         if driver.home_warehouse_id != warehouse_id:
-            raise _fail("RESOURCE_CONFLICT", "Driver is no longer assigned to the warehouse.", conflict="driver")
+            raise _fail(
+                "RESOURCE_CONFLICT", "Driver is no longer assigned to the warehouse.", conflict="driver"
+            )
 
 
 async def _stock_available(
@@ -347,7 +348,9 @@ async def _approve(
     if getattr(actor, "market", None) != market.code:
         raise _fail("NOT_FOUND", "Plan not found.")
     sales = "dispatcher" not in roles
-    if sales and (order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())):
+    if sales and (
+        order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
+    ):
         raise _fail("NOT_FOUND", "Plan not found.")
     if order.status != "PLANNED" or plan.status != "proposed" or run.kind == "replan_suggestion":
         raise _fail("PLAN_NOT_APPROVABLE", "This plan cannot be approved from the current order state.")
