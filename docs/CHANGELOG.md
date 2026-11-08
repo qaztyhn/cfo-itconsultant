@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-DEV2-D7-001 — Synthetic vehicle and driver fixture rules] — 2026-11-08 — owner approved, docs-only
+
+- Chủ dự án duyệt D7-A–E: seed xe và **56 ngày** lịch sử làm việc/lái/nghỉ tài xế synthetic, tách payload với `max_permissible_mass_kg`, xác định scope 561 theo tình huống, `unknown`/thiếu lịch sử → fail-closed; nghỉ mặc định 11h, không dùng ngoại lệ 9h, giờ lái khác giờ làm.
+- Bổ sung quy tắc cho `04` §6.7, `05` (vehicle/driver duty), `06` §13.0b, `08` §5.3; sửa ví dụ van 3,5t trước đó không hợp lý. Chưa thay đổi migration/code/API; Dev 2 seed và Dev 1 nghiệm thu engine/approval trên test fixtures. Quyết định D1–D6/D8 không được chốt bởi mục này.
+
 ## [05 §10 / 06 §16 — bản chụp đơn nguồn và GET /orders] — 2026-11-08 — theo DEC-SRC-001, chờ review
 
 - `05` §10: `src_order` thêm 8 cột bản chụp (SRC-Q1), nullable; nâng cấp cộng thêm, giữ dữ liệu.
