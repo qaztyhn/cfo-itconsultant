@@ -98,14 +98,10 @@ def test_US_GPS_01_AC4_simulator_cadence_does_not_change_device_policy(gps: Api)
         "VALUES (1,1,59.3,18.1,'2026-11-10T07:10:00Z','simulator'),"
         "(1,1,59.3,18.1,'2026-11-10T07:12:00Z','simulator')",
     )
-    result = submit(
-        gps, [position("2026-11-10T07:00:00Z"), position("2026-11-10T07:30:00Z")]
-    )
+    result = submit(gps, [position("2026-11-10T07:00:00Z"), position("2026-11-10T07:30:00Z")])
     assert result.status_code == 202, result.text
     assert result.json()["accepted"] == 2
-    assert fetch(
-        gps.dsn, "SELECT count(*) FROM ops.vehicle_position WHERE source='simulator'"
-    )[0][0] == 2
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position WHERE source='simulator'")[0][0] == 2
 
 
 def test_US_GPS_01_AC1_replay_is_idempotent_and_conflict_is_atomic(gps: Api) -> None:
