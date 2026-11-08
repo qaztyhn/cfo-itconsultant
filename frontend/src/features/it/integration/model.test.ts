@@ -20,6 +20,13 @@ describe("US-INT-01 AC3/AC4 source status and reject projection", () => {
     expect(fleet.latestStatus).toBe("failed");
   });
 
+  it("never overrides a latest partial run with an older OK overview chip", () => {
+    const sources = normalizeSources({ sources: { inbound: { status: "ok" } } }, normalizeRuns({ items: [
+      { id: 4, entity: "inbound", status: "partial", started_at: "2026-11-04T10:00:00Z" },
+    ] }));
+    expect(sources.find((source) => source.entity === "inbound")?.status).toBe("partial");
+  });
+
   it("separates unmapped SKUs from rejected product records", () => {
     const sources = normalizeSources(CONTRACT_OVERVIEW, normalizeRuns(CONTRACT_RUNS));
     const products = sources.find((source) => source.entity === "products")!;
