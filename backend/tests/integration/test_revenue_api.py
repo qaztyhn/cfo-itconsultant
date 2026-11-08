@@ -11,7 +11,7 @@ import pytest
 
 from tests.integration import rows
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
-from tests.integration.conftest import execute
+from tests.integration.conftest import execute, fetch
 from tests.integration.test_revenue_service import ORDERS, _order
 
 pytestmark = pytest.mark.integration
@@ -147,11 +147,11 @@ def test_US_REV_01_AC8_csv_bom_rows_and_audit(rev: Api) -> None:
     assert any(x["location_name"] == "Unassigned store" for x in data)
     assert "Test customer" not in r.text
     assert_error(rev.get("/revenue/export.csv", 4, view="store", **PERIOD), 403, "FORBIDDEN")
-    import psycopg
-
-    with psycopg.connect(rev.dsn) as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT action, snapshot->>'view', (snapshot->>'row_count')::int "
-            "FROM audit.decision_log WHERE action = 'REVENUE_EXPORTED'"
-        )
-        assert cur.fetchall() == [("REVENUE_EXPORTED", "store", len(data))]
+    audit = fetch(
+        rev.dsn,
+        "SELECT action, snapshot->>'view' AS view, (snapshot->>'row_count')::int AS rows "
+        "FROM audit.decision_log WHERE action = 'REVENUE_EXPORTED'",
+    )
+    assert [(record["action"], record["view"], record["rows"]) for record in audit] == [
+        ("REVENUE_EXPORTED", "store", len(data))
+    ]
