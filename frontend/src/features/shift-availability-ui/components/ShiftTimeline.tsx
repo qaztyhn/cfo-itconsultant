@@ -84,6 +84,9 @@ function TimelineRow({ row, win, ticks, text, labels }: RowProps) {
   const tz = win.timeZone;
   const unverified = row.scheduleStatus === "unverified";
   const restPeriods = row.kind === "driver" ? (row.restPeriods ?? []) : [];
+  // Draw the lane whenever there is anything to draw, even without an official shift:
+  // tasks and rest periods must never be hidden (a shift-less or unverified row can still have them).
+  const hasLaneContent = row.shifts.length > 0 || row.tasks.length > 0 || restPeriods.length > 0;
   const warnedTaskIds = new Set(
     row.warnings.map((w) => w.relatedTaskId).filter((id): id is string => Boolean(id)),
   );
@@ -99,7 +102,7 @@ function TimelineRow({ row, win, ticks, text, labels }: RowProps) {
         </div>
 
         <div className="min-w-0">
-          {unverified ? (
+          {unverified && (
             <div
               role="note"
               className="flex items-start gap-2 rounded-control bg-risk-atRisk-bg px-3 py-2 text-body text-risk-atRisk-fg"
@@ -110,93 +113,89 @@ function TimelineRow({ row, win, ticks, text, labels }: RowProps) {
                 <p>{text.scheduleUnverifiedHint}</p>
               </div>
             </div>
-          ) : (
-            <>
-              {row.shifts.length === 0 && (
-                <p className="rounded-control bg-chip px-3 py-2 text-body text-inkMuted">{text.noShiftInWindow}</p>
+          )}
+          {!unverified && row.shifts.length === 0 && (
+            <p className="rounded-control bg-chip px-3 py-2 text-body text-inkMuted">{text.noShiftInWindow}</p>
+          )}
+
+          {hasLaneContent && (
+            <div aria-hidden="true" className="relative mx-5 hidden h-16 md:mt-2 md:block">
+              {ticks.map((t) => (
+                <span
+                  key={t}
+                  className="absolute bottom-0 top-0 border-l border-border"
+                  style={{ left: `${span > 0 ? ((toMs(t) - toMs(win.start)) / span) * 100 : 0}%` }}
+                />
+              ))}
+              {row.shifts.map((s) => (
+                <Block
+                  key={s.id}
+                  range={s.range}
+                  win={win}
+                  kind="shift"
+                  title={`${text.officialShift}: ${clockRange(s.range, tz)}`}
+                  className="top-1 h-4 rounded bg-navActive text-pine border"
+                >
+                  <span className="truncate">{s.label ?? text.officialShift}</span>
+                </Block>
+              ))}
+              {row.shifts.flatMap((s) =>
+                (s.breaks ?? []).map((b, i) => (
+                  <Block
+                    key={`${s.id}-b${i}`}
+                    range={b}
+                    win={win}
+                    kind="break"
+                    title={`${text.breakLabel}: ${clockRange(b, tz)}`}
+                    className="top-1 h-4 rounded bg-pine text-surface"
+                  />
+                )),
               )}
-              {row.shifts.length > 0 && (
-                <div aria-hidden="true" className="relative mx-5 hidden h-16 md:block">
-                  {ticks.map((t) => (
-                    <span
-                      key={t}
-                      className="absolute bottom-0 top-0 border-l border-border"
-                      style={{ left: `${span > 0 ? ((toMs(t) - toMs(win.start)) / span) * 100 : 0}%` }}
-                    />
-                  ))}
-                  {row.shifts.map((s) => (
-                    <Block
-                      key={s.id}
-                      range={s.range}
-                      win={win}
-                      kind="shift"
-                      title={`${text.officialShift}: ${clockRange(s.range, tz)}`}
-                      className="top-1 h-4 rounded bg-navActive text-pine border"
-                    >
-                      <span className="truncate">{s.label ?? text.officialShift}</span>
-                    </Block>
-                  ))}
-                  {row.shifts.flatMap((s) =>
-                    (s.breaks ?? []).map((b, i) => (
-                      <Block
-                        key={`${s.id}-b${i}`}
-                        range={b}
-                        win={win}
-                        kind="break"
-                        title={`${text.breakLabel}: ${clockRange(b, tz)}`}
-                        className="top-1 h-4 rounded bg-pine text-surface"
-                      />
-                    )),
-                  )}
-                  {restPeriods.map((r, i) => (
-                    <Block
-                      key={`rest-${i}`}
-                      range={r}
-                      win={win}
-                      kind="rest"
-                      title={`${text.restPeriod}: ${clockRange(r, tz)}`}
-                      className="top-1 h-4 rounded border border-dashed bg-stone text-inkMuted"
-                    >
-                      <span className="truncate">{text.restPeriod}</span>
-                    </Block>
-                  ))}
-                  {row.tasks.map((task) => {
-                    const phase = task.phase ? text.taskPhase[task.phase] : undefined;
-                    return (
-                      <Block
-                        key={task.id}
-                        range={task.range}
-                        win={win}
-                        kind="task"
-                        title={[task.label, phase, text.assignmentStatus[task.status], clockRange(task.range, tz)]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        className={["top-7 h-7 rounded", ASSIGNMENT_STATUS_CLASS[task.status]].join(" ")}
-                      >
-                        {warnedTaskIds.has(task.id) && (
-                          <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
-                        )}
-                        <span className="truncate">{task.label}</span>
-                      </Block>
-                    );
-                  })}
-                  {row.tasks.flatMap((task) =>
-                    outsideOf(row, task).map((part, i) => (
-                      <Block
-                        key={`${task.id}-out-${i}`}
-                        range={part}
-                        win={win}
-                        kind="outside-schedule"
-                        title={`${text.outsideSchedule}: ${clockRange(part, tz)}`}
-                        className="top-7 h-7 rounded border-2 border-dashed border-apricot bg-risk-lateRow/60 text-risk-predictedLate-fg"
-                      >
-                        <AlertTriangle className="h-3 w-3 shrink-0" />
-                      </Block>
-                    )),
-                  )}
-                </div>
+              {restPeriods.map((r, i) => (
+                <Block
+                  key={`rest-${i}`}
+                  range={r}
+                  win={win}
+                  kind="rest"
+                  title={`${text.restPeriod}: ${clockRange(r, tz)}`}
+                  className="top-1 h-4 rounded border border-dashed bg-stone text-inkMuted"
+                >
+                  <span className="truncate">{text.restPeriod}</span>
+                </Block>
+              ))}
+              {row.tasks.map((task) => {
+                const phase = task.phase ? text.taskPhase[task.phase] : undefined;
+                return (
+                  <Block
+                    key={task.id}
+                    range={task.range}
+                    win={win}
+                    kind="task"
+                    title={[task.label, phase, text.assignmentStatus[task.status], clockRange(task.range, tz)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    className={["top-7 h-7 rounded", ASSIGNMENT_STATUS_CLASS[task.status]].join(" ")}
+                  >
+                    {warnedTaskIds.has(task.id) && <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />}
+                    <span className="truncate">{task.label}</span>
+                  </Block>
+                );
+              })}
+              {row.tasks.flatMap((task) =>
+                outsideOf(row, task).map((part, i) => (
+                  <Block
+                    key={`${task.id}-out-${i}`}
+                    range={part}
+                    win={win}
+                    kind="outside-schedule"
+                    title={`${text.outsideSchedule}: ${clockRange(part, tz)}`}
+                    className="top-7 h-7 rounded border-2 border-dashed border-apricot bg-risk-lateRow/60 text-risk-predictedLate-fg"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                  </Block>
+                )),
               )}
-            </>
+            </div>
           )}
 
           <ul className="mt-2 flex flex-col gap-1 text-caption text-ink md:sr-only md:mt-0">
@@ -228,7 +227,9 @@ function TimelineRow({ row, win, ticks, text, labels }: RowProps) {
             })}
           </ul>
 
-          {row.warnings.length > 0 && <WarningList warnings={row.warnings} labels={labels} showTitle={false} className="mt-2" />}
+          {row.warnings.length > 0 && (
+            <WarningList warnings={row.warnings} labels={labels} showTitle={false} className="mt-2" />
+          )}
         </div>
       </div>
     </li>

@@ -30,6 +30,10 @@ export interface ShiftAvailabilityLabels {
   dutyTime: string;
   drivingTime: string;
   eligibilityTitle: string;
+
+  eligibilityNotEvaluated: string;
+  eligibilityNotEvaluatedHint: string;
+
   warningsTitle: string;
   dataAsOf: string;
   loading: string;
@@ -65,6 +69,10 @@ export const DEFAULT_LABELS: ShiftAvailabilityLabels = {
   dutyTime: "Duty time",
   drivingTime: "Driving time",
   eligibilityTitle: "Driver eligibility",
+
+  eligibilityNotEvaluated: "Eligibility not evaluated",
+  eligibilityNotEvaluatedHint: "No eligibility result was supplied. Do not treat this driver as meeting all requirements.",
+
   warningsTitle: "Scheduling warnings",
   dataAsOf: "Data as of",
   loading: "Loading…",

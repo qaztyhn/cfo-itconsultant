@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { DEMO_DRIVER_MODEL, DEMO_WAREHOUSE_MODEL } from "../fixtures";
+import { DEMO_DRIVER_MODEL, DEMO_WAREHOUSE_MODEL, DEMO_WINDOW } from "../fixtures";
 import { ShiftTimeline } from "./ShiftTimeline";
+import type { DriverRow, ShiftTimelineModel } from "../types";
 
 function getRow(container: HTMLElement, id: string): HTMLElement {
   const el = container.querySelector<HTMLElement>(`[data-row-id="${id}"]`);
@@ -136,5 +137,72 @@ describe("ShiftTimeline (drivers)", () => {
     expect(row.querySelectorAll('[data-kind="shift"]')).toHaveLength(1);
     expect(row.querySelector('[data-kind="shift"]')).toHaveAttribute("title", "Official shift: 18:00–02:00");
     expect(row.querySelector('[data-kind="outside-schedule"]')).toBeNull();
+  });
+});
+
+const BASE_DRIVER: DriverRow = {
+  kind: "driver",
+  id: "dr-x",
+  displayName: "Driver X",
+  scheduleStatus: "verified",
+  status: "available",
+  shifts: [],
+  tasks: [],
+  warnings: [],
+  eligibility: [],
+};
+
+const TASK_9_TO_10 = {
+  id: "t1",
+  label: "Drive DEMO-0100",
+  phase: "driving",
+  status: "tentative",
+  range: { start: "2026-11-09T09:00:00+01:00", end: "2026-11-09T10:00:00+01:00" },
+} as const;
+
+const REST_4_TO_8 = { start: "2026-11-09T04:00:00+01:00", end: "2026-11-09T08:00:00+01:00" };
+
+function singleRow(row: DriverRow): ShiftTimelineModel<DriverRow> {
+  return { window: DEMO_WINDOW, rows: [row] };
+}
+
+describe("ShiftTimeline lane visibility (regression)", () => {
+  it("draws tasks and rest periods for a verified row that has no official shift", () => {
+    const { container } = render(
+      <ShiftTimeline model={singleRow({ ...BASE_DRIVER, tasks: [TASK_9_TO_10], restPeriods: [REST_4_TO_8] })} />,
+    );
+    const row = getRow(container, "dr-x");
+
+    expect(row.querySelector('[data-kind="task"]')).not.toBeNull();
+    expect(row.querySelector('[data-kind="rest"]')).not.toBeNull();
+    expect(row.querySelector('[data-kind="shift"]')).toBeNull();
+    expect(within(row).getByText("No official shift in this window")).toBeInTheDocument();
+    expect(row.querySelector('[data-kind="outside-schedule"]')).toHaveAttribute(
+      "title",
+      "Outside official schedule: 09:00–10:00",
+    );
+  });
+
+  it("draws tasks for an unverified row without marking them outside a schedule that does not exist", () => {
+    const { container } = render(
+      <ShiftTimeline model={singleRow({ ...BASE_DRIVER, scheduleStatus: "unverified", tasks: [TASK_9_TO_10] })} />,
+    );
+    const row = getRow(container, "dr-x");
+
+    expect(within(row).getByRole("note")).toHaveTextContent("Schedule not verified");
+    expect(row.querySelector('[data-kind="task"]')).not.toBeNull();
+    expect(row.querySelector('[data-kind="outside-schedule"]')).toBeNull();
+  });
+
+  it("draws only a rest period when that is all the row has", () => {
+    const { container } = render(<ShiftTimeline model={singleRow({ ...BASE_DRIVER, restPeriods: [REST_4_TO_8] })} />);
+
+    expect(getRow(container, "dr-x").querySelector('[data-kind="rest"]')).not.toBeNull();
+  });
+
+  it("draws no lane when there is nothing to draw (W07)", () => {
+    const { container } = render(<ShiftTimeline model={DEMO_WAREHOUSE_MODEL} />);
+
+    expect(getRow(container, "wh-w07").querySelector("[data-kind]")).toBeNull();
   });
 });

@@ -34,7 +34,7 @@ export function DriverAvailabilityPanel({ state, labels, className }: DriverAvai
           if (model.rows.length === 0) {
             return <p className="py-8 text-center text-body text-inkMuted">{text.emptyDefault}</p>;
           }
-          const details = model.rows.filter((r) => r.eligibility.length > 0 || r.totals);
+          const details = model.rows;
           return (
             <div className="flex flex-col gap-4">
               {model.dataAsOf && (

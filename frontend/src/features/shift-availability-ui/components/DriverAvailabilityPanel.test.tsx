@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DEMO_DRIVER_MODEL } from "../fixtures";
 import { DriverAvailabilityPanel } from "./DriverAvailabilityPanel";
+import type { DriverRow } from "../types";
 
 function getDriver(container: HTMLElement, id: string): HTMLElement {
   const el = container.querySelector<HTMLElement>(`[data-driver-id="${id}"]`);
@@ -50,11 +51,33 @@ describe("DriverAvailabilityPanel", () => {
     expect(d04.querySelector('[data-kind="vehicle_scope"]')).toHaveAttribute("data-status", "unknown");
   });
 
-  it("lists no eligibility block for a driver without a verified schedule (D05)", () => {
+  it("says eligibility was not evaluated for a driver without a verified schedule (D05)", () => {
     const { container } = render(<DriverAvailabilityPanel state={{ status: "ready", data: DEMO_DRIVER_MODEL }} />);
+    const d05 = getDriver(container, "dr-d05");
 
-    expect(container.querySelector('[data-driver-id="dr-d05"]')).toBeNull();
+    expect(within(d05).getByRole("note")).toHaveTextContent("Eligibility not evaluated");
+    expect(within(d05).queryByText("Eligible")).toBeNull();
     expect(screen.getByText("Schedule not verified")).toBeInTheDocument();
+  });
+
+  it("never lets an 'Available' driver with no eligibility result read as fully eligible (regression)", () => {
+    const row: DriverRow = {
+      kind: "driver",
+      id: "dr-x",
+      displayName: "Driver X",
+      scheduleStatus: "verified",
+      status: "available",
+      shifts: [{ id: "dr-x-s1", range: { start: "2026-11-09T06:00:00+01:00", end: "2026-11-09T15:00:00+01:00" } }],
+      tasks: [],
+      warnings: [],
+      eligibility: [],
+    };
+    const { container } = render(
+      <DriverAvailabilityPanel state={{ status: "ready", data: { ...DEMO_DRIVER_MODEL, rows: [row] } }} />,
+    );
+
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(within(getDriver(container, "dr-x")).getByRole("note")).toHaveTextContent("Eligibility not evaluated");
   });
 
   it("shows a busy status while loading", () => {

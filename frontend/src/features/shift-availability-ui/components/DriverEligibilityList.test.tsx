@@ -11,10 +11,21 @@ function driver(id: string): DriverRow {
 }
 
 describe("DriverEligibilityList", () => {
-  it("renders nothing for an empty list", () => {
+  it("states that eligibility was not evaluated when there are no results (regression)", () => {
     const { container } = render(<DriverEligibilityList items={[]} />);
 
-    expect(container).toBeEmptyDOMElement();
+    expect(container).not.toBeEmptyDOMElement();
+    expect(screen.getByRole("note")).toHaveTextContent("Eligibility not evaluated");
+    expect(screen.getByText(/Do not treat this driver as meeting all requirements/)).toBeInTheDocument();
+    expect(screen.queryByText("Eligible")).toBeNull();
+    expect(container.querySelector('[data-eligibility="not-evaluated"]')).toHaveClass("bg-risk-atRisk-bg");
+    expect(container.querySelector('[data-eligibility="not-evaluated"]')).not.toHaveClass("bg-risk-onTrack-bg");
+  });
+
+  it("accepts label overrides for the not-evaluated message", () => {
+    render(<DriverEligibilityList items={[]} labels={{ eligibilityNotEvaluated: "Not checked yet" }} />);
+
+    expect(screen.getByText("Not checked yet")).toBeInTheDocument();
   });
 
   it("shows a missing-history result as Unknown with its reason code, never as eligible", () => {

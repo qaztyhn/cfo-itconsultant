@@ -119,6 +119,11 @@ specific reason through `reasonCode` (for example `DRIVER_REST_INSUFFICIENT`,
 `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`) so it is not confused with "no drivers
 available". Duty time and driving time are separate (DEC-DRIVER-001); the caller supplies both.
 
+An empty `eligibility` array means eligibility was **not evaluated**. The UI then shows
+"Eligibility not evaluated"; an `available` assignment status must never be read as "meets every
+requirement". Tasks and rest periods are drawn on the timeline even when a row has no official
+shift or an unverified schedule.
+
 ### Outside the official schedule
 
 `outsideShiftPortions` (in `time.ts`) is a **geometric display hint**: it marks the part of a task
