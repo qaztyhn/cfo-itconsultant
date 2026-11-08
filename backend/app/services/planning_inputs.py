@@ -52,7 +52,6 @@ from app.engine.types import (
     VehicleCtx,
     WarehouseCtx,
 )
-from app.services.hr_service import day_capacities
 from app.services.planning_context import available_stock, confirmed_inbound, fleet_context, route_info
 
 
@@ -109,6 +108,9 @@ async def official_warehouse_capacity(
     """Only explicitly scheduled, assigned, attended employees count (never expected_staff)."""
     if not days:
         return {}, ()
+    # Lazy import breaks hr_service → planning_service → planning_inputs cycle.
+    from app.services.hr_service import day_capacities
+
     today = now.astimezone(zone).date()
     original = await day_capacities(
         session, warehouse_id, days, now=now, today=today, exclude_order_id=exclude_order_id
