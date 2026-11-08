@@ -30,6 +30,7 @@ import { PrepQueue } from "../features/warehouse/PrepQueue";
 import { NoAccess } from "./NoAccess";
 import { PATHS, ruleFor } from "./access";
 import { GuestOnly, LandingRedirect, RequireAccess, RequireAuth } from "./guards";
+import { PlanReview } from "../features/dispatcher/PlanReview";
 
 function guarded(path: string, element: ReactElement): RouteObject {
   return { path, element: <RequireAccess allow={ruleFor(path)}>{element}</RequireAccess> };
@@ -51,6 +52,14 @@ export const appRoutes: RouteObject[] = [
         children: [
           guarded(PATHS.dispatcherOrders, <OrderQueue />),
           guarded(PATHS.dispatcherPlanReview, <PlanReviewList />),
+          {
+            path: `${PATHS.dispatcherPlanReview}/:runId`,
+            element: (
+              <RequireAccess allow={ruleFor(PATHS.dispatcherPlanReview)}>
+                <PlanReview />
+              </RequireAccess>
+            ),
+          },
           guarded(PATHS.dispatcherExceptions, <Exceptions />),
           guarded(PATHS.dispatcherTracking, <TrackingList />),
           guarded(PATHS.dispatcherTransfers, <Transfers />),
