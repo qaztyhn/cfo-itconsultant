@@ -629,6 +629,8 @@ CREATE TABLE ops.notification (
   dedupe_key text NOT NULL UNIQUE                -- v1.1: '<order_id>:<template>:<plan_id|trip_stop_id>:<status>' để lập lại kế hoạch
                                                  -- vẫn gửi được CONFIRMED mới; DELAY: thêm phiên bản ETA
 );
+**D4 owner-approved 08/11/2026:** `ops.notification.subject/body` chỉ chứa kết quả render từ template versioned và biến allowlist (mã đơn công khai, trạng thái, ETA được duyệt, reason_code trong enum); không được lưu nội dung free-text của Dispatcher/POS như thư gửi khách. `DELAY` vẫn cần Dispatcher chọn template/ETA và Send; `idempotency_key`/dedupe, quiet hours, mail allowlist `DEC-NOTIFY-001` giữ nguyên. Code/schema phụ trợ cho `template_version`, `reason_code` cần migration và review, chưa có DDL mới trong PR tài liệu này.
+
 CREATE TABLE ops.customer_contact_log (          -- CS ghi nhật ký liên hệ [C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint REFERENCES ops.customer_order(id), customer_id bigint NOT NULL REFERENCES ref.customer(id),
@@ -637,7 +639,7 @@ CREATE TABLE ops.customer_contact_log (          -- CS ghi nhật ký liên hệ
   reason_code text NOT NULL CHECK (reason_code IN ('where_is_my_order','change_request','complaint','delay_inquiry','other')),
   note text, contacted_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE ops.vehicle_position (              -- GPS [C]; chỉ dispatcher xem; xóa 30 ngày sau chuyến
+CREATE TABLE ops.vehicle_position (              -- GPS [C]; D3: chỉ Dispatcher được gán chuyến, trong ca; purge khi trip/ca kết thúc
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   trip_id bigint NOT NULL REFERENCES ops.delivery_trip(id),
   vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id),
@@ -645,6 +647,12 @@ CREATE TABLE ops.vehicle_position (              -- GPS [C]; chỉ dispatcher xe
   recorded_at timestamptz NOT NULL, received_at timestamptz NOT NULL DEFAULT now(),
   source text NOT NULL CHECK (source IN ('device','simulator'))
 );
+**D3 owner-approved:** phải ràng buộc `vehicle_position` vào trip vẫn `on_road`, tài xế có ca chính thức còn hiệu lực; khi trip terminal hoặc ca kết thúc phải purge raw positions và từ chối upload offline muộn. Mọi GET GPS chỉ cho Dispatcher được **gán trực tiếp cho trip** khi tài xế đang trong ca. Model hiện tại chưa chứng minh có liên kết Dispatcher–trip: Dev 1/2 phải thiết kế bảng hoặc khóa sở hữu, migration, RBAC tests **trước** khi mở GPS read; tuyệt đối không suy diễn từ quyền Dispatcher cấp market. Khi trip gồm nhiều stop, chỉ hoàn tất toàn trip mới xóa theo terminal trip, nhưng hết ca đến trước cũng dừng/xóa. **Không xóa** `hr.driver_duty_log`/tachograph cùng với GPS; chúng chịu D5 khác. Tọa độ không đi vào audit/milestone/notification. Backup đã tồn tại cần cơ chế thời hạn riêng.
+
+**D5 owner-approved product retention (DEC-DEV2-D5-001):** customer/CS 90 ngày sau đóng đơn/case cuối, operational order không phải chứng từ 365 ngày sau terminal, former staff contact 90 ngày sau kết thúc quan hệ và hết quyền/nghĩa vụ, nonstatutory shift/attendance 24 tháng, technical/security logs 30/90 ngày, staging backup max 30 ngày, GPS purge theo trip/ca. Driver working-time/tachograph và Swedish accounting được giữ theo thời hạn luật áp dụng; audit/milestone bất biến không UPDATE/DELETE theo mốc 24 tháng review. Phải xét legal hold, bản ghi dùng chung, chính sách retention versioned, dry run, ROPA/DSAR/DPIA/nhà xử lý trước khi dùng dữ liệu cá nhân thật; các giá trị legacy 365/730 trong config không tự động có hiệu lực chính sách. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
+
+**D2 owner-approved:** CSV nguồn có schema version, ISO, decimal, SHA-256 theo market/entity/schema, retry `failed`, `partial` chỉ qua IT review, `ok` duplicate skip. Chỉ áp dụng qua adapter và `stg.sync_run`, không viết ngược source hoặc CFO approval, cần migration xem xét unique index cho retry.
+
 CREATE TABLE ops.idempotency_key (
   key text NOT NULL, user_id bigint NOT NULL REFERENCES ref.app_user(id),
   endpoint text NOT NULL, request_hash text NOT NULL, response_status int, response_body jsonb,
