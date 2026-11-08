@@ -79,8 +79,9 @@ def send(
     )
 
 
-async def verified_risk(order_id: int, trigger: str) -> dict[str, object]:
+async def verified_risk(order_id: int, trigger: str, *, session: object = None) -> dict[str, object]:
     assert order_id == 1 and trigger.startswith("event:")
+    assert session is not None, "M7 must run in the caller's transaction (session-aware)"
     return {"status": "ON_TRACK", "color": "green", "forecast_eta": "2026-11-10T10:00:00Z"}
 
 
@@ -427,3 +428,39 @@ def test_US_EXE_02_AC5_prior_cancelled_trip_does_not_block_current_plan(
         ]["status"]
         == "cancelled"
     )
+
+
+def test_M6_1_two_vehicles_deliver_same_order_one_pod_per_trip_stop(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEC-OWNER-20261109 M6-1: two successful PODs for one multi-vehicle order, one per trip stop."""
+
+    async def test_driver_gate(*_args: object) -> None:
+        return None
+
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+        return 1
+
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    monkeypatch.setattr(notify_service, "enqueue", test_enqueue)
+    monkeypatch.setattr(execution_service, "_driver_gate", test_driver_gate)
+    steps = (
+        (WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        (WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+        (DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        (14, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2}),
+        (DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "Synthetic one"}),
+        (14, "DELIVERED", "2026-11-10T09:35:00Z", {"trip_id": 2, "recipient_name": "Synthetic two"}),
+    )
+    for actor, kind, at, data in steps:
+        response = send(execution_api, actor, kind, at, data)
+        assert response.status_code == 200, response.text
+    assert response.json()["order_status"] == "DELIVERED"
+    pods = fetch(
+        execution_api.dsn,
+        "SELECT trip_stop_id, result FROM ops.proof_of_delivery WHERE order_id=1 ORDER BY trip_stop_id",
+    )
+    assert [p["result"] for p in pods] == ["delivered", "delivered"]
+    assert len({p["trip_stop_id"] for p in pods}) == 2

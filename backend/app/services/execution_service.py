@@ -586,8 +586,10 @@ async def record_event(
     )
     assert new_event is not None
     try:
-        risk = await risk_service.recalculate(order.id, f"event:{event_type}")
-        if risk is None:
+        # M7 runs in THIS transaction (session-aware): a rolled-back event never leaves a forecast/alert.
+        risk = await risk_service.recalculate(order.id, f"event:{event_type}", session=session)
+        # Terminal DELIVERED orders produce no new forecast (open risk alerts are closed by M7 instead).
+        if risk is None and order.status != "DELIVERED":
             raise DomainError("PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result.")
         # Notify only when the *order* changes, after a verified risk update.
         # Second-vehicle dispatch must not duplicate the DISPATCHED notification.
