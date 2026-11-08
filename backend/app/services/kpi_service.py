@@ -336,17 +336,12 @@ async def _collect(
     for day, wh in committed_map.keys() | staffed_map.keys():
         booked = committed_map.get((day, wh), Decimal(0))
         capacity = staffed_map.get((day, wh))
-        # A committed reservation without verified actual attendance has
-        # unknown utilisation, not a fabricated 0% or infinite percentage.
+        # Missing attendance does not imply 0% utilization. Sum numerators
+        # and denominators separately to weight warehouses by available hours.
         if capacity is None or capacity <= 0:
             all_days[day]["capacity_utilisation"].add(None)
         else:
-            all_days[day]["capacity_utilisation"].add(booked / capacity, capacity)
-            # Reweight across warehouses by available hours rather than average
-            # warehouse percentages: aggregate committed / aggregate capacity.
-            m = all_days[day]["capacity_utilisation"]
-            m.sum -= booked / capacity
-            m.sum += booked
+            all_days[day]["capacity_utilisation"].add(booked, capacity)
     return all_days
 
 
@@ -477,7 +472,10 @@ async def decision_log(
         Employee.id == DecisionLog.actor_employee_id, Employee.market_id == market.id
     ).exists()
     stmt = select(DecisionLog).where(
-        or_(same_market_order, same_market_employee),
+        or_(
+            same_market_order,
+            and_(DecisionLog.order_id.is_(None), same_market_employee),
+        ),
         local_day.between(period.start, period.end),
     )
     if order_id is not None:
