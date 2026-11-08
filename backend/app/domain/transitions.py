@@ -13,10 +13,17 @@ from dataclasses import dataclass
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import clock
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus as S
 from app.domain.models.ops import CustomerOrder, DeliveryTrip, OrderTransition, TripStop
-from app.domain.models.plan import FulfilmentPlan, PrepReservation, StockReservation, VehicleReservation
+from app.domain.models.plan import (
+    FulfilmentPlan,
+    PlanningRun,
+    PrepReservation,
+    StockReservation,
+    VehicleReservation,
+)
 
 SYSTEM_ROLE = "system"  # ASM-002: allowed_roles rỗng trong ops.order_transition = chỉ hệ thống
 
@@ -75,7 +82,13 @@ def is_allowed(from_status: S, to_status: S) -> bool:
 
 
 async def transition(
-    session: AsyncSession, order_id: int, to_status: S, actor_role: str, reason_text: str | None = None
+    session: AsyncSession,
+    order_id: int,
+    to_status: S,
+    actor_role: str,
+    reason_text: str | None = None,
+    *,
+    expired_hold_run_id: int | None = None,
 ) -> "Transitioned":
     """Đổi trạng thái đơn trong transaction của caller; trả trạng thái cũ và kế hoạch đã đóng (nếu có).
 
@@ -105,7 +118,17 @@ async def transition(
             {"from_status": from_status.value, "to_status": S(to_status).value},
         )
     allowed = set(rule.allowed_roles) or {SYSTEM_ROLE}
-    if actor_role not in allowed:
+    # DEC-HOLD-001: narrowly authorize an automatic PLANNED → SUBMITTED transition.
+    # It is NOT a general grant of dispatcher privileges to system jobs.
+    timeout_reset = (
+        actor_role == SYSTEM_ROLE
+        and from_status == S.PLANNED
+        and to_status == S.SUBMITTED
+        and reason_text == "hold_expired"
+        and expired_hold_run_id is not None
+        and await _eligible_expired_hold(session, order_id, expired_hold_run_id)
+    )
+    if actor_role not in allowed and not timeout_reset:
         raise DomainError("FORBIDDEN", "Role may not perform this transition.")
     if rule.requires_reason and not (reason_text and reason_text.strip()):
         raise DomainError("REASON_REQUIRED", "This transition requires a reason.")
@@ -116,6 +139,64 @@ async def transition(
         update(CustomerOrder).where(CustomerOrder.id == order_id).values(status=S(to_status).value)
     )
     return Transitioned(from_status, closed)
+
+
+async def _eligible_expired_hold(session: AsyncSession, order_id: int, run_id: int) -> bool:
+    """Only the latest expired, unapproved run may reset its order (DEC-HOLD-001).
+
+    Caller holds the order row lock in transition(); never reset a newer plan.
+    """
+    order = await session.get(CustomerOrder, order_id)
+    if order is None or order.status != S.PLANNED.value or order.approved_plan_id is not None:
+        return False
+    latest = await session.scalar(
+        select(PlanningRun)
+        .where(PlanningRun.order_id == order_id)
+        .order_by(PlanningRun.run_no.desc(), PlanningRun.id.desc())
+        .limit(1)
+    )
+    if (
+        latest is None
+        or latest.id != run_id
+        or latest.kind == "replan_suggestion"
+        or latest.hold_expires_at is None
+        or latest.hold_expires_at > clock.now()
+    ):
+        return False
+    approved = await session.scalar(
+        select(FulfilmentPlan.id)
+        .where(FulfilmentPlan.order_id == order_id, FulfilmentPlan.status.in_(("approved", "manual")))
+        .limit(1)
+    )
+    if approved is not None:
+        return False
+    for model in (StockReservation, PrepReservation, VehicleReservation):
+        active = await session.scalar(
+            select(model.id)
+            .where(model.order_id == order_id, model.status.in_(("held", "committed")))
+            .limit(1)
+        )
+        if active is not None:
+            return False
+    return True
+
+
+async def reset_expired_hold_order(session: AsyncSession, order_id: int, run_id: int) -> bool:
+    """Trusted timeout-only transition; runs inside expiry's existing transaction.
+
+    The normal dispatcher PLANNED → SUBMITTED transition remains unchanged.
+    """
+    if not await _eligible_expired_hold(session, order_id, run_id):
+        return False
+    await transition(
+        session,
+        order_id,
+        S.SUBMITTED,
+        SYSTEM_ROLE,
+        "hold_expired",
+        expired_hold_run_id=run_id,
+    )
+    return True
 
 
 @dataclass(frozen=True)

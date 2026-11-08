@@ -1,8 +1,11 @@
-# M1 source contract proposal — pending approval
+# M1 source contract — owner-approved direction, contract details pending
 
 Owner: Dev 2. Review: Dev 1 (adapter/ingestion DTOs), Dev 3 (POS UI).
-Requested by project owner on 2026-11-07. This document proposes decisions;
-it does not amend approved `05` / `06` and does not authorize implementation.
+Requested by project owner on 2026-11-07. On **2026-11-08**, the owner approved the
+SRC-Q1–Q10 **proposed directions** in the conversation (DEC-SRC-001, see
+[`docs/ASSUMPTIONS.md`](../ASSUMPTIONS.md)). This approval does not, by itself,
+amend canonical `05` / `06`, create a migration, or fill in missing implementation
+details. A reviewed spec/implementation PR remains necessary.
 
 ## Why a decision is needed
 
@@ -16,7 +19,7 @@ the source has no receiving calendar or country calendar configuration.
 Affected stories: US-SRC-02 AC1, US-SRC-03 AC1, US-ORD-01;
 rules: BR-GEN-02, BR-ORD-01. CFO remains read-only toward the source.
 
-## Decisions to approve
+## Approved decisions (direction; follow-up contract required)
 
 | ID | Proposed decision | Impact |
 |---|---|---|
@@ -30,6 +33,26 @@ rules: BR-GEN-02, BR-ORD-01. CFO remains read-only toward the source.
 | SRC-Q8 | Introduce source instance calendar configuration and receiving hours per address, or explicitly defer these validations with an approved spec change. | No guessed workweek, holiday market or opening hours in validation. |
 | SRC-Q9 | A stock snapshot is an atomic batch with one as_of; empty snapshots also retain batch time. | Current per-row as_of cannot represent an empty snapshot or guarantee a consistent batch. Agree storage/seed rule. |
 | SRC-Q10 | Specify stock normalization when several local SKUs map to one global product, including units_to_base and whether source rows represent distinct physical inventory. | Source key is warehouse/SKU; CFO key is warehouse/global_product_id. Neither last-row-wins nor unconditional summation is safe without this rule. Blocks stock persistence, not the read-only stock transport. |
+
+**Approved interpretation and explicit gaps (2026-11-08):**
+
+- **SRC-Q1–Q7 and Q9:** the table above is approved as a **source-system contract direction**.
+  In SRC-Q6 the intended default is **50** items/page, maximum **500**; this does not
+  change CFO's separate `GET /orders` pagination/ordering rules in `06`.
+- **SRC-Q8:** choose the **introduce source-instance receiving calendar plus
+  per-address receiving hours** option, not the “defer validations” option.
+  Missing/unknown calendar data must not silently mean that receiving is always possible.
+  Warehouse staff and driver shifts remain separate CFO feasibility checks.
+- **SRC-Q10:** approve the **need for normalization and no blind sum/overwrite**;
+  the proposed table does not itself fix a conversion/physical-inventory aggregation algorithm.
+  Dev 1 and Dev 2 must specify distinct-inventory identity, units, and test cases before stock persistence.
+- **Still open technical contract details:** exact write/response models and nullability;
+  lifecycle edits/cancellations after submit; cancellation visibility to CFO; error field
+  paths/reasons, zero price, receiving window validation; pagination endpoint inventory;
+  batch storage and empty snapshot semantics. Do not invent these rules from this approval.
+- **Implementation status:** documentation of owner direction only. Dev 2 to open a
+  focused contract/schema/code PR with Dev 1 and Dev 3 review, migrations and tests per
+  `09_AI_Coding_Rules.md`; no implicit source-to-CFO write integration.
 
 The ASM-005 legacy-routing decision merged in main is authoritative for ingestion: an order with any
 unconfirmed SKU must remain in the existing process, and later mapping must not automatically pull
@@ -54,7 +77,7 @@ server-owned. PUT replaces editable fields and all lines atomically; request
 includes the expected version, and stale writes return 409 ILLEGAL_TRANSITION
 unless the group approves a distinct conflict code. No new code is added here.
 
-## Proposed lifecycle (requires approval)
+## Approved lifecycle direction (edge cases still require contract review)
 
 - Create: DRAFT, version 1.
 - Edit DRAFT/VALIDATED: DRAFT, version +1, old validation invalidated.
@@ -71,7 +94,7 @@ unless the group approves a distinct conflict code. No new code is added here.
 
 The last two points are open business decisions, not implementation defaults.
 
-## Validation acceptance to finalize
+## Validation acceptance details still to finalize
 
 Require existing customer and address belonging to that customer; valid
 latitude/longitude; at least one line with known SKU, unique positive line_no,
@@ -97,3 +120,11 @@ Independent slice already implemented on `feat/m1-source-auth`: X-API-Key
 protection on business routes (health public), instance-local secret configuration,
 credential-free auth errors and OpenAPI security declarations. This is only
 the authentication portion of US-SRC-02, not the full source contract.
+
+## Implementation status (2026-11-08, after DEC-SRC-001; integration of #76 + #80)
+
+Implemented slices, neither completing M1:
+- `GET /stock` (from #76): reads existing `src_stock` rows, sorted by warehouse/SKU; numeric JSON quantities. The **temporary** `as_of=min(row.as_of)` is **not** a coherent batch marker and does not implement approved SRC-Q9. Empty storage returns `as_of=null`, so the CFO adapter rejects it; batch persistence is still missing.
+- `GET /orders` (from #80): SRC-Q1 nullable address/contact snapshot columns with additive bootstrap, SRC-Q3 read representation, SRC-Q6 pagination/envelope/header, SRC-Q7 `updated_at >= updated_since`, deterministic `(updated_at,id)` ordering, and sanitized 422 validation errors.
+
+**Still open and not implemented:** source order writes/validate/submit/cancel; final Q2/Q4/Q5/Q8 constraints and cancellation feed to CFO; other list endpoints and pagination inventory; true coherent stock-batch storage including empty batches (Q9); no-double-count local/global SKU normalization (Q10); reviewed OpenAPI baseline and second-instance contract tests. These routes remain stubs and can return 500. The Source contract and end-to-end ingestion are **not complete**.

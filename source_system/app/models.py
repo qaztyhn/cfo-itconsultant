@@ -122,6 +122,16 @@ class Order(Timestamps, Base):
     sales_code: Mapped[str | None]
     store_code: Mapped[str | None]
     status: Mapped[str]
+    # SRC-Q1 (DEC-SRC-001): snapshots taken when the order is written, never overwritten by later changes to
+    # the customer/address records. Nullable at the DB level so the additive upgrade keeps existing rows.
+    address: Mapped[str | None]
+    lat: Mapped[Decimal | None]
+    lon: Mapped[Decimal | None]
+    contact_name: Mapped[str | None]
+    contact_phone: Mapped[str | None]
+    contact_email: Mapped[str | None]
+    receiving_restrictions: Mapped[str | None]
+    special_requirements: Mapped[str | None]
 
 
 class OrderLine(Timestamps, Base):

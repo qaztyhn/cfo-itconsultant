@@ -3,54 +3,110 @@
 Owner: Dev 2 (luồng B) — M1.
 """
 
+from datetime import datetime
+from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import AwareDatetime, BaseModel, field_serializer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import lists_read as lists
 from app.auth import require_api_key
 from app.db import database_ready
+from app.models import Stock
+from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderPage, OrderStatus, list_orders
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 health_router = APIRouter()
 
 
-@router.get("/orders")
-async def list_orders(
-    updated_since: str | None = None, status: str = "SUBMITTED_FOR_PLANNING"
-) -> dict[str, object]:
-    """Đơn kèm dòng, bản chụp địa chỉ + tọa độ, version, updated_at."""
-    raise NotImplementedError
+@router.get("/orders", response_model=OrderPage)
+async def list_orders_endpoint(
+    request: Request,
+    response: Response,
+    updated_since: AwareDatetime | None = None,
+    status: OrderStatus = "SUBMITTED_FOR_PLANNING",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+) -> OrderPage:
+    """Đơn kèm dòng, bản chụp địa chỉ/liên hệ, version, updated_at (06 mục 16; SRC-Q1/Q6/Q7)."""
+    result = await list_orders(
+        request.app.state.engine, status=status, updated_since=updated_since, page=page, page_size=page_size
+    )
+    response.headers["X-Total-Count"] = str(result.total)
+    return result
 
 
-@router.get("/customers")
-async def list_customers(updated_since: str | None = None) -> dict[str, object]:
-    """Khách."""
-    raise NotImplementedError
+@router.get("/customers", response_model=lists.CustomerPage)
+async def list_customers(paging: lists.PagingDep) -> lists.CustomerPage:
+    """Khách (D1-A)."""
+    return await lists.customers(paging)
 
 
-@router.get("/products")
-async def list_products(updated_since: str | None = None) -> dict[str, object]:
-    """Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích)."""
-    raise NotImplementedError
+@router.get("/products", response_model=lists.ProductPage)
+async def list_products(paging: lists.PagingDep) -> lists.ProductPage:
+    """Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích) (D1-A)."""
+    return await lists.products(paging)
 
 
-@router.get("/stock")
-async def stock_snapshot() -> dict[str, object]:
-    """Ảnh chụp tồn kho toàn bộ kèm as_of."""
-    raise NotImplementedError
+def _number(value: Decimal) -> int | float:
+    return int(value) if value == value.to_integral_value() else float(value)
 
 
-@router.get("/inbound")
-async def inbound() -> dict[str, object]:
-    """Hàng nhập chưa về (inbound_ref, warehouse_code, sku, qty, eta_date, confirmed)."""
-    raise NotImplementedError
+class StockItem(BaseModel):
+    warehouse_code: str
+    sku: str
+    on_hand: Decimal
+    reserved: Decimal
+
+    @field_serializer("on_hand", "reserved")
+    def _plain_number(self, value: Decimal) -> int | float:
+        return _number(value)
 
 
-@router.get("/fleet/calendar")
-async def fleet_calendar(date_from: str, date_to: str) -> dict[str, object]:
-    """Khoảng bận của xe."""
-    raise NotImplementedError
+class StockSnapshot(BaseModel):
+    as_of: datetime | None
+    items: list[StockItem]
+
+
+@router.get("/stock", response_model=StockSnapshot)
+async def stock_snapshot(request: Request) -> StockSnapshot:
+    """Ảnh chụp tồn kho toàn bộ kèm as_of (06 mục 16).
+
+    `as_of` là thời điểm CŨ NHẤT trong các dòng (không khẳng định dữ liệu mới hơn thực tế). Bảng không có dòng
+    thì trả `as_of = null` và `items = []`: nguồn chưa lưu thời điểm của lô rỗng (SRC-Q9 chưa duyệt) nên KHÔNG
+    được bịa `as_of`; adapter CFO yêu cầu `as_of` hợp lệ và sẽ từ chối thay vì coi là tồn kho 0.
+    """
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session:
+        rows = (
+            (await session.execute(select(Stock).order_by(Stock.warehouse_code, Stock.sku))).scalars().all()
+        )
+    return StockSnapshot(
+        as_of=min((r.as_of for r in rows), default=None),
+        items=[
+            StockItem(warehouse_code=r.warehouse_code, sku=r.sku, on_hand=r.on_hand, reserved=r.reserved)
+            for r in rows
+        ],
+    )
+
+
+@router.get("/inbound", response_model=lists.InboundPage)
+async def inbound(paging: lists.PagingDep) -> lists.InboundPage:
+    """Hàng nhập: inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received (D1-A)."""
+    return await lists.inbound(paging)
+
+
+@router.get("/fleet/calendar", response_model=lists.FleetPage)
+async def fleet_calendar(
+    paging: lists.PagingDep,
+    from_: Annotated[AwareDatetime | None, Query(alias="from")] = None,
+    to: AwareDatetime | None = None,
+) -> lists.FleetPage:
+    """Khoảng bận của xe giao nửa mở [from, to) (D1-A)."""
+    return await lists.fleet_calendar(paging, from_, to)
 
 
 @router.post("/orders")
@@ -83,10 +139,12 @@ async def cancel_order(order_id: str) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/addresses")
-async def addresses(q: str = "") -> dict[str, object]:
-    """Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật)."""
-    raise NotImplementedError
+@router.get("/addresses", response_model=lists.AddressPage)
+async def addresses(
+    paging: lists.PagingDep, customer_id: str | None = None, q: str | None = None
+) -> lists.AddressPage:
+    """Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật); lọc theo khách / văn bản địa chỉ (D1-A)."""
+    return await lists.addresses(paging, customer_id, q)
 
 
 @health_router.get("/health")

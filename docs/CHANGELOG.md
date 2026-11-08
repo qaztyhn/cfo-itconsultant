@@ -1,5 +1,53 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
+
+- Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.
+- Ghi rõ các diễn giải kỹ thuật (cận `from`/`to` tùy chọn, `q` chỉ khớp văn bản địa chỉ, kiểu số/chuỗi) để review. Không đổi route/enum/mã lỗi, không migration.
+
+
+## [DEC-SRC-D1-001 — owner-approved detailed Source D1-A–D] — 2026-11-08 — docs-only
+
+- Owner trả lời **“ĐƯỢC ĐỒNG Ý”** với toàn bộ D1-A/B/C/D trong [PR #84](https://github.com/qaztyhn/cfo-itconsultant/pull/84). Ghi `DEC-SRC-D1-001` tại `ASSUMPTIONS` và hồ sơ quyết định `docs/decisions/DEC_SRC_D1_APPROVED_20261108.md`.
+- **D1-A:** GET `/orders,/customers,/products,/inbound,/fleet/calendar,/addresses` phân trang `items,page,page_size,total` 50/max500, sort `updated_at,natural_key`, inclusive `updated_since >=`; đơn `CANCELLED` cần feed đồng bộ riêng; `/stock` không phân trang.
+- **D1-B:** persisted DRAFT cần customer/address/store/date_mode; Validate/Submit yêu cầu contact/lines, qty dương, `unit_price` decimal chuỗi hai số (0 hợp lệ), date/hours nhận kiểm nguồn, 422 với stable path/reason không echo PII; source-known SKU chưa mapping không được POS chặn.
+- **D1-C:** PUT sau submit full validation + `expected_version`, `409 VERSION_CONFLICT`; CANCELLED terminal có version/reason/idempotency. CFO chưa duyệt phải close/release hold qua state transition/audit; đã APPROVED chưa DISPATCHED tự tính `replan_suggestion` **không giữ chỗ/auto-approve**, Dispatcher mới quyết định; sau DISPATCHED alert-only.
+- **D1-D:** lịch nhận market/address fail-closed nếu thiếu, tồn kho batch published atomically kể cả batch rỗng, nguồn chưa publish không phải tồn=0, normalize `units_to_base` và stock pool alias chống cộng trùng.
+- Đồng bộ `03/05/06/09`; PR **docs-only** và không chứng minh endpoint, database migration hay tests đã xong. D6 tiếp tục owner tự tổ chức riêng, D8 mới là proposal; D2–D5 và D7 đã có owner approval độc lập.
+
+## [DEC-DEV2-D2/3/4/5-001 — owner approvals; D6 deferred; D8 proposed] — 2026-11-08 — docs-only
+
+- **D2:** chốt CSV UTF-8 versioned/schema, ISO dates/timezone + decimal, SHA-256 idempotent: file `ok` trùng skip; `failed` retry run mới; `partial` cần IT review, tuyệt đối không cộng/trùng stock hoặc ghi approval.
+- **D3:** thu GPS **30 phút** chỉ khi on-road + tài xế trong ca; offline queue được phép nhưng xóa/bỏ khi chuyến hoặc ca kết thúc; **chỉ Dispatcher gán chuyến mới xem** trong ca, không toàn market. Raw GPS được xóa khi trip terminal/ca hết hiệu lực (không giữ 30 ngày như tài liệu cũ); đổi privacy/RBAC/config spec và yêu cầu migration/cleanup tests, giữ lịch sử duty/tachograph riêng.
+- **D4:** notification phải render server từ template với biến allowlist, cấm body/subject free-text; DELAY chỉ draft/Dispatcher duyệt; giữ giới hạn gửi email demo theo DEC-NOTIFY-001. Backoff 5/15 phút chưa được chốt riêng.
+- **D5:** chấp thuận con số policy theo loại customer/CS 90d, operations 365d, former-staff nonstatutory contact 90d, shift records 24mo (legal review), logs 30/90d, staging backups 30d; statutory tachograph/work-time/Swedish accounting căn cứ riêng, immutable audit review; **GPS theo D3 override**. GDPR là mục tiêu, legal/privacy review cần trước dữ liệu thật, không chứng nhận compliance.
+- **D6:** owner sẽ tổ chức riêng, chưa phê duyệt deploy/chi phí/cloud. **D8:** mới yêu cầu đề xuất schedule theo Europe/Stockholm (PR tài liệu này), chưa duyệt; chưa triển khai scheduler.
+- Đồng bộ `ASSUMPTIONS`, `03/04/05/06/09` cùng tài liệu quyết định và proposal D8; PR chỉ thay đổi docs, còn code/DDL/OpenAPI/tests pending, **không** tuyên bố M2/M6/M7/M8 đã hoàn thành.
+
+## [DEC-DEV2-D7-001 — Synthetic vehicle and driver fixture rules] — 2026-11-08 — owner approved, docs-only
+
+- Chủ dự án duyệt D7-A–E: seed xe và **56 ngày** lịch sử làm việc/lái/nghỉ tài xế synthetic, tách payload với `max_permissible_mass_kg`, xác định scope 561 theo tình huống, `unknown`/thiếu lịch sử → fail-closed; nghỉ mặc định 11h, không dùng ngoại lệ 9h, giờ lái khác giờ làm.
+- Bổ sung quy tắc cho `04` §6.7, `05` (vehicle/driver duty), `06` §13.0b, `08` §5.3; sửa ví dụ van 3,5t trước đó không hợp lý. Chưa thay đổi migration/code/API; Dev 2 seed và Dev 1 nghiệm thu engine/approval trên test fixtures. Quyết định D1–D6/D8 không được chốt bởi mục này.
+
+## [05 §10 / 06 §16 — bản chụp đơn nguồn và GET /orders] — 2026-11-08 — theo DEC-SRC-001, chờ review
+
+- `05` §10: `src_order` thêm 8 cột bản chụp (SRC-Q1), nullable; nâng cấp cộng thêm, giữ dữ liệu.
+- `06` §16: ghi rõ `GET /orders` — phong bì `{items,page,page_size,total}`, `page_size` mặc định 50 tối đa 500, `updated_since` bao gồm (`>=`), thứ tự `(updated_at, id)`, biểu diễn đơn, lỗi 422 không phản chiếu giá trị.
+- Không đổi mã lỗi/route/enum; không thêm migration CFO. **Chưa** có: ghi đơn, validate/submit/cancel, các danh sách khác, OpenAPI baseline.
+
+
+## [DEC-HOLD-001 — hết hold phải Plan Again, không hồi sinh plan cũ] — 2026-11-08 — owner approved, docs-only
+
+- Hold hết hạn: trả giữ chỗ, đặt plan `expired`, trả đơn `PLANNED` về trạng thái chờ lập kế hoạch `SUBMITTED` **chỉ khi đúng run vừa hết hạn và chưa có run/approval mới**. Không được duyệt plan expired kể cả Dispatcher, dù nguồn lực vẫn còn.
+- Người dùng muốn tiếp tục phải chủ động Plan Again: tạo `planning_run`/candidate/hold mới cho **cùng customer_order**, kiểm lại nguồn, ca kho, xe/tài xế và 5 gate; không sao chép đơn. Đây là quy tắc thay thế ngoại lệ cũ trong `04` §7 cho Dispatcher duyệt sau timeout.
+- `04`, `05`, `06`, `ASSUMPTIONS` đồng bộ theo quyết định chủ dự án khi review #78; không có code/migration trong PR này. T14/T15/T16 cần test timeout, double click/race và status reset.
+
+## [DEC-SRC-001 — M1 source contract SRC-Q1–Q10] — 2026-11-08 — owner approved direction, docs-only
+
+- Chủ dự án phê duyệt hướng đề xuất tại `docs/proposals/M1_SOURCE_CONTRACT.md`: (Q1–Q3) snapshot địa chỉ/liên hệ và request/response đơn; (Q4–Q5) validation lỗi 422 + lifecycle; (Q6–Q7) danh sách nguồn phân trang mặc định **50**, tối đa **500** và đồng bộ gia tăng theo thứ tự ổn định; (Q8) bổ sung lịch nguồn/giờ nhận theo địa chỉ; (Q9) stock snapshot batch có `as_of` kể cả rỗng; (Q10) normalize SKU/units, tránh cộng hoặc ghi đè tồn kho sai.
+- Quy tắc và biên phê duyệt đã ghi tại `docs/ASSUMPTIONS.md` (DEC-SRC-001); **không đồng nhất** phân trang của source với `GET /orders` CFO.
+- **Chưa triển khai:** không sửa schema/API chuẩn `05`/`06`, không migration/code/test trong PR này. Dev 2 cần PR hợp đồng/triển khai với review Dev 1 (adapter, stock) và Dev 3 (POS), test nguồn nhiều instance. Các quyết định còn thiếu được liệt kê tại proposal; không tự điền theo suy đoán.
+
 ## [DEC-ORS-001 + DEC-NOTIFY-001 — owner approvals] — 2026-11-07 — docs-only
 
 - Owner chấp nhận retry ORS fallback sau **60 phút** mặc định theo market, gắn nhãn tuyến ước lượng; TTL đã triển khai trong #67.
