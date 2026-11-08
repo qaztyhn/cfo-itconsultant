@@ -1,5 +1,14 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-DEV2-D2/3/4/5-001 — owner approvals; D6 deferred; D8 proposed] — 2026-11-08 — docs-only
+
+- **D2:** chốt CSV UTF-8 versioned/schema, ISO dates/timezone + decimal, SHA-256 idempotent: file `ok` trùng skip; `failed` retry run mới; `partial` cần IT review, tuyệt đối không cộng/trùng stock hoặc ghi approval.
+- **D3:** thu GPS **30 phút** chỉ khi on-road + tài xế trong ca; offline queue được phép nhưng xóa/bỏ khi chuyến hoặc ca kết thúc; **chỉ Dispatcher gán chuyến mới xem** trong ca, không toàn market. Raw GPS được xóa khi trip terminal/ca hết hiệu lực (không giữ 30 ngày như tài liệu cũ); đổi privacy/RBAC/config spec và yêu cầu migration/cleanup tests, giữ lịch sử duty/tachograph riêng.
+- **D4:** notification phải render server từ template với biến allowlist, cấm body/subject free-text; DELAY chỉ draft/Dispatcher duyệt; giữ giới hạn gửi email demo theo DEC-NOTIFY-001. Backoff 5/15 phút chưa được chốt riêng.
+- **D5:** chấp thuận con số policy theo loại customer/CS 90d, operations 365d, former-staff nonstatutory contact 90d, shift records 24mo (legal review), logs 30/90d, staging backups 30d; statutory tachograph/work-time/Swedish accounting căn cứ riêng, immutable audit review; **GPS theo D3 override**. GDPR là mục tiêu, legal/privacy review cần trước dữ liệu thật, không chứng nhận compliance.
+- **D6:** owner sẽ tổ chức riêng, chưa phê duyệt deploy/chi phí/cloud. **D8:** mới yêu cầu đề xuất schedule theo Europe/Stockholm (PR tài liệu này), chưa duyệt; chưa triển khai scheduler.
+- Đồng bộ `ASSUMPTIONS`, `03/04/05/06/09` cùng tài liệu quyết định và proposal D8; PR chỉ thay đổi docs, còn code/DDL/OpenAPI/tests pending, **không** tuyên bố M2/M6/M7/M8 đã hoàn thành.
+
 ## [DEC-DEV2-D7-001 — Synthetic vehicle and driver fixture rules] — 2026-11-08 — owner approved, docs-only
 
 - Chủ dự án duyệt D7-A–E: seed xe và **56 ngày** lịch sử làm việc/lái/nghỉ tài xế synthetic, tách payload với `max_permissible_mass_kg`, xác định scope 561 theo tình huống, `unknown`/thiếu lịch sử → fail-closed; nghỉ mặc định 11h, không dùng ngoại lệ 9h, giờ lái khác giờ làm.
