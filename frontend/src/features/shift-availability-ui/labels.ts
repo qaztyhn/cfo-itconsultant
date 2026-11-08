@@ -1,5 +1,6 @@
 import type {
   AssignmentStatus,
+  DriverEligibilityKind,
   EligibilityStatus,
   TaskPhase,
   WarningSeverity,
@@ -19,6 +20,12 @@ export interface ShiftAvailabilityLabels {
   scheduleUnverifiedHint: string;
   outsideSchedule: string;
   outsideScheduleHint: string;
+
+  timelineLabel: string;
+  noShiftInWindow: string;
+  continuesBefore: string;
+  continuesAfter: string;
+
   backendValidationNote: string;
   dutyTime: string;
   drivingTime: string;
@@ -34,6 +41,7 @@ export interface ShiftAvailabilityLabels {
   assignmentStatus: Record<AssignmentStatus, string>;
   warningSeverity: Record<WarningSeverity, string>;
   eligibilityStatus: Record<EligibilityStatus, string>;
+  eligibilityKind: Record<DriverEligibilityKind, string>;
   taskPhase: Record<TaskPhase, string>;
 }
 
@@ -47,6 +55,12 @@ export const DEFAULT_LABELS: ShiftAvailabilityLabels = {
   scheduleUnverifiedHint: "No official schedule on file. Capacity is not counted until a manager confirms the schedule.",
   outsideSchedule: "Outside official schedule",
   outsideScheduleHint: "Display hint only. The backend validates scheduling.",
+  
+  timelineLabel: "Shift timeline",
+  noShiftInWindow: "No official shift in this window",
+  continuesBefore: "continues from before this window",
+  continuesAfter: "continues after this window",
+
   backendValidationNote: "Final scheduling decisions are validated by the backend.",
   dutyTime: "Duty time",
   drivingTime: "Driving time",
@@ -68,6 +82,16 @@ export const DEFAULT_LABELS: ShiftAvailabilityLabels = {
   },
   warningSeverity: { info: "Info", warning: "Warning", blocking: "Blocking" },
   eligibilityStatus: { eligible: "Eligible", not_eligible: "Not eligible", unknown: "Unknown" },
+  
+  eligibilityKind: {
+    rest: "Rest",
+    driving_limit: "Driving limit",
+    break: "Break",
+    licence: "Licence",
+    vehicle_scope: "Vehicle scope",
+    history: "Driving history",
+  },
+
   taskPhase: {
     prep: "Preparation",
     loading: "Loading",
@@ -78,7 +102,7 @@ export const DEFAULT_LABELS: ShiftAvailabilityLabels = {
   },
 };
 
-type NestedKey = "assignmentStatus" | "warningSeverity" | "eligibilityStatus" | "taskPhase";
+type NestedKey = "assignmentStatus" | "warningSeverity" | "eligibilityStatus" | "eligibilityKind" | "taskPhase";
 
 export type ShiftAvailabilityLabelOverrides = Partial<Omit<ShiftAvailabilityLabels, NestedKey>> & {
   [K in NestedKey]?: Partial<ShiftAvailabilityLabels[K]>;
@@ -93,6 +117,9 @@ export function mergeLabels(overrides?: ShiftAvailabilityLabelOverrides): ShiftA
     assignmentStatus: { ...DEFAULT_LABELS.assignmentStatus, ...overrides.assignmentStatus },
     warningSeverity: { ...DEFAULT_LABELS.warningSeverity, ...overrides.warningSeverity },
     eligibilityStatus: { ...DEFAULT_LABELS.eligibilityStatus, ...overrides.eligibilityStatus },
+    
+    eligibilityKind: { ...DEFAULT_LABELS.eligibilityKind, ...overrides.eligibilityKind },
+
     taskPhase: { ...DEFAULT_LABELS.taskPhase, ...overrides.taskPhase },
   } as ShiftAvailabilityLabels;
 }
