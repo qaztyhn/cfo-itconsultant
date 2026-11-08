@@ -33,7 +33,7 @@ const QUALITY_LABEL: Record<EvidenceQuality, string> = {
   unavailable: "Unavailable",
 };
 
-/** Never accept naive timestamps: the source must explicitly identify its UTC offset. */
+/** Explicit evidence quality; color never carries meaning alone. */
 export function QualityBadge({ quality }: { quality: EvidenceQuality }) {
   return (
     <span
