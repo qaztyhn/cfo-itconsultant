@@ -94,11 +94,14 @@ async def _has_any(session: AsyncSession, run_id: int) -> bool:
 
 async def _other_active(session: AsyncSession, order_id: int, run_id: int) -> bool:
     for model in _RESERVATIONS:
-        if await session.scalar(
-            select(model.id)
-            .where(model.order_id == order_id, model.run_id != run_id, model.status.in_(_ACTIVE))
-            .limit(1)
-        ) is not None:
+        if (
+            await session.scalar(
+                select(model.id)
+                .where(model.order_id == order_id, model.run_id != run_id, model.status.in_(_ACTIVE))
+                .limit(1)
+            )
+            is not None
+        ):
             return True
     return False
 
@@ -129,9 +132,7 @@ async def _hold(session: AsyncSession, run_id: int) -> None:
         raise _error("ILLEGAL_TRANSITION", "Release the previous hold before re-running.")
     plans = (
         await session.scalars(
-            select(FulfilmentPlan)
-            .where(FulfilmentPlan.run_id == run.id)
-            .order_by(FulfilmentPlan.rank)
+            select(FulfilmentPlan).where(FulfilmentPlan.run_id == run.id).order_by(FulfilmentPlan.rank)
         )
     ).all()
     if not plans or len(plans) > 3 or any(p.status != "proposed" or p.order_id != order.id for p in plans):
@@ -154,9 +155,7 @@ async def _hold(session: AsyncSession, run_id: int) -> None:
             held[day] = max(held.get(day, Decimal(0)), hours)
         vehicles = (
             await session.scalars(
-                select(PlanVehicle)
-                .where(PlanVehicle.plan_id == plan.id)
-                .order_by(PlanVehicle.seq)
+                select(PlanVehicle).where(PlanVehicle.plan_id == plan.id).order_by(PlanVehicle.seq)
             )
         ).all()
         if not vehicles or len(vehicles) != plan.vehicle_count:
@@ -348,12 +347,8 @@ async def _commit_plan(session: AsyncSession, plan_id: int, resources_validated:
         raise _error("PLAN_NOT_APPROVABLE", "Approval must first validate and lock resources.")
     if run.kind == "replan_suggestion":
         raise _error("PLAN_NOT_APPROVABLE", "Suggested replan needs direct approval allocation.")
-    stock = (
-        await session.scalars(select(StockReservation).where(StockReservation.run_id == run.id))
-    ).all()
-    prep = (
-        await session.scalars(select(PrepReservation).where(PrepReservation.run_id == run.id))
-    ).all()
+    stock = (await session.scalars(select(StockReservation).where(StockReservation.run_id == run.id))).all()
+    prep = (await session.scalars(select(PrepReservation).where(PrepReservation.run_id == run.id))).all()
     vehicles = (
         await session.scalars(select(VehicleReservation).where(VehicleReservation.run_id == run.id))
     ).all()
