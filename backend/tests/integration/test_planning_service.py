@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Callable, Coroutine, Iterator
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -23,7 +23,6 @@ from app.engine.types import (
     PlanCandidate,
     PlanningResult,
     ProductCtx,
-    RouteInfo,
     VehicleAssignment,
 )
 from app.services import planning_service
@@ -92,8 +91,8 @@ async def _loader(
         D("0.01"),
     )
     ctx = OrderCtx(
-        id=getattr(order, "id"),
-        version=getattr(order, "version"),
+        id=order.id,
+        version=order.version,
         lat=59.0,
         lon=18.0,
         date_mode="exact",
@@ -106,7 +105,9 @@ async def _loader(
     return PlanningInputs(ctx, (), _config(), {"order_version": ctx.version, "as_of": now.isoformat()})
 
 
-def _feasible(order: OrderCtx, _warehouses: list[object], cfg: EngineConfig, weights: object) -> PlanningResult:
+def _feasible(
+    order: OrderCtx, _warehouses: list[object], cfg: EngineConfig, weights: object
+) -> PlanningResult:
     checks = tuple(
         CheckResult(name, True, name.upper() + "_OK", {"message": "verified"})
         for name in ("stock", "preparation", "truck", "site_date", "safety")
@@ -151,7 +152,9 @@ def _feasible(order: OrderCtx, _warehouses: list[object], cfg: EngineConfig, wei
     return PlanningResult("feasible", (candidate,), (), None, None, "safe", 2880, ())
 
 
-def _infeasible(order: OrderCtx, _warehouses: list[object], cfg: EngineConfig, weights: object) -> PlanningResult:
+def _infeasible(
+    order: OrderCtx, _warehouses: list[object], cfg: EngineConfig, weights: object
+) -> PlanningResult:
     return PlanningResult("infeasible", (), (), "truck", None, "infeasible", None, ())
 
 
@@ -205,7 +208,8 @@ def test_DEC_HOLD_001_plan_again_same_order_new_run(db: str, monkeypatch: pytest
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "released"
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=2")[0][0] == "held"
     assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
-    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='CRITERIA_CHANGED_RERUN'")[0][0] == 1
+    count = fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='CRITERIA_CHANGED_RERUN'")
+    assert count[0][0] == 1
 
 
 def test_US_PLN_08_AC3_infeasible_no_hold(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
