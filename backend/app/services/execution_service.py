@@ -332,9 +332,7 @@ async def _driver_gate(
     vehicle = await session.get(Vehicle, trip.vehicle_id)
     if driver is None or employee is None or vehicle is None or employee.status != "active":
         raise DomainError("PLAN_NOT_APPROVABLE", "Verified driver and vehicle data required.")
-    if LICENCE_RANK.get(driver.licence_class, 0) < LICENCE_RANK.get(
-        vehicle.required_licence, 999
-    ):
+    if LICENCE_RANK.get(driver.licence_class, 0) < LICENCE_RANK.get(vehicle.required_licence, 999):
         raise DomainError("PLAN_NOT_APPROVABLE", "Driver licence class is insufficient.")
     if driver.licence_expires_on < local.date():
         raise DomainError("LICENCE_EXPIRED", "Driver licence has expired.")
