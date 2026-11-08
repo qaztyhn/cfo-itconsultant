@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Plan vehicle DTO — object `vehicle` lồng] — 2026-11-08 — Dev 1 (chủ dự án chọn Option B)
+
+- `GET /planning-runs/{id}` và `GET /plans/{id}` (view Dispatcher): mỗi phần tử `vehicles[]` giữ nguyên field cũ (`vehicle_id`, `driver_employee_id`, `load_*`, mốc giờ) và **thêm** `vehicle: {id, code, name, capacity_kg, capacity_m3}` từ `ref.vehicle` thật; capacity là chuỗi thập phân không số 0 thừa (`"12000"`, `"40"`). Không có biển số, bằng lái, lịch xe, GPS hay dữ liệu tài xế.
+- Một truy vấn `plan.plan_vehicle` + một truy vấn `ref.vehicle` cho cả run (không N+1). View Sales giữ nguyên dạng gọn (`seq`, `eta_at`). Bản ghi xe thiếu -> `500 INTERNAL_ERROR` an toàn, không trả DTO thiếu. Không đổi quyết định lập kế hoạch/duyệt, route, DDL hay mã lỗi.
+- Mẫu docs/06 §6.2: capacity chuyển từ số sang chuỗi cho khớp với các trường Decimal khác.
+
 ## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
 
 - `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.
