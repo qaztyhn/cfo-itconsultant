@@ -67,9 +67,11 @@ def _attempt(
     for vehicles in vehicle_sets:
         option, delivery_checks = plan_delivery(order, warehouse, vehicles, prep.loading_start_at, cfg)
         # The delivery function may detect absent official warehouse loading shifts.
-        checks = (stock, *delivery_checks) if (
-            delivery_checks and delivery_checks[0].name == "preparation"
-        ) else (*first, *delivery_checks)
+        checks = (
+            (stock, *delivery_checks)
+            if (delivery_checks and delivery_checks[0].name == "preparation")
+            else (*first, *delivery_checks)
+        )
         reached.append(checks)
         if option is None or not all_passed(checks):
             rejected.append(_reject(warehouse.id, checks))
@@ -150,10 +152,12 @@ def plan_order(
                 # A distant exact-date option may be feasible beyond the reserve-search horizon.
                 corrected.append(candidate)
             else:
-                corrected.append(replace(
-                    candidate,
-                    planning_reserve_min=planning_reserve_min(order, earliest_eta, cfg),
-                ))
+                corrected.append(
+                    replace(
+                        candidate,
+                        planning_reserve_min=planning_reserve_min(order, earliest_eta, cfg),
+                    )
+                )
         ranked = rank_candidates(corrected, cfg, weights)
         names = {wh.id: wh.name for wh in warehouses}
         explained = tuple(
@@ -177,9 +181,7 @@ def plan_order(
         )
 
     earliest = [
-        option.target_date
-        for warehouse in warehouses
-        for option in _earliest_options(order, warehouse, cfg)
+        option.target_date for warehouse in warehouses for option in _earliest_options(order, warehouse, cfg)
     ]
     # WarehouseCtx does not carry warehouse-to-warehouse route distances or pair lead times.
     # Never fabricate transfer suggestions; service must supply the missing route matrix.
