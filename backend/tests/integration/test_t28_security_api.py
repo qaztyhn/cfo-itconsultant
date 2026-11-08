@@ -41,10 +41,16 @@ def secured(api: Api) -> Api:  # noqa: F811
     return api
 
 
-@pytest.mark.parametrize("user_id", [CS, DRIVER, VIEWER])
-def test_T28_planning_details_forbidden_for_non_planning_roles(secured: Api, user_id: int) -> None:
+@pytest.mark.parametrize(
+    ("user_id", "status", "code"),
+    [(CS, 403, "FORBIDDEN"), (DRIVER, 403, "FORBIDDEN"), (VIEWER, 404, "NOT_FOUND")],
+)
+def test_T28_planning_details_forbidden_for_non_planning_roles(
+    secured: Api, user_id: int, status: int, code: str
+) -> None:
+    # A viewer without market scope gets a privacy-preserving 404, not 403.
     for url in ("/planning-runs/1", "/orders/2/planning-runs", "/plans/1"):
-        assert_error(secured.get(url, user_id), 403, "FORBIDDEN")
+        assert_error(secured.get(url, user_id), status, code)
 
 
 def test_T28_sales_compact_plan_does_not_leak_alternatives_or_diagnostics(secured: Api) -> None:
