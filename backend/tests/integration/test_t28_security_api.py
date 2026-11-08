@@ -33,10 +33,10 @@ def secured(api: Api) -> Api:  # noqa: F811
         # One alternative for the same run must remain invisible to Sales.
         rows.plan_sql(1, 2, 2),
         # Seed a synthetic diagnostic marker; it must not leak via compact responses.
-        "UPDATE plan.fulfilment_plan SET checks='{\"safety\":{\"detail\":"
-        "{\"private_marker\":\"RESTRICTED_TEST_ONLY\"}}}'::jsonb WHERE id=1",
-        "UPDATE plan.planning_run SET input_snapshot='{\"rejected_candidates\":"
-        "[{\"detail\":{\"private_marker\":\"RESTRICTED_TEST_ONLY\"}}]}'::jsonb WHERE id=1",
+        'UPDATE plan.fulfilment_plan SET checks=\'{"safety":{"detail":'
+        '{"private_marker":"RESTRICTED_TEST_ONLY"}}}\'::jsonb WHERE id=1',
+        'UPDATE plan.planning_run SET input_snapshot=\'{"rejected_candidates":'
+        '[{"detail":{"private_marker":"RESTRICTED_TEST_ONLY"}}]}\'::jsonb WHERE id=1',
     )
     return api
 
