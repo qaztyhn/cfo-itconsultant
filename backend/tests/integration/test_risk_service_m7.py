@@ -52,6 +52,8 @@ SETUP_RISK = (
     "UPDATE plan.fulfilment_plan SET vehicle_count=2 WHERE id=1",
     rows.trip_sql(1),
     rows.trip_sql(2),
+    "UPDATE ops.delivery_trip SET plan_vehicle_id=1 WHERE id=1",
+    "UPDATE ops.delivery_trip SET plan_vehicle_id=2 WHERE id=2",
     rows.stop_sql(1, 1),
     rows.stop_sql(2, 1),
     "UPDATE ops.delivery_trip SET status='on_road',depart_actual_at='2026-11-10T08:30Z'",
