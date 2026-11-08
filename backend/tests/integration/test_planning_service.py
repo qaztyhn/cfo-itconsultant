@@ -289,17 +289,16 @@ def test_US_APR_04_unheld_replan_suggestion_preserves_approved_resources(
     )
     new_run = _run(
         db,
-        lambda s: planning_service.suggest_replan(
-            1, "vehicle_issue", session=s, inputs_loader=_loader
-        ),
+        lambda s: planning_service.suggest_replan(1, "vehicle_issue", session=s, inputs_loader=_loader),
     )
     assert new_run == 2
-    assert _run(
-        db,
-        lambda s: planning_service.suggest_replan(
-            1, "vehicle_issue", session=s, inputs_loader=_loader
-        ),
-    ) == 2
+    assert (
+        _run(
+            db,
+            lambda s: planning_service.suggest_replan(1, "vehicle_issue", session=s, inputs_loader=_loader),
+        )
+        == 2
+    )
     assert fetch(db, "SELECT hold_expires_at FROM plan.planning_run WHERE id=2")[0][0] is None
     assert fetch(db, "SELECT kind FROM plan.planning_run WHERE id=2")[0][0] == "replan_suggestion"
     assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "APPROVED"
