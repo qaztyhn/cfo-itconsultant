@@ -153,7 +153,9 @@ def _line_payload(candidate: PlanCandidate) -> dict[str, object]:
     }
 
 
-def _candidate_row(run: PlanningRun, candidate: PlanCandidate, actor_id: int) -> FulfilmentPlan:
+def _candidate_row(
+    run: PlanningRun, candidate: PlanCandidate, actor_id: int, weights: RankWeights
+) -> FulfilmentPlan:
     return FulfilmentPlan(
         run_id=run.id,
         order_id=run.order_id,
@@ -174,7 +176,11 @@ def _candidate_row(run: PlanningRun, candidate: PlanCandidate, actor_id: int) ->
         prep_hours=candidate.prep_hours,
         capacity_fill=candidate.capacity_fill,
         score=candidate.score,
-        score_breakdown={"score": str(candidate.score), "weights": {"w_km": "market", "w_fill": "market"}},
+        score_breakdown={
+            "score": str(candidate.score),
+            "w_km": str(weights.w_km),
+            "w_fill": str(weights.w_fill),
+        },
         complexity_points=candidate.complexity_points,
         planning_reserve_min=candidate.planning_reserve_min,
         route_provenance=candidate.route_provenance,
@@ -187,10 +193,10 @@ def _candidate_row(run: PlanningRun, candidate: PlanCandidate, actor_id: int) ->
 
 
 async def _save_candidates(
-    session: AsyncSession, run: PlanningRun, result: PlanningResult, actor_id: int
+    session: AsyncSession, run: PlanningRun, result: PlanningResult, actor_id: int, weights: RankWeights
 ) -> None:
     for candidate in result.candidates:
-        row = _candidate_row(run, candidate, actor_id)
+        row = _candidate_row(run, candidate, actor_id, weights)
         session.add(row)
         await session.flush()
         for vehicle in candidate.vehicles:
@@ -341,7 +347,9 @@ async def _execute_plan(
     )
     session.add(run)
     await session.flush()
-    await _save_candidates(session, run, result, _actor_id(actor))
+    config = cast(EngineConfig, inputs.config)
+    effective_weights = _weights(params) or RankWeights(config.w_km, config.w_fill)
+    await _save_candidates(session, run, result, _actor_id(actor), effective_weights)
     if result.result == "feasible":
         await reservation_service.hold(run.id, session=session)
         await transition(session, order.id, OrderStatus.PLANNED, "system")
