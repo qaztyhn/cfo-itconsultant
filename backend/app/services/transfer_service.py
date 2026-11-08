@@ -640,35 +640,18 @@ async def receive(
 async def cancel(
     session: AsyncSession, actor: object, transfer_id: int, reason_text: str, idempotency_key: str
 ) -> dict[str, object]:
+    """Fail closed until a dedicated cancellation audit action is approved.
+
+    TRANSFER_APPROVED must never be recorded for a cancellation: that would
+    corrupt audit consumers and could suggest a cancelled transfer was approved.
+    """
     _can_dispatch(actor)
     transfer, _ = await _transfer(session, actor, transfer_id, lock=False)
     if not reason_text.strip():
         raise _error("REASON_REQUIRED", "Cancelling a transfer requires a reason.")
-    record, replay = await _claim(
-        session, actor, f"POST /transfers/{transfer_id}/cancel", idempotency_key, {"reason_text": reason_text}
-    )
-    if replay is not None:
-        return replay
-    transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
     if transfer.status not in ("suggested", "approved"):
         raise _error("ILLEGAL_TRANSITION", "Confirmed or received transfers cannot be cancelled here.")
-    before = _out(transfer)
-    transfer.status = "cancelled"
-    await session.flush()
-    # No TRANSFER_CANCELLED action exists in the approved audit vocabulary. Do not
-    # invent one; reuse the existing transfer decision action with explicit stage.
-    await record_decision(
-        session,
-        Action.TRANSFER_APPROVED,
-        "stock_transfer",
-        str(transfer.id),
-        order_id=transfer.order_id,
-        reason_text=reason_text,
-        snapshot={"stage": "cancelled"},
-        before=before,
-        after=_out(transfer),
-        actor_user_id=_user_id(actor),
-        actor_employee_id=_employee_id(actor),
-        actor_role="dispatcher",
+    raise _error(
+        "PLAN_NOT_APPROVABLE",
+        "Transfer cancellation is blocked pending an approved cancellation audit action.",
     )
-    return _save(record, _out(transfer))
