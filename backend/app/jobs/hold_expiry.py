@@ -1,9 +1,11 @@
-"""held → expired, proposed → expired khi quá hold_expires_at (US-RES-01 AC4).
+"""Expire planning holds in one database transaction (US-RES-01 AC4).
 
-Owner: Dev 1 (A) — M5.
+Runs are locked with SKIP LOCKED; a second worker does not double-expire.
 """
+
+from app.services.reservation_service import expire_due
 
 
 async def run() -> int:
-    """Chạy một lượt; trả số bản ghi xử lý. TODO(#hold_expiry)."""
-    raise NotImplementedError
+    """Run one expiry pass; return the number of planning runs changed."""
+    return await expire_due()
