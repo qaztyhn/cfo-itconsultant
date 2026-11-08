@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-07)
+## Sổ quyết định đã chốt (cập nhật 2026-11-08)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -16,9 +16,13 @@
 | [ASM-007](#asm-007--quy-tắc-điểm-danh-chưa-ghi-trong-06-mục-13) | Warehouse Manager quyết định lịch người–ca; `expected_staff` **chỉ để so sánh** | 07/11 | [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50) | Cần lịch chính thức, migration/API |
 | [DEC-SALES-001](#dec-sales-001--sales-xác-nhận-có-điều-kiện-và-sync-now) | Sales dùng CFO riêng, sync-now; chỉ confirm phương án chuẩn an toàn | 07/11 | [PR #43](https://github.com/qaztyhn/cfo-itconsultant/pull/43) | Docs đã merge, code theo milestone |
 | [DEC-ROUTING-001](#dec-routing-001--sales-kiểm-cfo-trước-khi-điều-phối-thủ-công) | Sales phải kiểm CFO trước khi điều phối tay; luồng CFO/legacy không tự đảo | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; chi tiết Q14 vẫn chờ migration/API |
+| [DEC-ROUTING-002](#dec-routing-002--chỉ-người-kiểm-tra-mới-ghi-quyết-định-phân-luồng) | Polling chỉ đồng bộ dữ liệu nguồn; quyết định `cfo/legacy` chỉ ghi khi Sales Sync & check hoặc Dispatcher kiểm tra được ủy quyền; đã ghi không tự đổi; điều phối tay trước khi kiểm = ngoại lệ có lý do + audit; đã `cfo` thì chuyển Dispatcher | 07/11 | Chủ dự án chốt trong phiên làm việc 07/11 (trả lời câu hỏi ở [PR #59](https://github.com/qaztyhn/cfo-itconsultant/pull/59)) | DB ràng buộc ở migration 0011; ingestion/sync-now do Dev 2 |
+| [DEC-ORS-001](#dec-ors-001--thời-hạn-cache-ước-lượng-tuyến-ors) | Fallback ORS có TTL 60 phút mặc định theo market; quá hạn phải thử ORS lại, gắn nhãn tuyến ước lượng | 07/11 | Chủ dự án xác nhận sau review [PR #67](https://github.com/qaztyhn/cfo-itconsultant/pull/67) | Code TTL trong #67 đã vào `main`; theo dõi tích hợp/hiển thị nhãn fallback |
 | [DEC-SHIFTS-001](#dec-shifts-001--q12-lịch-làm-chính-thức-của-kho-và-tài-xế) | Q12a–d: 1 ca/người/ngày, manager chính/phó có quyền, hồi tố có lý do, thiếu lịch thì 0 công suất | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Quy tắc duyệt; bảng/API đề xuất cần review |
 | [DEC-AUDIT-001](#dec-audit-001--q13-mã-nhật-ký-nhân-sự) | Q13 chấp thuận 3 mã audit mới và quy tắc hồi tố | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Chờ cập nhật contract/code |
 | [DEC-DRIVER-001](#dec-driver-001--khung-giờ-làm-nghỉ-và-giới-hạn-lái-xe) | Kiểm ca tài xế và nhân viên kho; nghỉ mặc định 11h; lái xe/nghỉ theo phạm vi pháp luật | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54) | Quy tắc MVP đã duyệt; engine/schema cần nghiệm thu |
+| [DEC-NOTIFY-001](#dec-notify-001--giới-hạn-email-thử-nghiệm-và-ngăn-gửi-trùng) | Email MVP chỉ qua Mailpit hoặc staging kiểm soát với địa chỉ demo; chưa gửi khách thật khi thiếu chống trùng/đối soát | 07/11 | Chủ dự án xác nhận sau review [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69) | Quyết định đã duyệt; #68–#70 đã lên `main` (#74); chặn người nhận staging bằng code trong PR `fix/notify-staging-recipient-guard` (chờ review); chống trùng/đối soát chưa có |
+| [DEC-SRC-001](#dec-src-001--source-contract-src-q1q10) | Phê duyệt hướng giải quyết SRC-Q1–Q10 cho hệ thống nguồn: snapshot, API ghi, lỗi, lifecycle, phân trang, tăng dần, lịch nhận, tồn kho, local/global SKU | 08/11 | Chủ dự án xác nhận trong phiên làm việc 08/11; [proposal](proposals/M1_SOURCE_CONTRACT.md) | Đã duyệt nguyên tắc; 05/06, migration, contract test và code chưa cập nhật trong quyết định này |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -48,7 +52,7 @@
   đây là fixtures tham chiếu, chưa phải seed định lượng cho các kịch bản engine.
 - **Nguồn:** 40 khách tổng hợp (30 doanh nghiệp, 10 consumer), mỗi khách 2 địa chỉ quanh ba vùng,
   email chỉ thuộc miền `.test`, không tạo số điện thoại thật. Chưa seed giờ nhận vì schema nguồn
-  hiện thiếu trường này và SRC-Q8 chưa được duyệt.
+  hiện thiếu trường này; SRC-Q8 đã được duyệt hướng bổ sung lịch nguồn và giờ nhận theo địa chỉ (DEC-SRC-001), nhưng schema/seed chưa triển khai.
 - **Catalog nguồn:** đóng gói độc lập 100 SKU trong `source_system/seed/se`; test đối chiếu mọi trường
   sản phẩm với seed CFO để phát hiện lệch fixture. Không import ứng dụng CFO lúc chạy nguồn, không đọc
   dữ liệu vận hành CFO để ghi ngược; không đổi trạng thái mapping, không seed tồn kho/đơn kịch bản.
@@ -232,6 +236,40 @@
 - Quy trình cũ được nhân viên **điều phối thủ công**, không có hệ thống tự động điều phối cạnh tranh. Vì CFO không ghi ngược POS, bảng routing nội bộ **không tự ngăn** nhân viên đã thực hiện thủ công; cần bước xác nhận bàn giao/audit và cơ chế chống xử lý trùng trước rollout.
 - **Thiết kế Dev đề xuất, chưa được xem là DDL/API đã duyệt:** bảng `ops.order_routing`, `routing-ack` với lựa chọn `legacy_acknowledged` / `manual_started`, routing từ polling, cách xử lý đơn cũ. Xem [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) và yêu cầu review implementation. **Chưa có quyết định cho phép tự động chuyển sang quy trình cũ khi CFO lỗi**; phải hỏi owner nếu muốn làm ngoại lệ.
 
+## DEC-ROUTING-002 — Chỉ người kiểm tra mới ghi quyết định phân luồng
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án, trong phiên làm việc. Đây là câu trả lời cho câu hỏi "manual_started và quyết định bất biến" nêu ở [PR #59](https://github.com/qaztyhn/cfo-itconsultant/pull/59): **chọn phương án A, có điều chỉnh**.
+- **Câu chốt (nguyên nghĩa):**
+  > Polling chỉ đồng bộ dữ liệu nguồn, không được ghi quyết định phân luồng cuối cùng cfo/legacy. Quyết định chỉ được lưu khi Sales thực hiện Sync & check routing trên CFO hoặc Dispatcher thực hiện kiểm tra được ủy quyền, dựa trên dữ liệu nguồn mới nhất và trạng thái mapping tại thời điểm đó. Một khi đã ghi quyết định thì không tự chuyển luồng. Nếu Sales đã bắt đầu điều phối thủ công trước khi kiểm CFO, phải ghi nhận ngoại lệ có lý do và audit; nếu đã có quyết định cfo thì không được tự đổi sang legacy, phải chuyển Dispatcher xử lý để tránh double fulfilment.
+- **Trường hợp biên:**
+  1. **Polling** (job 5 phút):
+     - chỉ đồng bộ và lưu dữ liệu nguồn;
+     - cập nhật theo version các đơn **đã** có quyết định `cfo`;
+     - **không** ghi `ops.order_routing`;
+     - **không** tạo `customer_order` cho đơn chưa có quyết định;
+     - không tạo plan/hold.
+  2. **Sales Sync & check** hoặc **Dispatcher kiểm tra được ủy quyền**:
+     - CFO đọc lại nguồn ngay lúc đó và đánh giá mapping tại thời điểm đó.
+     - Đủ dữ liệu → ghi một quyết định duy nhất kèm người và vai trò (`decided_by_user_id`, `decided_by_role` ∈ sales/dispatcher) và ghi `ROUTING_DECIDED`.
+     - Thiếu dữ liệu → `unresolved`, không ghi gì.
+  3. **Sales đã điều phối tay trước khi kiểm, chưa có quyết định:**
+     - ghi `legacy` với `reason_code = manual_started`, `reason_text` bắt buộc;
+     - ghi audit `ROUTING_MANUAL_START_RECORDED`.
+  4. **Sales báo đã điều phối tay nhưng đơn đã có quyết định `cfo`:**
+     - **không** đổi luồng;
+     - ghi audit `ROUTING_MANUAL_CONFLICT_ESCALATED` (lý do bắt buộc);
+     - tạo alert `ROUTING_MANUAL_CONFLICT` cho Dispatcher.
+     - Dispatcher xử lý bằng các luồng có sẵn (hủy/giữ kế hoạch CFO, liên hệ cửa hàng), để tránh giao trùng.
+  5. **Đơn đã có `legacy`:** mapping về sau không kéo đơn vào CFO.
+- **Thay thế (superseded):** phần "polling được phép quyết định cfo/legacy, nhưng không tự tạo hold" trong [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) / DEC-ROUTING-001 và câu "`manual_started` … kể cả khi đủ SKU" của `06` §5.0.2 cũ, khi đơn đã có quyết định `cfo`.
+- **Ảnh hưởng:**
+  - `06` §5.0.2, `05` (`ops.order_routing`), `04` §10 (mã hành động), `CHANGELOG`;
+  - migration `0011_routing_decided_by_check` và test PostgreSQL;
+  - Dev 2: ingestion/polling và `sync-now`; Dev 3: màn Sync & check và nút báo điều phối tay.
+- **Tình trạng triển khai:**
+  - Đã có ràng buộc DB (0011): không có quyết định thiếu người/vai trò; `manual_started` cần lý do; quyết định bất biến.
+  - Service/API của `sync-now`, `routing-ack` và escalation **chưa code**.
+
 ## DEC-SHIFTS-001 — Q12 lịch làm chính thức của kho và tài xế
 
 - **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án; [PR #53 Q12](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #50](https://github.com/qaztyhn/cfo-itconsultant/pull/50).
@@ -259,3 +297,41 @@
 - Engine phải kiểm tra **thời gian làm nhiệm vụ** và **thời gian lái thực** riêng biệt; `driver_max_hours_day=9` trong code hiện tại **không được tự diễn giải** là đủ kiểm tra quy tắc lái xe của EU/EEA. Ca và dữ liệu nghỉ thiếu phải hiển thị lý do không thể duyệt, không chỉ coi là “không có tài xế”.
 - **Triển khai:** Dev 1 phối hợp lịch chính thức Q12, sửa engine/kiểm thử trong PR #54; tài liệu/DB/API, seed driver, dữ liệu lịch sử chuyến và phạm vi áp dụng vẫn cần PR triển khai và test. Nguồn kiểm tra phạm vi: [European Commission — driving time and rest periods](https://transport.ec.europa.eu/transport-modes/road/social-provisions/driving-time-and-rest-periods_en), [EUR-Lex — Regulation 561/2006](https://eur-lex.europa.eu/eli/reg/2006/561/oj).
 
+## DEC-ORS-001 — Thời hạn cache ước lượng tuyến ORS
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án sau review [PR #67](https://github.com/qaztyhn/cfo-itconsultant/pull/67), cũng bao gồm sửa lỗi từ #65.
+- **Quyết định:** chấp nhận `MarketConfig.routing.fallback_retry_min = 60` **phút** mặc định trong MVP, giá trị phải > 0 và có thể cấu hình riêng theo market. Tuyến `fallback` là **ước lượng**, phải được nhận diện/gắn nhãn rõ khi sử dụng hoặc trình bày, không được thể hiện như dữ liệu ORS thực tế.
+- **Điều kiện:** chỉ áp dụng fallback khi `routing.allow_fallback = true`. Khi bản ghi fallback còn trong 60 phút thì cho phép dùng lại; hết hạn phải thử gọi ORS để thay bằng tuyến `ors` nếu khả dụng. Nếu ORS tiếp tục lỗi và thị trường cho phép fallback, có thể dùng lại ước lượng với thời điểm tính mới để hạn chế retry liên tục. Nếu fallback bị tắt, không được âm thầm dùng lại tuyến fallback đã cache.
+- **Tình huống biên:** không kéo dài fallback vô thời hạn chỉ vì ORS đang lỗi; giá trị mặc định 60 phút là chính sách kỹ thuật MVP, **không bảo đảm độ chính xác ETA**. Việc cung cấp ETA hứa hẹn cho khách phải tính đến chất lượng nguồn ước lượng.
+- **Nguồn triển khai:** `backend/app/providers/route_cache.py`, `backend/app/core/config.py`, `backend/tests/integration/test_dev2_route_cache.py`; `docs/06_API_Specification.md` Phụ lục A; [PR #67](https://github.com/qaztyhn/cfo-itconsultant/pull/67).
+- **Tình trạng:** cơ chế TTL đã merge qua #67 vào `main`; cần tiếp tục kiểm tra các nơi hiển thị/tính ETA để bảo toàn nhãn `fallback`.
+
+## DEC-NOTIFY-001 — Giới hạn email thử nghiệm và ngăn gửi trùng
+
+- **Ngày chốt:** 2026-11-07. **Duyệt bởi:** chủ dự án sau review chuỗi [PR #68](https://github.com/qaztyhn/cfo-itconsultant/pull/68)–[PR #70](https://github.com/qaztyhn/cfo-itconsultant/pull/70), đặc biệt [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69).
+- **Quyết định:** MVP **không được gửi email đến khách hàng thật** trước khi có cơ chế chống gửi trùng và đối soát. Gửi email thử nghiệm chỉ qua **Mailpit/localhost**, hoặc SMTP **staging được kiểm soát với người nhận là địa chỉ demo/synthetic**; không coi việc bật `shadow_mode = false` là đủ cấp quyền gửi thật.
+- **Ràng buộc code bắt buộc:** không chỉ ghi trong tài liệu. Cần kiểm tra và chặn người nhận không thuộc tập email thử nghiệm được phép ở staging, hoặc khóa hoàn toàn SMTP bên ngoài cho đến khi có cơ chế an toàn. Phải có kiểm thử xác nhận email khách thật bị từ chối trước khi gọi transport.
+- **Rủi ro hiện tại:** outbox theo cơ chế **at-least-once**: SMTP có thể chấp nhận email trước khi transaction DB lưu `sent` thành công. Nếu commit thất bại hoặc timeout, lần retry có thể gửi **trùng**; `FOR UPDATE SKIP LOCKED` chỉ chống worker cùng gửi đồng thời, không giải quyết trường hợp này.
+- **Trước khi gửi thật:** cần thiết kế và review riêng việc claim trạng thái trước gửi, định danh/dedupe ổn định, đối soát kết quả nhà cung cấp, xử lý trạng thái không chắc chắn và regression test mô phỏng SMTP thành công nhưng DB commit thất bại. Không tự mặc định hệ thống bảo đảm exactly-once.
+- **Tài liệu/code liên quan:** `backend/app/providers/email_smtp.py`, `backend/app/services/notification_delivery.py`, [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69), `docs/05_Database_Design.md` và `docs/06_API_Specification.md` nếu sau này thay đổi giao kèo notification.
+- **Tình trạng:** quyết định nghiệp vụ **đã chốt**. Code #68–#70 đã lên `main` qua #74. Chặn người nhận staging: `SmtpEmailProvider` với host ngoài Mailpit/localhost chỉ chấp nhận đúng một địa chỉ thuộc `SMTP_ALLOWED_RECIPIENT_DOMAINS` (mặc định `test`, rỗng → từ chối khởi tạo); địa chỉ khác bị từ chối **trước khi mở kết nối SMTP**, dòng notification chuyển `suppressed` với `suppressed_reason = recipient_not_allowed`, ghi `NOTIFICATION_SUPPRESSED`, không tính là lần thử và không retry (PR `fix/notify-staging-recipient-guard`, chờ review). **Chống trùng/đối soát vẫn chưa có**; chưa cho phép gửi email khách thật. Không đưa miền email thật (ví dụ miền của khách) vào danh sách cho phép.
+
+
+## DEC-SRC-001 — Source contract SRC-Q1–Q10
+
+- **Ngày chốt:** 2026-11-08. **Duyệt bởi:** chủ dự án trong cuộc trò chuyện 2026-11-08 sau khi xem bảng SRC-Q1–Q10 tại [M1_SOURCE_CONTRACT.md](proposals/M1_SOURCE_CONTRACT.md); xác nhận “đc tôi đồng ý”.
+- **Phạm vi:** contract **hệ thống nguồn giả lập/POS và adapter đọc vào CFO**. Không thay đổi nguyên tắc CFO chỉ đọc từ nguồn, không thay thế POS cũ. Quyết định này **không** phải xác nhận rằng code, API hay migration đã triển khai.
+- **SRC-Q1 — Snapshot:** lưu trong đơn bản chụp `address, lat, lon`, tên/điện thoại/email liên hệ; `receiving_restrictions` và `special_requirements` nullable. Thay đổi hồ sơ khách/địa chỉ sau đó không tự ghi đè bản chụp đơn cũ.
+- **SRC-Q2 — Ghi đơn:** `POST/PUT` nhận `customer_id, address_id`, liên hệ, ngày/khung giờ, mã sales/store, yêu cầu đặc biệt, dòng hàng; server tự snapshot địa chỉ/toạ độ từ địa chỉ được chọn, không tin toạ độ client; từ chối field lạ.
+- **SRC-Q3 — Response:** `POST` trả `201`; `PUT/validate/submit/cancel` trả `200`, dùng cùng order representation. Tiền dạng string, số lượng numeric, thời điểm có timezone; schema chi tiết còn phải đặc tả.
+- **SRC-Q4 — Validation errors:** `422 VALIDATION_ERROR`, `details.errors` có đường dẫn field và reason ổn định; tuyệt đối không phản chiếu dữ liệu cá nhân. Dev 2 và Dev 3 chốt danh sách reason/path trong contract.
+- **SRC-Q5 — Lifecycle:** `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh sửa đơn đã validate đưa về `DRAFT`; submit kiểm tra lại trong transaction/row lock; xử lý version/cancel/retry theo proposal, cần contract test. Chỉnh sửa/hủy sau khi đã đồng bộ và sau duyệt CFO phải xét tương tác với `ORDER_CHANGED_AFTER_APPROVAL`, không tự suy đoán.
+- **SRC-Q6 — Pagination:** danh sách nguồn dùng `{items,page,page_size,total}`, `page=1`, `page_size=50`, max `500`, header `X-Total-Count`; endpoint snapshot `/stock` giữ `{as_of,items}`. Danh sách endpoint thuộc phạm vi phải được liệt kê đầy đủ trong `06`.
+- **SRC-Q7 — Đồng bộ gia tăng:** điều kiện `updated_at >= updated_since`, thứ tự tăng ổn định theo timestamp rồi natural key: đơn dùng `id`, sản phẩm dùng `sku`, thực thể khóa ghép dùng toàn bộ key; adapter upsert/idempotent để không bỏ sót bản ghi trùng timestamp.
+- **SRC-Q8 — Lịch nhận:** chọn hướng **bổ sung** cấu hình lịch làm việc theo source instance/market và giờ nhận theo địa chỉ; không tự đoán ngày nghỉ, ngày lễ hay 24/7. Lịch nhận phải được kiểm tra cùng với quy tắc ca nhân viên kho và tài xế đã duyệt tại DEC-SHIFTS-001 / DEC-DRIVER-001 khi lập kế hoạch. Lịch/giờ nhận ở nguồn và ca kho/tài xế trong CFO là các dữ liệu khác nhau.
+- **SRC-Q9 — Stock batch:** mỗi snapshot tồn kho là một batch nhất quán với một `as_of`, bao gồm cả snapshot rỗng; không dùng timestamp từng dòng làm thay thế batch marker. Storage/seed/transaction và ý nghĩa snapshot rỗng cần đặc tả kỹ trước triển khai.
+- **SRC-Q10 — Local/global SKU:** normalize số lượng theo `units_to_base` và phân biệt các row có đại diện cho **tồn vật lý độc lập** hay không; không ghi đè hàng trước bằng hàng sau, cũng không cộng vô điều kiện khi nhiều local SKU ánh xạ một global product. Khóa nguồn: warehouse/local SKU; khóa CFO: warehouse/global product. Dev 1 + Dev 2 chốt quy tắc conversion/uniqueness và test chống đếm tồn hai lần.
+
+**Ranh giới phê duyệt / còn cần chốt bằng contract:** danh sách đầy đủ field bắt buộc/nullable của draft, schema money/quantity/time, lỗi/field path, giá bằng 0, special requirements dạng cấu trúc hay free text; sửa/hủy đơn sau submit, cách phát thay đổi/hủy tới CFO; danh sách endpoint phân trang; nguồn lịch/holiday theo market và default khi thiếu; cách lưu và seed batch tồn rỗng; kiểm tra `units_to_base` và tính độc lập tồn kho. Những chi tiết này **chưa được phép Dev tự mặc định** chỉ vì 10 hướng ở trên đã duyệt.
+
+**Phụ thuộc triển khai:** Dev 2 soạn/sửa schema nguồn tại `05`, OpenAPI/source contract tại `06`, upgrade/seed bảo toàn dữ liệu, backend source, adapter, test giao kèo nhiều instance; Dev 1 review DTO/ingestion và normalize stock; Dev 3 review POS request/response và lỗi. PR triển khai phải cập nhật `05`/`06`/`CHANGELOG`, migration và kiểm thử cùng nhau theo `09`; không tự mở rộng scope của DEC-ROUTING-002 / ASM-005 (đơn SKU chưa confirmed vẫn ở luồng cũ, không tự chuyển về CFO).

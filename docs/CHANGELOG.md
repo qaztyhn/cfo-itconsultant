@@ -1,5 +1,24 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-SRC-001 — M1 source contract SRC-Q1–Q10] — 2026-11-08 — owner approved direction, docs-only
+
+- Chủ dự án phê duyệt hướng đề xuất tại `docs/proposals/M1_SOURCE_CONTRACT.md`: (Q1–Q3) snapshot địa chỉ/liên hệ và request/response đơn; (Q4–Q5) validation lỗi 422 + lifecycle; (Q6–Q7) danh sách nguồn phân trang mặc định **50**, tối đa **500** và đồng bộ gia tăng theo thứ tự ổn định; (Q8) bổ sung lịch nguồn/giờ nhận theo địa chỉ; (Q9) stock snapshot batch có `as_of` kể cả rỗng; (Q10) normalize SKU/units, tránh cộng hoặc ghi đè tồn kho sai.
+- Quy tắc và biên phê duyệt đã ghi tại `docs/ASSUMPTIONS.md` (DEC-SRC-001); **không đồng nhất** phân trang của source với `GET /orders` CFO.
+- **Chưa triển khai:** không sửa schema/API chuẩn `05`/`06`, không migration/code/test trong PR này. Dev 2 cần PR hợp đồng/triển khai với review Dev 1 (adapter, stock) và Dev 3 (POS), test nguồn nhiều instance. Các quyết định còn thiếu được liệt kê tại proposal; không tự điền theo suy đoán.
+
+## [DEC-ORS-001 + DEC-NOTIFY-001 — owner approvals] — 2026-11-07 — docs-only
+
+- Owner chấp nhận retry ORS fallback sau **60 phút** mặc định theo market, gắn nhãn tuyến ước lượng; TTL đã triển khai trong #67.
+- Owner chốt **chỉ gửi email thử nghiệm qua Mailpit hoặc staging kiểm soát với địa chỉ demo**, không gửi khách thật khi chưa có chống trùng/đối soát. Quyết định chưa có guard đầy đủ trong code SMTP; Dev 2 phải bổ sung test/chặn người nhận ở staging.
+- #68–#70 đã merge vào các nhánh trung gian, **chưa có đầy đủ code trên `main`**. Tạo PR tích hợp riêng và chạy CI trước khi kết luận đã hoàn tất.
+- Phê duyệt này chỉ ghi vào `docs/ASSUMPTIONS.md` và cập nhật trạng thái changelog; không tự kích hoạt email gửi khách thật.
+
+## [06 Phụ lục A — `routing.fallback_retry_min`] — 2026-11-07 — đã duyệt DEC-ORS-001
+
+- Thêm khóa cấu hình `MarketConfig.routing.fallback_retry_min` (mặc định 60, phải > 0): fallback ORS không còn được lưu và dùng vô thời hạn; quá hạn thì thử ORS lại. Không đổi DDL/route/mã lỗi; `route_matrix.computed_at` sẵn có.
+- Test PostgreSQL: `backend/tests/integration/test_dev2_route_cache.py`.
+
+
 ## [Approved decision register] — 2026-11-07 — docs-only
 
 - Tập trung quyết định đã duyệt ở `docs/ASSUMPTIONS.md`: ASM-001/002/003/005/006/007; Sales confirmation, Q12/Q13/Q14 và giờ làm/nghỉ của kho/tài xế trong MVP Bắc Âu.
@@ -26,6 +45,16 @@
 
 > Mỗi thay đổi `05`/`06` đi cùng migration/code và test trong cùng PR (`09` mục 6, `AGENTS.md`).
 > Mục có trạng thái **chờ duyệt** chưa được merge cho tới khi nhóm phê duyệt trên PR.
+
+## [DEC-ROUTING-002 — 05/06 + migration 0011] — 2026-11-07 — quyết định của chủ dự án, chờ review PR
+
+- **Quyết định:** polling chỉ đồng bộ dữ liệu nguồn. Quyết định `cfo`/`legacy` chỉ ghi khi Sales Sync & check hoặc Dispatcher kiểm tra được ủy quyền, trên dữ liệu nguồn và mapping lúc đó. Đã ghi không tự đổi. Điều phối tay trước khi kiểm là ngoại lệ có lý do + audit; đơn đã `cfo` thì không đổi sang `legacy` mà chuyển Dispatcher. Thay thế phần "polling được quyết định" của Q14/DEC-ROUTING-001.
+- **`05`:** `ops.order_routing.decided_by_user_id` NOT NULL, `decided_by_role` (`sales|dispatcher`) NOT NULL, `reason_text`, `ck_routing_manual_reason`. Trigger bất biến bao cả hai cột mới. Thêm loại alert `ROUTING_MANUAL_CONFLICT`. Migration `0011` thất bại nếu bảng đã có dữ liệu cũ (fail closed).
+- **`06` §5.0.2:**
+  - `sync-now` trả lại quyết định đã lưu (`already_decided`);
+  - `routing-ack` `manual_started` có ba nhánh: chưa quyết định → `legacy/manual_started`; đã `legacy` → chỉ audit; đã `cfo` → `409 RESOURCE_CONFLICT` + escalation.
+- **`04` §10:** mã hành động `ROUTING_DECIDED`, `ROUTING_LEGACY_ACKNOWLEDGED`, `ROUTING_MANUAL_START_RECORDED`, `ROUTING_MANUAL_CONFLICT_ESCALATED`.
+- Service/API (`sync-now`, `routing-ack`, escalation) và ingestion **chưa code**. Dev 2 làm phần ingestion/sync-now, Dev 1 làm guard/routing-ack.
 
 ## [05 — migration 0010] — 2026-11-07 — quyết định phân luồng bất biến (Q14), chờ review
 

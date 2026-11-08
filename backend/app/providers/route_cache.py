@@ -1,6 +1,11 @@
-"""Precompute missing warehouse/site routes before planning (US-INT-05)."""
+"""Precompute missing warehouse/site routes before planning (US-INT-05).
 
-from datetime import datetime
+An ORS route is reused. A fallback route is reused only while fresh (`routing.fallback_retry_min`, and only if
+fallback is still allowed); after that ORS is retried: success replaces the fallback, failure stores a new
+fallback with a new `computed_at`, so retries are throttled but a fallback never lives forever.
+"""
+
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -39,7 +44,13 @@ async def ensure_route(
     ).one()
     config = MarketConfig.model_validate(market.config)
     cached = await session.get(RouteMatrix, (warehouse_id, lat, lon))
-    if cached is not None and (cached.provider == "ors" or config.routing.allow_fallback):
+    fallback_fresh = (
+        cached is not None
+        and cached.provider == "fallback"
+        and config.routing.allow_fallback
+        and cached.computed_at >= now - timedelta(minutes=config.routing.fallback_retry_min)
+    )
+    if cached is not None and (cached.provider == "ors" or fallback_fresh):
         return RouteEstimate(
             cached.distance_km,
             cached.duration_min,

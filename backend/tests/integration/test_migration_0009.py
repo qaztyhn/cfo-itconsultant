@@ -40,9 +40,12 @@ def schedule(
 
 
 def routing(ref: str, route: str, reason: str) -> str:
+    # 0011: quyết định luôn có người/vai trò quyết định; manual_started bắt buộc lý do
+    text = "'Dispatched by phone before CFO check'" if reason == "manual_started" else "NULL"
     return (
         "INSERT INTO ops.order_routing (market_id, external_ref, route, reason_code, decided_at, "
-        f"decided_source_version) VALUES (1, '{ref}', '{route}', '{reason}', now(), 1)"
+        "decided_source_version, decided_by_user_id, decided_by_role, reason_text) VALUES "
+        f"(1, '{ref}', '{route}', '{reason}', now(), 1, 1, 'sales', {text})"
     )
 
 

@@ -19,8 +19,8 @@ pytestmark = pytest.mark.integration
 def routing(ref: str, route: str = "legacy", reason: str = "unmapped_sku") -> str:
     return (
         "INSERT INTO ops.order_routing (market_id, external_ref, route, reason_code, unmapped_skus, "
-        f"decided_at, decided_source_version) VALUES (1, '{ref}', '{route}', '{reason}', '{{SE-NEW-77}}', "
-        "'2026-11-07T10:00Z', 1)"
+        "decided_at, decided_source_version, decided_by_user_id, decided_by_role) VALUES "
+        f"(1, '{ref}', '{route}', '{reason}', '{{SE-NEW-77}}', '2026-11-07T10:00Z', 1, 1, 'sales')"
     )
 
 
@@ -40,11 +40,11 @@ def immutable(db: str, statement: str) -> None:
     "assignment",
     [
         "route = 'cfo', reason_code = 'all_confirmed'",  # đổi luồng legacy → cfo (dù hợp lệ theo CHECK)
-        "reason_code = 'manual_started'",  # đổi lý do trong cùng luồng
+        "reason_code = 'manual_started', reason_text = 'late report'",  # đổi lý do trong cùng luồng
         "unmapped_skus = '{}'",
         "decided_at = '2026-11-07T11:00Z'",
         "decided_source_version = 2",
-        "decided_by_user_id = 1",
+        "decided_by_user_id = NULL",
         "external_ref = 'POS-9'",
         "created_at = now() - interval '1 day'",
     ],
@@ -128,5 +128,5 @@ def test_0010_downgrade_removes_guard_and_upgrade_restores_it(db: str) -> None:
     command.downgrade(cfg, "0009")
     execute(db, "UPDATE ops.order_routing SET decided_source_version = 2 WHERE external_ref = 'POS-1'")
     assert fetch(db, "SELECT to_regproc('ops.guard_order_routing') AS f")[0]["f"] is None
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0010")  # head (0011) cần bảng rỗng — xem test_migration_0011
     immutable(db, "UPDATE ops.order_routing SET decided_source_version = 3 WHERE external_ref = 'POS-1'")

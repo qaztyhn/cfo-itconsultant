@@ -215,7 +215,7 @@ CREATE TABLE ops.order_routing (
   Bên thua đọc lại quyết định đã lưu.
 - `customer_order` chỉ được tạo khi `route = 'cfo'`.
 - `order_service`, `planning_service`, `approval_service` đều kiểm `route = 'cfo'` trước khi plan/hold/approve.
-- Polling được phép quyết định `cfo`/`legacy`, nhưng **không tự tạo hold** trước khi Sales kiểm.
+- ~~Polling được phép quyết định `cfo`/`legacy`, nhưng không tự tạo hold trước khi Sales kiểm.~~ **Thay thế bởi DEC-ROUTING-002:** polling chỉ đồng bộ dữ liệu nguồn; quyết định chỉ do Sales check hoặc Dispatcher kiểm tra được ủy quyền.
 - Dữ liệu cũ: đơn đang `BLOCKED_UNMAPPED_SKU` được chuyển thành `legacy / unmapped_sku`.
 
 **Giới hạn:** bảng định tuyến nội bộ **không bảo đảm** chặn được điều phối tay, vì CFO chỉ đọc POS. Chống làm trùng dựa vào:
