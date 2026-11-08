@@ -289,6 +289,8 @@ def test_US_APR_04_unheld_replan_suggestion_preserves_approved_resources(
     )
     new_run = _run(
         db,
+        lambda s: planning_service.suggest_replan(
+            1, "vehicle_issue", session=s, inputs_loader=_loader
         ),
     )
     assert new_run == 2
