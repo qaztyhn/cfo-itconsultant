@@ -171,10 +171,13 @@ def test_T18_cancel_fails_closed_until_audit_contract_is_approved(transfer_api: 
         )
     # A rejected cancellation must not mutate the transfer or write a deceptive APPROVED audit.
     assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
-    assert fetch(
-        transfer_api.dsn,
-        "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_APPROVED'",
-    )[0]["n"] == 1
+    assert (
+        fetch(
+            transfer_api.dsn,
+            "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_APPROVED'",
+        )[0]["n"]
+        == 1
+    )
     confirmed = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["status"] == "source_confirmed"
@@ -185,8 +188,7 @@ def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfe
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
     execute(transfer_api.dsn, "UPDATE ops.stock_snapshot SET as_of='2026-11-01T09:00Z' WHERE warehouse_id=1")
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
-    assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER),
-                 409, "PLAN_NOT_APPROVABLE")
+    assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
 
 
 def test_US_ATP_02_AC3_distinct_key_cannot_approve_same_shortage_twice(transfer_api: Api) -> None:
@@ -209,16 +211,18 @@ def test_US_ATP_03_AC1_source_confirmation_cannot_reuse_confirmed_outbound_stock
         transfer_api.dsn,
         "INSERT INTO ops.stock_transfer (order_id,from_warehouse_id,to_warehouse_id,status,"
         "lead_days,suggestion) VALUES (NULL,1,3,'source_confirmed',1,'{}')",
-        "INSERT INTO ops.stock_transfer_line (transfer_id,global_product_id,qty) "
-        "VALUES (2,1,30)",
+        "INSERT INTO ops.stock_transfer_line (transfer_id,global_product_id,qty) " "VALUES (2,1,30)",
     )
     denied = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
     assert_error(denied, 409, "RESOURCE_CONFLICT")
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
-    assert fetch(
-        transfer_api.dsn,
-        "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_CONFIRMED'",
-    )[0]["n"] == 0
+    assert (
+        fetch(
+            transfer_api.dsn,
+            "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_CONFIRMED'",
+        )[0]["n"]
+        == 0
+    )
 
 
 def test_US_ATP_03_AC1_source_snapshot_staleness_blocks_confirmation(transfer_api: Api) -> None:
@@ -233,7 +237,6 @@ def test_US_ATP_03_AC1_source_snapshot_staleness_blocks_confirmation(transfer_ap
         "RESOURCE_CONFLICT",
     )
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
-
 
 
 def test_US_ATP_02_nonshortage_order_has_no_transfer_suggestions(transfer_api: Api) -> None:
