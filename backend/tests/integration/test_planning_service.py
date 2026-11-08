@@ -58,7 +58,7 @@ def db(empty_db: str) -> Iterator[str]:
 
 
 def _actor(role: str = "dispatcher", *, store_ids: tuple[int, ...] = (2,)) -> CurrentUser:
-    return CurrentUser(id=1, employee_id=1, roles=(role,), market="ZZ", location_ids=store_ids)
+    return CurrentUser(id=1, employee_id=1, roles=(role,), market="SE", location_ids=store_ids)
 
 
 def _run[T](dsn: str, fn: Callable[[AsyncSession], Coroutine[Any, Any, T]]) -> T:
