@@ -629,6 +629,8 @@ CREATE TABLE ops.notification (
   dedupe_key text NOT NULL UNIQUE                -- v1.1: '<order_id>:<template>:<plan_id|trip_stop_id>:<status>' để lập lại kế hoạch
                                                  -- vẫn gửi được CONFIRMED mới; DELAY: thêm phiên bản ETA
 );
+**D4 owner-approved 08/11/2026:** `ops.notification.subject/body` chỉ chứa kết quả render từ template versioned và biến allowlist (mã đơn công khai, trạng thái, ETA được duyệt, reason_code trong enum); không được lưu nội dung free-text của Dispatcher/POS như thư gửi khách. `DELAY` vẫn cần Dispatcher chọn template/ETA và Send; `idempotency_key`/dedupe, quiet hours, mail allowlist `DEC-NOTIFY-001` giữ nguyên. Code/schema phụ trợ cho `template_version`, `reason_code` cần migration và review, chưa có DDL mới trong PR tài liệu này.
+
 CREATE TABLE ops.customer_contact_log (          -- CS ghi nhật ký liên hệ [C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint REFERENCES ops.customer_order(id), customer_id bigint NOT NULL REFERENCES ref.customer(id),
@@ -637,7 +639,7 @@ CREATE TABLE ops.customer_contact_log (          -- CS ghi nhật ký liên hệ
   reason_code text NOT NULL CHECK (reason_code IN ('where_is_my_order','change_request','complaint','delay_inquiry','other')),
   note text, contacted_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE ops.vehicle_position (              -- GPS [C]; chỉ dispatcher xem; xóa 30 ngày sau chuyến
+CREATE TABLE ops.vehicle_position (              -- GPS [C]; D3: chỉ Dispatcher được gán chuyến, trong ca; purge khi trip/ca kết thúc
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   trip_id bigint NOT NULL REFERENCES ops.delivery_trip(id),
   vehicle_id bigint NOT NULL REFERENCES ref.vehicle(id),
@@ -645,6 +647,12 @@ CREATE TABLE ops.vehicle_position (              -- GPS [C]; chỉ dispatcher xe
   recorded_at timestamptz NOT NULL, received_at timestamptz NOT NULL DEFAULT now(),
   source text NOT NULL CHECK (source IN ('device','simulator'))
 );
+**D3 owner-approved:** phải ràng buộc `vehicle_position` vào trip vẫn `on_road`, tài xế có ca chính thức còn hiệu lực; khi trip terminal hoặc ca kết thúc phải purge raw positions và từ chối upload offline muộn. Mọi GET GPS chỉ cho Dispatcher được **gán trực tiếp cho trip** khi tài xế đang trong ca. Model hiện tại chưa chứng minh có liên kết Dispatcher–trip: Dev 1/2 phải thiết kế bảng hoặc khóa sở hữu, migration, RBAC tests **trước** khi mở GPS read; tuyệt đối không suy diễn từ quyền Dispatcher cấp market. Khi trip gồm nhiều stop, chỉ hoàn tất toàn trip mới xóa theo terminal trip, nhưng hết ca đến trước cũng dừng/xóa. **Không xóa** `hr.driver_duty_log`/tachograph cùng với GPS; chúng chịu D5 khác. Tọa độ không đi vào audit/milestone/notification. Backup đã tồn tại cần cơ chế thời hạn riêng.
+
+**D5 owner-approved product retention (DEC-DEV2-D5-001):** customer/CS 90 ngày sau đóng đơn/case cuối, operational order không phải chứng từ 365 ngày sau terminal, former staff contact 90 ngày sau kết thúc quan hệ và hết quyền/nghĩa vụ, nonstatutory shift/attendance 24 tháng, technical/security logs 30/90 ngày, staging backup max 30 ngày, GPS purge theo trip/ca. Driver working-time/tachograph và Swedish accounting được giữ theo thời hạn luật áp dụng; audit/milestone bất biến không UPDATE/DELETE theo mốc 24 tháng review. Phải xét legal hold, bản ghi dùng chung, chính sách retention versioned, dry run, ROPA/DSAR/DPIA/nhà xử lý trước khi dùng dữ liệu cá nhân thật; các giá trị legacy 365/730 trong config không tự động có hiệu lực chính sách. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
+
+**D2 owner-approved:** CSV nguồn có schema version, ISO, decimal, SHA-256 theo market/entity/schema, retry `failed`, `partial` chỉ qua IT review, `ok` duplicate skip. Chỉ áp dụng qua adapter và `stg.sync_run`, không viết ngược source hoặc CFO approval, cần migration xem xét unique index cho retry.
+
 CREATE TABLE ops.idempotency_key (
   key text NOT NULL, user_id bigint NOT NULL REFERENCES ref.app_user(id),
   endpoint text NOT NULL, request_hash text NOT NULL, response_status int, response_body jsonb,
@@ -914,12 +922,24 @@ Dùng chung cho mọi nước (cùng mã nguồn, dữ liệu seed riêng). CFO 
 | `src_customer` | id, name, email, phone, type, updated_at |
 | `src_address` | id, customer_id, address, lat, lon (địa chỉ seed sẵn kèm tọa độ) |
 | `src_product` | sku, name, category, gtin, sale_unit, units_to_base, unit_price, weight_kg, volume_m3, updated_at |
-| `src_stock` | warehouse_code, sku, on_hand, reserved, as_of |
+| `src_stock` | warehouse_code, sku, **physical_stock_pool_id (schema target of DEC-SRC-D1-001)**, on_hand, reserved, as_of; stock rows only published together via a complete snapshot batch |
 | `src_inbound` | inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received |
-| `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind |
+| `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind, updated_at; range queries with stable `(updated_at, vehicle_code, from_ts, to_ts)` |
 | `src_order`, `src_order_line` | id, version, customer_id, address_id, date_mode, date_from, date_to, window_start, window_end, sales_code, store_code, status (`DRAFT`,`VALIDATED`,`SUBMITTED_FOR_PLANNING`,`CANCELLED`), updated_at; **bản chụp tại thời điểm ghi đơn (SRC-Q1, DEC-SRC-001):** address, lat, lon, contact_name, contact_phone, contact_email, receiving_restrictions, special_requirements — đều nullable ở DB (nâng cấp cộng thêm `ADD COLUMN IF NOT EXISTS`, giữ dữ liệu cũ); không bị ghi đè khi hồ sơ khách/địa chỉ đổi |
 
-Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bước "Sales Validation" của form POS giả lập). Mọi bảng có `updated_at` để CFO kéo theo `updated_since`.
+**Quy tắc ghi vào CFO:** đơn chỉ vào luồng planning khi `status = SUBMITTED_FOR_PLANNING`, nhưng adapter **còn phải đọc source status `CANCELLED`** để phát hiện yêu cầu hủy đã đồng bộ. Mọi danh sách nguồn dùng `updated_at` (có timezone) + natural key để kéo `updated_since >=` bền vững; không bỏ qua cập nhật trùng timestamp. CFO không ghi ngược hệ thống nguồn.
+
+### 10.1 DEC-SRC-D1-001 — Quy tắc mô hình nguồn được owner duyệt (08/11/2026)
+
+**Trạng thái: đặc tả mục tiêu đã được owner duyệt; bảng/cột bên dưới có thể cần migration mới, không đồng nghĩa đã có trên DB.** [Approved D1 contract](decisions/DEC_SRC_D1_APPROVED_20261108.md).
+
+- **Order:** lưu `id`, `source_version`, `updated_at`, `status`, `cancel_reason`, `cancelled_at`, `customer_id`, `address_id`, `store_code`, `sales_code`, địa chỉ/toạ độ/liên hệ snapshot, ngày và khung giờ, line_id/sku/qty/unit_price. `DRAFT` tồn DB khi có `customer_id,address_id,store_code,date_mode`; validate/submit cần đủ contact/line/date/calendar. Đơn `SUBMITTED_FOR_PLANNING` được PUT full replacement **chỉ sau validate lại**, có `expected_version` compare + row lock; material edit tăng version, no-op giữ nguyên, chuyển `CANCELLED` từ trạng thái được phép và không mở lại. Ghi provenance sửa/hủy để CFO xử lý theo source version, không nhân đôi đơn.
+- **Receiving calendars (SRC-Q8):** định danh lịch market/source instance (timezone IANA, ngày làm việc và ngày lễ cấu hình/seed), khung giờ nhận của từng address; thiếu dữ liệu phải đánh dấu thiếu để validation chặn, **không** tự 24/7. Không đồng nhất source receiving với ca kho/tài xế ở CFO (DEC-SHIFTS-001/D7).
+- **Stock batch (SRC-Q9):** mô hình riêng `src_stock_snapshot_batch` (tên logical, cần migration review) với `batch_id, market/source_instance, as_of, published_at, complete` và nhiều `src_stock` rows cùng batch. Publish nguyên batch bằng một transaction; hỗ trợ **complete zero-row batch**: đã xuất bản và xác nhận đầy đủ mới mang nghĩa tồn=0. Chưa có batch, batch lỗi/chưa publish => **UNKNOWN/UNAVAILABLE**, không suy thành tồn=0. Không lấy `min(row.as_of)` làm batch timestamp.
+- **Alias/pool (SRC-Q10):** `physical_stock_pool_id` (tên logical được đề xuất) xác định **lượng tồn kho vật lý** theo warehouse; các local SKU alias của cùng pool chỉ count **một lần** sau chuyển số lượng về base bằng `units_to_base`. Pool độc lập mới cộng; thiếu pool ID/mapping không chắc chắn => chặn/quarantine chứ không last-row-wins/cộng mù. Dev 1+2 review uniqueness theo `(market, warehouse, physical_pool_id, batch_id)` và ngoại lệ hàng nhiều presentation; không khẳng định UNIQUE này đã được tạo.
+- **Bất biến CFO cancellation/replan:** preapproval source CANCELLED phải release hold và chuyển trạng thái bằng transition được phép + audit (hiện transition table chưa bao phủ mọi đường); postapproval pre-dispatch tạo alert và `replan_suggestion` **không hold**, Dispatcher mới duyệt swap bằng transaction; sau DISPATCHED alert-only. Không xóa lịch sử đã giao, không tự chuyển legacy/cfo cũ. Triển khai migration, adapter, tests sau review, không tự vượt state machine.
+
+
 
 ## 11. Thứ tự migration và seed
 
