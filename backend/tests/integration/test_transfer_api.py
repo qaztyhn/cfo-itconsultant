@@ -190,8 +190,8 @@ def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfe
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
     execute(transfer_api.dsn, "UPDATE ops.stock_snapshot SET as_of='2026-11-01T09:00Z' WHERE warehouse_id=1")
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
-    execute(transfer_api.dsn, "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1")
-    assert transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER).json() == {"items": []}
+    assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER),
+                 409, "PLAN_NOT_APPROVABLE")
 
 
 def test_US_ATP_02_AC3_distinct_key_cannot_approve_same_shortage_twice(transfer_api: Api) -> None:
@@ -238,3 +238,18 @@ def test_US_ATP_03_AC1_source_snapshot_staleness_blocks_confirmation(transfer_ap
         "RESOURCE_CONFLICT",
     )
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+
+
+
+def test_US_ATP_02_nonshortage_order_has_no_transfer_suggestions(transfer_api: Api) -> None:
+    """Create a separate initially-PLANNED order, never bypass the order transition trigger."""
+    execute(
+        transfer_api.dsn,
+        "INSERT INTO ops.customer_order (order_no,market_id,external_ref,customer_id,"
+        "contact_name,delivery_address,delivery_lat,delivery_lon,date_mode,date_to,"
+        "order_date,currency,submitted_at,status) VALUES "
+        "('SE-T18-PLANNED',1,'POS-T18-PLANNED',1,'Demo','Demo location',59.0,18.0,"
+        "'latest','2026-11-10','2026-11-04T09:00:00Z','SEK',"
+        "'2026-11-04T09:00:00Z','PLANNED')",
+    )
+    assert transfer_api.get("/orders/2/transfer-suggestions", DISPATCHER).json() == {"items": []}
