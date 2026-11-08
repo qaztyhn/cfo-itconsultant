@@ -941,6 +941,12 @@ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL D
 IANA timezone trước dùng. Mỗi schema nguồn là một instance, không có calendar dùng chung ngầm định.
 Bootstrap chỉ ADD COLUMN IF NOT EXISTS; không backfill giờ nhận cho địa chỉ cũ hoặc ghi đè calendar đã có.
 
+**Tham chiếu POS để kiểm tra sales/store (D1-B):** mỗi schema nguồn có `src_store(code text PRIMARY KEY,
+is_active boolean NOT NULL DEFAULT true)` và `src_sales(code text PRIMARY KEY, store_code text NOT NULL
+REFERENCES src_store(code), is_active boolean NOT NULL DEFAULT true)`, kèm created_at/updated_at như các
+bảng nguồn khác. Chỉ nguồn/seed quản lý danh mục này; CFO không ghi ngược. Tạo draft kiểm tra reference
+tồn tại/địa chỉ thuộc khách; validate/submit còn kiểm tra customer/store/sales active và đúng store.
+
 **Trạng thái: đặc tả mục tiêu đã được owner duyệt; bảng/cột bên dưới có thể cần migration mới, không đồng nghĩa đã có trên DB.** [Approved D1 contract](decisions/DEC_SRC_D1_APPROVED_20261108.md).
 
 - **Order:** lưu `id`, `source_version`, `updated_at`, `status`, `cancel_reason`, `cancelled_at`, `customer_id`, `address_id`, `store_code`, `sales_code`, địa chỉ/toạ độ/liên hệ snapshot, ngày và khung giờ, line_id/sku/qty/unit_price. `DRAFT` tồn DB khi có `customer_id,address_id,store_code,date_mode`; validate/submit cần đủ contact/line/date/calendar. Đơn `SUBMITTED_FOR_PLANNING` được PUT full replacement **chỉ sau validate lại**, có `expected_version` compare + row lock; material edit tăng version, no-op giữ nguyên, chuyển `CANCELLED` từ trạng thái được phép và không mở lại. Ghi provenance sửa/hủy để CFO xử lý theo source version, không nhân đôi đơn.
