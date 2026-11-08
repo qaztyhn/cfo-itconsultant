@@ -1,0 +1,35 @@
+name: M8 focused PostgreSQL and strict type-check
+on:
+  push:
+    branches: [feat/m8-kpi-backend]
+permissions:
+  contents: write
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/postgres
+      - run: pip install -e ".[dev]"
+      - name: Execute focused DB and strict KPI type checks, then self-remove
+        shell: bash
+        run: |
+          set +e
+          pytest -q tests/unit/test_m8_kpi.py tests/integration/test_m8_kpi_api.py
+          tests=$?
+          mypy --strict --follow-imports=silent app/services/kpi_service.py app/api/v1/kpi.py
+          types=$?
+          set -e
+          cd ..
+          git rm .github/workflows/m8-focused-check.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(kpi): complete focused verification workflow"
+          git push origin HEAD:feat/m8-kpi-backend
+          test "$tests" -eq 0 && test "$types" -eq 0
