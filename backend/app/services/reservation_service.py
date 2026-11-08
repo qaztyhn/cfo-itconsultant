@@ -368,8 +368,13 @@ async def _commit_plan(session: AsyncSession, plan_id: int, resources_validated:
     if plan is None:
         raise _error("NOT_FOUND", "Plan not found.")
     run = await _locked_run(session, plan.run_id)
-    # DEC-HOLD-001: an expired proposal is never approvable by any actor.
-    if plan.status == "expired":
+    # DEC-HOLD-001: reject timeouts even when the sweeper has not run yet.
+    # A previously committed approved plan remains idempotently readable.
+    if plan.status == "expired" or (
+        plan.status not in ("approved", "manual")
+        and run.hold_expires_at is not None
+        and run.hold_expires_at <= clock.now()
+    ):
         raise _error("HOLD_EXPIRED", "Planning hold expired. Plan Again.", run_id=run.id)
     if not resources_validated or plan.status not in ("approved", "manual"):
         raise _error("PLAN_NOT_APPROVABLE", "Approval must first validate and lock resources.")
