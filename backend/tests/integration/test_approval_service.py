@@ -305,7 +305,8 @@ def _second_order(db: str, *, stock: int = 30, hours: str = "1.500") -> None:
         "UPDATE plan.fulfilment_plan SET workload="
         f"""'{{"prep_by_day":{{"2026-11-10":"{hours}"}}}}'::jsonb WHERE id=2""",
         f"UPDATE plan.fulfilment_plan SET checks='{GATES}'::jsonb WHERE id=2",
-        f"UPDATE plan.fulfilment_plan SET workload='{{\"prep_by_day\":{{\"2026-11-10\":\"{hours}\"}}}}'::jsonb WHERE id=1",
+        "UPDATE plan.fulfilment_plan SET workload="
+        f"""'{{"prep_by_day":{{"2026-11-10":"{hours}"}}}}'::jsonb WHERE id=1""",
         f"UPDATE ops.stock_snapshot SET on_hand={stock} WHERE warehouse_id=1 AND global_product_id=1",
     )
     _run(db, lambda s: reservation_service.hold(2, session=s))
