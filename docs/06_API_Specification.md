@@ -433,6 +433,8 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | GET | `/driver/trips?date=` | Chuyến của tôi (xe, kho, điểm dừng, địa chỉ, liên hệ, cửa sổ nhận hàng, trạng thái) |
 | GET | `/driver/trips/{id}` | Chi tiết chuyến |
 
+**D5 — DEC-GDPR-001 (owner approved direction, chưa triển khai):** các API dữ liệu cá nhân phải kiểm scope, retention theo mục đích, các quyền chủ thể dữ liệu (sau khi xét ngoại lệ pháp lý), minimization và audit không lộ PII; chưa có contract DSAR được duyệt, không tự thêm endpoint. Mốc cấu hình GPS 30, personal 365, order 730 ngày chỉ dành cho demo cho tới khi review GDPR. Trước dùng dữ liệu thật: ROPA, lawful basis, privacy notice, DPIA nếu cần, Art.28 DPA/transfer và review quyền xóa/backup.
+
 ## 9. GPS (chỉ khi `market.gps_enabled`)
 
 | Phương thức | Đường dẫn | Vai trò | Mô tả |
