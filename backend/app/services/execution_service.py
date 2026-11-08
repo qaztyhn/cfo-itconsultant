@@ -203,6 +203,14 @@ async def _claim(
     digest = hashlib.sha256(json.dumps({
         "event_type": event_type, "occurred_at": occurred_at.isoformat(), "payload": payload
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    # milestone_event.key is globally unique, not merely scoped by actor.
+    existing_event = await session.scalar(
+        select(MilestoneEvent.id)
+        .where(MilestoneEvent.idempotency_key == key, MilestoneEvent.actor_user_id != _actor_id(actor))
+        .limit(1)
+    )
+    if existing_event is not None:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used.")
     await session.execute(
         insert(IdempotencyKey).values(
             key=key, user_id=_actor_id(actor), endpoint=endpoint, request_hash=digest
@@ -420,8 +428,18 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
                 await transition(session, order.id, OrderStatus.DELIVERED, "driver")
                 order.delivered_at = occurred_at
             else:
-                await transition(session, order.id, OrderStatus.FAILED, "driver",
-                                 str(payload.get("failure_reason", "partial_delivery")))
+                failed_reason = (
+                    str(payload["failure_reason"])
+                    if outcome == "failed"
+                    else await session.scalar(
+                        select(ProofOfDelivery.failure_reason)
+                        .where(ProofOfDelivery.order_id == order.id, ProofOfDelivery.result == "failed")
+                        .limit(1)
+                    )
+                )
+                if not failed_reason:
+                    raise DomainError("PLAN_NOT_APPROVABLE", "Failed stop reason is unavailable.")
+                await transition(session, order.id, OrderStatus.FAILED, "driver", failed_reason)
     elif event_type == "VEHICLE_ISSUE":
         if not any(t.vehicle_id == payload["vehicle_id"] for t, _ in trips):
             raise DomainError("NOT_FOUND", "Vehicle not assigned to this order.")
@@ -444,14 +462,21 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         payload=event_data, idempotency_key=idempotency_key,
     ))
     await session.flush()
+    await session.refresh(order, attribute_names=["status"])
     new_event = await session.scalar(select(MilestoneEvent).where(
         MilestoneEvent.idempotency_key == idempotency_key
     ))
     assert new_event is not None
     try:
         risk = await risk_service.recalculate(order.id, f"event:{event_type}")
-        if event_type in ("DISPATCHED", "DELIVERED", "FAILED") and order.status == event_type:
-            await notify_service.enqueue(order.id, event_type, plan_id=order.approved_plan_id)
+        if order.status in ("DISPATCHED", "DELIVERED", "FAILED"):
+            current_type = (
+                "DISPATCHED" if event_type == "DISPATCHED" else
+                "DELIVERED" if order.status == "DELIVERED" else
+                "FAILED" if order.status == "FAILED" else None
+            )
+            if current_type is not None:
+                await notify_service.enqueue(order.id, current_type, plan_id=order.approved_plan_id)
     except NotImplementedError as exc:
         raise DomainError(
             "PLAN_NOT_APPROVABLE", "Mandatory ETA or notification integration is not available."
