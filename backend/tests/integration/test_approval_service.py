@@ -20,8 +20,10 @@ from tests.integration.conftest import alembic_config, async_url, execute, fetch
 
 pytestmark = pytest.mark.integration
 NOW = datetime(2026, 11, 4, 9, 5, tzinfo=UTC)
-GATES = '{"stock":{"passed":true},"preparation":{"passed":true},"truck":{"passed":true},' \
-        '"site_date":{"passed":true},"safety":{"passed":true}}'
+GATES = (
+    '{"stock":{"passed":true},"preparation":{"passed":true},"truck":{"passed":true},'
+    '"site_date":{"passed":true},"safety":{"passed":true}}'
+)
 
 
 @pytest.fixture
@@ -40,8 +42,7 @@ def db(empty_db: str) -> Iterator[str]:
         "unit_price,line_total) VALUES (1,1,'SKU1',1,20,20,1,20)",
         "INSERT INTO ops.stock_snapshot (warehouse_id,global_product_id,on_hand,wms_reserved,as_of) "
         "VALUES (1,1,40,0,'2026-11-04T09:05Z')",
-        "INSERT INTO hr.warehouse_staff (employee_id,role,counts_in_capacity) "
-        "VALUES (1,'operator',true)",
+        "INSERT INTO hr.warehouse_staff (employee_id,role,counts_in_capacity) " "VALUES (1,'operator',true)",
         "INSERT INTO hr.driver_staff (employee_id,home_warehouse_id,licence_class,licence_expires_on) "
         "VALUES (1,1,'C','2027-01-01')",
         "INSERT INTO hr.shift_template "
@@ -55,8 +56,7 @@ def db(empty_db: str) -> Iterator[str]:
         rows.run_sql(1, 1),
         rows.plan_sql(1, 1, 1),
         rows.plan_vehicle_sql(1, 1, 1, 1),
-        "UPDATE plan.fulfilment_plan SET workload = "
-        """'{"prep_by_day":{"2026-11-10":"1.500"}}'::jsonb""",
+        "UPDATE plan.fulfilment_plan SET workload = " """'{"prep_by_day":{"2026-11-10":"1.500"}}'::jsonb""",
         f"UPDATE plan.fulfilment_plan SET checks='{GATES}'::jsonb WHERE id=1",
         "UPDATE plan.planning_run SET reserve_class='safe' WHERE id=1",
     )
@@ -122,9 +122,7 @@ def test_US_APR_01_AC2_changed_request_reusing_key_conflicts(db: str) -> None:
     _hold(db)
     _run(
         db,
-        lambda s: approval_service.approve(
-            1, _actor(), {}, "same-key", session=s, recheck=_recheck
-        ),
+        lambda s: approval_service.approve(1, _actor(), {}, "same-key", session=s, recheck=_recheck),
     )
     with pytest.raises(DomainError) as got:
         _run(
@@ -142,9 +140,7 @@ def test_DEC_HOLD_001_reject_expired_even_before_sweeper(db: str) -> None:
     with pytest.raises(DomainError) as got:
         _run(
             db,
-            lambda s: approval_service.approve(
-                1, _actor(), {}, "expired", session=s, recheck=_recheck
-            ),
+            lambda s: approval_service.approve(1, _actor(), {}, "expired", session=s, recheck=_recheck),
         )
     assert got.value.code == "HOLD_EXPIRED"
     assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
@@ -204,9 +200,7 @@ def test_US_APR_01_AC5_stock_conflict_rolls_back(db: str) -> None:
     with pytest.raises(DomainError) as got:
         _run(
             db,
-            lambda s: approval_service.approve(
-                1, _actor(), {}, "stock-too-low", session=s, recheck=_recheck
-            ),
+            lambda s: approval_service.approve(1, _actor(), {}, "stock-too-low", session=s, recheck=_recheck),
         )
     assert got.value.code == "RESOURCE_CONFLICT"
     assert got.value.details["conflict"] == "stock"
@@ -276,9 +270,7 @@ def test_US_APR_01_AC8_source_version_mismatch_denied(db: str) -> None:
     with pytest.raises(DomainError) as got:
         _run(
             db,
-            lambda s: approval_service.approve(
-                1, _actor(), {}, "stale-source", session=s, recheck=_recheck
-            ),
+            lambda s: approval_service.approve(1, _actor(), {}, "stale-source", session=s, recheck=_recheck),
         )
     assert got.value.code == "RESOURCE_CONFLICT"
 
@@ -289,8 +281,6 @@ def test_US_APR_01_AC9_no_active_hold_denied(db: str) -> None:
     with pytest.raises(DomainError) as got:
         _run(
             db,
-            lambda s: approval_service.approve(
-                1, _actor(), {}, "missing-hold", session=s, recheck=_recheck
-            ),
+            lambda s: approval_service.approve(1, _actor(), {}, "missing-hold", session=s, recheck=_recheck),
         )
     assert got.value.code == "PLAN_NOT_APPROVABLE"
