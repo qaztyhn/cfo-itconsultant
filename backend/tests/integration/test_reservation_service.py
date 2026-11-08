@@ -346,3 +346,55 @@ def test_DEC_HOLD_001_old_run_cannot_extend_after_new_run_created(db: str) -> No
     with pytest.raises(DomainError) as reused:
         _run(db, lambda s: reservation.hold(1, session=s))
     assert reused.value.code == "PLAN_NOT_APPROVABLE"
+
+
+def test_T28_concurrent_hold_extensions_stop_at_market_cap(db: str) -> None:
+    """The run row lock serializes two simultaneous extensions without lost updates."""
+    _run(db, lambda s: reservation.hold(1, session=s))
+    original = fetch(db, "SELECT hold_expires_at FROM plan.planning_run WHERE id=1")[0][0]
+
+    async def concurrent() -> None:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+
+        async def extend_once() -> None:
+            async with async_sessionmaker(engine)() as session, session.begin():
+                await reservation.extend(1, _actor(), session=session)
+
+        try:
+            await asyncio.wait_for(asyncio.gather(extend_once(), extend_once()), timeout=20)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(concurrent())
+    deadline, count = fetch(db, "SELECT hold_expires_at, hold_extensions FROM plan.planning_run WHERE id=1")[
+        0
+    ]
+    assert count == 2 and deadline - original == timedelta(minutes=30)
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='HOLD_EXTENDED'")[0][0] == 2
+    with pytest.raises(DomainError) as denied:
+        _run(db, lambda s: reservation.extend(1, _actor(), session=s))
+    assert denied.value.code == "HOLD_EXTENSION_LIMIT"
+
+
+def test_T28_two_expiry_workers_emit_one_audit_and_do_not_reexpire(db: str) -> None:
+    """Skip-locked workers must not release or audit the same hold twice."""
+    _run(db, lambda s: reservation.hold(1, session=s))
+    clock.set_now(clock.now() + timedelta(minutes=16))
+
+    async def concurrent() -> list[int]:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+
+        async def expire_once() -> int:
+            async with async_sessionmaker(engine)() as session, session.begin():
+                return await reservation.expire_due(session=session)
+
+        try:
+            return list(await asyncio.wait_for(asyncio.gather(expire_once(), expire_once()), timeout=20))
+        finally:
+            await engine.dispose()
+
+    counts = asyncio.run(concurrent())
+    assert sorted(counts) == [0, 1]
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='HOLD_EXPIRED'")[0][0] == 1
+    assert {row[0] for row in fetch(db, "SELECT status FROM plan.vehicle_reservation")} == {"expired"}
+    assert _run(db, lambda s: reservation.expire_due(session=s)) == 0

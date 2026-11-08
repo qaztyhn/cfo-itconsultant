@@ -1,0 +1,97 @@
+{
+  "kind": "drivers",
+  "records": [
+    {
+      "adr": false,
+      "driver_code": "D01",
+      "employee_no": "DEMO-DRIVER-1",
+      "licence_class": "B",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "GBG"
+    },
+    {
+      "adr": false,
+      "driver_code": "D02",
+      "employee_no": "DEMO-DRIVER-2",
+      "licence_class": "C",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "STO"
+    },
+    {
+      "adr": false,
+      "driver_code": "D03",
+      "employee_no": "DEMO-DRIVER-3",
+      "licence_class": "CE",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "MLM"
+    },
+    {
+      "adr": false,
+      "driver_code": "D04",
+      "employee_no": "DEMO-DRIVER-4",
+      "licence_class": "C",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "GBG"
+    },
+    {
+      "adr": false,
+      "driver_code": "D05",
+      "employee_no": "DEMO-DRIVER-5",
+      "licence_class": "C",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "STO"
+    },
+    {
+      "adr": false,
+      "driver_code": "D06",
+      "employee_no": "DEMO-DRIVER-6",
+      "licence_class": "CE",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "MLM"
+    },
+    {
+      "adr": false,
+      "driver_code": "D07",
+      "employee_no": "DEMO-DRIVER-7",
+      "licence_class": "C",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "GBG"
+    },
+    {
+      "adr": false,
+      "driver_code": "D08",
+      "employee_no": "DEMO-DRIVER-8",
+      "licence_class": "B",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "STO"
+    },
+    {
+      "adr": false,
+      "driver_code": "D09",
+      "employee_no": "DEMO-DRIVER-9",
+      "licence_class": "CE",
+      "licence_expires_on": "2030-01-01",
+      "market": "SE",
+      "warehouse_code": "MLM"
+    },
+    {
+      "adr": false,
+      "driver_code": "D10",
+      "employee_no": "DEMO-DRIVER-10",
+      "licence_class": "C",
+      "licence_expires_on": "2026-01-01",
+      "market": "SE",
+      "warehouse_code": "GBG"
+    }
+  ],
+  "schema_version": "d7.synthetic.v1",
+  "source": "synthetic_demo"
+}
