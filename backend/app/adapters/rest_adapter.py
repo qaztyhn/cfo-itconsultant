@@ -8,36 +8,33 @@ Owner: Dev 2 (luồng B) — M2.
 
 import json
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import cast
+from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
-from app.adapters.base import CustomerDTO, ProductDTO, StockItemDTO, StockSnapshotDTO
-
-
-class _Customer(BaseModel):
-    id: str = Field(min_length=1)
-    type: str
-    name: str
-    email: str | None
-    phone: str | None
-    updated_at: AwareDatetime
-
-
-class _Product(BaseModel):
-    sku: str = Field(min_length=1)
-    name: str
-    category: str | None
-    gtin: str | None
-    sale_unit: str
-    units_to_base: Decimal = Field(gt=0, allow_inf_nan=False)
-    unit_price: Decimal = Field(ge=0, allow_inf_nan=False)
-    weight_kg: Decimal | None = Field(ge=0, allow_inf_nan=False)
-    volume_m3: Decimal | None = Field(ge=0, allow_inf_nan=False)
-    updated_at: AwareDatetime
+from app.adapters.base import (
+    AddressDTO,
+    CancellationDTO,
+    CustomerDTO,
+    FleetBlockDTO,
+    InboundDTO,
+    OrderDTO,
+    ProductDTO,
+    StockItemDTO,
+    StockSnapshotDTO,
+)
+from app.adapters.order_wire import SourceCancellation, SourceOrder
+from app.adapters.reference_wire import (
+    SourceAddress,
+    SourceCustomer,
+    SourceFleet,
+    SourceInbound,
+    SourceProduct,
+)
 
 
 class _Page[T](BaseModel):
@@ -64,7 +61,7 @@ class _StockSnapshot(BaseModel):
 
 
 class RestMarketAdapter:
-    """Read-only source adapter. Stock is implemented; other feeds remain M2 work."""
+    """Read-only D1 source feeds; persistence/routing/checkpoints belong to ingestion."""
 
     def __init__(
         self,
@@ -75,6 +72,7 @@ class RestMarketAdapter:
         timeout_seconds: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
         max_pages: int = 10000,
+        market_timezone: str | None = None,
     ) -> None:
         if not api_key.strip():
             raise ValueError("Source API key is required")
@@ -94,14 +92,35 @@ class RestMarketAdapter:
         if max_pages <= 0:
             raise ValueError("Page safety limit must be positive")
         self._max_pages = max_pages
+        try:
+            self._zone = ZoneInfo(market_timezone) if market_timezone else None
+        except KeyError:
+            raise ValueError("Invalid source market timezone") from None
 
-    async def _pages[T: _Customer | _Product](
-        self, entity: str, since: datetime, model: type[T], *, key_field: str, page_size: int = 50
+    async def _pages[
+        T: SourceCustomer
+        | SourceProduct
+        | SourceOrder
+        | SourceCancellation
+        | SourceAddress
+        | SourceInbound
+        | SourceFleet
+    ](
+        self,
+        entity: str,
+        since: datetime | None,
+        model: type[T],
+        *,
+        key_fields: tuple[str, ...],
+        page_size: int = 50,
+        filters: dict[str, str] | None = None,
     ) -> AsyncIterator[T]:
-        if since.tzinfo is None or since.utcoffset() is None or not 1 <= page_size <= 500:
+        if (
+            since is not None and (since.tzinfo is None or since.utcoffset() is None)
+        ) or not 1 <= page_size <= 500:
             raise ValueError("Source checkpoint must be aware and page size in 1..500")
-        seen: set[str] = set()
-        last: tuple[datetime, str] | None = None
+        seen: set[tuple[str, ...]] = set()
+        last: tuple[datetime, tuple[str, ...]] | None = None
         total: int | None = None
         async with httpx.AsyncClient(
             timeout=self._timeout_seconds, transport=self._transport, follow_redirects=False
@@ -111,7 +130,12 @@ class RestMarketAdapter:
                     response = await client.get(
                         self.base_url + entity,
                         headers={"X-API-Key": self._api_key},
-                        params={"updated_since": since.isoformat(), "page": page, "page_size": page_size},
+                        params={
+                            **({"updated_since": since.isoformat()} if since is not None else {}),
+                            "page": page,
+                            "page_size": page_size,
+                            **(filters or {}),
+                        },
                     )
                     response.raise_for_status()
                     # JSON document is an external boundary; fractions are parsed without a float round-trip.
@@ -136,9 +160,17 @@ class RestMarketAdapter:
                         item = model.model_validate(row)
                     except ValueError:
                         raise SourceReadError("Source reference item is invalid") from None
-                    key = str(getattr(item, key_field))
+                    parts = [getattr(item, field) for field in key_fields]
+                    key = tuple(
+                        value.astimezone(UTC).isoformat() if isinstance(value, datetime) else str(value)
+                        for value in parts
+                    )
                     current = (item.updated_at, key)
-                    if key in seen or item.updated_at < since or (last is not None and current <= last):
+                    if (
+                        key in seen
+                        or (since is not None and item.updated_at < since)
+                        or (last is not None and current <= last)
+                    ):
                         raise SourceReadError("Source reference keys/checkpoint ordering is invalid")
                     seen.add(key)
                     last = current
@@ -148,11 +180,90 @@ class RestMarketAdapter:
         raise SourceReadError("Source reference page safety limit exceeded")
 
     async def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]:
-        async for item in self._pages("customers", updated_since, _Customer, key_field="id"):
+        async for item in self._pages("customers", updated_since, SourceCustomer, key_fields=("id",)):
             yield CustomerDTO(item.id, item.type, item.name, item.email, item.phone, item.updated_at)
 
+    async def fetch_addresses(self, updated_since: datetime) -> AsyncIterator[AddressDTO]:
+        async for item in self._pages("addresses", updated_since, SourceAddress, key_fields=("id",)):
+            yield AddressDTO(
+                item.id,
+                item.customer_id,
+                item.address,
+                item.lat,
+                item.lon,
+                item.receiving_hours,
+                item.updated_at,
+            )
+
+    async def fetch_inbound(self, *, updated_since: datetime | None = None) -> list[InboundDTO]:
+        return [
+            InboundDTO(
+                item.inbound_ref,
+                item.warehouse_code,
+                item.sku,
+                item.qty,
+                item.eta_date,
+                item.confirmed,
+                item.received,
+                item.updated_at,
+            )
+            async for item in self._pages(
+                "inbound", updated_since, SourceInbound, key_fields=("inbound_ref", "warehouse_code", "sku")
+            )
+        ]
+
+    async def fetch_fleet(
+        self, date_from: date, date_to: date, *, updated_since: datetime | None = None
+    ) -> list[FleetBlockDTO]:
+        """Date bounds are half-open market-local midnights; callers must supply an exclusive end date."""
+        if self._zone is None:
+            raise SourceReadError("Source fleet market timezone must be configured")
+        if date_from >= date_to:
+            raise ValueError("Fleet dates require a half-open ordered range")
+        begin, end = datetime.combine(date_from, time.min, self._zone), datetime.combine(
+            date_to, time.min, self._zone
+        )
+        if any(
+            point.replace(fold=0).utcoffset() != point.replace(fold=1).utcoffset() for point in (begin, end)
+        ):
+            raise SourceReadError("Fleet boundary requires explicit timezone resolution")
+        return [
+            FleetBlockDTO(item.vehicle_code, item.start, item.end, item.kind, item.updated_at)
+            async for item in self._pages(
+                "fleet/calendar",
+                updated_since,
+                SourceFleet,
+                key_fields=("vehicle_code", "start", "end"),
+                filters={"from": begin.isoformat(), "to": end.isoformat()},
+            )
+        ]
+
+    async def fetch_orders(self, updated_since: datetime, page_size: int = 200) -> AsyncIterator[OrderDTO]:
+        async for item in self._pages(
+            "orders",
+            updated_since,
+            SourceOrder,
+            key_fields=("id",),
+            page_size=page_size,
+            filters={"status": "SUBMITTED_FOR_PLANNING"},
+        ):
+            yield item.dto()
+
+    async def fetch_cancelled_orders(
+        self, updated_since: datetime, page_size: int = 200
+    ) -> AsyncIterator[CancellationDTO]:
+        async for item in self._pages(
+            "orders",
+            updated_since,
+            SourceCancellation,
+            key_fields=("id",),
+            page_size=page_size,
+            filters={"status": "CANCELLED"},
+        ):
+            yield item.dto()
+
     async def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]:
-        async for item in self._pages("products", updated_since, _Product, key_field="sku"):
+        async for item in self._pages("products", updated_since, SourceProduct, key_fields=("sku",)):
             yield ProductDTO(
                 item.sku,
                 item.name,
