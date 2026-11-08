@@ -435,6 +435,11 @@ async def orders(
     return result, total
 
 
+def _csv_safe(value: str) -> str:
+    """Prevent spreadsheet formula interpretation for user-controlled labels."""
+    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
+
+
 async def export_csv(
     session: AsyncSession,
     viewer: RevenueViewer,
@@ -488,8 +493,7 @@ async def export_csv(
     ):
         code, name = loc_names.get(loc_id, ("", UNASSIGNED_STORE if view == "store" else ""))
         # Quote risky spreadsheet-formula prefixes in free-text location labels.
-        safe = lambda value: "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
-        writer.writerow((day.isoformat(), view, safe(code), safe(name), count,
+        writer.writerow((day.isoformat(), view, _csv_safe(code), _csv_safe(name), count,
                          str(Decimal(recognised).quantize(_CENT)),
                          str(Decimal(booked).quantize(_CENT)), currency))
 
