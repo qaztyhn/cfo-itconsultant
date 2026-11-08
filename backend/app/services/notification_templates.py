@@ -21,6 +21,21 @@ PHRASES = {
     "FAILED": "Delivery was unsuccessful.",
     "DELAY": "Delivery timing has changed.",
 }
+SUBJECTS = {
+    "CONFIRMED": "Your delivery is confirmed — order {ref}",
+    "DISPATCHED": "Your order is on its way",
+    "DELIVERED": "Your order was delivered",
+    "FAILED": "We could not deliver your order",
+    "DELAY": "Delivery update for order {ref}",
+}
+SMS_STATUS = {
+    "CONFIRMED": "confirmed",
+    "DISPATCHED": "on its way",
+    "DELIVERED": "delivered",
+    "FAILED": "delivery unsuccessful",
+    "DELAY": "delivery delayed",
+}
+FOOTER = "For questions, contact your store and quote the order number."
 
 
 class EtaWindow(BaseModel):
@@ -51,7 +66,7 @@ class RenderedMessage:
 
 
 def render_message(
-    template: Template, variables: MessageVariables, *, locale: str, timezone: str
+    template: Template, variables: MessageVariables, *, locale: str, timezone: str, channel: str = "email"
 ) -> RenderedMessage:
     if template not in PHRASES or locale.lower().replace("_", "-").split("-")[0] != "en":
         raise ValueError("Unsupported notification template or locale")
@@ -65,7 +80,18 @@ def render_message(
         body += (
             f" Delivery window: {start.isoformat(timespec='minutes')} – {end.isoformat(timespec='minutes')}."
         )
-    return RenderedMessage(template, TEMPLATE_VERSION, locale, f"Order {variables.public_order_ref}", body)
+    if channel == "sms_sim":
+        body = f"CFO demo: order {variables.public_order_ref}: {SMS_STATUS[template]}."
+        if variables.eta_window is not None:
+            body += f" ETA {start:%d %b %H:%M}–{end:%d %b %H:%M}."
+        if len(body) > 160:
+            raise ValueError("SMS template exceeds 160 characters")
+    elif channel == "email":
+        body += f"\n\n{FOOTER}"
+    else:
+        raise ValueError("Unsupported notification channel")
+    subject = SUBJECTS[template].format(ref=variables.public_order_ref)
+    return RenderedMessage(template, TEMPLATE_VERSION, locale, subject, body)
 
 
 def approved_window(start: datetime | None, end: datetime | None) -> EtaWindow | None:

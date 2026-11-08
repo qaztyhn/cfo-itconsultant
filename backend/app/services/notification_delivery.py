@@ -122,6 +122,7 @@ async def deliver_queued(
                 MessageVariables(public_order_ref=order.order_no, eta_window=window),
                 locale=market.locale,
                 timezone=market.timezone,
+                channel=notification.channel,
             )
         except (ValueError, KeyError):
             notification.status = "failed"

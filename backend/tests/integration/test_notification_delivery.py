@@ -205,10 +205,15 @@ def test_D4_outbox_never_forwards_legacy_free_text(empty_db: str, channel: str) 
         )
         == 1
     )
-    expected = "Order ZZ-000001: Delivery dispatched."
+    expected = (
+        "Order ZZ-000001: Delivery dispatched.\n\n"
+        "For questions, contact your store and quote the order number."
+        if channel == "email"
+        else "CFO demo: order ZZ-000001: on its way."
+    )
     if channel == "email":
         assert email.send.call_args.kwargs["text"] == expected
-        assert email.send.call_args.kwargs["subject"] == "Order ZZ-000001"
+        assert email.send.call_args.kwargs["subject"] == "Your order is on its way"
     else:
         assert sms.send.call_args.kwargs["body"] == expected
     assert fetch(empty_db, "SELECT body FROM ops.notification")[0][0] == expected
