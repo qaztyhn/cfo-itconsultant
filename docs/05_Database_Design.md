@@ -922,12 +922,24 @@ Dùng chung cho mọi nước (cùng mã nguồn, dữ liệu seed riêng). CFO 
 | `src_customer` | id, name, email, phone, type, updated_at |
 | `src_address` | id, customer_id, address, lat, lon (địa chỉ seed sẵn kèm tọa độ) |
 | `src_product` | sku, name, category, gtin, sale_unit, units_to_base, unit_price, weight_kg, volume_m3, updated_at |
-| `src_stock` | warehouse_code, sku, on_hand, reserved, as_of |
+| `src_stock` | warehouse_code, sku, **physical_stock_pool_id (schema target of DEC-SRC-D1-001)**, on_hand, reserved, as_of; stock rows only published together via a complete snapshot batch |
 | `src_inbound` | inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received |
-| `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind |
+| `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind, updated_at; range queries with stable `(updated_at, vehicle_code, from_ts, to_ts)` |
 | `src_order`, `src_order_line` | id, version, customer_id, address_id, date_mode, date_from, date_to, window_start, window_end, sales_code, store_code, status (`DRAFT`,`VALIDATED`,`SUBMITTED_FOR_PLANNING`,`CANCELLED`), updated_at; **bản chụp tại thời điểm ghi đơn (SRC-Q1, DEC-SRC-001):** address, lat, lon, contact_name, contact_phone, contact_email, receiving_restrictions, special_requirements — đều nullable ở DB (nâng cấp cộng thêm `ADD COLUMN IF NOT EXISTS`, giữ dữ liệu cũ); không bị ghi đè khi hồ sơ khách/địa chỉ đổi |
 
-Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bước "Sales Validation" của form POS giả lập). Mọi bảng có `updated_at` để CFO kéo theo `updated_since`.
+**Quy tắc ghi vào CFO:** đơn chỉ vào luồng planning khi `status = SUBMITTED_FOR_PLANNING`, nhưng adapter **còn phải đọc source status `CANCELLED`** để phát hiện yêu cầu hủy đã đồng bộ. Mọi danh sách nguồn dùng `updated_at` (có timezone) + natural key để kéo `updated_since >=` bền vững; không bỏ qua cập nhật trùng timestamp. CFO không ghi ngược hệ thống nguồn.
+
+### 10.1 DEC-SRC-D1-001 — Quy tắc mô hình nguồn được owner duyệt (08/11/2026)
+
+**Trạng thái: đặc tả mục tiêu đã được owner duyệt; bảng/cột bên dưới có thể cần migration mới, không đồng nghĩa đã có trên DB.** [Approved D1 contract](decisions/DEC_SRC_D1_APPROVED_20261108.md).
+
+- **Order:** lưu `id`, `source_version`, `updated_at`, `status`, `cancel_reason`, `cancelled_at`, `customer_id`, `address_id`, `store_code`, `sales_code`, địa chỉ/toạ độ/liên hệ snapshot, ngày và khung giờ, line_id/sku/qty/unit_price. `DRAFT` tồn DB khi có `customer_id,address_id,store_code,date_mode`; validate/submit cần đủ contact/line/date/calendar. Đơn `SUBMITTED_FOR_PLANNING` được PUT full replacement **chỉ sau validate lại**, có `expected_version` compare + row lock; material edit tăng version, no-op giữ nguyên, chuyển `CANCELLED` từ trạng thái được phép và không mở lại. Ghi provenance sửa/hủy để CFO xử lý theo source version, không nhân đôi đơn.
+- **Receiving calendars (SRC-Q8):** định danh lịch market/source instance (timezone IANA, ngày làm việc và ngày lễ cấu hình/seed), khung giờ nhận của từng address; thiếu dữ liệu phải đánh dấu thiếu để validation chặn, **không** tự 24/7. Không đồng nhất source receiving với ca kho/tài xế ở CFO (DEC-SHIFTS-001/D7).
+- **Stock batch (SRC-Q9):** mô hình riêng `src_stock_snapshot_batch` (tên logical, cần migration review) với `batch_id, market/source_instance, as_of, published_at, complete` và nhiều `src_stock` rows cùng batch. Publish nguyên batch bằng một transaction; hỗ trợ **complete zero-row batch**: đã xuất bản và xác nhận đầy đủ mới mang nghĩa tồn=0. Chưa có batch, batch lỗi/chưa publish => **UNKNOWN/UNAVAILABLE**, không suy thành tồn=0. Không lấy `min(row.as_of)` làm batch timestamp.
+- **Alias/pool (SRC-Q10):** `physical_stock_pool_id` (tên logical được đề xuất) xác định **lượng tồn kho vật lý** theo warehouse; các local SKU alias của cùng pool chỉ count **một lần** sau chuyển số lượng về base bằng `units_to_base`. Pool độc lập mới cộng; thiếu pool ID/mapping không chắc chắn => chặn/quarantine chứ không last-row-wins/cộng mù. Dev 1+2 review uniqueness theo `(market, warehouse, physical_pool_id, batch_id)` và ngoại lệ hàng nhiều presentation; không khẳng định UNIQUE này đã được tạo.
+- **Bất biến CFO cancellation/replan:** preapproval source CANCELLED phải release hold và chuyển trạng thái bằng transition được phép + audit (hiện transition table chưa bao phủ mọi đường); postapproval pre-dispatch tạo alert và `replan_suggestion` **không hold**, Dispatcher mới duyệt swap bằng transaction; sau DISPATCHED alert-only. Không xóa lịch sử đã giao, không tự chuyển legacy/cfo cũ. Triển khai migration, adapter, tests sau review, không tự vượt state machine.
+
+
 
 ## 11. Thứ tự migration và seed
 
