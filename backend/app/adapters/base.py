@@ -42,6 +42,16 @@ class OrderDTO:
     sales_code: str | None
     store_code: str | None
     lines: tuple[OrderLineDTO, ...]
+    address_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class CancellationDTO:
+    external_ref: str
+    version: int
+    updated_at: datetime
+    cancel_reason: dict[str, str | None] | None
+    cancelled_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -110,6 +120,9 @@ class MarketAdapter(Protocol):
     market_code: str
 
     def fetch_orders(self, updated_since: datetime, page_size: int = 200) -> AsyncIterator[OrderDTO]: ...
+    def fetch_cancelled_orders(
+        self, updated_since: datetime, page_size: int = 200
+    ) -> AsyncIterator[CancellationDTO]: ...
     def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]: ...
     def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]: ...
     async def fetch_stock(self) -> StockSnapshotDTO: ...

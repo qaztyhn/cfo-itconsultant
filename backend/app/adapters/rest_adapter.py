@@ -15,7 +15,15 @@ from typing import Literal, cast
 import httpx
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError, field_validator
 
-from app.adapters.base import CustomerDTO, ProductDTO, StockItemDTO, StockSnapshotDTO
+from app.adapters.base import (
+    CancellationDTO,
+    CustomerDTO,
+    OrderDTO,
+    ProductDTO,
+    StockItemDTO,
+    StockSnapshotDTO,
+)
+from app.adapters.order_wire import SourceCancellation, SourceOrder
 
 
 class _Customer(BaseModel):
@@ -106,8 +114,15 @@ class RestMarketAdapter:
             raise ValueError("Page safety limit must be positive")
         self._max_pages = max_pages
 
-    async def _pages[T: _Customer | _Product](
-        self, entity: str, since: datetime, model: type[T], *, key_field: str, page_size: int = 50
+    async def _pages[T: _Customer | _Product | SourceOrder | SourceCancellation](
+        self,
+        entity: str,
+        since: datetime,
+        model: type[T],
+        *,
+        key_field: str,
+        page_size: int = 50,
+        filters: dict[str, str] | None = None,
     ) -> AsyncIterator[T]:
         if since.tzinfo is None or since.utcoffset() is None or not 1 <= page_size <= 500:
             raise ValueError("Source checkpoint must be aware and page size in 1..500")
@@ -122,7 +137,12 @@ class RestMarketAdapter:
                     response = await client.get(
                         self.base_url + entity,
                         headers={"X-API-Key": self._api_key},
-                        params={"updated_since": since.isoformat(), "page": page, "page_size": page_size},
+                        params={
+                            "updated_since": since.isoformat(),
+                            "page": page,
+                            "page_size": page_size,
+                            **(filters or {}),
+                        },
                     )
                     response.raise_for_status()
                     # JSON document is an external boundary; fractions are parsed without a float round-trip.
@@ -161,6 +181,30 @@ class RestMarketAdapter:
     async def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]:
         async for item in self._pages("customers", updated_since, _Customer, key_field="id"):
             yield CustomerDTO(item.id, item.type, item.name, item.email, item.phone, item.updated_at)
+
+    async def fetch_orders(self, updated_since: datetime, page_size: int = 200) -> AsyncIterator[OrderDTO]:
+        async for item in self._pages(
+            "orders",
+            updated_since,
+            SourceOrder,
+            key_field="id",
+            page_size=page_size,
+            filters={"status": "SUBMITTED_FOR_PLANNING"},
+        ):
+            yield item.dto()
+
+    async def fetch_cancelled_orders(
+        self, updated_since: datetime, page_size: int = 200
+    ) -> AsyncIterator[CancellationDTO]:
+        async for item in self._pages(
+            "orders",
+            updated_since,
+            SourceCancellation,
+            key_field="id",
+            page_size=page_size,
+            filters={"status": "CANCELLED"},
+        ):
+            yield item.dto()
 
     async def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]:
         async for item in self._pages("products", updated_since, _Product, key_field="sku"):
