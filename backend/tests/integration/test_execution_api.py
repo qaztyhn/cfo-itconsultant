@@ -145,7 +145,8 @@ def test_US_WH_04_AC4_missing_risk_dependency_rolls_back(execution_api: Api) -> 
                     "2026-11-10T07:00:00Z", {"crew_size": 3})
     assert_error(response, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 0
-    assert fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.customer_order")[0]["status"] == "APPROVED"
+    status = fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.customer_order")
+    assert status[0]["status"] == "APPROVED"
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.idempotency_key")[0]["n"] == 0
 
 
@@ -192,7 +193,8 @@ def test_US_EXE_02_AC4_outside_shift_and_incomplete_history_denied(
     )
     assert_error(send(execution_api, DRIVER, "DISPATCHED",
                       "2026-11-10T08:10:00Z", {"trip_id": 1}), 409, "PLAN_NOT_APPROVABLE")
-    assert fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.delivery_trip")[0]["status"] == "loading"
+    trip_state = fetch(execution_api.dsn, "SELECT status::text AS status FROM ops.delivery_trip")
+    assert trip_state[0]["status"] == "loading"
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
 
 
