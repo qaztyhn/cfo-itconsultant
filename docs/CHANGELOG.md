@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
+
+- Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
+- Đồng bộ đặc tả `04/05/06/09` cho: market grant/versioned stock scope/evidence 30 ngày; đối soát WMS transfer không double count; D7 56 ngày/11h nghỉ và legal vehicle scope; GPS một Dispatcher chính/trip, chứng cứ thông báo theo tài xế, 100 điểm/batch và xóa theo trip/ca; D4 transactional outbox/ETA window; POD theo `trip_stop`; `checks.*.passed` và rejected candidates flat; 10 KPI, diagnostics `null`.
+- Sửa ví dụ JSON trong `06` để không hiện `driver.name`, `promise_window_preview`, `drivers` override mà backend chưa hỗ trợ. Ghi rõ index unique POD theo `order_id` là lịch sử/superseded; **migration mới vẫn cần** để bỏ chỉ mục thực.
+- **Không có thay đổi code, schema migration, router hay API runtime**. PR #136 đã merge, Dev 3 tạo hotfix mới; các PR #121/#127/#129/#137/#143 cần tiếp tục triển khai/kiểm thử, **không auto-merge code**.
+
+
 ## [06 §6 — T16 trusted five-gate recheck nối vào `POST /plans/{id}/approve`] — 2026-11-08 — Dev 1, chờ review
 
 - `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã giữ** vẫn qua đủ 5 gate — so khớp từng `seq` (xe, tài xế, `load_kg`/`load_m3`/`load_lines`, 4 mốc giờ), các mốc giờ và giờ chuẩn bị cấp kế hoạch, khoảng cách/lái xe/dự phòng/route; Decimal so ở scale cột NUMERIC, thời điểm so như instant có múi giờ (naive không khớp); lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
