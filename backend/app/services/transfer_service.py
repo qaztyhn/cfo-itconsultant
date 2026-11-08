@@ -114,7 +114,7 @@ async def _manager(session: AsyncSession, actor: object, warehouse_id: int, mark
     if "warehouse" not in _roles(actor):
         raise _error("FORBIDDEN", "Warehouse permission required.")
     if warehouse_id not in tuple(getattr(actor, "location_ids", ())):
-        raise _error("FORBIDDEN", "Warehouse manager permission required.")
+        raise _error("NOT_FOUND", "Transfer not found.")
     today = _today(market)
     manager = await session.scalar(
         select(LocationManager.id)
