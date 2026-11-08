@@ -164,6 +164,17 @@ def test_US_WH_04_AC2_ordering_and_multi_vehicle_loading(
         409,
         "ILLEGAL_TRANSITION",
     )
+    assert_error(
+        send(
+            execution_api,
+            WAREHOUSE,
+            "SHORTAGE",
+            "2026-11-10T06:55:00Z",
+            {"sku": "SE-SYN", "qty_missing": 1},
+        ),
+        409,
+        "ILLEGAL_TRANSITION",
+    )
     send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3})
     assert_error(
         send(execution_api, WAREHOUSE, "GOODS_READY", "2026-11-10T06:00:00Z"), 409, "ILLEGAL_TRANSITION"
