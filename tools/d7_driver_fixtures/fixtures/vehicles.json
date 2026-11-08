@@ -1,0 +1,178 @@
+{
+  "kind": "vehicles",
+  "records": [
+    {
+      "capacity_kg": 1000,
+      "market": "SE",
+      "max_permissible_mass_kg": 3500,
+      "regulation_561_scope": "unknown",
+      "required_licence": "B",
+      "scope_evidence": null,
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "GBG-03-02",
+      "vehicle_type": "van",
+      "warehouse_code": "GBG"
+    },
+    {
+      "capacity_kg": 6000,
+      "market": "SE",
+      "max_permissible_mass_kg": 12000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "GBG-12-03",
+      "vehicle_type": "rigid",
+      "warehouse_code": "GBG"
+    },
+    {
+      "capacity_kg": 6000,
+      "market": "SE",
+      "max_permissible_mass_kg": 12000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "STO-12-04",
+      "vehicle_type": "rigid",
+      "warehouse_code": "STO"
+    },
+    {
+      "capacity_kg": 6000,
+      "market": "SE",
+      "max_permissible_mass_kg": 12000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "MLM-12-02",
+      "vehicle_type": "rigid",
+      "warehouse_code": "MLM"
+    },
+    {
+      "capacity_kg": 10000,
+      "market": "SE",
+      "max_permissible_mass_kg": 18000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "GBG-18-01",
+      "vehicle_type": "rigid",
+      "warehouse_code": "GBG"
+    },
+    {
+      "capacity_kg": 10000,
+      "market": "SE",
+      "max_permissible_mass_kg": 18000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "MLM-18-01",
+      "vehicle_type": "rigid",
+      "warehouse_code": "MLM"
+    },
+    {
+      "capacity_kg": 16000,
+      "market": "SE",
+      "max_permissible_mass_kg": 26000,
+      "regulation_561_scope": "in_scope",
+      "required_licence": "CE",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "GBG-26-01",
+      "vehicle_type": "articulated",
+      "warehouse_code": "GBG"
+    },
+    {
+      "capacity_kg": 8000,
+      "market": "SE",
+      "max_permissible_mass_kg": 18000,
+      "regulation_561_scope": "unknown",
+      "required_licence": "C",
+      "scope_evidence": null,
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "STO-CR-01",
+      "vehicle_type": "crane",
+      "warehouse_code": "STO"
+    },
+    {
+      "capacity_kg": 12000,
+      "market": "SE",
+      "max_permissible_mass_kg": 26000,
+      "regulation_561_scope": "out_of_scope",
+      "required_licence": "C",
+      "scope_evidence": "synthetic_checked_context",
+      "scope_note": "Synthetic classification input; legal applicability requires independent review",
+      "transport_context": {
+        "country": "SE",
+        "exception_claim": null,
+        "operation": "domestic_goods",
+        "trailer_attached": false,
+        "trailer_max_permissible_mass_kg": null
+      },
+      "vehicle_code": "MLM-DUMP-01",
+      "vehicle_type": "tipper",
+      "warehouse_code": "MLM"
+    }
+  ],
+  "schema_version": "d7.synthetic.v1",
+  "source": "synthetic_demo"
+}

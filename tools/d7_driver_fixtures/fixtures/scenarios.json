@@ -1,0 +1,218 @@
+{
+  "kind": "scenarios",
+  "note": "Golden expectations; not a safety-gate implementation",
+  "records": [
+    {
+      "driver_code": "D04",
+      "expected_outcome": "candidate_for_planner_review",
+      "expected_reason_codes": [],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 240,
+      "proposed_duty_end": "2026-11-09T14:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "valid_candidate",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "block_automatic_approval",
+      "expected_reason_codes": [
+        "DRIVER_REST_INSUFFICIENT"
+      ],
+      "input_overrides": {
+        "additional_duty": {
+          "driving_min": 60,
+          "duty_end": "2026-11-08T23:00+01:00",
+          "duty_start": "2026-11-08T20:00+01:00"
+        }
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 180,
+      "proposed_duty_end": "2026-11-09T12:00+01:00",
+      "proposed_duty_start": "2026-11-09T07:00+01:00",
+      "scenario_id": "insufficient_rest",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D07",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "DRIVER_HISTORY_MISSING"
+      ],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-11-09T13:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "missing_history",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "block_automatic_approval",
+      "expected_reason_codes": [
+        "OUTSIDE_DRIVER_SHIFT"
+      ],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-11-09T22:00+01:00",
+      "proposed_duty_start": "2026-11-09T18:00+01:00",
+      "scenario_id": "off_shift_driver",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D10",
+      "expected_outcome": "block_automatic_approval",
+      "expected_reason_codes": [
+        "LICENCE_EXPIRED"
+      ],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-11-09T13:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "expired_licence",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D01",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "VEHICLE_SCOPE_UNKNOWN"
+      ],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 90,
+      "proposed_duty_end": "2026-11-09T12:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "unknown_vehicle_scope",
+      "vehicle_code": "GBG-03-02"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "VEHICLE_DATA_MISSING"
+      ],
+      "input_overrides": {
+        "vehicle_override": {
+          "max_permissible_mass_kg": null
+        }
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 100,
+      "proposed_duty_end": "2026-11-09T13:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "missing_vehicle_mass",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "block_automatic_approval",
+      "expected_reason_codes": [
+        "DRIVING_TIME_EXCEEDED",
+        "DRIVER_HOURS_EXCEEDED"
+      ],
+      "input_overrides": {
+        "future_shift_override": {
+          "shift_end": "2026-11-09T20:00+01:00",
+          "shift_start": "2026-11-09T07:00+01:00"
+        }
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 550,
+      "proposed_duty_end": "2026-11-09T18:00+01:00",
+      "proposed_duty_start": "2026-11-09T07:00+01:00",
+      "scenario_id": "driving_day_over_limit",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D06",
+      "expected_outcome": "candidate_for_planner_review",
+      "expected_reason_codes": [],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 180,
+      "proposed_duty_end": "2026-11-15T02:00+01:00",
+      "proposed_duty_start": "2026-11-14T21:00+01:00",
+      "scenario_id": "overnight_duty",
+      "vehicle_code": "MLM-12-02"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "DRIVER_SHIFT_MISSING"
+      ],
+      "input_overrides": {},
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-11-15T13:00+01:00",
+      "proposed_duty_start": "2026-11-15T09:00+01:00",
+      "scenario_id": "missing_shift",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D04",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "VEHICLE_SCOPE_UNKNOWN"
+      ],
+      "input_overrides": {
+        "vehicle_override": {
+          "regulation_561_scope": "unknown",
+          "transport_context": {
+            "country": "SE",
+            "exception_claim": null,
+            "operation": "international_goods",
+            "trailer_attached": true,
+            "trailer_max_permissible_mass_kg": null
+          }
+        }
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-11-09T12:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "transport_context_changed",
+      "vehicle_code": "GBG-12-03"
+    },
+    {
+      "driver_code": "D01",
+      "expected_outcome": "unknown_fail_closed",
+      "expected_reason_codes": [
+        "DRIVER_LICENCE_MISSING"
+      ],
+      "input_overrides": {
+        "driver_override": {
+          "licence_class": null
+        }
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 100,
+      "proposed_duty_end": "2026-11-09T12:00+01:00",
+      "proposed_duty_start": "2026-11-09T09:00+01:00",
+      "scenario_id": "licence_data_missing",
+      "vehicle_code": "GBG-03-02"
+    },
+    {
+      "driver_code": "D09",
+      "expected_outcome": "historical_evidence_only",
+      "expected_reason_codes": [],
+      "input_overrides": {
+        "history_reference": "history_week_06.json"
+      },
+      "legal_compliance_certified": false,
+      "proposed_driving_min": 120,
+      "proposed_duty_end": "2026-10-25T04:30+01:00",
+      "proposed_duty_start": "2026-10-25T00:30+02:00",
+      "scenario_id": "dst_overnight_history",
+      "vehicle_code": "MLM-18-01"
+    }
+  ],
+  "schema_version": "d7.synthetic.v1",
+  "source": "synthetic_demo",
+  "timezone": "Europe/Stockholm"
+}
