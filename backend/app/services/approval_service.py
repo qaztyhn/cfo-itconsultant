@@ -205,7 +205,11 @@ async def _stock_available(
 ) -> None:
     for entry in stock:
         snapshot = await session.get(StockSnapshot, (entry.warehouse_id, entry.global_product_id))
-        if snapshot is None or snapshot.as_of < now - timedelta(minutes=cfg.stale_stock_min):
+        if (
+            snapshot is None
+            or snapshot.as_of < now - timedelta(minutes=cfg.stale_stock_min)
+            or snapshot.as_of > now + timedelta(minutes=cfg.stale_stock_min)
+        ):
             raise _fail("RESOURCE_CONFLICT", "Stock snapshot unavailable or stale.", conflict="stock")
         committed = await session.scalar(
             select(func.coalesce(func.sum(StockReservation.qty), 0)).where(
@@ -352,6 +356,16 @@ async def _approve(
     uid = _actor_id(actor)
     identity, replay = await _claim(session, key, uid, plan_id, payload)
     if replay is not None:
+        # A previously successful request must not disclose data after role or
+        # store access has been revoked.
+        order, _, _, market = await _order_and_plan(session, plan_id)
+        roles = _roles(actor)
+        if not roles.intersection({"dispatcher", "sales"}):
+            raise _fail("FORBIDDEN", "Approval permission revoked.")
+        if getattr(actor, "market", None) != market.code:
+            raise _fail("NOT_FOUND", "Plan not found.")
+        if "dispatcher" not in roles and order.origin_store_id not in getattr(actor, "location_ids", ()):
+            raise _fail("NOT_FOUND", "Plan not found.")
         return replay
 
     order, plan, run, market = await _order_and_plan(session, plan_id)
@@ -365,7 +379,12 @@ async def _approve(
         order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
     ):
         raise _fail("NOT_FOUND", "Plan not found.")
-    if order.status != "PLANNED" or plan.status != "proposed" or run.kind == "replan_suggestion":
+    if (
+        order.status != "PLANNED"
+        or plan.status != "proposed"
+        or run.kind == "replan_suggestion"
+        or run.result != "feasible"
+    ):
         raise _fail("PLAN_NOT_APPROVABLE", "This plan cannot be approved from the current order state.")
     if order.version != run.order_version or plan.order_id != order.id:
         raise _fail("PLAN_NOT_APPROVABLE", "Order data changed; re-run planning.")
