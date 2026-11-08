@@ -328,3 +328,47 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 0
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 2
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.alert WHERE type='EXCEPTION'")[0]["n"] == 1
+
+
+def test_US_WH_04_AC1_assigned_shift_supervisor_can_record_event(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    execute(
+        execution_api.dsn,
+        "UPDATE hr.warehouse_staff SET role='supervisor' WHERE employee_id=4",
+        "UPDATE ref.app_user SET roles='{warehouse}' WHERE id=4",
+    )
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    result = send(
+        execution_api, 4, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 2}
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["order_status"] == "PREPARING"
+
+
+def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    for event, at, payload in (
+        ("START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        ("GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        ("LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        ("LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+    ):
+        assert send(execution_api, WAREHOUSE, event, at, payload).status_code == 200
+    execute(
+        execution_api.dsn,
+        "UPDATE hr.driver_staff SET licence_expires_on='2026-11-09' WHERE employee_id=5",
+    )
+    assert_error(
+        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        422,
+        "LICENCE_EXPIRED",
+    )
+    assert_error(
+        send(execution_api, 15, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        403,
+        "FORBIDDEN",
+    )
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
