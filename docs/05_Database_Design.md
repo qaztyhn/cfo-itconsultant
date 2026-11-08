@@ -453,6 +453,10 @@ CREATE TABLE ops.stock_transfer (                -- gợi ý bằng quy tắc, d
   received_at timestamptz,
   CHECK (from_warehouse_id <> to_warehouse_id)
 );
+-- D1-01/02: ops.transfer_status đã gồm 'cancelled'/'received'; audit action là
+-- TRANSFER_CANCELLED khi hủy (actor, reason, ts, before, after), TRANSFER_RECEIVED
+-- khi kho đích nhận; TRANSFER_CONFIRMED chỉ dành cho kho nguồn xác nhận xuất.
+-- Ghi audit trong cùng transaction với trạng thái; không dùng TRANSFER_APPROVED cho hủy.
 CREATE TABLE ops.stock_transfer_line (
   transfer_id bigint NOT NULL REFERENCES ops.stock_transfer(id),
   global_product_id bigint NOT NULL REFERENCES ref.product_global(id),
@@ -693,6 +697,12 @@ Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt
 
 **Gợi ý lập lại tự động (v1.2).** Khi một đơn đã duyệt gặp một trong bốn tín hiệu — (a) nguồn sửa đơn sau khi duyệt, (b) tồn kho đổi làm kế hoạch không còn hợp lệ, (c) `VEHICLE_ISSUE`, (d) giao `FAILED` — hệ thống tạo `planning_run(kind='replan_suggestion', trigger=…)`. Engine chạy **coi như kế hoạch hiện tại của chính đơn này không tồn tại** (giữ chỗ hàng, giờ công, xe, tài xế của nó được cộng lại vào phần khả dụng) để không tính sai nhân công, công suất, tồn kho. Lần chạy này **không tạo giữ chỗ** (tránh trùng chỉ mục với giữ chỗ `committed` của chính đơn). Hệ thống tạo alert `REPLAN_SUGGESTED` cho dispatcher. Dispatcher: **duyệt** (đóng kế hoạch cũ theo 5 bước trên rồi khóa, kiểm tra lại và commit kế hoạch mới trong cùng transaction; `409 RESOURCE_CONFLICT` nếu tài nguyên đã bị chiếm), **giữ kế hoạch cũ** (lý do), hoặc lập lại thủ công. Không bao giờ tự duyệt. Đơn đã `DISPATCHED` chỉ nhận alert.
 
+### 6.1 Contract versioned scope SKU và evidence (DEC-DEV1-D1-03/04)
+
+**Đã duyệt nghiệp vụ, chưa chốt DDL:** scope SKU CFO phải do quản trị viên có thẩm quyền theo **market/pilot** quản lý/phê duyệt, có **version, hiệu lực và audit**; không suy từ mapping hoặc Source batch. Chứng cứ tồn độc lập do **Warehouse Manager** cung cấp từ kho/WMS; quản trị viên có thẩm quyền phê duyệt; lưu **bằng chứng/provenance, approver, version, hiệu lực và audit**. Thiếu/hết hiệu lực/chồng lấn thì không cộng và không ghi một phần vào `ops.stock_snapshot`.
+
+**Handoff Dev 1/2:** thiết kế DDL/migration/chi tiết quyền server-side, lưu trữ version + audit, ràng buộc market/pilot/warehouse/SKU, effective version theo `batch_id/as_of`, thu hồi bằng chứng khi Source/mapping đổi, atomic persistence và PostgreSQL tests. Các tên bảng/cột/route mới **chưa được owner phê duyệt**; đoạn này không cho phép tự invent schema hay coi T07 stock writer đã xong. Xem `ASSUMPTIONS.md` và `decisions/DEV1_D1_01_04_APPROVED_20261108.md`.
+
 ## 7. Schema `plan` — kế hoạch và giữ chỗ
 
 ```sql
@@ -812,6 +822,9 @@ CREATE TABLE audit.decision_log (               -- nhật ký quyết định [C
   reason_code text, reason_text text,
   snapshot jsonb, before jsonb, after jsonb
 );
+-- DEC-DEV1-D1-01/02 (2026-11-08): action hiện là text; action names
+-- TRANSFER_CANCELLED, TRANSFER_RECEIVED cần triển khai trong Action catalogue.
+-- before/after, actor và ts lưu tại đây trong cùng business transaction.
 CREATE INDEX ix_decision_order ON audit.decision_log (order_id, ts);
 CREATE INDEX ix_decision_action ON audit.decision_log (action, ts);
 CREATE TABLE audit.improvement_log (            -- kế hoạch so với thực tế, dùng hiệu chỉnh buffer và định mức [S]
