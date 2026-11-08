@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [05 §10 / 06 §16 — bản chụp đơn nguồn và GET /orders] — 2026-11-08 — theo DEC-SRC-001, chờ review
+
+- `05` §10: `src_order` thêm 8 cột bản chụp (SRC-Q1), nullable; nâng cấp cộng thêm, giữ dữ liệu.
+- `06` §16: ghi rõ `GET /orders` — phong bì `{items,page,page_size,total}`, `page_size` mặc định 50 tối đa 500, `updated_since` bao gồm (`>=`), thứ tự `(updated_at, id)`, biểu diễn đơn, lỗi 422 không phản chiếu giá trị.
+- Không đổi mã lỗi/route/enum; không thêm migration CFO. **Chưa** có: ghi đơn, validate/submit/cancel, các danh sách khác, OpenAPI baseline.
+
+
 ## [DEC-HOLD-001 — hết hold phải Plan Again, không hồi sinh plan cũ] — 2026-11-08 — owner approved, docs-only
 
 - Hold hết hạn: trả giữ chỗ, đặt plan `expired`, trả đơn `PLANNED` về trạng thái chờ lập kế hoạch `SUBMITTED` **chỉ khi đúng run vừa hết hạn và chưa có run/approval mới**. Không được duyệt plan expired kể cả Dispatcher, dù nguồn lực vẫn còn.
