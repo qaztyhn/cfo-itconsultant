@@ -274,7 +274,7 @@ Không có điểm số, GPS, `snapshot`/`before`/`after` của decision log tro
     { "id": 2001, "rank": 1, "status": "proposed",
       "warehouse": { "id": 3, "name": "Malmö DC" },
       "vehicle_count": 1, "total_capacity_kg": 6000, "total_capacity_m3": 40,
-      "vehicles": [ { "seq": 1, "vehicle": { "id": 15, "code": "MLM-12-02", "name": "Truck 12 t", "capacity_kg": 6000, "capacity_m3": 40 },
+      "vehicles": [ { "seq": 1, "vehicle": { "id": 15, "code": "MLM-12-02", "name": "Truck 12 t", "capacity_kg": "6000", "capacity_m3": "40" },
                       "driver": { "employee_id": 71, "name": "Johan Ek" }, "load_kg": 4120, "load_m3": 9.6,
                       "load_lines": [ { "line_no": 1, "qty_base": 800 } ],
                       "loading_start_at": "2026-11-12T11:20:00Z", "depart_at": "2026-11-13T05:10:00Z", "eta_at": "2026-11-13T07:00:00Z" } ],
