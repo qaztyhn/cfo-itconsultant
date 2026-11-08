@@ -761,14 +761,25 @@ const REVENUE_DAILY = Array.from({ length: 30 }, (_, i) => {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-import { authHandlers } from "./authHandlers"
+import { authHandlers, errorResponse } from "./authHandlers";
+import {
+  authorize,
+  GPS_READ_ROLES,
+  ORDER_READ_ROLES,
+  orderInScope,
+  projectOrderDetail,
+  projectOrderListItem,
+} from "./authorization";
 
 export const handlers = [
   ...authHandlers,
   // Orders — chỉ đơn CFO (DEC-ROUTING-002). Đơn legacy (LEGACY_ORDERS) không có trong list/detail/counts;
   // GET /orders/:id của đơn legacy trả 404 NOT_FOUND.
   http.get(`${BASE}/orders`, ({ request }) => {
-    const result = listOrders(ORDER_RECORDS, new URL(request.url).searchParams);
+    const auth = authorize(request, ORDER_READ_ROLES);
+    if (!auth.ok) return auth.response;
+    const scoped = ORDER_RECORDS.filter((o) => orderInScope(auth.account.user, o));
+    const result = listOrders(scoped, new URL(request.url).searchParams);
     if (!result.ok) {
       const cid = request.headers.get("X-Correlation-ID") ?? crypto.randomUUID();
       return HttpResponse.json(
@@ -776,17 +787,32 @@ export const handlers = [
         { status: 422, headers: { "X-Correlation-ID": cid } },
       );
     }
-    return HttpResponse.json(result.body);
+    return HttpResponse.json({ ...result.body, items: result.body.items.map((i) => projectOrderListItem(auth.account.user, i)) });
   }),
 
-  http.get(`${BASE}/orders/counts`, () => {
-    return HttpResponse.json(computeOrderCounts(ORDERS, ALERTS, { now: MOCK_NOW, timezone: MARKET_TIMEZONE }));
+  http.get(`${BASE}/orders/counts`, ({ request }) => {
+    const auth = authorize(request, ORDER_READ_ROLES);
+    if (!auth.ok) return auth.response;
+    const ids = new Set(ORDER_RECORDS.filter((o) => orderInScope(auth.account.user, o)).map((o) => o.id));
+    return HttpResponse.json(
+      computeOrderCounts(
+        ORDERS.filter((o) => ids.has(o.id)),
+        ALERTS.filter((a) => ids.has(a.order_id)),
+        { now: MOCK_NOW, timezone: MARKET_TIMEZONE },
+      ),
+    );
   }),
 
-  http.get(`${BASE}/orders/:id`, ({ params }) => {
-    const order = ORDERS.find((o) => o.id === Number(params.id));
-    if (!order) return HttpResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
-    return HttpResponse.json(order);
+  http.get(`${BASE}/orders/:id`, ({ params, request }) => {
+    const auth = authorize(request, ORDER_READ_ROLES);
+    if (!auth.ok) return auth.response;
+    const id = Number(params.id);
+    const order = ORDERS.find((o) => o.id === id);
+    const record = ORDER_RECORDS.find((o) => o.id === id);
+    if (!order || !record || !orderInScope(auth.account.user, record)) {
+      return errorResponse(request, 404, "NOT_FOUND", "Order not found."); // ngoài phạm vi cũng 404, không lộ sự tồn tại
+    }
+    return HttpResponse.json(projectOrderDetail(auth.account.user, order));
   }),
 
   // Planning
@@ -867,8 +893,10 @@ export const handlers = [
     return HttpResponse.json({ event_id: 998, status: "recorded" });
   }),
 
-  // GPS
-  http.get(`${BASE}/gps/live`, () => {
+  // GPS — chỉ dispatcher được xem (docs/06 mục 3, mục 9)
+  http.get(`${BASE}/gps/live`, ({ request }) => {
+    const auth = authorize(request, GPS_READ_ROLES);
+    if (!auth.ok) return auth.response;
     return HttpResponse.json({
       positions: [
         {

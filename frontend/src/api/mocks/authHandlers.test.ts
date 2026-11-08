@@ -13,6 +13,11 @@ import { API_BASE_URL } from "../config";
 
 const server = setupServer(...handlers);
 
+async function signInAs(email: string): Promise<void> {
+  const { access_token } = await login({ email, password: "x" });
+  useAuthStore.setState({ token: access_token });
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 beforeEach(() => {
   useAuthStore.setState({ token: null, user: null });
@@ -68,25 +73,54 @@ describe("login (US-EMP-03)", () => {
   it("rejects an empty password with 422 VALIDATION_ERROR", async () => {
     await expect(login({ email: "dispatcher@cfo.demo", password: "" })).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
   });
+});
 
-  it("answers 429 after 5 failed attempts within a minute and recovers afterwards", async () => {
+describe("login rate limit — ASM-003 (5 lần/60 giây/IP, kể cả lần thành công)", () => {
+  const start = new Date("2026-11-07T10:00:00Z");
+  const ok = { email: "dispatcher@cfo.demo", password: "x" };
+
+  beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    const start = new Date("2026-11-07T10:00:00Z");
     vi.setSystemTime(start);
-
-    for (let i = 0; i < 5; i++) {
-      await expect(login({ email: "nobody@cfo.demo", password: "x" })).rejects.toMatchObject({ status: 401 });
-    }
-    await expect(login({ email: "nobody@cfo.demo", password: "x" })).rejects.toMatchObject({ status: 429 });
-
-    vi.setSystemTime(new Date(start.getTime() + 61_000));
-    await expect(login({ email: "nobody@cfo.demo", password: "x" })).rejects.toMatchObject({ status: 401 });
   });
 
-  it("does not rate-limit a known account", async () => {
-    for (let i = 0; i < 7; i++) {
-      await expect(login({ email: "dispatcher@cfo.demo", password: "x" })).resolves.toBeDefined();
+  it("blocks the 6th attempt with 429 AUTH_INVALID even when the first 5 succeeded, then recovers after 60s", async () => {
+    for (let i = 0; i < 5; i++) {
+      await expect(login(ok)).resolves.toBeDefined();
     }
+    await expect(login(ok)).rejects.toMatchObject({
+      status: 429,
+      code: "AUTH_INVALID",
+      message: "Too many login attempts. Try again in a minute.",
+    });
+
+    vi.setSystemTime(new Date(start.getTime() + 61_000));
+    await expect(login(ok)).resolves.toBeDefined();
+  });
+
+  it("counts successful and failed attempts together", async () => {
+    for (let i = 0; i < 3; i++) {
+      await expect(login({ email: "nobody@cfo.demo", password: "x" })).rejects.toMatchObject({ status: 401 });
+    }
+    await expect(login(ok)).resolves.toBeDefined();
+    await expect(login(ok)).resolves.toBeDefined();
+    await expect(login(ok)).rejects.toMatchObject({ status: 429 });
+  });
+
+  it("shares one counter across different emails (per IP, not per email)", async () => {
+    for (const a of MOCK_ACCOUNTS.slice(0, 5)) {
+      await expect(login({ email: a.email, password: "x" })).resolves.toBeDefined();
+    }
+    await expect(login({ email: MOCK_ACCOUNTS[5].email, password: "x" })).rejects.toMatchObject({ status: 429 });
+  });
+
+  it("does not count 422 validation errors toward the limit", async () => {
+    for (let i = 0; i < 4; i++) {
+      await expect(login(ok)).resolves.toBeDefined();
+    }
+    await expect(login({ ...ok, password: "" })).rejects.toMatchObject({ status: 422 });
+    await expect(login(ok)).resolves.toBeDefined(); // lần thứ 5
+    await expect(login(ok)).rejects.toMatchObject({ status: 429 });
   });
 });
 
@@ -114,6 +148,7 @@ describe("session endpoints", () => {
 });
 
 describe("GET /orders/counts follows docs/06 mục 5.4", () => {
+  beforeEach(() => signInAs("dispatcher@cfo.demo"));
   interface Counts {
     all: number;
     needs_plan: number;
@@ -181,6 +216,7 @@ describe("GET /orders/counts follows docs/06 mục 5.4", () => {
 });
 
 describe("GET /orders follows docs/06 mục 5.4", () => {
+  beforeEach(() => signInAs("dispatcher@cfo.demo"));  
   interface ListBody {
     items: { id: number; [key: string]: unknown }[];
     page: number;
@@ -220,6 +256,131 @@ describe("GET /orders follows docs/06 mục 5.4", () => {
   it("rejects invalid paging/sort with 422 VALIDATION_ERROR", async () => {
     await expect(apiGet("/orders", { page_size: "201" })).rejects.toMatchObject({ status: 422, code: "VALIDATION_ERROR" });
     await expect(apiGet("/orders", { sort: "customer_name" })).rejects.toMatchObject({ status: 422, code: "VALIDATION_ERROR" });
+  });
+});
+
+describe("mock authorization: xác thực, role/scope, lọc trường (docs/06 mục 3, 5.2, 5.3, 9)", () => {
+  // Đây là test của MOCK. Nó không chứng minh API thật đã bảo vệ dữ liệu; backend vẫn phải có test 401/403/404 riêng.
+  type Row = Record<string, unknown>;
+  interface ListBody { items: Row[]; total: number }
+  interface CountsBody { all: number; awaiting_approval: number; in_execution: number; delivered_today: number; nav: { exceptions: number } }
+  const idsOf = (body: ListBody) => body.items.map((i) => i.id);
+
+  describe("không có token → 401 AUTH_INVALID", () => {
+    it.each(["/orders", "/orders/counts", "/orders/123", "/gps/live"])("%s", async (path) => {
+      await expect(apiGet(path)).rejects.toMatchObject({ status: 401, code: "AUTH_INVALID" });
+    });
+  });
+
+  describe("viewer (Business owner / Project lead) → 403 FORBIDDEN trên đơn", () => {
+    it.each(["owner@cfo.demo", "projectlead@cfo.demo"])("%s", async (email) => {
+      await signInAs(email);
+      for (const path of ["/orders", "/orders/counts", "/orders/123"]) {
+        await expect(apiGet(path)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+      }
+    });
+  });
+
+  describe("GET /gps/live chỉ dispatcher", () => {
+    it("dispatcher đọc được vị trí", async () => {
+      await signInAs("dispatcher@cfo.demo");
+      const body = await apiGet<{ positions: unknown[] }>("/gps/live");
+      expect(body.positions.length).toBeGreaterThan(0);
+    });
+
+    it.each(["admin@cfo.demo", "wm.got@cfo.demo", "sales@cfo.demo", "driver1@cfo.demo", "cs@cfo.demo", "owner@cfo.demo"])(
+      "%s bị 403",
+      async (email) => {
+        await signInAs(email);
+        await expect(apiGet("/gps/live")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+      },
+    );
+  });
+
+  describe("phạm vi đơn theo vai trò (mục 5.2)", () => {
+    it.each(["dispatcher@cfo.demo", "admin@cfo.demo", "cs@cfo.demo", "sales@cfo.demo"])("%s thấy cả 9 đơn CFO", async (email) => {
+      await signInAs(email);
+      expect((await apiGet<ListBody>("/orders")).total).toBe(9);
+    });
+
+    it("warehouse chỉ thấy đơn của kho mình (wm.got → kho 1)", async () => {
+      await signInAs("wm.got@cfo.demo");
+      expect(idsOf(await apiGet<ListBody>("/orders"))).toEqual([118, 160, 123]);
+    });
+
+    it("warehouse lọc theo kho ngoài phạm vi → danh sách rỗng", async () => {
+      await signInAs("wm.got@cfo.demo");
+      const body = await apiGet<ListBody>("/orders", { warehouse_id: "2" });
+      expect(body.total).toBe(0);
+      expect(body.items).toEqual([]);
+    });
+
+    it("driver chỉ thấy đơn trên chuyến của mình", async () => {
+      await signInAs("driver1@cfo.demo");
+      expect(idsOf(await apiGet<ListBody>("/orders"))).toEqual([129]);
+    });
+
+    it("/orders/counts đếm theo phạm vi của người gọi", async () => {
+      await signInAs("wm.got@cfo.demo");
+      expect(await apiGet<CountsBody>("/orders/counts")).toMatchObject({
+        all: 3, awaiting_approval: 2, in_execution: 0, delivered_today: 1, nav: { exceptions: 0 },
+      });
+    });
+
+    it("/orders/counts của driver chỉ tính đơn của mình", async () => {
+      await signInAs("driver1@cfo.demo");
+      expect(await apiGet<CountsBody>("/orders/counts")).toMatchObject({ all: 1, in_execution: 1 });
+    });
+
+    it("đơn ngoài phạm vi → 404 NOT_FOUND (không lộ sự tồn tại)", async () => {
+      await signInAs("wm.got@cfo.demo");
+      await expect(apiGet("/orders/141")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" }); // đơn kho STO
+    });
+
+    it("driver mở đơn không thuộc chuyến mình → 404, đơn của mình → 200", async () => {
+      await signInAs("driver1@cfo.demo");
+      await expect(apiGet("/orders/123")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+      await expect(apiGet("/orders/129")).resolves.toMatchObject({ id: 129 });
+    });
+  });
+
+  describe("lọc trường theo vai trò: trường bị cấm bị bỏ hẳn, không trả null (mục 5.3, 5.4)", () => {
+    const DRIVER_LIST_FORBIDDEN = ["origin_store", "block_reason", "total_amount", "currency", "risk_color", "date_request"];
+
+    it("danh sách: dispatcher có đủ trường, driver thì không", async () => {
+      await signInAs("dispatcher@cfo.demo");
+      const full = (await apiGet<ListBody>("/orders")).items[0];
+      for (const key of DRIVER_LIST_FORBIDDEN) expect(full).toHaveProperty(key);
+
+      useAuthStore.setState({ token: null });
+      resetLoginRateLimit();
+      await signInAs("driver1@cfo.demo");
+      const limited = (await apiGet<ListBody>("/orders")).items[0];
+      for (const key of DRIVER_LIST_FORBIDDEN) expect(limited).not.toHaveProperty(key);
+      expect(limited).toHaveProperty("customer_name");
+    });
+
+    it("chi tiết: dispatcher có approved_plan_id và khối lượng/thể tích", async () => {
+      await signInAs("dispatcher@cfo.demo");
+      expect(await apiGet<Row>("/orders/129")).toMatchObject({ approved_plan_id: 129, total_kg: 1200, total_m3: 3 });
+    });
+
+    it.each(["sales@cfo.demo", "cs@cfo.demo"])("chi tiết: %s không có approved_plan_id, total_kg, total_m3", async (email) => {
+      await signInAs(email);
+      const detail = await apiGet<Row>("/orders/129");
+      for (const key of ["approved_plan_id", "total_kg", "total_m3"]) expect(detail).not.toHaveProperty(key);
+      expect(detail).toHaveProperty("customer_name");
+    });
+
+    it("chi tiết: driver chỉ còn tên khách, giao hàng và cửa sổ giờ", async () => {
+      await signInAs("driver1@cfo.demo");
+      const detail = await apiGet<Row>("/orders/129");
+      for (const key of ["approved_plan_id", "total_kg", "total_m3", "risk_color", "risk_status", "date_mode", "date_from", "date_to"]) {
+        expect(detail).not.toHaveProperty(key);
+      }
+      expect(detail).toMatchObject({ customer_name: "Privatperson Malmö", window_start: "12:00", window_end: "18:00" });
+      expect(detail).toHaveProperty("site_address");
+    });
   });
 });
 

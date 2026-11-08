@@ -1,8 +1,8 @@
 /**
  * MSW handlers cho xác thực theo docs/06 mục 4. Owner: Dev 3 (luồng C) — M0.
  * Mock KHÔNG lưu mật khẩu nào (09 bất biến 25): email demo đã biết + mật khẩu không rỗng → 200.
- * Email lạ → 401 AUTH_INVALID. 5 lần sai liên tiếp trong 60 giây → 429 (06: "quá 5 lần/phút").
- * Mock PASS không chứng minh tích hợp thật PASS.
+ * Email lạ → 401 AUTH_INVALID. Mô phỏng ASM-003: tối đa 5 lần thử đăng nhập/60 giây/IP (cửa sổ trượt),
+ * tính cả lần thành công; lần thứ 6 → 429 AUTH_INVALID. Trình duyệt chỉ có một "IP" nên mock dùng một khóa cố định.
  */
 import { http, HttpResponse } from "msw";
 import { API_BASE_URL } from "../config";
@@ -10,8 +10,9 @@ import type { AuthUser, LoginRequest, LoginResponse } from "../contracts/auth";
 
 export const MOCK_TOKEN_PREFIX = "mock-jwt.";
 const EXPIRES_IN_SECONDS = 28_800;
-const MAX_FAILED_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 60_000;
+const MOCK_CLIENT_KEY = "mock-client-ip";
 
 export interface MockAccount {
   email: string;
@@ -32,25 +33,30 @@ export const MOCK_ACCOUNTS: MockAccount[] = [
   { email: "projectlead@cfo.demo", user: { id: 8, employee_id: 108, name: "Ingrid Larsson", roles: ["viewer"], kpi_scopes: ["ops"], location_ids: [], ...common } },
 ];
 
-const failures = new Map<string, number[]>();
+const attempts = new Map<string, number[]>();
 
-function recentFailureCount(email: string): number {
+/** Giống LoginRateLimiter.hit() của backend: mọi lần thử đều tính; lần bị chặn thì không tính. */
+function hitLoginRateLimit(key: string): boolean {
   const now = Date.now();
-  const recent = (failures.get(email) ?? []).filter((t) => now - t < WINDOW_MS);
-  failures.set(email, recent);
-  return recent.length;
+  const recent = (attempts.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
+  if (recent.length >= MAX_ATTEMPTS) {
+    attempts.set(key, recent);
+    return false;
+  }
+  attempts.set(key, [...recent, now]);
+  return true;
 }
 
 export function resetLoginRateLimit(): void {
-  failures.clear();
+  attempts.clear();
 }
 
-function errorResponse(request: Request, status: number, code: string, message: string) {
+export function errorResponse(request: Request, status: number, code: string, message: string) {
   const cid = request.headers.get("X-Correlation-ID") ?? crypto.randomUUID();
   return HttpResponse.json({ error: { code, message, correlation_id: cid } }, { status, headers: { "X-Correlation-ID": cid } });
 }
 
-function accountFromRequest(request: Request): MockAccount | undefined {
+export function accountFromRequest(request: Request): MockAccount | undefined {
   const header = request.headers.get("Authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
   if (!token.startsWith(MOCK_TOKEN_PREFIX)) {
@@ -71,17 +77,15 @@ export const authHandlers = [
     if (!email || !secret) {
       return errorResponse(request, 422, "VALIDATION_ERROR", "Email and password are required.");
     }
-    if (recentFailureCount(email) >= MAX_FAILED_ATTEMPTS) {
-      return errorResponse(request, 429, "RATE_LIMITED", "Too many attempts, try again in a minute.");
+    if (!hitLoginRateLimit(MOCK_CLIENT_KEY)) {
+      return errorResponse(request, 429, "AUTH_INVALID", "Too many login attempts. Try again in a minute.");
     }
 
     const account = MOCK_ACCOUNTS.find((a) => a.email === email);
     if (!account) {
-      failures.set(email, [...(failures.get(email) ?? []), Date.now()]);
       return errorResponse(request, 401, "AUTH_INVALID", "Invalid email or password.");
     }
 
-    failures.delete(email);
     const response: LoginResponse = {
       access_token: `${MOCK_TOKEN_PREFIX}${account.user.id}`,
       token_type: "bearer",
