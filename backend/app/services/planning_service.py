@@ -11,13 +11,30 @@ KHÔNG giữ chỗ, alert REPLAN_SUGGESTED (06 mục 6.6; US-APR-04).
 Owner: Dev 1 (A) — M4.
 """
 
-from collections.abc import Iterable
-from datetime import date, time
+from collections.abc import Awaitable, Callable, Iterable
+from datetime import date, datetime, time
 from decimal import Decimal
+from typing import cast
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.audit.actions import Action
+from app.audit.recorder import record_decision
+from app.core import clock
 from app.core.config import MarketConfig
-from app.engine.types import EngineConfig
-
+from app.core.db import get_sessionmaker
+from app.core.errors import DomainError
+from app.domain.enums import OrderStatus
+from app.domain.models.ops import CustomerOrder, DateNegotiation, OrderRouting
+from app.domain.models.plan import FulfilmentPlan, PlanningRun, PlanVehicle
+from app.domain.models.ref import Location, Market
+from app.domain.transitions import transition
+from app.engine.planner import plan_order
+from app.engine.types import EngineConfig, PlanCandidate, PlanningResult, RankWeights
+from app.engine.workload import compute_workload
+from app.services import reservation_service
+from app.services.planning_inputs import PlanningInputs, load_inputs
 
 def _dec(value: float | int) -> Decimal:
     """float của JSON cấu hình → Decimal qua chuỗi (tránh sai số nhị phân)."""
@@ -27,7 +44,7 @@ def _dec(value: float | int) -> Decimal:
 def _receiving_hours(cfg: MarketConfig) -> tuple[time, time]:
     windows = {tuple(v) for v in cfg.default_receiving_hours.values()}
     if len(windows) != 1:
-        raise ValueError("default_receiving_hours must define one window (engine supports a single window)")
+        raise ValueError("default_receiving_hours must specify one supported window")
     opens, closes = next(iter(windows))
     return time.fromisoformat(opens), time.fromisoformat(closes)
 
@@ -64,29 +81,6 @@ def engine_config(cfg: MarketConfig, holidays: Iterable[date]) -> EngineConfig:
     )
 
 
-# T14 implementation. Keep the pure engine conversion above independent of DB.
-from collections.abc import Awaitable, Callable
-from typing import Any, cast
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.audit.actions import Action
-from app.audit.recorder import record_decision
-from app.core import clock
-from app.core.db import get_sessionmaker
-from app.core.errors import DomainError
-from app.domain.enums import OrderStatus
-from app.domain.models.ops import CustomerOrder, DateNegotiation, OrderRouting
-from app.domain.models.plan import FulfilmentPlan, PlanningRun, PlanVehicle
-from app.domain.models.ref import Location, Market
-from app.domain.transitions import transition
-from app.engine.planner import plan_order
-from app.engine.types import PlanCandidate, PlanningResult, RankWeights, WarehouseCtx
-from app.engine.workload import compute_workload
-from app.services import reservation_service
-from app.services.planning_inputs import PlanningInputs, load_inputs
 
 InputLoader = Callable[..., Awaitable[PlanningInputs]]
 _VALID_KEYS = frozenset(
@@ -314,7 +308,9 @@ async def _execute_plan(
             actor_role="dispatcher",
         )
     inputs = await loader(session, order, market, now=now, params=params)
-    result = plan_order(inputs.order, list(inputs.warehouses), cast(EngineConfig, inputs.config), _weights(params))
+    result = plan_order(
+        inputs.order, list(inputs.warehouses), cast(EngineConfig, inputs.config), _weights(params)
+    )
     no = (existing.run_no + 1) if existing is not None else 1
     raw_rejections = [
         {
