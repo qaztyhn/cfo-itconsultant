@@ -104,7 +104,9 @@ def test_US_RES_01_AC3_extend_max_two_and_no_third(db: str) -> None:
     with pytest.raises(DomainError) as caught:
         _run(db, lambda s: reservation.extend(1, _actor(), session=s))
     assert caught.value.code == "HOLD_EXTENSION_LIMIT"
-    expiration, count = fetch(db, "SELECT hold_expires_at, hold_extensions FROM plan.planning_run WHERE id=1")[0]
+    expiration, count = fetch(
+        db, "SELECT hold_expires_at, hold_extensions FROM plan.planning_run WHERE id=1"
+    )[0]
     assert expiration - initial == timedelta(minutes=30)
     assert count == 2
     assert len(fetch(db, "SELECT id FROM audit.decision_log WHERE action='HOLD_EXTENDED'")) == 2
@@ -142,7 +144,8 @@ def test_US_RES_01_AC6_provisional_holds_can_exceed_stock(db: str) -> None:
         db,
         "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, position_code, hire_date) "
         "VALUES (1, 'E3', 'Test', 'Three', 'TEST_POS', '2026-01-01')",
-        "INSERT INTO ref.vehicle (home_warehouse_id, code, plate, name, capacity_kg, capacity_m3, required_licence) "
+        "INSERT INTO ref.vehicle (home_warehouse_id, code, plate, name, "
+        "capacity_kg, capacity_m3, required_licence) "
         "VALUES (1, 'V-3', 'TST003', 'Truck 3', 8000, 30, 'C')",
         rows.plan_sql(2, 2, 1),
         rows.plan_vehicle_sql(3, 1, 3, 3),
