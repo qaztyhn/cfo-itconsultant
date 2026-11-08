@@ -1,4 +1,4 @@
-"""M6 PostgreSQL lifecycle, RBAC and fail-closed integration (US-WH-04/05, US-EXE-01/02)."""
+"""M6 PostgreSQL tests for scoped execution, labour hours and fail-closed safety."""
 
 import json
 from datetime import UTC, datetime
