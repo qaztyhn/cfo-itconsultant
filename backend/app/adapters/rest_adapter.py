@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import cast
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from app.adapters.base import CustomerDTO, ProductDTO, StockItemDTO, StockSnapshotDTO
 
@@ -51,7 +51,12 @@ class SourceReadError(RuntimeError):
     """Safe error for ingestion; never includes HTTP bodies, URLs or credentials."""
 
 
+class StockUnavailable(SourceReadError):
+    """Source answered 503 STOCK_UNAVAILABLE: no complete published batch. Never means zero stock."""
+
+
 class _StockItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # a producer still sending pool identity is refused
     warehouse_code: str = Field(min_length=1)
     sku: str = Field(min_length=1)
     on_hand: Decimal = Field(allow_inf_nan=False)
@@ -59,7 +64,10 @@ class _StockItem(BaseModel):
 
 
 class _StockSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     as_of: AwareDatetime
+    batch_id: int = Field(gt=0, strict=True)
+    item_count: int = Field(ge=0, strict=True)
     items: list[_StockItem]
 
 
@@ -167,22 +175,29 @@ class RestMarketAdapter:
             )
 
     async def fetch_stock(self) -> StockSnapshotDTO:
-        """Fetch one complete snapshot; the caller owns persistence and sync status."""
+        """Fetch the latest complete published batch; the caller owns persistence and sync status.
+
+        `503 STOCK_UNAVAILABLE` raises `StockUnavailable`: keep the previous snapshot, never replace it with
+        an empty one. A legacy `{as_of, items}` body without batch markers is refused (no completeness proof).
+        """
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout_seconds, transport=self._transport, follow_redirects=False
             ) as client:
                 response = await client.get(self.base_url + "stock", headers={"X-API-Key": self._api_key})
-                response.raise_for_status()
-        except httpx.HTTPStatusError:
-            raise SourceReadError("Source stock request returned an unsuccessful status") from None
         except httpx.RequestError:
             raise SourceReadError("Source stock request failed") from None
+        if response.status_code == 503 and _error_code(response) == "STOCK_UNAVAILABLE":
+            raise StockUnavailable("Source stock snapshot is unavailable")
+        if response.status_code != 200:
+            raise SourceReadError("Source stock request returned an unsuccessful status")
         try:
             # Parse JSON fractions as Decimal before validation, avoiding a float round-trip.
             snapshot = _StockSnapshot.model_validate(json.loads(response.content, parse_float=Decimal))
         except (ValueError, ValidationError):
             raise SourceReadError("Source stock response is invalid") from None
+        if snapshot.item_count != len(snapshot.items):
+            raise SourceReadError("Source stock batch is incomplete")
         keys = [(item.warehouse_code, item.sku) for item in snapshot.items]
         if len(keys) != len(set(keys)):
             raise SourceReadError("Source stock response contains duplicate item keys")
@@ -192,4 +207,15 @@ class RestMarketAdapter:
                 StockItemDTO(item.warehouse_code, item.sku, item.on_hand, item.reserved)
                 for item in snapshot.items
             ),
+            batch_id=snapshot.batch_id,
+            item_count=snapshot.item_count,
         )
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    try:
+        body = json.loads(response.content)
+        code = body["error"]["code"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    return code if isinstance(code, str) else None

@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.4 — DTO tồn kho phía CFO theo fixed-SKU] — 2026-11-08 — thiết kế lại #107, chờ review Dev 1/Dev 2
+
+- Ghi rõ DTO `GET /stock` thống nhất (`as_of`, `batch_id`, `item_count`, `items`) và các quy tắc từ chối/chuẩn hóa của adapter CFO theo DEC-SRC-Q10-SKU-001 và DEC-SRC-Q9-ERROR-001. Không pool.
+- Không đổi DDL/route/mã lỗi mới ngoài `STOCK_UNAVAILABLE` đã duyệt; chưa có persistence tồn kho CFO.
+
+
 ## [DEC-SRC-Q9-ERROR-001 — Source 503 STOCK_UNAVAILABLE approved] — 2026-11-08 — docs-only PR #101
 
 - Chủ dự án đã duyệt phương án A: `GET /api/v1/stock` khi **chưa có batch tồn kho hoàn chỉnh nào đã publish** trả **HTTP 503**, `error.code = STOCK_UNAVAILABLE`, body/header lỗi chuẩn Source có `correlation_id`. Nếu published empty batch thì vẫn trả `200 items=[]` (tồn=0), không nhầm với unknown.
