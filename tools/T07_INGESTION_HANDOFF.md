@@ -103,3 +103,32 @@ transaction. Replays without a material reference change do not recalculate. Mis
 the affected reference row; callback failure rolls back the entire run. This keeps retry meaningful rather
 than acknowledging new data before downstream work exists. Initial risk/replan callback adapters are still
 Dev 1 handoffs, not automatically inferred from existing stub function names.
+
+## Delivery D: polling job and explicit scheduler worker
+
+`app.jobs.ingest.run_market` polls customers → products → orders (both statuses) → inbound → fleet,
+records every feed result and continues independent feeds after one failure. Incomplete runs or
+overlapping feed errors make the job fail visibly; no catch-and-return-zero success. Technical logs
+use the approved integration/scheduler services with market/counts only.
+
+`app.jobs.scheduler.create_scheduler` builds one job per market, its configured IANA timezone and
+`sync.interval_min`, coalescing missed invocations with max_instances=1. PostgreSQL leases still guard
+replicas/manual runs. Building/importing does not start jobs. No API startup, new `/internal/tick`
+contract or D8 GPS/outbox/nightly schedule is enabled. Rebuild the worker after market-config changes.
+
+Explicit commands from backend, with private `DATABASE_URL` and source-key-reference environment set:
+
+```powershell
+.venv/Scripts/python.exe -m app.jobs.ingest --market SE
+.venv/Scripts/python.exe -m app.jobs.scheduler
+```
+
+The first command is a one-off run and exits nonzero for partial/failed work. The second starts the
+ingest-only worker and runs until stopped. It must be operated separately from API replicas; do not
+also start an overlapping external cron. T14 risk/replan remains fail-closed until the server handoff
+is injected. No production API exposes callback injection. Stock remains excluded from this delivery.
+
+Recheck during implementation: #111 merged into main at `06ab96d` after the initial T07 audit; #105
+and #111 now agree on fixed-SKU/503 DTO. #106 is still open, reconciled on a new head awaiting review.
+Do not read the earlier initial audit as the current merge status or reuse superseded pool code.
+Full stock persistence/freshness still needs an all-or-nothing batch review and its own tests.

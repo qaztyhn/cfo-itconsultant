@@ -1,0 +1,27 @@
+{
+  "driver_count": 10,
+  "files": [
+    "drivers.json",
+    "future_shifts.json",
+    "history_week_01.json",
+    "history_week_02.json",
+    "history_week_03.json",
+    "history_week_04.json",
+    "history_week_05.json",
+    "history_week_06.json",
+    "history_week_07.json",
+    "history_week_08.json",
+    "scenarios.json",
+    "vehicles.json"
+  ],
+  "future_start": "2026-11-09",
+  "history_days_per_driver": 56,
+  "history_end": "2026-11-08",
+  "history_start": "2026-09-14",
+  "market": "SE",
+  "offline_only": true,
+  "schema_version": "d7.synthetic.v1",
+  "source": "synthetic_demo",
+  "timezone": "Europe/Stockholm",
+  "vehicle_count": 9
+}

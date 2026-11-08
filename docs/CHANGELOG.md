@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.4 — chuẩn hóa tồn kho CFO theo DEC-CFO-STOCK-SCOPE-001 và DEC-CFO-STOCK-INDEPENDENCE-001] — 2026-11-08 — chờ review Dev 1/Dev 2
+
+- `normalize_stock` nhận phạm vi SKU tường minh (ngoài phạm vi không chặn; trong phạm vi lỗi thì từ chối cả batch) và nhóm `verified_independent` (chỉ cộng nhiều SKU cùng kho cùng global product khi đã xác minh; mặc định từ chối). `GlobalStock.source_sku` đổi thành `source_skus`.
+- Không đổi DDL/route/mã lỗi; nơi lưu phạm vi và bằng chứng độc lập, lưu `ops.stock_snapshot`, độ mới và kiểm tra nguyên tử vẫn chưa làm.
+
+
 ## [06 §16.4 — DTO tồn kho phía CFO theo fixed-SKU] — 2026-11-08 — thiết kế lại #107, chờ review Dev 1/Dev 2
 
 - Ghi rõ DTO `GET /stock` thống nhất (`as_of`, `batch_id`, `item_count`, `items`) và các quy tắc từ chối/chuẩn hóa của adapter CFO theo DEC-SRC-Q10-SKU-001 và DEC-SRC-Q9-ERROR-001. Không pool.
