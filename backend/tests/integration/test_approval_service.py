@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import Callable, Coroutine, Iterator
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any
 
 import pytest
