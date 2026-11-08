@@ -37,8 +37,12 @@ def _role(actor: object, role: str) -> int:
 def _market_config(market: Market) -> MarketConfig:
     try:
         cfg = MarketConfig.model_validate(market.config or {})
-        if cfg.gps.interval_min < 1 or cfg.gps.lost_min < 1:
-            raise ValueError("Invalid GPS policy")
+        approved = MarketConfig().gps
+        if (
+            cfg.gps.interval_min != approved.interval_min
+            or cfg.gps.lost_min != approved.lost_min
+        ):
+            raise ValueError("Unapproved GPS collection or loss frequency")
         return cfg
     except ValueError as exc:
         raise DomainError("VALIDATION_ERROR", "Approved GPS configuration is unavailable.") from exc
