@@ -12,7 +12,14 @@ from app.api import health_router, router
 from app.auth import SourceAuthenticationError, authentication_error
 from app.config import Settings
 from app.db import create_engine
-from app.errors import SourceOrderError, StockUnavailable, order_error, request_id, stock_unavailable, validation_error
+from app.errors import (
+    SourceOrderError,
+    StockUnavailable,
+    order_error,
+    request_id,
+    stock_unavailable,
+    validation_error,
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
