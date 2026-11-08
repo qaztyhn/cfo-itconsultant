@@ -161,12 +161,19 @@ async def test_US_SRC_02_invalid_query_is_422_without_echoing_input(
     src: tuple[AsyncClient, AsyncEngine, str], params: dict[str, object]
 ) -> None:
     http, _, _ = src
-    r = await http.get("/api/v1/orders", headers=H, params=params)
+    # A correlation UUID can legitimately contain the rejected value ("501").
+    # Use a fixed one to keep that regression case deterministic.
+    correlation_id = "00000501-0000-4000-8000-000000000000"
+    r = await http.get("/api/v1/orders", headers={**H, "X-Correlation-ID": correlation_id}, params=params)
     assert r.status_code == 422
     error = r.json()["error"]
+    assert r.headers["X-Correlation-ID"] == correlation_id
+    assert error["correlation_id"] == correlation_id
     assert error["code"] == "VALIDATION_ERROR" and error["details"]["errors"]
     assert all(set(e) == {"loc", "type", "msg"} for e in error["details"]["errors"])
-    assert all(str(v) not in r.text for v in params.values() if str(v) not in ("0",))
+    # Only validation text must avoid echoing user input, not metadata IDs.
+    validation_text = str({"message": error["message"], "details": error["details"]})
+    assert all(str(v) not in validation_text for v in params.values() if str(v) != "0")
 
 
 async def test_US_SRC_02_missing_key_is_rejected_before_query_validation(
