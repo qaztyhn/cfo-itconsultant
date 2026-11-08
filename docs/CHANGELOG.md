@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M6-1 — POD thành công duy nhất theo `trip_stop` + M7 session-aware] — 2026-11-09 — Dev 1 (#129)
+
+- Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
+- `execution_service` gọi `risk_service.recalculate(..., session=session)` trong cùng transaction (sự kiện, forecast, alert cùng commit/rollback); đơn `DELIVERED` không có forecast mới (M7 đóng alert rủi ro).
+- Chưa đổi: notification outbox (chờ Dev 2, N4), bằng chứng D7 56 ngày, GPS assignment.
+
 ## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
 
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
