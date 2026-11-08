@@ -7,6 +7,42 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
+class SourceOrderError(Exception):
+    def __init__(
+        self, status: int, code: str, message: str, errors: list[dict[str, object]] | None = None
+    ) -> None:
+        self.status, self.code, self.message, self.errors = status, code, message, errors or []
+
+
+def invalid(field: str, kind: str) -> SourceOrderError:
+    return SourceOrderError(
+        422,
+        "VALIDATION_ERROR",
+        "Order validation failed.",
+        [{"loc": ["body", field], "type": kind, "msg": "Order field is invalid."}],
+    )
+
+
+async def order_error(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, SourceOrderError)
+    try:
+        correlation_id = str(UUID(request.headers.get("X-Correlation-ID", "")))
+    except ValueError:
+        correlation_id = str(uuid4())
+    return JSONResponse(
+        status_code=exc.status,
+        headers={"X-Correlation-ID": correlation_id},
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "details": {"errors": exc.errors},
+                "correlation_id": correlation_id,
+            }
+        },
+    )
+
+
 async def validation_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     try:

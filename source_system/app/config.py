@@ -13,6 +13,7 @@ class Settings:
     database_url: str = field(repr=False)
     source_schema: str
     api_key: str = field(default="", repr=False)
+    app_now: str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -30,4 +31,5 @@ class Settings:
             os.environ.get("DATABASE_URL", ""),
             os.environ.get("SOURCE_SCHEMA", ""),
             os.environ.get("API_KEY", ""),
+            os.environ.get("APP_NOW"),
         )
