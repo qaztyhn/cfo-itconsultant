@@ -105,7 +105,7 @@ def test_US_ATP_03_AC1_AC3_source_confirm_and_dest_receive_in_one_transaction(
     transfer_api: Api,
 ) -> None:
     transfer_id = approved(transfer_api)
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/confirm-source", 7), 403, "FORBIDDEN")
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/confirm-source", 7), 404, "NOT_FOUND")
     confirmed = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["status"] == "source_confirmed"
@@ -115,7 +115,7 @@ def test_US_ATP_03_AC1_AC3_source_confirm_and_dest_receive_in_one_transaction(
     assert [(x["source"], x["confirmed"], x["received"], x["qty"]) for x in inbound] == [
         ("transfer", True, False, 40)
     ]
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", WAREHOUSE), 403, "FORBIDDEN")
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", WAREHOUSE), 404, "NOT_FOUND")
     received = post(transfer_api, f"/transfers/{transfer_id}/receive", 7)
     assert received.status_code == 200, received.text
     assert received.json()["status"] == "received"
@@ -263,3 +263,19 @@ def test_T18_mutations_require_valid_idempotency_header(transfer_api: Api) -> No
         )
         assert_error(response, 422, "VALIDATION_ERROR")
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.stock_transfer")[0]["n"] == 0
+
+
+def test_T18_revoke_warehouse_approval_rights_immediately(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    execute(
+        transfer_api.dsn,
+        "UPDATE hr.location_manager SET can_approve=false "
+        "WHERE location_id=1 AND employee_id=3",
+    )
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
+        403,
+        "FORBIDDEN",
+    )
+    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
