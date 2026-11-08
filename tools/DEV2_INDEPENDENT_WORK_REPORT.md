@@ -9,9 +9,11 @@ No main merge, deployment, real external email, or paid routing request was perf
 
 ## Current delivery session — separate PRs and remaining decisions
 
-Updated to main `67e2212`, including approved migrations 0009/0010. The independent components were
+Initial verification used main `67e2212`, including approved migrations 0009/0010. The independent components were
 split into incremental PRs **#60–#70**; each exact-head CI passed backend/source/frontend and each PR
-was marked Ready for review. No automatic merge is enabled. The dependency/merge order, per-task PR
+was marked Ready for review. Those components have since been integrated by the owner, including #74.
+The roster branch was updated to main `61ae96a` before publication (migration 0011, routing/ORS/email
+decisions, pure planner and DEC-SRC-001 from #79). No automatic merge is enabled. Per-task PR
 links, owner decisions D1–D8 and developer handoffs are in
 [DEV2_DECISIONS_REQUIRED.md](DEV2_DECISIONS_REQUIRED.md).
 

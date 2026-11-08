@@ -5,9 +5,9 @@ No sensitive business rule is inferred from CI success. Assumptions/decisions re
 
 ## Delivered PRs and review order
 
-These are separate incremental PRs, stacked to keep each diff reviewable. Their exact-head CI passed.
-Review/merge in order using merge commits, retarget the next PR to main after each merge and rerun CI.
-No automatic merge is enabled.
+The earlier components were delivered as separate incremental PRs with exact-head CI passing.
+The owner has since integrated that stack into main (including #74); the roster PR now targets main.
+No automatic merge is enabled. Historical PR links below preserve the delivery trail.
 
 | PR | Task |
 |---|---|
@@ -32,7 +32,7 @@ invents driver duty history or vehicle regulation data. Existing schedules/cance
 
 | ID | Decision to finalize | Work held back |
 |---|---|---|
-| D1 | Review SRC-Q1–Q10 in [M1 source proposal](../docs/proposals/M1_SOURCE_CONTRACT.md): snapshots, write/read DTOs, lifecycle/version/cancellation, validation, paging/calendars, atomic empty stock batches and normalization of multiple SKUs into one global stock key. | Complete source API, remaining adapters, stock persistence, ingestion and full source/scenario seed |
+| D1 | SRC-Q1–Q10 direction is approved by DEC-SRC-001 / #79. Finalize the explicitly outstanding details in [M1 source contract](../docs/proposals/M1_SOURCE_CONTRACT.md): draft nullability, exact DTO/error paths, zero price, structured requirements, submitted edits/cancellation delivery, endpoint pagination inventory, calendar configuration, empty batch storage and distinct-inventory normalization. These are not approved implementation defaults. | Reviewed 05/06/schema/API contract, complete source API, remaining adapters, stock persistence, ingestion and scenario seed |
 | D2 | Approve CSV column/schema/number/date conventions and retry semantics for a file hash whose previous run failed. Do not infer aggregation or skip failed files merely because their hash exists. | CSV fallback adapter/upload |
 | D3 | Finalize GPS ingest/live/history/settings response DTOs and limits. Dispatcher-only reading, driver ownership, gps_enabled/on_road guards and privacy requirements are already fixed and must not be weakened. | GPS API and live simulator/PWA integration |
 | D4 | Reconcile notification templates/free-text editing in 03/06 with 09's status/ETA-only content rule. No exception for coordinates/GPS/driver names is proposed. Approve exact payload/content constraints and any retry backoff beyond the next tick. | Rendering, enqueue, DELAY draft/send/discard and customer-message integration |
