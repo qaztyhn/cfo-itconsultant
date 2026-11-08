@@ -5,6 +5,7 @@
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
 - Đồng bộ đặc tả `04/05/06/09` cho: market grant/versioned stock scope/evidence 30 ngày; đối soát WMS transfer không double count; D7 56 ngày/11h nghỉ và legal vehicle scope; GPS một Dispatcher chính/trip, chứng cứ thông báo theo tài xế, 100 điểm/batch và xóa theo trip/ca; D4 transactional outbox/ETA window; POD theo `trip_stop`; `checks.*.passed` và rejected candidates flat; 10 KPI, diagnostics `null`.
 - Sửa ví dụ JSON trong `06` để không hiện `driver.name`, `promise_window_preview`, `drivers` override mà backend chưa hỗ trợ. Ghi rõ index unique POD theo `order_id` là lịch sử/superseded; **migration mới vẫn cần** để bỏ chỉ mục thực.
+- Đồng bộ thêm `02_User_Stories_and_Acceptance_Criteria.md` và `03_UI_UX_Specification.md`: GPS đọc theo assignment, xoá theo trip/ca, simulator xác thực riêng; DELAY draft cần ETA được duyệt; UI không duyệt replan suggestion hoặc hold hết hạn. Giữ nguyên ngoại lệ quiet-hours cho DELAY hiện có, nếu thay đổi cần phê duyệt khác.
 - **Không có thay đổi code, schema migration, router hay API runtime**. PR #136 đã merge, Dev 3 tạo hotfix mới; các PR #121/#127/#129/#137/#143 cần tiếp tục triển khai/kiểm thử, **không auto-merge code**.
 
 
