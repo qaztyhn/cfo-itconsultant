@@ -40,8 +40,8 @@ from app.domain.models.ref import (
     Vehicle,
 )
 from app.engine.types import (
-    DayCapacity,
     DateModeT,
+    DayCapacity,
     DriverCtx,
     HandlingGroupCtx,
     LineCtx,
@@ -332,7 +332,9 @@ async def load_inputs(
     global_ids = {line.global_product_id for line in lines if line.global_product_id is not None}
     globals_ = {
         row.id: row
-        for row in (await session.scalars(select(ProductGlobal).where(ProductGlobal.id.in_(global_ids)))).all()
+        for row in (
+            await session.scalars(select(ProductGlobal).where(ProductGlobal.id.in_(global_ids)))
+        ).all()
     }
     groups = {
         row.id: row for row in (await session.scalars(select(HandlingGroup))).all()
