@@ -355,6 +355,7 @@ async def _expire_due(session: AsyncSession) -> int:
             )
     return processed
 
+
 async def expire_due(*, session: AsyncSession | None = None) -> int:
     """Expire holds and proposed plans atomically; retries are idempotent."""
     if session is not None:
