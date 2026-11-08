@@ -140,7 +140,7 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - **Nhật ký quyết định** trong DB: `record_decision(action, entity, entity_id, order_id?, plan_id?, reason_code?, reason_text?, snapshot?, before?, after?)`; dùng đúng mã hành động ở `04` mục 10.
 - **GPS:** kiểm `gps_enabled` theo nước; xóa sau `retention_days`; hiển thị cờ/biểu ngữ DPIA; không có báo cáo năng suất cá nhân.
 - **Thông báo:** nội dung chỉ trạng thái và ETA; không toạ độ, không tên tài xế, không GPS.
-- Ẩn danh dữ liệu cá nhân quá hạn lưu giữ qua `retention_job`.
+- **D5 (`DEC-GDPR-001`):** GDPR by design. Chỉ xóa/ẩn danh qua `retention_job` theo chính sách retention per-purpose/per-data-category được review, xét legal hold/backup và bảo toàn immutable audit. Ngăn PII xuất hiện không cần thiết trong decision/milestone/technical logs từ đầu. Không xem 365/730/30 ngày là mặc định hợp pháp. Đánh giá lawful basis, ROPA, privacy notices, quyền chủ thể dữ liệu, DPA và DPIA/GPS trước xử lý dữ liệu người thật.
 
 ## 11. Quy tắc test
 
