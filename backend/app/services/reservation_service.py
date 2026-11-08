@@ -93,6 +93,28 @@ async def _has_any(session: AsyncSession, run_id: int) -> bool:
     return False
 
 
+async def _latest_run_id(session: AsyncSession, order_id: int) -> int | None:
+    return await session.scalar(
+        select(PlanningRun.id)
+        .where(PlanningRun.order_id == order_id)
+        .order_by(PlanningRun.run_no.desc(), PlanningRun.id.desc())
+        .limit(1)
+    )
+
+
+async def _has_live_hold(session: AsyncSession, run_id: int) -> bool:
+    """A hold must still contain held stock, labour AND vehicle reservations."""
+    for model in _RESERVATIONS:
+        if (
+            await session.scalar(
+                select(model.id).where(model.run_id == run_id, model.status == "held").limit(1)
+            )
+            is None
+        ):
+            return False
+    return True
+
+
 async def _other_active(session: AsyncSession, order_id: int, run_id: int) -> bool:
     for model in _RESERVATIONS:
         if (
@@ -118,6 +140,8 @@ async def _hold(session: AsyncSession, run_id: int) -> None:
     order, _, cfg = await _config(session, run.order_id)
     if order.version != run.order_version or order.status not in ("SUBMITTED", "PLANNED"):
         raise _error("ILLEGAL_TRANSITION", "Planning run is not current.")
+    if await _latest_run_id(session, order.id) != run.id:
+        raise _error("PLAN_NOT_APPROVABLE", "Only the latest run can hold resources. Plan Again.")
     route = await session.scalar(
         select(OrderRouting.route).where(
             OrderRouting.market_id == order.market_id,
@@ -127,11 +151,9 @@ async def _hold(session: AsyncSession, run_id: int) -> None:
     if route != "cfo":
         raise _error("PLAN_NOT_APPROVABLE", "Order is not assigned to CFO planning.")
     if run.hold_expires_at is not None:
-        if run.hold_expires_at <= now:
-            raise _error("HOLD_EXPIRED", "Planning hold expired.", run_id=run.id)
-        if await _has_any(session, run.id):
+        if await _has_live_hold(session, run.id):
             return  # idempotent: do not duplicate resources or audit
-        raise _error("ILLEGAL_TRANSITION", "Hold deadline exists without reservations.")
+        raise _error("PLAN_NOT_APPROVABLE", "Run has no live hold. Plan Again.")
     if await _has_any(session, run.id) or await _other_active(session, order.id, run.id):
         raise _error("ILLEGAL_TRANSITION", "Release the previous hold before re-running.")
     plans = (
@@ -244,6 +266,8 @@ async def _extend(session: AsyncSession, run_id: int, actor: object) -> None:
         raise _error("NOT_FOUND", "Planning run not found.")
     if run.kind == "replan_suggestion" or run.hold_expires_at is None or run.hold_expires_at <= now:
         raise _error("HOLD_EXPIRED", "Planning hold expired.", run_id=run.id)
+    if await _latest_run_id(session, run.order_id) != run.id:
+        raise _error("PLAN_NOT_APPROVABLE", "Only the latest run can extend its hold.")
     if run.hold_extensions >= cfg.hold.max_extensions:
         raise _error("HOLD_EXTENSION_LIMIT", "Maximum hold extensions reached.", run_id=run.id)
     proposed = await session.scalar(
@@ -252,7 +276,7 @@ async def _extend(session: AsyncSession, run_id: int, actor: object) -> None:
             FulfilmentPlan.status == "proposed",
         )
     )
-    if proposed is None or not await _has_any(session, run.id):
+    if proposed is None or not await _has_live_hold(session, run.id):
         raise _error("PLAN_NOT_APPROVABLE", "No active proposed plan to extend.")
     before = run.hold_expires_at
     run.hold_expires_at = before + timedelta(minutes=cfg.hold.ttl_min)
