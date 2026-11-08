@@ -1,5 +1,6 @@
 """Read-only stock transport for US-INT-03 AC1 (persistence is a separate slice)."""
 
+import json
 import secrets
 from decimal import Decimal
 
@@ -20,8 +21,8 @@ async def test_US_INT_03_AC1_fetch_stock_preserves_precision_and_source_timestam
         assert request.extensions["timeout"]["read"] == 2.5
         return httpx.Response(
             200,
-            content=b"""{"as_of":"2026-11-07T10:00:00+01:00","items":[
-            {"warehouse_code":"WH","sku":"X","on_hand":750.1234567890123456789,"reserved":20}]}""",
+            content=b"""{"as_of":"2026-11-07T10:00:00+01:00","batch_id":1,"complete":true,"row_count":1,"items":[
+            {"warehouse_code":"WH","sku":"X","physical_stock_pool_id":"POOL","on_hand":750.1234567890123456789,"reserved":20}]}""",
         )
 
     adapter = RestMarketAdapter(
@@ -45,7 +46,16 @@ async def test_empty_snapshot_preserves_source_time() -> None:
         "https://source.test/api/v1/",
         secrets.token_urlsafe(32),
         transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json={"as_of": "2026-11-07T09:00:00Z", "items": []})
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "as_of": "2026-11-07T09:00:00Z",
+                    "batch_id": 1,
+                    "complete": True,
+                    "row_count": 0,
+                    "items": [],
+                },
+            )
         ),
     )
     assert (await adapter.fetch_stock()).items == ()
@@ -95,6 +105,15 @@ async def test_transport_timeout_is_sanitized() -> None:
     ],
 )
 async def test_invalid_snapshot_fails_atomically(body: bytes) -> None:
+    try:
+        raw = json.loads(body)
+        if isinstance(raw, dict) and "as_of" in raw:
+            raw.update(batch_id=1, complete=True, row_count=len(raw.get("items", [])))
+            for item in raw.get("items", []):
+                item.setdefault("physical_stock_pool_id", "POOL")
+            body = json.dumps(raw).encode()
+    except ValueError:
+        pass
     adapter = RestMarketAdapter(
         "SE",
         "https://source.test",
@@ -106,13 +125,22 @@ async def test_invalid_snapshot_fails_atomically(body: bytes) -> None:
 
 
 async def test_duplicate_natural_key_is_rejected() -> None:
-    row = {"warehouse_code": "WH", "sku": "X", "on_hand": 1, "reserved": 0}
+    row = {"warehouse_code": "WH", "sku": "X", "physical_stock_pool_id": "POOL", "on_hand": 1, "reserved": 0}
     adapter = RestMarketAdapter(
         "SE",
         "https://source.test",
         secrets.token_urlsafe(32),
         transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json={"as_of": "2026-11-07T09:00:00Z", "items": [row, row]})
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "as_of": "2026-11-07T09:00:00Z",
+                    "batch_id": 1,
+                    "complete": True,
+                    "row_count": 2,
+                    "items": [row, row],
+                },
+            )
         ),
     )
     with pytest.raises(SourceReadError, match="duplicate"):
@@ -136,3 +164,33 @@ def test_timeout_must_be_bounded(timeout: float) -> None:
 def test_missing_key_is_a_configuration_error() -> None:
     with pytest.raises(ValueError, match="API key"):
         RestMarketAdapter("SE", "https://source.test", "")
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"complete": False},
+        {"complete": 1},
+        {"batch_id": None},
+        {"batch_id": True},
+        {"row_count": 1},
+        {"row_count": True},
+    ],
+)
+async def test_D1_batch_markers_must_be_explicit_typed_and_complete(metadata: dict[str, object]) -> None:
+    body = {
+        "as_of": "2026-11-07T09:00:00Z",
+        "batch_id": 1,
+        "complete": True,
+        "row_count": 0,
+        "items": [],
+        **metadata,
+    }
+    reader = RestMarketAdapter(
+        "ZZ",
+        "https://source.test",
+        secrets.token_urlsafe(32),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body)),
+    )
+    with pytest.raises(SourceReadError):
+        await reader.fetch_stock()

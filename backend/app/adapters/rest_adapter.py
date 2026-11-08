@@ -10,10 +10,10 @@ import json
 from collections.abc import AsyncIterator
 from datetime import datetime
 from decimal import Decimal
-from typing import cast
+from typing import Literal, cast
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, ValidationError, field_validator
 
 from app.adapters.base import CustomerDTO, ProductDTO, StockItemDTO, StockSnapshotDTO
 
@@ -56,11 +56,22 @@ class _StockItem(BaseModel):
     sku: str = Field(min_length=1)
     on_hand: Decimal = Field(allow_inf_nan=False)
     reserved: Decimal = Field(allow_inf_nan=False)
+    physical_stock_pool_id: str = Field(min_length=1)
 
 
 class _StockSnapshot(BaseModel):
     as_of: AwareDatetime
     items: list[_StockItem]
+    batch_id: int = Field(gt=0, strict=True)
+    complete: Literal[True]
+    row_count: int = Field(ge=0, strict=True)
+
+    @field_validator("complete", mode="before")
+    @classmethod
+    def explicit_marker(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("Stock batch must be explicitly complete")
+        return value
 
 
 class RestMarketAdapter:
@@ -186,10 +197,17 @@ class RestMarketAdapter:
         keys = [(item.warehouse_code, item.sku) for item in snapshot.items]
         if len(keys) != len(set(keys)):
             raise SourceReadError("Source stock response contains duplicate item keys")
+        if snapshot.row_count != len(snapshot.items):
+            raise SourceReadError("Source stock response row count is incomplete")
         return StockSnapshotDTO(
             as_of=snapshot.as_of,
+            batch_id=snapshot.batch_id,
+            complete=snapshot.complete,
+            row_count=snapshot.row_count,
             items=tuple(
-                StockItemDTO(item.warehouse_code, item.sku, item.on_hand, item.reserved)
+                StockItemDTO(
+                    item.warehouse_code, item.sku, item.on_hand, item.reserved, item.physical_stock_pool_id
+                )
                 for item in snapshot.items
             ),
         )

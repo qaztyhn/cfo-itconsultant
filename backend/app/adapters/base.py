@@ -74,12 +74,16 @@ class StockItemDTO:
     sku: str
     on_hand: Decimal
     reserved: Decimal
+    physical_stock_pool_id: str | None = None
 
 
 @dataclass(frozen=True)
 class StockSnapshotDTO:
     as_of: datetime
     items: tuple[StockItemDTO, ...]
+    batch_id: int | None = None
+    complete: bool = False
+    row_count: int | None = None
 
 
 @dataclass(frozen=True)
