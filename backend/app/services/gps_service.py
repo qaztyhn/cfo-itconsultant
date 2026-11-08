@@ -113,8 +113,7 @@ async def ingest_positions(
     # Loading the entire trip history here grows without bound during a long trip.
     existing = (
         await session.scalars(
-            select(VehiclePosition)
-            .where(
+            select(VehiclePosition).where(
                 VehiclePosition.trip_id == trip.id,
                 VehiclePosition.source == "device",
                 VehiclePosition.recorded_at.in_(set(requested)),
