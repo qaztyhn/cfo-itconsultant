@@ -6,8 +6,9 @@ Owner: Dev 2 (luồng B) — M1.
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel, field_serializer
 from sqlalchemy import select
@@ -15,9 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import lists_read as lists
 from app.auth import require_api_key
+from app.core import clock
 from app.db import database_ready
 from app.models import Stock
-from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderPage, OrderStatus, list_orders
+from app.order_create import create
+from app.order_payloads import OrderIn
+from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderOut, OrderPage, OrderStatus, list_orders
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 health_router = APIRouter()
@@ -109,10 +113,18 @@ async def fleet_calendar(
     return await lists.fleet_calendar(paging, from_, to)
 
 
-@router.post("/orders")
-async def create_order() -> dict[str, object]:
+@router.post("/orders", status_code=201, response_model=OrderOut)
+async def create_order(
+    request: Request, payload: OrderIn, idempotency_key: Annotated[UUID | None, Header()] = None
+) -> OrderOut:
     """POS: tạo đơn nháp (DRAFT)."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await create(
+            session,
+            payload,
+            now=clock.now(request.app.state.settings.app_now),
+            key=str(idempotency_key) if idempotency_key else None,
+        )
 
 
 @router.put("/orders/{order_id}")

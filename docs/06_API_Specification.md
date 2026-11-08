@@ -754,6 +754,13 @@ Request fields nguồn có thể chứa `customer_id, address_id, store_code, sa
 
 **Valid DRAFT:** cần `customer_id,address_id,store_code,date_mode`, có thể thiếu contact/date details/lines để người dùng bổ sung trước validate. **VALIDATED/SUBMITTED** cần khách đang hoạt động, địa chỉ thuộc khách và có tọa độ hợp lệ, sales/store reference, tên liên hệ và ít nhất phone hoặc email, ít nhất một line SKU **tồn tại trong nguồn**, `line_no` dương không trùng, `qty > 0` tối đa 3 chữ số thập phân, `unit_price` là **chuỗi decimal chính xác hai chữ số thập phân và không âm (cho phép `"0.00"`)**. SKU có trong POS nhưng chưa CFO mapping confirmed **không** bị POS từ chối, mà điều phối toàn đơn theo ASM-005 / DEC-ROUTING-002.
 
+`POST /orders` nhận optional `Idempotency-Key` UUID; POS nên gửi cùng key khi retry/double-click.
+Cùng key + typed payload trả cùng order ID (representation hiện tại), vẫn 201; khác payload →
+409 `IDEMPOTENCY_CONFLICT`, không tạo thêm order. Không gửi key nghĩa là tạo draft mới.
+Nếu gửi lines trong DRAFT thì mỗi line phải có đầy đủ line_no/sku/qty/unit_price đúng kiểu; có thể dùng
+`lines:[]` khi chưa nhập hàng. Reference sales/store sai dùng field `value_error` chuẩn 422; không tạo
+reason code mới. Order clock nhận APP_NOW aware của instance, lưu UTC; id/status/version/snapshot do server quản lý.
+
 **Date modes:** `exact` → `date_from` bắt buộc, `date_to=null`; `range` → cần cả hai, `from<=to`; `latest` → `date_to` bắt buộc, `date_from=null`. Date là `YYYY-MM-DD` theo IANA timezone của source instance/market. `window_start` và `window_end` cùng có hoặc cùng null, dạng 24h `HH:MM`, start < end, phải phù hợp lịch nhận từng địa chỉ (xem 16.4); thiếu receiving calendar phải trả lỗi, không đoán mở 24/7. `special_requirements` và `receiving_restrictions` là optional text snapshot, **không** được Planning Engine tự suy luận thành khả năng/safety của xe; thiếu trường có cấu trúc phải chuyển Dispatcher kiểm tra.
 
 **Lỗi 422 có cấu trúc cố định:**

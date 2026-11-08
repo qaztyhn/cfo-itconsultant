@@ -173,3 +173,10 @@ class OrderLine(Timestamps, Base):
     sku: Mapped[str] = mapped_column(ForeignKey("source.src_product.sku"))
     qty: Mapped[Decimal]
     unit_price: Mapped[Decimal]
+
+
+class CreateRequest(Timestamps, Base):
+    __tablename__ = "src_create_request"
+    key: Mapped[str] = mapped_column(primary_key=True)
+    request_hash: Mapped[str]
+    order_id: Mapped[str] = mapped_column(ForeignKey("source.src_order.id"))

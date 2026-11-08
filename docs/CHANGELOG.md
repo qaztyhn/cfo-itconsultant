@@ -219,3 +219,10 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
 - Add source-local active store/sales references for approved D1-B validation, with FK and preserved
   synthetic 25-store/100-sales seed. IDs align with synthetic CFO workforce fixtures without runtime
   cross-database reads. Bootstrap is additive; no source order endpoint is enabled by this task.
+# Dev 2 source draft creation (2026-11-08)
+
+- Enable approved D1-B POST /orders with server address/contact snapshot, source references, atomic
+  lines and optional payload-bound UUID idempotency key protected by transaction lock. Add source-local
+  clock with APP_NOW injection and additive src_create_request storage; document 05/06 behavior.
+- DRAFT may omit lines/contact/date details; zero-price source lines are accepted without CFO mapping.
+  Full validate/edit/submit/cancel and CFO ingestion remain separate implementation tasks.
