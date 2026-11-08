@@ -164,8 +164,10 @@ async def _targets(
         location = await session.get(Location, location_id)
         if location is None or location.market_id != market_id:
             raise DomainError("NOT_FOUND", "Location not found.")
+        if not scope.all and location_id not in (scope.store_ids | scope.warehouse_ids):
+            raise DomainError("NOT_FOUND", "Location not found.")
         if location.type != view:
-            raise DomainError("VALIDATION_ERROR", f"Location {location.code} is not a {view}.")
+            raise DomainError("VALIDATION_ERROR", "Location type does not match revenue view.")
         if not scope.all and location_id not in owned:
             raise DomainError("NOT_FOUND", "Location not found.")
         return frozenset({location_id})
