@@ -27,6 +27,7 @@ def run[T](dsn: str, action: Callable[[AsyncSession], Awaitable[T]]) -> T:
                 return await action(session)
         finally:
             await engine.dispose()
+
     return asyncio.run(go())
 
 
@@ -98,7 +99,9 @@ def test_US_RSK_02_AC4_AC5_negative_slack_twice_min_gap_and_dedupe(
     orange = _recalc(dsn, at=NOW - timedelta(minutes=1))
     assert orange is not None
     assert (orange["risk_status"], orange["risk_color"], orange["consecutive_negative"]) == (
-        "AT_RISK", "orange", 1,
+        "AT_RISK",
+        "orange",
+        1,
     )
     state["now"] += timedelta(minutes=2)
     short_gap = _recalc(dsn, at=state["now"] - timedelta(minutes=1))
@@ -113,7 +116,8 @@ def test_US_RSK_02_AC4_AC5_negative_slack_twice_min_gap_and_dedupe(
     assert fetch(dsn, "SELECT count(*) AS n FROM ops.eta_forecast")[0]["n"] == 3
     active = fetch(dsn, "SELECT type,level,resolved_at FROM ops.alert ORDER BY id")
     assert [(a["type"], a["level"]) for a in active] == [
-        ("RISK_ORANGE", "warning"), ("PREDICTED_LATE", "critical"),
+        ("RISK_ORANGE", "warning"),
+        ("PREDICTED_LATE", "critical"),
     ]
     assert active[0]["resolved_at"] is not None  # replaced by critical
     assert active[1]["resolved_at"] is None
@@ -139,22 +143,43 @@ def test_US_RSK_01_AC2_event_signal_must_exist_and_cannot_replay(
     risk_db: tuple[str, dict[str, datetime]],
 ) -> None:
     dsn, state = risk_db
-    assert run(dsn, lambda s: risk_service.recalculate(
-        1, "event:GOODS_READY", session=s,
-    )) is None
+    assert (
+        run(
+            dsn,
+            lambda s: risk_service.recalculate(
+                1,
+                "event:GOODS_READY",
+                session=s,
+            ),
+        )
+        is None
+    )
     execute(
         dsn,
         "INSERT INTO ops.milestone_event (order_id, plan_id, event_type, occurred_at, "
         "actor_user_id, idempotency_key) "
         "VALUES (1,1,'GOODS_READY','2026-11-10T06:00Z',3,'m7-ready-1')",
     )
-    result = run(dsn, lambda s: risk_service.recalculate(
-        1, "event:GOODS_READY", session=s,
-    ))
+    result = run(
+        dsn,
+        lambda s: risk_service.recalculate(
+            1,
+            "event:GOODS_READY",
+            session=s,
+        ),
+    )
     assert result is not None and result["version"] == 1
-    assert run(dsn, lambda s: risk_service.recalculate(
-        1, "event:GOODS_READY", session=s,
-    )) is None
+    assert (
+        run(
+            dsn,
+            lambda s: risk_service.recalculate(
+                1,
+                "event:GOODS_READY",
+                session=s,
+            ),
+        )
+        is None
+    )
     state["now"] += timedelta(minutes=1)
 
 

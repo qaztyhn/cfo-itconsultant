@@ -139,12 +139,12 @@ async def list_alerts(
                 (Alert.level == "critical").desc(),
                 Alert.created_at.desc(),
                 Alert.id.desc(),
-            ).limit(page_size).offset((page - 1) * page_size)
+            )
+            .limit(page_size)
+            .offset((page - 1) * page_size)
         )
     ).all()
-    reduced = "customer_service" in _roles(actor) and not (
-        {"admin", "dispatcher"} & set(_roles(actor))
-    )
+    reduced = "customer_service" in _roles(actor) and not ({"admin", "dispatcher"} & set(_roles(actor)))
     return {
         "items": [
             {

@@ -110,25 +110,36 @@ def test_US_RSK_03_AC2_AC3_concurrent_raise_keeps_single_open_record(alerts: Api
     async def same_key() -> tuple[int | None, int | None]:
         engine = create_async_engine(async_url(alerts.dsn), poolclass=NullPool)
         maker = async_sessionmaker(engine)
+
         async def once() -> int | None:
             async with maker() as session, session.begin():
                 return await raise_alert(
-                    session, market_id=1, type_="RISK_ORANGE", level="warning",
-                    message="Risk only", dedupe_key="risk-concurrent",
-                    target_roles=("dispatcher",), order_id=1,
+                    session,
+                    market_id=1,
+                    type_="RISK_ORANGE",
+                    level="warning",
+                    message="Risk only",
+                    dedupe_key="risk-concurrent",
+                    target_roles=("dispatcher",),
+                    order_id=1,
                 )
+
         try:
             a, b = await asyncio.gather(once(), once())
             return a, b
         finally:
             await engine.dispose()
+
     one, two = asyncio.run(same_key())
     assert (one is None) != (two is None)
-    assert fetch(
-        alerts.dsn,
-        "SELECT count(*) AS n FROM ops.alert WHERE dedupe_key='risk-concurrent' "
-        "AND resolved_at IS NULL",
-    )[0]["n"] == 1
+    assert (
+        fetch(
+            alerts.dsn,
+            "SELECT count(*) AS n FROM ops.alert WHERE dedupe_key='risk-concurrent' "
+            "AND resolved_at IS NULL",
+        )[0]["n"]
+        == 1
+    )
 
 
 def test_US_RSK_03_AC3_resolved_key_can_recur(alerts: Api) -> None:

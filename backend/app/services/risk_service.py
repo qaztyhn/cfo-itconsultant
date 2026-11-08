@@ -31,15 +31,31 @@ from app.domain.models.ref import Location, Market
 from app.engine.forecast import MilestoneState, assess_risk, forecast_eta, order_forecast
 from app.services import alert_service, notify_service
 
-
-_EVENT_KINDS = frozenset({
-    "START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY", "LOADED",
-    "DISPATCHED", "DELIVERED", "FAILED", "SHORTAGE", "BREAKAGE",
-    "VEHICLE_ISSUE", "SHIFT_CHANGE",
-})
-_FIXED_SIGNALS = frozenset({
-    "approval", "source_change", "overdue_milestone", "morning_check", "gps",
-})
+_EVENT_KINDS = frozenset(
+    {
+        "START_PREP",
+        "PREP_PAUSED",
+        "PREP_RESUMED",
+        "GOODS_READY",
+        "LOADED",
+        "DISPATCHED",
+        "DELIVERED",
+        "FAILED",
+        "SHORTAGE",
+        "BREAKAGE",
+        "VEHICLE_ISSUE",
+        "SHIFT_CHANGE",
+    }
+)
+_FIXED_SIGNALS = frozenset(
+    {
+        "approval",
+        "source_change",
+        "overdue_milestone",
+        "morning_check",
+        "gps",
+    }
+)
 _ACTIVE = frozenset({"APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"})
 
 
@@ -221,8 +237,10 @@ async def _vehicle_inputs(
             cutoff_at=cutoff_at,
         )
         try:
-            eta = stop.completed_at if stop.status == "delivered" else forecast_eta(
-                state, now, config.eta_round_min, config.after_loaded_min
+            eta = (
+                stop.completed_at
+                if stop.status == "delivered"
+                else forecast_eta(state, now, config.eta_round_min, config.after_loaded_min)
             )
         except ValueError as exc:
             raise _missing("Verified preparation or routing evidence is insufficient.") from exc
@@ -250,9 +268,7 @@ async def recalculate(
     if session is None:
         raise _missing("Transactional risk integration requires the caller's session.")
     now = clock.now()
-    order = await session.scalar(
-        select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update()
-    )
+    order = await session.scalar(select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update())
     if order is None:
         raise DomainError("NOT_FOUND", "Order not found.")
     if order.status not in _ACTIVE:
@@ -288,28 +304,42 @@ async def recalculate(
         # An intervening fast negative signal cannot count as a second confirmation.
         prev_negative = 0
         if previous is not None and previous.slack_min < 0:
-            if now - previous.computed_at >= timedelta(
-                minutes=config.risk.consecutive_min_gap_min
-            ):
+            if now - previous.computed_at >= timedelta(minutes=config.risk.consecutive_min_gap_min):
                 prev_negative = previous.consecutive_negative
             elif previous.consecutive_negative >= config.risk.consecutive_negative:
                 prev_negative = previous.consecutive_negative
         assessed = assess_risk(
-            plan.eta_at, overall_eta, order.promise_end, now, prev_negative,
-            config.risk.yellow_pct, config.risk.orange_pct,
-            config.risk.min_reserve_min, config.risk.consecutive_negative,
+            plan.eta_at,
+            overall_eta,
+            order.promise_end,
+            now,
+            prev_negative,
+            config.risk.yellow_pct,
+            config.risk.orange_pct,
+            config.risk.min_reserve_min,
+            config.risk.consecutive_negative,
         )
         trip_results = []
         for trip_id, planned, eta in vehicle_inputs:
             single = assess_risk(
-                planned, eta, order.promise_end, now, 0,
-                config.risk.yellow_pct, config.risk.orange_pct,
-                config.risk.min_reserve_min, config.risk.consecutive_negative,
+                planned,
+                eta,
+                order.promise_end,
+                now,
+                0,
+                config.risk.yellow_pct,
+                config.risk.orange_pct,
+                config.risk.min_reserve_min,
+                config.risk.consecutive_negative,
             )
-            trip_results.append({
-                "trip_id": trip_id, "forecast_eta": eta.isoformat(),
-                "risk_status": single.risk_status, "risk_color": single.risk_color,
-            })
+            trip_results.append(
+                {
+                    "trip_id": trip_id,
+                    "forecast_eta": eta.isoformat(),
+                    "risk_status": single.risk_status,
+                    "risk_color": single.risk_color,
+                }
+            )
     except ValueError as exc:
         raise _missing("Invalid approved risk calculation evidence.") from exc
     if assessed.consumption_pct > Decimal("9999.99"):
@@ -341,10 +371,14 @@ async def recalculate(
         key = f"risk:{order.id}:{kind}"
         if active:
             await alert_service.raise_alert(
-                session, market_id=order.market_id, type_=kind,
+                session,
+                market_id=order.market_id,
+                type_=kind,
                 level="warning" if kind == "RISK_ORANGE" else "critical",
                 message=f"Order risk signal: {kind}.",
-                dedupe_key=key, target_roles=("dispatcher",), order_id=order.id,
+                dedupe_key=key,
+                target_roles=("dispatcher",),
+                order_id=order.id,
             )
         else:
             await alert_service.resolve(session, key, now=now)

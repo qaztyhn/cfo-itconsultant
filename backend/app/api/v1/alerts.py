@@ -24,8 +24,14 @@ async def list_alerts(
 ) -> dict[str, object]:
     """US-RSK-03 AC1: critical first, warehouse and market restrictions."""
     return await alert_service.list_alerts(
-        db, user, type_=type, level=level, resolved=resolved,
-        order_id=order_id, page=page, page_size=page_size,
+        db,
+        user,
+        type_=type,
+        level=level,
+        resolved=resolved,
+        order_id=order_id,
+        page=page,
+        page_size=page_size,
     )
 
 
