@@ -324,16 +324,16 @@
 - AC2. *Given* `gps_enabled = false`, *Then* `403 GPS_DISABLED`; chuyến chưa `on_road` → `409 NOT_ON_TRIP`.
 - AC3. *Then* app hiện thông báo quyền riêng tư (mục đích, ai xem, chỉ gửi khi chuyến đang chạy, thời gian lưu) và xin quyền vị trí trước khi gửi.
 - AC5. *Given* chuyến đã `completed` hoặc chưa `on_road` (ngoài giờ chạy chuyến), *Then* app không gửi vị trí và API trả `409 NOT_ON_TRIP`.
-- AC4. *Given* bộ giả lập `gps_simulator.py`, *Then* gửi vị trí dọc tuyến mỗi 1–2 phút (`source=simulator`).
+- AC4. *Given* bộ giả lập `gps_simulator.py`, *Then* chỉ producer synthetic có danh tính xác thực **riêng** được gửi nguồn `simulator`; nhãn `source=simulator` từ tài xế không được tin. Kịch bản demo 1–2 phút tách biệt cadence device 30 phút (G5).
 
 **US-GPS-02 — Dispatcher xem GPS** · Là *dispatcher*, tôi xem vị trí xe và ETA. · BR-GPS-01
-- AC1. *Then* `GET /gps/live` và `/trips/{id}/positions` chỉ trả cho `dispatcher`; `customer_service`, `sales`, `warehouse`, `viewer`, khách nhận `403`.
+- AC1. *Then* `GET /gps/live` và `/trips/{id}/positions` **chỉ trả cho Dispatcher chính được phân công rõ cho đúng trip**, còn trong ca tài xế và khi trip `on_road`; Dispatcher khác cùng market hoặc role khác đều không được xem. Quyền phân công do Admin/supervisor có grant theo market và ghi audit (G1/G2).
 - AC2. *Then* không endpoint nào trả GPS dưới dạng tổng hợp theo tài xế (không báo cáo năng suất cá nhân).
 - AC3. *Given* bản demo chưa có DPIA, *Then* UI hiện biểu ngữ "chưa có DPIA, chỉ demo".
 
 **US-GPS-03 — Mất tín hiệu và xóa dữ liệu** · 
 - AC1. *Given* chuyến `on_road` không có vị trí quá 60 phút, *Then* alert `GPS_LOST` cho dispatcher.
-- AC2. *Given* chuyến kết thúc > 30 ngày, *When* `retention_job` chạy, *Then* điểm GPS bị xóa.
+- AC2. *Given* trip kết thúc hoặc ca tài xế hết hạn (mốc nào sớm hơn), *Then* raw GPS bị xóa **trong transaction kết thúc trip** hoặc qua cleanup ở mốc kết thúc ca; job chỉ là backstop, không giữ 30 ngày. Client cũng xóa queue offline (G4).
 
 ---
 
@@ -370,7 +370,7 @@
 - AC4. *Given* `shadow_mode = true`, *Then* thông báo ở trạng thái `suppressed` (`suppressed_reason = shadow_mode`).
 
 **US-NOT-02 — Báo trễ do dispatcher gửi** · BR-RSK-02, FR-NOT-02
-- AC1. *Given* alert PREDICTED_LATE, *Then* có `notification(status=draft, template=DELAY)` với khung ETA mới đề xuất.
+- AC1. *Given* alert PREDICTED_LATE **và đã có khung ETA start/end/version được Dispatcher duyệt**, *Then* tạo `notification(status=draft, template=DELAY)` trong transaction của risk, không tự gửi; nếu chưa có khung được duyệt thì chặn draft/send (N1/N2/N4).
 - AC2. *When* dispatcher sửa nội dung/khung giờ và `send`, *Then* `queued → sent`, ghi `NOTIFICATION_SENT`, lưu `eta_window` đã thông báo.
 - AC3. *When* dispatcher `discard` không có lý do, *Then* `422`; có lý do → `suppressed`, ghi `NOTIFICATION_SUPPRESSED`.
 - AC4. *Given* đã gửi khung 11:00–13:00 và ETA mới lệch < 30 phút, *Then* không tạo bản nháp mới; lệch ≥ 30 phút → tạo bản nháp mới.
@@ -378,7 +378,7 @@
 
 **US-NOT-03 — Giờ yên lặng và gửi lại** · FR-NOT-03
 - AC1. *Given* thông báo `DISPATCHED` tạo lúc 22:30, *Then* `scheduled_for` = 07:00 hôm sau.
-- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* gửi ngay.
+- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* gửi ngay **theo ngoại lệ đã ghi trong AC hiện có**, nhưng vẫn chỉ đến Mailpit/test recipients. Quyết định N5 giữ retry cap và không duyệt backoff mới; nếu thay đổi ngoại lệ quiet-hours cần owner review riêng.
 - AC3. *Given* SMTP lỗi, *Then* thử lại tối đa 3 lần rồi `failed` kèm `last_error`.
 - AC4. *Then* `dedupe_key` ngăn gửi trùng một mẫu cho cùng đơn, cùng kế hoạch/lần giao và cùng trạng thái; sau khi lập lại kế hoạch, `CONFIRMED`/`DISPATCHED` của kế hoạch mới vẫn được tạo.
 
@@ -503,3 +503,8 @@
 | 14 | US-KPI-01/02, US-REV-01, US-LOG-01 | FR-KPI-01/02, FR-LOG-01, BR-KPI-01, BR-GEN-04 |
 | 15 | US-ADM-01..03 | FR-ADM-01, BR-GPS-01 |
 | 16 | US-SRC-01..03 | FR-INT-01, BR-GEN-02 |
+
+### Owner-approved acceptance addendum — 2026-11-09
+
+Các AC trên được làm rõ bởi [27 owner decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). Bổ sung bắt buộc cho việc nghiệm thu: T07 scope/evidence 30 ngày & snapshot coverage đầy đủ; T18 chứng cứ WMS thể hiện inbound (không chỉ timestamp); D7 history 56 ngày từng ngày có verifier, nghỉ 11h; M6 POD delivered theo mỗi `trip_stop`; GPS notice/ack riêng từng driver, upload ≤100 điểm/batch và xoá ngay khi hết trip/ca; D4 outbox cùng transaction và DELAY start/end được duyệt; API sử dụng `passed`/flat rejected candidates; M8 có 10 KPI keys, diagnostics thiếu nguồn = `null`, cohort theo market-local approval/delivery/work_date. Nếu thiếu chứng cứ thì test phải chứng minh fail-closed. Chưa có migration/API/E2E thật không được đánh dấu Done.
+
