@@ -1,18 +1,26 @@
-"""Normalize a published source stock batch to CFO global products (DEC-SRC-Q10-SKU-001, Q9-ERROR-001).
+"""Normalize a published source stock batch to CFO global products.
 
-Pure function: no persistence, clock, market policy or I/O. Contract:
-- Source stock has exactly one row per (warehouse, SKU), always in that SKU's declared stock unit. There is
-  no physical-pool or alias concept; equal converted quantities never imply shared stock.
-- Each SKU's quantities are converted to base units **once** with `units_to_base`, after checking that the
-  unit and factor declared by the source product feed equal CFO's confirmed mapping.
-- All-or-nothing: any unresolved or ambiguous row raises and **no** partial result is returned, so the
-  caller can never commit an apparently complete snapshot that misses inventory.
-- Several local SKUs of one warehouse that map to the same global product are NOT added together: the
-  independence of their inventory is not verifiable here, so the snapshot fails closed until a reviewed
-  mapping contract defines how to verify it. Different warehouses are independent and never merged.
+Policies: DEC-SRC-Q10-SKU-001 (fixed unit per SKU), DEC-SRC-Q9-ERROR-001, DEC-CFO-STOCK-SCOPE-001
+(SKU scope, option B) and DEC-CFO-STOCK-INDEPENDENCE-001 (aggregate only when independence is verified, A).
+
+Pure function: no persistence, clock or I/O. Contract:
+- Source stock has exactly one row per (warehouse, SKU), always in that SKU's declared stock unit; there is
+  no pool or alias concept and equal converted quantities never imply shared stock.
+- Only SKUs of the **caller-supplied CFO scope** are normalized. The scope is fixed before the sync (never
+  derived from which SKUs of this batch happen to map); rows outside it are ignored and can never block.
+- Any in-scope SKU that is unmapped, unconfirmed, inconsistent or unconvertible rejects the **whole**
+  batch: no partial result is ever returned, so an incomplete snapshot cannot be published as complete.
+- Each SKU is converted once with `units_to_base` after the source-declared unit and factor are checked
+  against CFO's confirmed mapping.
+- Several in-scope SKUs of one warehouse that map to one global product are summed (after conversion)
+  **only** if all of them are inside one `verified_independent` group, i.e. verified independent physical
+  inventory. Otherwise the batch is rejected. How independence is verified, and by whom, is not decided
+  yet, so the evidence is an explicit input and the default (nothing verified) is fail closed.
+  Warehouses are never merged.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, DecimalException, localcontext
@@ -46,7 +54,7 @@ class DeclaredUnit:
 class GlobalStock:
     warehouse_code: str
     global_product_id: int
-    source_sku: str
+    source_skus: tuple[str, ...]
     on_hand: Decimal
     reserved: Decimal
     as_of: datetime
@@ -75,6 +83,9 @@ def normalize_stock(
     snapshot: StockSnapshotDTO,
     mappings: Mapping[str, StockMapping],
     declared: Mapping[str, DeclaredUnit],
+    *,
+    scope: AbstractSet[str],
+    verified_independent: Collection[AbstractSet[str]] = (),
 ) -> tuple[GlobalStock, ...]:
     if (
         type(snapshot.batch_id) is not int
@@ -85,9 +96,10 @@ def normalize_stock(
         or snapshot.as_of.utcoffset() is None
     ):
         raise StockNormalizationError("Stock batch is not an authoritative complete published batch")
-    rows: list[GlobalStock] = []
+    if any(not sku.strip() for sku in scope):
+        raise StockNormalizationError("Stock SKU scope contains an empty SKU")
     source_keys: set[tuple[str, str]] = set()
-    product_keys: dict[tuple[str, int], str] = {}
+    groups: dict[tuple[str, int], list[tuple[str, Decimal, Decimal]]] = {}
     for item in snapshot.items:
         if not item.warehouse_code.strip() or not item.sku.strip():
             raise StockNormalizationError("Stock source key is missing")
@@ -95,6 +107,8 @@ def normalize_stock(
         if key in source_keys:
             raise StockNormalizationError("Stock source key is duplicated")
         source_keys.add(key)
+        if item.sku not in scope:
+            continue  # outside the pre-defined CFO scope: never converted, never blocking
         mapping = mappings.get(item.sku)
         if mapping is None or mapping.confirmed is not True:
             raise StockNormalizationError("Stock SKU has no confirmed mapping")
@@ -109,10 +123,6 @@ def normalize_stock(
             or _factor(mapping.units_to_base) != _factor(unit.units_to_base)
         ):
             raise StockNormalizationError("Stock SKU unit or conversion differs from the confirmed mapping")
-        product_key = (item.warehouse_code, mapping.global_product_id)
-        if product_key in product_keys:
-            raise StockNormalizationError("Several SKUs of one warehouse map to the same global product")
-        product_keys[product_key] = item.sku
         factor = mapping.units_to_base
         try:
             with localcontext() as context:
@@ -126,13 +136,23 @@ def normalize_stock(
                 reserved = stored_quantity(item.reserved * factor)
         except DecimalException:
             raise StockNormalizationError("Stock conversion cannot be represented exactly") from None
+        groups.setdefault((item.warehouse_code, mapping.global_product_id), []).append(
+            (item.sku, on_hand, reserved)
+        )
+    rows: list[GlobalStock] = []
+    for (warehouse, product), members in groups.items():
+        skus = frozenset(sku for sku, _, _ in members)
+        if len(members) > 1 and not any(skus <= group for group in verified_independent):
+            raise StockNormalizationError("Several SKUs share a global product without verified independence")
+        total_hand = sum((hand for _, hand, _ in members), Decimal(0))
+        total_reserved = sum((reserved for _, _, reserved in members), Decimal(0))
         rows.append(
             GlobalStock(
-                item.warehouse_code,
-                mapping.global_product_id,
-                item.sku,
-                on_hand,
-                reserved,
+                warehouse,
+                product,
+                tuple(sorted(skus)),
+                stored_quantity(total_hand),
+                stored_quantity(total_reserved),
                 snapshot.as_of,
                 snapshot.batch_id,
             )
