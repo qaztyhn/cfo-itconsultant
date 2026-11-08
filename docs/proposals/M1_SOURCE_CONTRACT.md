@@ -120,3 +120,19 @@ Independent slice already implemented on `feat/m1-source-auth`: X-API-Key
 protection on business routes (health public), instance-local secret configuration,
 credential-free auth errors and OpenAPI security declarations. This is only
 the authentication portion of US-SRC-02, not the full source contract.
+
+## Implementation status (2026-11-07) — still pending approval
+
+Only one endpoint whose contract is already fixed by `06` section 16 is implemented: `GET /stock`
+(`{as_of, items[{warehouse_code, sku, on_hand, reserved}]}`, ordered by warehouse/SKU, numbers as JSON numbers).
+It reads existing `src_stock` rows only; no schema or error-code change.
+
+Interim behaviour pending SRC-Q9: `as_of` is the **oldest** row `as_of` (never claims fresher data). An empty table
+returns `as_of = null, items = []` because the source stores no time for an empty batch; the CFO adapter requires a
+valid `as_of`, so ingestion fails instead of treating it as zero stock. SRC-Q9/Q10 must be decided before
+persistence of stock by CFO.
+
+**Not implemented (blocked by the decisions above):** `GET /orders` (needs the SRC-Q1 address/contact snapshot),
+all write endpoints and validation (SRC-Q2–Q5, Q8), list envelopes/pagination for customers/products/inbound/
+fleet/addresses (SRC-Q6/Q7), the OpenAPI baseline and the second-instance contract test. They remain stubs that
+return 500. The Source contract and E2E are **not complete**.
