@@ -54,10 +54,13 @@ export function Sidebar({ className }: SidebarProps) {
   const hasBadges = groups.some((group) => group.items.some((item) => item.badge));
 
   const warehouseId = useScopeStore((s) => s.warehouseId);
+  // Backend GET /orders/counts does not accept warehouse_id yet.
+  // Never display market-wide totals as if they belonged to a selected warehouse.
+  const warehouseCountsUnsupported = warehouseId !== null;
   const { data: counts } = useQuery({
-    queryKey: ["orders", "counts", { warehouseId }],
-    queryFn: ({ signal }) => fetchOrderCounts(signal, warehouseId),
-    enabled: hasBadges,
+    queryKey: ["orders", "counts", "market"],
+    queryFn: ({ signal }) => fetchOrderCounts(signal),
+    enabled: hasBadges && !warehouseCountsUnsupported,
   });
 
   if (!user) {
@@ -72,6 +75,11 @@ export function Sidebar({ className }: SidebarProps) {
       </div>
 
       <ScopePicker />
+      {hasBadges && warehouseCountsUnsupported && (
+        <p role="status" className="px-6 text-caption text-surface">
+          Order counts for a selected warehouse are not available yet.
+        </p>
+      )}
       
       <nav aria-label="Main" className="flex flex-1 flex-col gap-5 overflow-y-auto px-3">
         {groups.map((group) => (
@@ -79,7 +87,7 @@ export function Sidebar({ className }: SidebarProps) {
             <p className="px-3 pb-1 font-mono text-overline uppercase text-apricot">{group.label}</p>
             <ul className="flex flex-col gap-0.5">
               {group.items.map((item) => {
-                const count = item.badge ? badgeValue(counts, item.badge) : undefined;
+                const count = item.badge && !warehouseCountsUnsupported ? badgeValue(counts, item.badge) : undefined;
                 return (
                   <li key={item.id}>
                     {item.to ? (
