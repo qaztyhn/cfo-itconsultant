@@ -4,6 +4,7 @@ Every test creates a fresh migrated database through the existing API harness.
 All data is synthetic and uses the approved market/warehouse schema.
 """
 
+import asyncpg
 import pytest
 
 from tests.integration import rows
@@ -153,8 +154,11 @@ def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
     assert report.json()["metrics"]["planning_time_min"] == {"value": 15, "baseline": 15.0, "change": 0.0}
     baselines = fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline")
     assert [tuple(record) for record in baselines] == [("planning_time_min", "15", "manual")]
-    audit = fetch(kpi.dsn, "SELECT action,entity FROM audit.decision_log")
-    assert [tuple(record) for record in audit] == [("CONFIG_CHANGED", "kpi_baseline")]
+    audit = fetch(kpi.dsn, "SELECT action,entity,correlation_id FROM audit.decision_log")
+    assert [(record["action"], record["entity"]) for record in audit] == [
+        ("CONFIG_CHANGED", "kpi_baseline")
+    ]
+    assert str(audit[0]["correlation_id"]) == response.headers["X-Correlation-ID"]
 
 
 def test_US_LOG_01_AC1_AC3_redacts_raw_decisions_and_respects_market(kpi: Api) -> None:
@@ -220,3 +224,20 @@ def test_US_KPI_01_AC1_diagnostics_do_not_fabricate_missing_source_metrics(kpi: 
         "hard_constraint_violations": None,
         "event_to_alert_latency_s_median": None,
     }
+
+
+def test_US_LOG_01_AC2_decisions_and_milestones_remain_immutable(kpi: Api) -> None:
+    execute(
+        kpi.dsn,
+        "INSERT INTO audit.decision_log "
+        "(correlation_id,actor_employee_id,actor_role,action,entity,order_id) VALUES "
+        "('00000000-0000-0000-0000-000000000021',2,'dispatcher',"
+        "'PLAN_APPROVED','order',1)",
+        rows.event_sql(1, "START_PREP", "immutable-kpi-1"),
+    )
+    with pytest.raises(asyncpg.RaiseError):
+        execute(kpi.dsn, "UPDATE audit.decision_log SET action='PLAN_PROPOSED' WHERE id=1")
+    with pytest.raises(asyncpg.RaiseError):
+        execute(kpi.dsn, "DELETE FROM audit.decision_log WHERE id=1")
+    with pytest.raises(asyncpg.RaiseError):
+        execute(kpi.dsn, "DELETE FROM ops.milestone_event WHERE order_id=1")
