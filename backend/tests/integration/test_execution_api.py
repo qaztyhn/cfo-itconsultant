@@ -397,7 +397,12 @@ def test_US_EXE_02_AC5_prior_cancelled_trip_does_not_block_current_plan(
         result = send(execution_api, WAREHOUSE, event, at, payload)
         assert result.status_code == 200, result.text
     assert result.json()["order_status"] == "LOADED"
-    assert fetch(
-        execution_api.dsn,
-        "SELECT status::text AS status FROM ops.delivery_trip WHERE id=3",
-    )[0]["status"] == "cancelled"
+    assert (
+        fetch(
+            execution_api.dsn,
+            "SELECT status::text AS status FROM ops.delivery_trip WHERE id=3",
+        )[
+            0
+        ]["status"]
+        == "cancelled"
+    )

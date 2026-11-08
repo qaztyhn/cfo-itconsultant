@@ -156,9 +156,7 @@ async def _order(session: AsyncSession, actor: object, order_id: int) -> tuple[C
     return order, market
 
 
-async def _trips(
-    session: AsyncSession, order_id: int, plan_id: int
-) -> list[tuple[DeliveryTrip, TripStop]]:
+async def _trips(session: AsyncSession, order_id: int, plan_id: int) -> list[tuple[DeliveryTrip, TripStop]]:
     """Only trips attached to the order's CURRENT approved plan may change its status.
 
     Previously completed or cancelled trips from superseded plans must not enter
@@ -181,6 +179,7 @@ async def _trips(
             )
         ).all()
     )
+
 
 def _require_positive(value: object, name: str) -> int:
     if type(value) is not int or value <= 0:
@@ -584,15 +583,11 @@ async def record_event(
     try:
         risk = await risk_service.recalculate(order.id, f"event:{event_type}")
         if risk is None:
-            raise DomainError(
-                "PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result."
-            )
+            raise DomainError("PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result.")
         # Notify only when the *order* changes, after a verified risk update.
         # Second-vehicle dispatch must not duplicate the DISPATCHED notification.
         if changed_to is not None:
-            await notify_service.enqueue(
-                order.id, changed_to, plan_id=order.approved_plan_id
-            )
+            await notify_service.enqueue(order.id, changed_to, plan_id=order.approved_plan_id)
     except NotImplementedError as exc:
         raise DomainError(
             "PLAN_NOT_APPROVABLE", "Mandatory ETA or notification integration is not available."
