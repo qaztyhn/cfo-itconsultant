@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
+<<<<<<< HEAD
 from app.services import approval_service, planning_service, reservation_service, transfer_service
+=======
+from app.services import approval_service, planning_service, reservation_service
+from app.services.approval_recheck import five_gate_recheck
+>>>>>>> origin/main
 
 router = APIRouter(tags=["planning"])
 
@@ -87,14 +92,18 @@ async def approve_plan(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
     body: Annotated[dict[str, object] | None, Body()] = None,
 ) -> dict[str, object]:
-    """T16 transaction; fail closed until trusted source and 56-day duty recheck are connected."""
+    """T16 transaction with the trusted fresh five-gate recheck (never client data).
+
+    The 56-day duty-history completeness marker (D7) is not persisted yet, so the `safety` gate keeps failing
+    closed for real markets until that contract exists; this wiring does not bypass it.
+    """
     return await approval_service.approve(
         plan_id,
         user,
         body or {},
         idempotency_key,
         session=db,
-        recheck=None,
+        recheck=five_gate_recheck,
     )
 
 
