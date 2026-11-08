@@ -41,6 +41,7 @@ from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import Location, Market, Vehicle
 from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
+from app.engine.delivery import LICENCE_RANK
 from app.services import alert_service, notify_service, planning_service, risk_service
 
 WAREHOUSE_EVENTS = frozenset(
@@ -331,6 +332,10 @@ async def _driver_gate(
     vehicle = await session.get(Vehicle, trip.vehicle_id)
     if driver is None or employee is None or vehicle is None or employee.status != "active":
         raise DomainError("PLAN_NOT_APPROVABLE", "Verified driver and vehicle data required.")
+    if LICENCE_RANK.get(driver.licence_class, 0) < LICENCE_RANK.get(
+        vehicle.required_licence, 999
+    ):
+        raise DomainError("PLAN_NOT_APPROVABLE", "Driver licence class is insufficient.")
     if driver.licence_expires_on < local.date():
         raise DomainError("LICENCE_EXPIRED", "Driver licence has expired.")
     if vehicle.regulation_561_scope == "unknown" or vehicle.max_permissible_mass_kg is None:
@@ -536,6 +541,8 @@ async def record_event(
                     dedupe_key=f"delivery-failed:{order.id}:{order.approved_plan_id}",
                 )
                 await planning_service.suggest_replan(order.id, "delivery_failed", session=session)
+    elif event_type == "SHORTAGE" and order.status != "PREPARING":
+        raise DomainError("ILLEGAL_TRANSITION", "Shortage reporting requires active preparation.")
     elif event_type == "VEHICLE_ISSUE":
         if not any(t.vehicle_id == payload["vehicle_id"] for t, _ in trips):
             raise DomainError("NOT_FOUND", "Vehicle not assigned to this order.")
