@@ -9,4 +9,4 @@ def test_capture_generated_openapi() -> None:
     print("SCHEMA_CAPTURE_BEGIN_106")
     print(yaml.safe_dump(app.openapi(), allow_unicode=True, sort_keys=False))
     print("SCHEMA_CAPTURE_END_106")
-    raise AssertionError("Schema capture only: remove this temporary test after extracting the generated schema")
+    raise AssertionError("SCHEMA_CAPTURE_ONLY")
