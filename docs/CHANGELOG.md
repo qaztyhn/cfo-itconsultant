@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §2 / §16 — NOT_IMPLEMENTED của API nguồn và baseline OpenAPI nguồn] — 2026-11-08 — chờ review
+
+- Endpoint nguồn chưa xây dựng (ghi đơn, validate, submit, cancel) trả `501 NOT_IMPLEMENTED` thân lỗi chuẩn thay vì 500 không kiểm soát. **Mã lỗi mới chỉ cho API nguồn, chờ duyệt**; lỗi không bắt trả `500 INTERNAL_ERROR` cố định.
+- `source_system/openapi.yaml` là baseline sinh bằng `python -m app.openapi_export`, **chỉ gồm endpoint đã triển khai** (không mô tả stub như hợp đồng); CI so sánh qua `tools/check_openapi.py`. Mỗi PR thêm endpoint phải cập nhật baseline cùng lúc.
+- Không đổi route/enum, không migration. Contract ghi đơn **chưa** có trong baseline.
+
+
 ## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
 
 - Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.

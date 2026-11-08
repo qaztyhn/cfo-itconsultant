@@ -1,5 +1,924 @@
-# Hợp đồng nguồn dùng chung mọi nước (06 mục 16; US-SRC-02). Sinh/đồng bộ từ source_system/app/api.py.
-# Contract test chạy với instance SE và một instance giả khác. TODO(#M1-source-contract)
+# Hợp đồng nguồn dùng chung mọi nước (06 mục 16; US-SRC-02). Sinh bằng `python -m app.openapi_export`
+# và được CI so sánh (tools/check_openapi.py). Chỉ gồm endpoint đã triển khai; endpoint chưa có: 501.
+components:
+  schemas:
+    AddressOut:
+      properties:
+        address:
+          title: Address
+          type: string
+        customer_id:
+          title: Customer Id
+          type: string
+        id:
+          title: Id
+          type: string
+        lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lat
+        lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lon
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - customer_id
+      - address
+      - lat
+      - lon
+      - updated_at
+      title: AddressOut
+      type: object
+    AddressPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AddressOut'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: AddressPage
+      type: object
+    Contact:
+      properties:
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+      required:
+      - name
+      - phone
+      - email
+      title: Contact
+      type: object
+    CustomerOut:
+      properties:
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+        type:
+          title: Type
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - name
+      - email
+      - phone
+      - type
+      - updated_at
+      title: CustomerOut
+      type: object
+    CustomerPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CustomerOut'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: CustomerPage
+      type: object
+    FleetPage:
+      properties:
+        items:
+          items:
+            additionalProperties: true
+            type: object
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: FleetPage
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    InboundOut:
+      properties:
+        confirmed:
+          title: Confirmed
+          type: boolean
+        eta_date:
+          format: date
+          title: Eta Date
+          type: string
+        inbound_ref:
+          title: Inbound Ref
+          type: string
+        qty:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Qty
+        received:
+          title: Received
+          type: boolean
+        sku:
+          title: Sku
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        warehouse_code:
+          title: Warehouse Code
+          type: string
+      required:
+      - inbound_ref
+      - warehouse_code
+      - sku
+      - qty
+      - eta_date
+      - confirmed
+      - received
+      - updated_at
+      title: InboundOut
+      type: object
+    InboundPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InboundOut'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: InboundPage
+      type: object
+    OrderLineOut:
+      properties:
+        line_no:
+          title: Line No
+          type: integer
+        qty:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Qty
+        sku:
+          title: Sku
+          type: string
+        unit_price:
+          title: Unit Price
+          type: string
+      required:
+      - line_no
+      - sku
+      - qty
+      - unit_price
+      title: OrderLineOut
+      type: object
+    OrderOut:
+      properties:
+        address:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Address
+        address_id:
+          title: Address Id
+          type: string
+        contact:
+          $ref: '#/components/schemas/Contact'
+        customer_id:
+          title: Customer Id
+          type: string
+        date_from:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Date From
+        date_mode:
+          title: Date Mode
+          type: string
+        date_to:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Date To
+        id:
+          title: Id
+          type: string
+        lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lat
+        lines:
+          items:
+            $ref: '#/components/schemas/OrderLineOut'
+          title: Lines
+          type: array
+        lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lon
+        receiving_restrictions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Receiving Restrictions
+        sales_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sales Code
+        special_requirements:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Special Requirements
+        status:
+          enum:
+          - DRAFT
+          - VALIDATED
+          - SUBMITTED_FOR_PLANNING
+          - CANCELLED
+          title: Status
+          type: string
+        store_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Store Code
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        version:
+          title: Version
+          type: integer
+        window_end:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Window End
+        window_start:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Window Start
+      required:
+      - id
+      - version
+      - updated_at
+      - status
+      - customer_id
+      - address_id
+      - address
+      - lat
+      - lon
+      - contact
+      - date_mode
+      - date_from
+      - date_to
+      - window_start
+      - window_end
+      - receiving_restrictions
+      - special_requirements
+      - sales_code
+      - store_code
+      - lines
+      title: OrderOut
+      type: object
+    OrderPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OrderOut'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: OrderPage
+      type: object
+    ProductOut:
+      properties:
+        category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+        gtin:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gtin
+        name:
+          title: Name
+          type: string
+        sale_unit:
+          title: Sale Unit
+          type: string
+        sku:
+          title: Sku
+          type: string
+        unit_price:
+          title: Unit Price
+          type: string
+        units_to_base:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Units To Base
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        volume_m3:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Volume M3
+        weight_kg:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Weight Kg
+      required:
+      - sku
+      - name
+      - category
+      - gtin
+      - sale_unit
+      - units_to_base
+      - unit_price
+      - weight_kg
+      - volume_m3
+      - updated_at
+      title: ProductOut
+      type: object
+    ProductPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ProductOut'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: ProductPage
+      type: object
+    StockItem:
+      properties:
+        on_hand:
+          anyOf:
+          - type: integer
+          - type: number
+          title: On Hand
+        reserved:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Reserved
+        sku:
+          title: Sku
+          type: string
+        warehouse_code:
+          title: Warehouse Code
+          type: string
+      required:
+      - warehouse_code
+      - sku
+      - on_hand
+      - reserved
+      title: StockItem
+      type: object
+    StockSnapshot:
+      properties:
+        as_of:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: As Of
+        items:
+          items:
+            $ref: '#/components/schemas/StockItem'
+          title: Items
+          type: array
+      required:
+      - as_of
+      - items
+      title: StockSnapshot
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+  securitySchemes:
+    APIKeyHeader:
+      in: header
+      name: X-API-Key
+      type: apiKey
+info:
+  title: CFO Source System (mock)
+  version: 0.1.0
 openapi: 3.1.0
-info: {title: CFO Source System (mock), version: 0.1.0}
-paths: {}
+paths:
+  /api/v1/addresses:
+    get:
+      description: Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật); lọc theo khách
+        / văn bản địa chỉ (D1-A).
+      operationId: addresses_api_v1_addresses_get
+      parameters:
+      - in: query
+        name: customer_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Id
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: Addresses
+  /api/v1/customers:
+    get:
+      description: Khách (D1-A).
+      operationId: list_customers_api_v1_customers_get
+      parameters:
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: List Customers
+  /api/v1/fleet/calendar:
+    get:
+      description: Khoảng bận của xe giao nửa mở [from, to) (D1-A).
+      operationId: fleet_calendar_api_v1_fleet_calendar_get
+      parameters:
+      - in: query
+        name: from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: From
+      - in: query
+        name: to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: To
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: Fleet Calendar
+  /api/v1/health:
+    get:
+      description: Public health probe; do not report healthy when the database is
+        unavailable.
+      operationId: health_api_v1_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Health
+  /api/v1/inbound:
+    get:
+      description: 'Hàng nhập: inbound_ref, warehouse_code, sku, qty, eta_date, confirmed,
+        received (D1-A).'
+      operationId: inbound_api_v1_inbound_get
+      parameters:
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: Inbound
+  /api/v1/orders:
+    get:
+      description: Đơn kèm dòng, bản chụp địa chỉ/liên hệ, version, updated_at (06
+        mục 16; SRC-Q1/Q6/Q7).
+      operationId: list_orders_endpoint_api_v1_orders_get
+      parameters:
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: status
+        required: false
+        schema:
+          default: SUBMITTED_FOR_PLANNING
+          enum:
+          - DRAFT
+          - VALIDATED
+          - SUBMITTED_FOR_PLANNING
+          - CANCELLED
+          title: Status
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: List Orders Endpoint
+  /api/v1/products:
+    get:
+      description: Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân
+        nặng, thể tích) (D1-A).
+      operationId: list_products_api_v1_products_get
+      parameters:
+      - in: query
+        name: updated_since
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated Since
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 50
+          maximum: 500
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - APIKeyHeader: []
+      summary: List Products
+  /api/v1/stock:
+    get:
+      description: 'Ảnh chụp tồn kho toàn bộ kèm as_of (06 mục 16).
+
+
+        `as_of` là thời điểm CŨ NHẤT trong các dòng (không khẳng định dữ liệu mới
+        hơn thực tế). Bảng không có dòng
+
+        thì trả `as_of = null` và `items = []`: nguồn chưa lưu thời điểm của lô rỗng
+        (SRC-Q9 chưa duyệt) nên KHÔNG
+
+        được bịa `as_of`; adapter CFO yêu cầu `as_of` hợp lệ và sẽ từ chối thay vì
+        coi là tồn kho 0.'
+      operationId: stock_snapshot_api_v1_stock_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockSnapshot'
+          description: Successful Response
+      security:
+      - APIKeyHeader: []
+      summary: Stock Snapshot

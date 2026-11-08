@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import lists_read as lists
 from app.auth import require_api_key
 from app.db import database_ready
+from app.errors import EndpointNotImplemented
 from app.models import Stock
 from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderPage, OrderStatus, list_orders
 
@@ -109,34 +110,34 @@ async def fleet_calendar(
     return await lists.fleet_calendar(paging, from_, to)
 
 
-@router.post("/orders")
+@router.post("/orders", include_in_schema=False)
 async def create_order() -> dict[str, object]:
     """POS: tạo đơn nháp (DRAFT)."""
-    raise NotImplementedError
+    raise EndpointNotImplemented
 
 
-@router.put("/orders/{order_id}")
+@router.put("/orders/{order_id}", include_in_schema=False)
 async def update_order(order_id: str) -> dict[str, object]:
     """POS: sửa đơn, tăng version."""
-    raise NotImplementedError
+    raise EndpointNotImplemented
 
 
-@router.post("/orders/{order_id}/validate")
+@router.post("/orders/{order_id}/validate", include_in_schema=False)
 async def validate_order(order_id: str) -> dict[str, object]:
     """Sales Validation: khách, địa chỉ/tọa độ, dòng hàng, ngày và khung giờ (US-SRC-03)."""
-    raise NotImplementedError
+    raise EndpointNotImplemented
 
 
-@router.post("/orders/{order_id}/submit")
+@router.post("/orders/{order_id}/submit", include_in_schema=False)
 async def submit_order(order_id: str) -> dict[str, object]:
     """Chuyển SUBMITTED_FOR_PLANNING — chỉ sau validate thành công (US-ORD-01 AC4)."""
-    raise NotImplementedError
+    raise EndpointNotImplemented
 
 
-@router.post("/orders/{order_id}/cancel")
+@router.post("/orders/{order_id}/cancel", include_in_schema=False)
 async def cancel_order(order_id: str) -> dict[str, object]:
     """Hủy đơn ở nguồn."""
-    raise NotImplementedError
+    raise EndpointNotImplemented
 
 
 @router.get("/addresses", response_model=lists.AddressPage)
