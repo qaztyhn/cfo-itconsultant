@@ -2,7 +2,7 @@
 
 Risk and notification services are currently unfinished. Their absence deliberately
 rolls back writes rather than committing a milestone without mandatory follow-up.
-No GPS coordinates, customer financial data or inferred driver-hour eligibility.
+No GPS coordinates, customer prices or inferred driver-hour eligibility.
 """
 
 import hashlib
