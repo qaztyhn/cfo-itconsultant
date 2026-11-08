@@ -344,7 +344,6 @@ async def by_location(
     return RevenueByLocation(view, await _currency(session, market_id), tuple(built))
 
 
-
 async def resolve_market_period(
     session: AsyncSession, viewer: RevenueViewer, start: date | None, end: date | None
 ) -> tuple[int, Period]:
@@ -383,8 +382,10 @@ async def orders(
     local_day = cast(func.timezone(Market.timezone, CustomerOrder.delivered_at), Date)
     in_period = or_(
         and_(CustomerOrder.status == "DELIVERED", local_day.between(period.start, period.end)),
-        and_(CustomerOrder.status.in_(BOOKED_STATUSES),
-             CustomerOrder.committed_date.between(period.start, period.end)),
+        and_(
+            CustomerOrder.status.in_(BOOKED_STATUSES),
+            CustomerOrder.committed_date.between(period.start, period.end),
+        ),
     )
     location_col = CustomerOrder.origin_store_id if view == "store" else FulfilmentPlan.warehouse_id
     filters = [
@@ -392,9 +393,9 @@ async def orders(
         in_period,
         location_col.in_(targets if targets is not None else frozenset({location_id})),
     ]
-    show_customer = "admin" in viewer.roles or (not scope.all and location_id in (
-        scope.store_ids if view == "store" else scope.warehouse_ids
-    ))
+    show_customer = "admin" in viewer.roles or (
+        not scope.all and location_id in (scope.store_ids if view == "store" else scope.warehouse_ids)
+    )
     fields = [
         CustomerOrder.order_no,
         CustomerOrder.delivered_at,
@@ -413,13 +414,20 @@ async def orders(
     if show_customer:
         stmt = stmt.join(Customer, Customer.id == CustomerOrder.customer_id)
     stmt = stmt.where(*filters)
-    total = int((await session.execute(
-        select(func.count()).select_from(stmt.order_by(None).subquery())
-    )).scalar_one())
-    records = (await session.execute(
-        stmt.order_by(CustomerOrder.order_no, CustomerOrder.id)
-        .limit(page_size).offset((page - 1) * page_size)
-    )).mappings().all()
+    total = int(
+        (await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
+    )
+    records = (
+        (
+            await session.execute(
+                stmt.order_by(CustomerOrder.order_no, CustomerOrder.id)
+                .limit(page_size)
+                .offset((page - 1) * page_size)
+            )
+        )
+        .mappings()
+        .all()
+    )
     result: list[dict[str, object]] = []
     for row in records:
         item: dict[str, object] = {
@@ -461,12 +469,19 @@ async def export_csv(
         (v_revenue_pending, "revenue_booked", "orders_pending", 2),
     ):
         loc_col = _column(table, view)
-        rows = (await session.execute(
-            select(table.c.day, loc_col, table.c.currency,
-                   func.sum(table.c[count_column]), func.sum(table.c[amount_column]))
-            .where(*_filtered(table, view, market_id, period, targets))
-            .group_by(table.c.day, loc_col, table.c.currency)
-        )).all()
+        rows = (
+            await session.execute(
+                select(
+                    table.c.day,
+                    loc_col,
+                    table.c.currency,
+                    func.sum(table.c[count_column]),
+                    func.sum(table.c[amount_column]),
+                )
+                .where(*_filtered(table, view, market_id, period, targets))
+                .group_by(table.c.day, loc_col, table.c.currency)
+            )
+        ).all()
         for day, loc_id, currency, count, amount in rows:
             key = (day, loc_id, currency)
             values = totals.setdefault(key, [0, Decimal(0), Decimal(0)])
@@ -477,32 +492,61 @@ async def export_csv(
     ids = {loc_id for _, loc_id, _ in totals if loc_id is not None}
     loc_names: dict[int, tuple[str, str]] = {}
     if ids:
-        locations = (await session.execute(
-            select(Location.id, Location.code, Location.name).where(
-                Location.market_id == market_id, Location.type == view, Location.id.in_(ids)
+        locations = (
+            await session.execute(
+                select(Location.id, Location.code, Location.name).where(
+                    Location.market_id == market_id, Location.type == view, Location.id.in_(ids)
+                )
             )
-        )).all()
+        ).all()
         loc_names = {i: (code, name) for i, code, name in locations}
 
     output = StringIO(newline="")
     writer = csv.writer(output, lineterminator="\r\n")
-    writer.writerow(("day", "view", "location_code", "location_name", "orders_delivered",
-                     "revenue_recognised", "revenue_booked", "currency"))
+    writer.writerow(
+        (
+            "day",
+            "view",
+            "location_code",
+            "location_name",
+            "orders_delivered",
+            "revenue_recognised",
+            "revenue_booked",
+            "currency",
+        )
+    )
     for (day, loc_id, currency), (count, recognised, booked) in sorted(
         totals.items(), key=lambda item: (item[0][0], item[0][1] is None, item[0][1] or 0)
     ):
         code, name = loc_names.get(loc_id, ("", UNASSIGNED_STORE if view == "store" else ""))
         # Quote risky spreadsheet-formula prefixes in free-text location labels.
-        writer.writerow((day.isoformat(), view, _csv_safe(code), _csv_safe(name), count,
-                         str(Decimal(recognised).quantize(_CENT)),
-                         str(Decimal(booked).quantize(_CENT)), currency))
+        writer.writerow(
+            (
+                day.isoformat(),
+                view,
+                _csv_safe(code),
+                _csv_safe(name),
+                count,
+                str(Decimal(recognised).quantize(_CENT)),
+                str(Decimal(booked).quantize(_CENT)),
+                currency,
+            )
+        )
 
     await record_decision(
-        session, Action.REVENUE_EXPORTED, entity="revenue", entity_id=str(market_id),
-        snapshot={"view": view, "location_id": location_id, "from": period.start.isoformat(),
-                  "to": period.end.isoformat(), "row_count": len(totals)},
-        actor_user_id=viewer.id, actor_employee_id=viewer.employee_id,
+        session,
+        Action.REVENUE_EXPORTED,
+        entity="revenue",
+        entity_id=str(market_id),
+        snapshot={
+            "view": view,
+            "location_id": location_id,
+            "from": period.start.isoformat(),
+            "to": period.end.isoformat(),
+            "row_count": len(totals),
+        },
+        actor_user_id=viewer.id,
+        actor_employee_id=viewer.employee_id,
         actor_role=viewer.roles[0] if viewer.roles else None,
     )
     return output.getvalue().encode("utf-8-sig")
-

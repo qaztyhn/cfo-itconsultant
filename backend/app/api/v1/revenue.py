@@ -90,8 +90,12 @@ class RevenueOrderOut(BaseModel):
 
 @router.get("/revenue/summary", response_model=RevenueSummaryOut, responses=_ERRORS)
 async def revenue_summary(
-    user: AuthUser, db: DbSession, view: RevenueView,
-    date_from: FromDate = None, date_to: ToDate = None, location_id: LocationId = None,
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    location_id: LocationId = None,
 ) -> RevenueSummaryOut:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     result = await service.summary(
@@ -99,8 +103,11 @@ async def revenue_summary(
     )
     return RevenueSummaryOut(
         period=PeriodOut.model_validate({"from": result.period.start, "to": result.period.end}),
-        view=result.view, location_id=result.location_id, currency=result.currency,
-        recognised=_money(result.recognised), booked_not_delivered=_money(result.booked_not_delivered),
+        view=result.view,
+        location_id=result.location_id,
+        currency=result.currency,
+        recognised=_money(result.recognised),
+        booked_not_delivered=_money(result.booked_not_delivered),
         orders_delivered=result.orders_delivered,
         avg_order_value=_money(result.avg_order_value) if result.avg_order_value is not None else None,
         share_of_market_pct=(
@@ -111,15 +118,20 @@ async def revenue_summary(
 
 @router.get("/revenue/daily", response_model=RevenueDailyOut, responses=_ERRORS)
 async def revenue_daily(
-    user: AuthUser, db: DbSession, view: RevenueView,
-    date_from: FromDate = None, date_to: ToDate = None, location_id: LocationId = None,
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    location_id: LocationId = None,
 ) -> RevenueDailyOut:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     result = await service.daily(
         db, user, market_id=market_id, view=view, location_id=location_id, period=period
     )
     return RevenueDailyOut(
-        currency=result.currency, points=[
+        currency=result.currency,
+        points=[
             RevenuePointOut(day=p.day, recognised=_money(p.recognised), booked=_money(p.booked))
             for p in result.points
         ],
@@ -128,19 +140,27 @@ async def revenue_daily(
 
 @router.get("/revenue/by-location", response_model=RevenueByLocationOut, responses=_ERRORS)
 async def revenue_by_location(
-    user: AuthUser, db: DbSession, view: RevenueView,
-    date_from: FromDate = None, date_to: ToDate = None, location_id: LocationId = None,
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    location_id: LocationId = None,
 ) -> RevenueByLocationOut:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     result = await service.by_location(
         db, user, market_id=market_id, view=view, period=period, location_id=location_id
     )
     return RevenueByLocationOut(
-        view=result.view, currency=result.currency,
+        view=result.view,
+        currency=result.currency,
         rows=[
             RevenueLocationRowOut(
-                location_id=row.location_id, code=row.code, name=row.name,
-                orders_delivered=row.orders_delivered, recognised=_money(row.recognised),
+                location_id=row.location_id,
+                code=row.code,
+                name=row.name,
+                orders_delivered=row.orders_delivered,
+                recognised=_money(row.recognised),
                 booked_not_delivered=_money(row.booked_not_delivered),
                 share_pct=float(row.share_pct) if row.share_pct is not None else None,
             )
@@ -150,35 +170,55 @@ async def revenue_by_location(
 
 
 @router.get(
-    "/revenue/orders", response_model=Page[RevenueOrderOut],
-    response_model_exclude_unset=True, responses=_ERRORS,
+    "/revenue/orders",
+    response_model=Page[RevenueOrderOut],
+    response_model_exclude_unset=True,
+    responses=_ERRORS,
 )
 async def revenue_orders(
-    user: AuthUser, db: DbSession, view: RevenueView, location_id: RequiredLocation,
-    date_from: FromDate = None, date_to: ToDate = None,
-    page: PageNo = 1, page_size: PageSize = 50,
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    location_id: RequiredLocation,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
 ) -> Page[RevenueOrderOut]:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     records, total = await service.orders(
-        db, user, market_id=market_id, view=view, location_id=location_id, period=period,
-        page=page, page_size=page_size,
+        db,
+        user,
+        market_id=market_id,
+        view=view,
+        location_id=location_id,
+        period=period,
+        page=page,
+        page_size=page_size,
     )
     return Page[RevenueOrderOut](
         items=[RevenueOrderOut.model_validate(row) for row in records],
-        page=page, page_size=page_size, total=total,
+        page=page,
+        page_size=page_size,
+        total=total,
     )
 
 
 @router.get("/revenue/export.csv", responses=_ERRORS)
 async def revenue_export_csv(
-    user: AuthUser, db: DbSession, view: RevenueView,
-    date_from: FromDate = None, date_to: ToDate = None, location_id: LocationId = None,
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    location_id: LocationId = None,
 ) -> Response:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     data = await service.export_csv(
         db, user, market_id=market_id, view=view, location_id=location_id, period=period
     )
     return Response(
-        content=data, media_type="text/csv; charset=utf-8",
+        content=data,
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="revenue.csv"'},
     )

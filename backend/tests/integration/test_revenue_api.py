@@ -35,16 +35,19 @@ SEED = (
     "(NULL, 'admin@cfo.test', 'not-a-real-hash', '{admin}', '{}')",
 )
 
+
 def _seed_orders(dsn: str) -> None:
     statements: list[str] = []
     for no, status, amount, store, warehouse, delivered, committed in ORDERS:
-        statements.extend((
-            _order(no, status, amount, store, delivered=delivered, committed=committed),
-            rows.run_sql(no, 1),
-            rows.plan_sql(no, no, 1, "approved"),
-            f"UPDATE plan.fulfilment_plan SET warehouse_id = {warehouse} WHERE id = {no}",
-            f"UPDATE ops.customer_order SET approved_plan_id = {no} WHERE id = {no}",
-        ))
+        statements.extend(
+            (
+                _order(no, status, amount, store, delivered=delivered, committed=committed),
+                rows.run_sql(no, 1),
+                rows.plan_sql(no, no, 1, "approved"),
+                f"UPDATE plan.fulfilment_plan SET warehouse_id = {warehouse} WHERE id = {no}",
+                f"UPDATE ops.customer_order SET approved_plan_id = {no} WHERE id = {no}",
+            )
+        )
     execute(dsn, *statements)
 
 
@@ -78,18 +81,24 @@ def test_US_REV_01_AC1_AC5_summary_and_daily_market_period(rev: Api) -> None:
 
 def test_US_REV_01_AC2_AC3_AC4_scope_views_and_errors(rev: Api) -> None:
     assert rev.get("/revenue/summary", 1, view="store", **PERIOD).json()["recognised"] == "1500.50"
-    assert_error(rev.get("/revenue/summary", 1, view="store", location_id=3, **PERIOD),
-                 404, "NOT_FOUND")
-    assert_error(rev.get("/revenue/summary", 3, view="store", location_id=4, **PERIOD),
-                 422, "VALIDATION_ERROR")
+    assert_error(rev.get("/revenue/summary", 1, view="store", location_id=3, **PERIOD), 404, "NOT_FOUND")
+    assert_error(
+        rev.get("/revenue/summary", 3, view="store", location_id=4, **PERIOD), 422, "VALIDATION_ERROR"
+    )
     assert_error(rev.get("/revenue/summary", 3, view="store", **PERIOD), 403, "FORBIDDEN")
     assert_error(rev.get("/revenue/summary", 4, view="store", **PERIOD), 403, "FORBIDDEN")
     assert_error(rev.get("/revenue/summary", None, view="store", **PERIOD), 401, "AUTH_INVALID")
     assert_error(rev.get("/revenue/summary", 1, view="region", **PERIOD), 422, "VALIDATION_ERROR")
-    assert_error(rev.get("/revenue/summary", 2, view="store", **{"from": "2026-12-01",
-                 "to": "2026-11-01"}), 422, "VALIDATION_ERROR")
-    assert_error(rev.get("/revenue/summary", 2, view="store", **{"from": "2025-01-01",
-                 "to": "2026-11-30"}), 422, "VALIDATION_ERROR")
+    assert_error(
+        rev.get("/revenue/summary", 2, view="store", **{"from": "2026-12-01", "to": "2026-11-01"}),
+        422,
+        "VALIDATION_ERROR",
+    )
+    assert_error(
+        rev.get("/revenue/summary", 2, view="store", **{"from": "2025-01-01", "to": "2026-11-30"}),
+        422,
+        "VALIDATION_ERROR",
+    )
 
 
 def test_US_REV_01_AC7_market_share_includes_unassigned_store(rev: Api) -> None:
@@ -113,10 +122,8 @@ def test_US_REV_01_AC9_order_pagination_and_customer_redaction(rev: Api) -> None
     allowed = rev.get("/revenue/orders", 1, view="store", location_id=2, **PERIOD)
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["items"][0]["customer_name"] == "Test customer"
-    assert_error(rev.get("/revenue/orders", 1, view="store", location_id=3, **PERIOD),
-                 404, "NOT_FOUND")
-    assert_error(rev.get("/revenue/orders", 4, view="store", location_id=2, **PERIOD),
-                 403, "FORBIDDEN")
+    assert_error(rev.get("/revenue/orders", 1, view="store", location_id=3, **PERIOD), 404, "NOT_FOUND")
+    assert_error(rev.get("/revenue/orders", 4, view="store", location_id=2, **PERIOD), 403, "FORBIDDEN")
     assert_error(rev.get("/revenue/orders", 2, view="store", **PERIOD), 422, "VALIDATION_ERROR")
 
 
@@ -126,8 +133,14 @@ def test_US_REV_01_AC8_csv_bom_rows_and_audit(rev: Api) -> None:
     assert r.content.startswith(b"\xef\xbb\xbf")
     data = list(csv.DictReader(StringIO(r.content.decode("utf-8-sig"))))
     assert set(data[0]) == {
-        "day", "view", "location_code", "location_name", "orders_delivered",
-        "revenue_recognised", "revenue_booked", "currency",
+        "day",
+        "view",
+        "location_code",
+        "location_name",
+        "orders_delivered",
+        "revenue_recognised",
+        "revenue_booked",
+        "currency",
     }
     assert sum(float(x["revenue_recognised"]) for x in data) == 1850.5
     assert all(x["currency"] == "SEK" and x["view"] == "store" for x in data)
@@ -135,6 +148,7 @@ def test_US_REV_01_AC8_csv_bom_rows_and_audit(rev: Api) -> None:
     assert "Test customer" not in r.text
     assert_error(rev.get("/revenue/export.csv", 4, view="store", **PERIOD), 403, "FORBIDDEN")
     import psycopg
+
     with psycopg.connect(rev.dsn) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT action, snapshot->>'view', (snapshot->>'row_count')::int "
