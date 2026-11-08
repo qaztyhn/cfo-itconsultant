@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [05 §10 / 06 §16.4 — PR #105 căn chỉnh theo DEC-SRC-Q9-ERROR-001 và DEC-SRC-Q10-SKU-001] — 2026-11-08 — chờ review
+
+- `GET /stock` nguồn: `200 {as_of, batch_id, item_count, items[{warehouse_code, sku, on_hand, reserved}]}` từ batch published hoàn chỉnh mới nhất; **`503 STOCK_UNAVAILABLE`** khi không có batch published hoặc batch mới nhất không qua kiểm tra toàn vẹn; `200` với `items=[]` chỉ cho batch published rỗng. Thay thế phản hồi `200 {complete:false, as_of:null}`.
+- **Bỏ `physical_stock_pool_id`** khỏi DDL, DTO, CLI và test; `src_stock` có `UNIQUE(batch_id, warehouse_code, sku)`, mỗi batch giữ dòng của mình. Nâng cấp từng bước giữ dữ liệu; dòng legacy không batch không bao giờ được phục vụ.
+- Phần mô tả pool của mục "Dev 2 source authoritative stock batches" bên dưới đã bị thay thế bởi mục này.
+- Không đổi route; OpenAPI baseline nguồn chưa có trên `main` (đang chờ PR #99) nên chưa tái tạo ở PR này.
+
+
 ## [DEC-SRC-Q9-ERROR-001 — Source 503 STOCK_UNAVAILABLE approved] — 2026-11-08 — docs-only PR #101
 
 - Chủ dự án đã duyệt phương án A: `GET /api/v1/stock` khi **chưa có batch tồn kho hoàn chỉnh nào đã publish** trả **HTTP 503**, `error.code = STOCK_UNAVAILABLE`, body/header lỗi chuẩn Source có `correlation_id`. Nếu published empty batch thì vẫn trả `200 items=[]` (tồn=0), không nhầm với unknown.
@@ -226,3 +234,25 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   clock with APP_NOW injection and additive src_create_request storage; document 05/06 behavior.
 - DRAFT may omit lines/contact/date details; zero-price source lines are accepted without CFO mapping.
   Full validate/edit/submit/cancel and CFO ingestion remain separate implementation tasks.
+# Dev 2 source validate/submit (2026-11-08)
+
+- Implement locked source DRAFT→VALIDATED→SUBMITTED_FOR_PLANNING with source-only customer/reference,
+  contact, SKU/lines, snapshot coordinates, date-mode and explicit receiving-calendar checks (D1-B/C).
+- Validation failure preserves version/status; retries and concurrent submit bump only once. Recheck
+  references/calendar on submit, inject APP_NOW into the source timestamp trigger within the transaction.
+- CFO planning, stock feasibility, mapping, routing, approval and source PUT/cancel remain separate.
+# Dev 2 source versioned PUT/cancel (2026-11-08)
+
+- Complete approved D1-C source full replacement with expected_version/row lock, no-op detection,
+  explicit snapshot refresh, validation invalidation and fully revalidated submitted edits.
+- Add terminal idempotent cancellation provenance and DB immutability guard; expose cancellation
+  metadata in the existing status=CANCELLED feed. Concurrent cancel/edit has one version winner.
+- CFO transition/hold/replan/suggestion/approval propagation is not implemented by source writes.
+# Dev 2 source authoritative stock batches (2026-11-08)
+
+- Replace interim min(row.as_of) stock read with an atomically published complete batch, authoritative
+  empty marker, row-count/content integrity, explicit physical pool IDs and repeatable-read snapshot.
+- Add preserved source schema upgrade and explicit `python -m app.stock_batches --snapshot file.json
+  --complete-snapshot` publisher. No existing environment was reset; tests use isolated schemas only.
+- 05/06 define batch markers, retry/capture behavior and legacy UNKNOWN. CFO pool normalization and
+  persistence remain a separate reviewed integration task.

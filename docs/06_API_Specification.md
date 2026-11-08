@@ -786,6 +786,15 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 
 ### 16.3 D1-C — Version, sửa/hủy sau submit và CFO propagation
 
+PUT full replacement dùng cùng OrderIn + `expected_version` int≥1; optional `refresh_address=false`
+chỉ lấy snapshot mới khi true hoặc đổi address/customer reference. No-op giữ version; edit VALIDATED
+thành DRAFT, edit SUBMITTED phải validate toàn đơn và vẫn SUBMITTED. Stale version → 409 VERSION_CONFLICT.
+Cancel body `{expected_version,reason_code,reason_text?}`: reason_code token chữ thường/số/gạch dưới
+(bắt đầu bằng chữ, tối đa 64 ký tự), reason_text tối đa 1000 ký tự printable, bắt buộc nếu code=`other`.
+Retry cùng reason, với version trước hủy hoặc version hiện tại, trả cùng CANCELLED/provenance không tăng
+version; intent khác không ghi đè provenance. Common order DTO thêm nullable `cancel_reason` và
+`cancelled_at`, gồm cả GET feed status=CANCELLED; không trả dữ liệu này như thông báo khách tự do.
+
 - `PUT /orders/{id}`: bắt buộc `expected_version`, compare + row lock; đổi thực tế tăng version/updated_at, identical no-op có thể không tăng. Sai version → **409 `VERSION_CONFLICT`** (mã mới **chỉ áp dụng hợp đồng Source API**); trạng thái không hợp lệ → **409 `ILLEGAL_TRANSITION`**.
 - `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh đơn VALIDATED → DRAFT, invalidates validation. Chỉnh đơn đã `SUBMITTED_FOR_PLANNING` được phép **nếu toàn bộ nội dung mới validate thành công trong cùng transaction**; giữ status `SUBMITTED_FOR_PLANNING`, tăng source version. PUT lỗi không làm mất đơn khỏi feed.
 - `POST /orders/{id}/cancel` từ DRAFT/VALIDATED/SUBMITTED_FOR_PLANNING có `expected_version`, `reason_code` và reason_text bảo đảm an toàn khi `other`; terminal CANCELLED không được sửa/reopen/resubmit; retry cancel không nhân phiên bản/hủy trùng.
@@ -793,6 +802,19 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 - **Đã DISPATCHED/đang giao:** alert Dispatcher xử lý thủ công, không tự thay chuyến/commit hoặc xóa lịch sử giao hàng. CFO không bao giờ POST/PUT/cancel ngược POS và không tự đảo routing legacy/cfo.
 
 ### 16.4 D1-D — Calendar / stock batch / fixed-unit SKU (Q10 owner override)
+
+`GET /stock` (**không phân trang**) trả `200 {as_of, batch_id, item_count, items}`; item chỉ có
+`warehouse_code, sku, on_hand, reserved` (số lượng là số JSON, theo **đơn vị tồn kho khai báo của SKU**).
+Đó là **batch published hoàn chỉnh mới nhất** (`as_of` cao nhất, rồi `batch_id`), `as_of` là thời điểm chụp
+của batch, `item_count` bằng số dòng; batch published rỗng hợp lệ trả `200` với `items=[]` (tồn 0 trong
+phạm vi batch). **Không có `physical_stock_pool_id`** hay trường nhóm/alias nào (DEC-SRC-Q10-SKU-001); mỗi batch
+tối đa một dòng `(batch_id, warehouse_code, sku)`, trùng khóa làm batch bị từ chối khi publish (không cộng,
+không last-row-wins). Không có batch published hoàn chỉnh, hoặc batch mới nhất không qua kiểm tra toàn vẹn
+(số dòng/hash/`as_of`) ⇒ **`503 STOCK_UNAVAILABLE`** (DEC-SRC-Q9-ERROR-001), thân lỗi chuẩn kèm
+`X-Correlation-ID`, sau bước xác thực `X-API-Key`; không bao giờ trả 200 rỗng thay cho "không biết". Batch
+mới lỗi khi đã có batch published cũ: batch lỗi bị rollback hoàn toàn và Source tiếp tục trả batch cũ với
+`as_of` thật của nó (CFO phải tự kiểm độ mới). Đọc marker và dòng trong cùng một MVCC snapshot. Dòng tồn
+cũ không có `batch_id` (legacy) không bao giờ được phục vụ cho đến khi có batch được publish.
 
 Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
 weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,
