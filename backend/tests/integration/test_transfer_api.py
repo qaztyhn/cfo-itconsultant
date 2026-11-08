@@ -155,34 +155,29 @@ def test_US_ATP_03_AC2_RBAC_location_scope_and_market(transfer_api: Api) -> None
     assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", SALES), 403, "FORBIDDEN")
 
 
-def test_US_ATP_02_AC3_cancel_with_reason_and_reject_invalid_transitions(
-    transfer_api: Api,
-) -> None:
+def test_T18_cancel_fails_closed_until_audit_contract_is_approved(transfer_api: Api) -> None:
     transfer_id = approved(transfer_api)
     assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, {}), 422, "VALIDATION_ERROR"
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, {}),
+        422,
+        "VALIDATION_ERROR",
     )
-    key = str(uuid4())
-    response = post(
-        transfer_api,
-        f"/transfers/{transfer_id}/cancel",
-        DISPATCHER,
-        {"reason_text": "Customer cancelled transfer"},
-        key,
-    )
-    assert response.status_code == 200 and response.json()["status"] == "cancelled"
-    same = post(
-        transfer_api,
-        f"/transfers/{transfer_id}/cancel",
-        DISPATCHER,
-        {"reason_text": "Customer cancelled transfer"},
-        key,
-    )
-    assert same.json() == response.json()
-    assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE), 409, "ILLEGAL_TRANSITION"
-    )
-    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+    requested = {"reason_text": "Customer cancelled transfer"}
+    for _ in range(2):
+        assert_error(
+            post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, requested),
+            409,
+            "PLAN_NOT_APPROVABLE",
+        )
+    # A rejected cancellation must not mutate the transfer or write a deceptive APPROVED audit.
+    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
+    assert fetch(
+        transfer_api.dsn,
+        "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_APPROVED'",
+    )[0]["n"] == 1
+    confirmed = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "source_confirmed"
 
 
 def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfer_api: Api) -> None:
