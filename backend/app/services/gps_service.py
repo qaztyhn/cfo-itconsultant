@@ -104,7 +104,7 @@ async def ingest_positions(
     existing = (
         await session.scalars(
             select(VehiclePosition)
-            .where(VehiclePosition.trip_id == trip.id)
+            .where(VehiclePosition.trip_id == trip.id, VehiclePosition.source == "device")
             .order_by(VehiclePosition.recorded_at, VehiclePosition.id)
         )
     ).all()
