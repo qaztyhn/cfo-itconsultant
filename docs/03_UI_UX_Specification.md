@@ -164,7 +164,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Cột phải — "Customer notifications":** danh sách (giờ, loại · kênh, nội dung ngắn, trạng thái). **Bản nháp DELAY** hiện thẻ nền `#FFF4EE`: "Draft · Delay notice — new window 13:00–13:30" với **Edit**, **Send**, **Discard** (lý do bắt buộc). Chân: "A new draft appears only if the ETA moves ≥ 30 min from the last notified window. Customers see status and ETA only — never driver location." Liên kết "Open inbox".
 - **Thẻ "Approved plan":** Warehouse · Truck · Prep (giờ/phút) · **Distance** (thay "Cost") · Score.
 - **Event log:** hiệu ứng của `RISK · AT_RISK` lấy theo mức thật (ví dụ "Goods ready 30 min overdue" khớp `milestone_grace_min = 30`); hiệu ứng của `RISK · PREDICTED_LATE` là "Alert to dispatcher; delay notice draft created" (không "delay email queued").
-- **Panel bổ sung "Live position" (chỉ dispatcher, khi `gps_enabled` và chuyến `on_road`):** bản đồ Leaflet/OSM với kho, điểm giao, đường đi, xe; dòng "Last fix 10:52 · accuracy 12 m · source device/simulator"; trạng thái "GPS lost since 10:20" (nền Predicted late); biểu ngữ "No DPIA on file — demo only". Không hiển thị cho vai trò khác.
+- **Panel bổ sung "Live position" (D3 / DEC-DEV2-D3-001: chỉ Dispatcher được gán rõ cho chuyến, khi `gps_enabled`, chuyến `on_road` và tài xế trong ca đã xác nhận):** bản đồ Leaflet/OSM với kho, điểm giao, đường đi, xe; dòng "Last fix 10:52 · accuracy 12 m · source device/simulator"; trạng thái "GPS lost since 10:20" (nền Predicted late); biểu ngữ "No DPIA on file — demo only". Không hiển thị cho Dispatcher khác dù cùng market hay vai trò khác; khi trip hoặc ca kết thúc phải ẩn ngay và xóa dữ liệu tọa độ (kể cả queue offline), chỉ bật lại cho chuyến kế tiếp có phân công/ca hợp lệ.
 - Hộp thoại khẩn cấp cho `VEHICLE_ISSUE`: hiển thị cảnh báo kèm nút "Review suggested plan" (gợi ý lập lại tự động) và "Replan this order".
 - **Đơn nhiều xe:** ô FORECAST ETA theo xe tới muộn nhất; danh sách nhỏ trạng thái từng xe (Loaded / Dispatched / Delivered / Failed); Live position hiện mọi xe của đơn.
 
@@ -206,7 +206,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Chip lọc:** `All · 6`, `Email · 4`, `SMS · 2`, `Draft · 1`, `Suppressed · 1`.
 - **Danh sách trái:** mỗi mục: chip mẫu (`DELAY`, `DISPATCHED`, `DELIVERED`, `CONFIRMED`) + kênh + giờ, dòng `SE-… · Khách`, dòng trạng thái ("Sent · new ETA 13:00–13:30", "Suppressed · ETA moved < 30 min", "Draft · waiting for dispatcher").
 - **Chi tiết phải:** khung email (From/To/Subject; To đã che `u•••@…`), thân thư theo mẫu mục 8.1 (dải màu `apricot` phía trên, tiêu đề, đoạn, khối "New arrival / Status", chân thư). Dưới: **SMS preview · simulated** và thẻ **"What a customer can see"** ("Order number, status, delivery window and ETA. **Never driver location or GPS.**").
-- **Bản nháp DELAY:** thanh hành động Edit / Send (dispatcher) / Discard (có lý do). CS và admin chỉ đọc.
+- **Bản nháp DELAY (D4):** Edit chỉ chỉnh `eta_window` đã kiểm tra và chọn `reason_code`/câu từ template được duyệt. **Không có textarea subject/body free-text**. Xem trước chính là nội dung server render từ biến allowlist (mã đơn công khai, trạng thái, khung ETA). Send (chỉ Dispatcher) / Discard (bắt buộc lý do). CS và admin chỉ đọc. Không đưa GPS, tên tài xế, người nhận, địa chỉ, risk score hoặc ghi chú CS vào template.
 
 ### 5.9 — 09 Data integration (admin/IT)
 - **Banner:** "Each country plugs in its own systems; source systems here are mock APIs standing in for POS, WMS, ERP and the fleet calendar."
@@ -254,14 +254,14 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 
 ## 6. Nội dung thư và tin nhắn (mẫu)
 
-Nguồn chung: `From: CFO deliveries (demo) · noreply@cfo.demo`; ngôn ngữ theo `market.locale` (mặc định tiếng Anh). Mọi thư có dải màu `apricot` phía trên, dòng `ORDER SE-2026-000141`, tiêu đề, đoạn, khối tóm tắt, chân thư: "For questions, contact your store and quote the order number." **Không bao giờ có toạ độ, GPS, tên tài xế.**
+Nguồn chung: `From: CFO deliveries (demo) · noreply@cfo.demo`; ngôn ngữ theo `market.locale` (mặc định tiếng Anh). Mọi thư có dải màu `apricot` phía trên, dòng `ORDER SE-2026-000141`, tiêu đề, đoạn, khối tóm tắt, chân thư: "For questions, contact your store and quote the order number." **Không bao giờ có toạ độ, GPS, tên tài xế, tên người nhận hay văn bản người dùng tự nhập**. D4: subject/body được render ở server từ template đã version và allowlist biến `order_public_ref, status, eta_window, reason_code` (reason_code chọn sẵn, không free-text). Không gửi trực tiếp chuỗi từ POS/CS.
 
 | Mẫu | Chủ đề | Nội dung chính |
 |---|---|---|
 | `CONFIRMED` | "Your delivery is confirmed — order SE-…" | "Your delivery is planned for **Wed 4 Nov, 10:00–12:30**." |
-| `DISPATCHED` | "Your order is on its way" | "Your order has left <Warehouse>. Expected arrival **13:10–13:40**." |
-| `DELIVERED` | "Your order was delivered" | "Delivered at 09:12, received by <name>." |
-| `FAILED` | "We could not deliver your order" | "We could not deliver today (<reason in plain words>). We will contact you to arrange a new time." |
+| `DISPATCHED` | "Your order is on its way" | "Your order has been dispatched. Expected arrival **13:10–13:40**." |
+| `DELIVERED` | "Your order was delivered" | "Delivery completed at 09:12." |
+| `FAILED` | "We could not deliver your order" | "We could not deliver today (approved reason template). We will contact you to arrange a new time." |
 | `DELAY` | "Delivery update for order SE-…" | "**Your delivery is running later than planned.** We now expect to arrive … between **13:00 and 13:30** today. The confirmed window was 10:00–12:30." khối New arrival / Status; "We will tell you again only if this changes." |
 
 SMS (≤ 160 ký tự): "CFO demo: order SE-2026-000129 has left Malmö DC. Expected arrival 13:10–13:40." Ghi chú dưới bản xem trước: `sms_sim · 10:12 · not sent to a network`.
