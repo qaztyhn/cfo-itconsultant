@@ -13,6 +13,7 @@ from pydantic import AwareDatetime, BaseModel, field_serializer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import lists_read as lists
 from app.auth import require_api_key
 from app.db import database_ready
 from app.models import Stock
@@ -39,16 +40,16 @@ async def list_orders_endpoint(
     return result
 
 
-@router.get("/customers")
-async def list_customers(updated_since: str | None = None) -> dict[str, object]:
-    """Khách."""
-    raise NotImplementedError
+@router.get("/customers", response_model=lists.CustomerPage)
+async def list_customers(paging: lists.PagingDep) -> lists.CustomerPage:
+    """Khách (D1-A)."""
+    return await lists.customers(paging)
 
 
-@router.get("/products")
-async def list_products(updated_since: str | None = None) -> dict[str, object]:
-    """Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích)."""
-    raise NotImplementedError
+@router.get("/products", response_model=lists.ProductPage)
+async def list_products(paging: lists.PagingDep) -> lists.ProductPage:
+    """Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích) (D1-A)."""
+    return await lists.products(paging)
 
 
 def _number(value: Decimal) -> int | float:
@@ -92,16 +93,20 @@ async def stock_snapshot(request: Request) -> StockSnapshot:
     )
 
 
-@router.get("/inbound")
-async def inbound() -> dict[str, object]:
-    """Hàng nhập chưa về (inbound_ref, warehouse_code, sku, qty, eta_date, confirmed)."""
-    raise NotImplementedError
+@router.get("/inbound", response_model=lists.InboundPage)
+async def inbound(paging: lists.PagingDep) -> lists.InboundPage:
+    """Hàng nhập: inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received (D1-A)."""
+    return await lists.inbound(paging)
 
 
-@router.get("/fleet/calendar")
-async def fleet_calendar(date_from: str, date_to: str) -> dict[str, object]:
-    """Khoảng bận của xe."""
-    raise NotImplementedError
+@router.get("/fleet/calendar", response_model=lists.FleetPage)
+async def fleet_calendar(
+    paging: lists.PagingDep,
+    from_: Annotated[AwareDatetime | None, Query(alias="from")] = None,
+    to: AwareDatetime | None = None,
+) -> lists.FleetPage:
+    """Khoảng bận của xe giao nửa mở [from, to) (D1-A)."""
+    return await lists.fleet_calendar(paging, from_, to)
 
 
 @router.post("/orders")
@@ -134,10 +139,12 @@ async def cancel_order(order_id: str) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/addresses")
-async def addresses(q: str = "") -> dict[str, object]:
-    """Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật)."""
-    raise NotImplementedError
+@router.get("/addresses", response_model=lists.AddressPage)
+async def addresses(
+    paging: lists.PagingDep, customer_id: str | None = None, q: str | None = None
+) -> lists.AddressPage:
+    """Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật); lọc theo khách / văn bản địa chỉ (D1-A)."""
+    return await lists.addresses(paging, customer_id, q)
 
 
 @health_router.get("/health")

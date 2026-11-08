@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
+
+- Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.
+- Ghi rõ các diễn giải kỹ thuật (cận `from`/`to` tùy chọn, `q` chỉ khớp văn bản địa chỉ, kiểu số/chuỗi) để review. Không đổi route/enum/mã lỗi, không migration.
+
+
 ## [DEC-SRC-D1-001 — owner-approved detailed Source D1-A–D] — 2026-11-08 — docs-only
 
 - Owner trả lời **“ĐƯỢC ĐỒNG Ý”** với toàn bộ D1-A/B/C/D trong [PR #84](https://github.com/qaztyhn/cfo-itconsultant/pull/84). Ghi `DEC-SRC-D1-001` tại `ASSUMPTIONS` và hồ sơ quyết định `docs/decisions/DEC_SRC_D1_APPROVED_20261108.md`.
