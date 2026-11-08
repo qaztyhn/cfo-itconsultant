@@ -803,6 +803,14 @@ version; intent khác không ghi đè provenance. Common order DTO thêm nullabl
 
 ### 16.4 D1-D — Calendar / stock batch / physical pool
 
+`GET /stock` trả `{batch_id,as_of,complete,row_count,items}`; item có
+`warehouse_code,sku,physical_stock_pool_id,on_hand,reserved` (quantity JSON numbers).
+Batch published hoàn chỉnh có complete=true, batch_id dương, as_of aware và row_count bằng số items;
+batch rỗng hợp lệ vẫn có các marker này. Không có published batch hoặc phát hiện count/hash/as_of/pool
+không nhất quán ⇒ complete=false, as_of=null, items=[]; tuyệt đối không thay bằng tồn=0 trong CFO.
+Đọc marker/rows cùng MVCC snapshot, không lấy min timestamp của các dòng legacy. Physical pool identity
+có phạm vi warehouse; alias không tự cộng, cần normalization được review ở adapter trước persistence.
+
 Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
 weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,
 working_days và không phải holiday; khung người dùng (nếu có) phải nằm trọn trong một slot nhận hàng.

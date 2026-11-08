@@ -107,6 +107,23 @@ class Stock(Timestamps, Base):
     on_hand: Mapped[Decimal]
     reserved: Mapped[Decimal]
     as_of: Mapped[datetime]
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("source.src_stock_snapshot_batch.id"))
+    physical_stock_pool_id: Mapped[str | None]
+
+
+class StockBatch(Timestamps, Base):
+    __tablename__ = "src_stock_snapshot_batch"
+    __table_args__ = (
+        CheckConstraint("row_count >= 0", name="ck_stock_batch_count"),
+        UniqueConstraint("source_instance", "as_of", name="ux_stock_batch_capture"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    source_instance: Mapped[str]
+    as_of: Mapped[datetime]
+    published_at: Mapped[datetime | None]
+    complete: Mapped[bool] = mapped_column(server_default=text("false"))
+    row_count: Mapped[int] = mapped_column(server_default=text("0"))
+    content_hash: Mapped[str]
 
 
 class Inbound(Timestamps, Base):

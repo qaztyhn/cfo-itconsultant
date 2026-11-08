@@ -225,3 +225,11 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
 - Add terminal idempotent cancellation provenance and DB immutability guard; expose cancellation
   metadata in the existing status=CANCELLED feed. Concurrent cancel/edit has one version winner.
 - CFO transition/hold/replan/suggestion/approval propagation is not implemented by source writes.
+# Dev 2 source authoritative stock batches (2026-11-08)
+
+- Replace interim min(row.as_of) stock read with an atomically published complete batch, authoritative
+  empty marker, row-count/content integrity, explicit physical pool IDs and repeatable-read snapshot.
+- Add preserved source schema upgrade and explicit `python -m app.stock_batches --snapshot file.json
+  --complete-snapshot` publisher. No existing environment was reset; tests use isolated schemas only.
+- 05/06 define batch markers, retry/capture behavior and legacy UNKNOWN. CFO pool normalization and
+  persistence remain a separate reviewed integration task.

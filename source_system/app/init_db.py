@@ -44,6 +44,13 @@ async def initialize(engine: AsyncEngine, schema: str) -> None:
         await connection.execute(
             text(f"ALTER TABLE {quoted_schema}.src_address ADD COLUMN IF NOT EXISTS receiving_hours jsonb")
         )
+        for column, kind in (
+            ("batch_id", f"bigint REFERENCES {quoted_schema}.src_stock_snapshot_batch(id)"),
+            ("physical_stock_pool_id", "text"),
+        ):
+            await connection.execute(
+                text(f"ALTER TABLE {quoted_schema}.src_stock ADD COLUMN IF NOT EXISTS {column} {kind}")
+            )
         for column, kind in (("cancel_reason", "jsonb"), ("cancelled_at", "timestamptz")):
             await connection.execute(
                 text(f"ALTER TABLE {quoted_schema}.src_order ADD COLUMN IF NOT EXISTS {column} {kind}")
