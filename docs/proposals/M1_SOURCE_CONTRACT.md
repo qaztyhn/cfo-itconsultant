@@ -121,18 +121,10 @@ protection on business routes (health public), instance-local secret configurati
 credential-free auth errors and OpenAPI security declarations. This is only
 the authentication portion of US-SRC-02, not the full source contract.
 
-## Implementation status (2026-11-07) — still pending approval
+## Implementation status (2026-11-08, after DEC-SRC-001; integration of #76 + #80)
 
-Only one endpoint whose contract is already fixed by `06` section 16 is implemented: `GET /stock`
-(`{as_of, items[{warehouse_code, sku, on_hand, reserved}]}`, ordered by warehouse/SKU, numbers as JSON numbers).
-It reads existing `src_stock` rows only; no schema or error-code change.
+Implemented slices, neither completing M1:
+- `GET /stock` (from #76): reads existing `src_stock` rows, sorted by warehouse/SKU; numeric JSON quantities. The **temporary** `as_of=min(row.as_of)` is **not** a coherent batch marker and does not implement approved SRC-Q9. Empty storage returns `as_of=null`, so the CFO adapter rejects it; batch persistence is still missing.
+- `GET /orders` (from #80): SRC-Q1 nullable address/contact snapshot columns with additive bootstrap, SRC-Q3 read representation, SRC-Q6 pagination/envelope/header, SRC-Q7 `updated_at >= updated_since`, deterministic `(updated_at,id)` ordering, and sanitized 422 validation errors.
 
-Interim behaviour pending SRC-Q9: `as_of` is the **oldest** row `as_of` (never claims fresher data). An empty table
-returns `as_of = null, items = []` because the source stores no time for an empty batch; the CFO adapter requires a
-valid `as_of`, so ingestion fails instead of treating it as zero stock. SRC-Q9/Q10 must be decided before
-persistence of stock by CFO.
-
-**Not implemented (blocked by the decisions above):** `GET /orders` (needs the SRC-Q1 address/contact snapshot),
-all write endpoints and validation (SRC-Q2–Q5, Q8), list envelopes/pagination for customers/products/inbound/
-fleet/addresses (SRC-Q6/Q7), the OpenAPI baseline and the second-instance contract test. They remain stubs that
-return 500. The Source contract and E2E are **not complete**.
+**Still open and not implemented:** source order writes/validate/submit/cancel; final Q2/Q4/Q5/Q8 constraints and cancellation feed to CFO; other list endpoints and pagination inventory; true coherent stock-batch storage including empty batches (Q9); no-double-count local/global SKU normalization (Q10); reviewed OpenAPI baseline and second-instance contract tests. These routes remain stubs and can return 500. The Source contract and end-to-end ingestion are **not complete**.

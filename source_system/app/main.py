@@ -4,11 +4,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from app.api import health_router, router
 from app.auth import SourceAuthenticationError, authentication_error
 from app.config import Settings
 from app.db import create_engine
+from app.errors import validation_error
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(router, prefix="/api/v1")
     application.include_router(health_router, prefix="/api/v1")
     application.add_exception_handler(SourceAuthenticationError, authentication_error)
+    application.add_exception_handler(RequestValidationError, validation_error)
     return application
 
 

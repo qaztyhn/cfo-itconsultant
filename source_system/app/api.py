@@ -7,26 +7,36 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_serializer
+from pydantic import AwareDatetime, BaseModel, field_serializer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_api_key
 from app.db import database_ready
 from app.models import Stock
+from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderPage, OrderStatus, list_orders
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 health_router = APIRouter()
 
 
-@router.get("/orders")
-async def list_orders(
-    updated_since: str | None = None, status: str = "SUBMITTED_FOR_PLANNING"
-) -> dict[str, object]:
-    """Đơn kèm dòng, bản chụp địa chỉ + tọa độ, version, updated_at."""
-    raise NotImplementedError
+@router.get("/orders", response_model=OrderPage)
+async def list_orders_endpoint(
+    request: Request,
+    response: Response,
+    updated_since: AwareDatetime | None = None,
+    status: OrderStatus = "SUBMITTED_FOR_PLANNING",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+) -> OrderPage:
+    """Đơn kèm dòng, bản chụp địa chỉ/liên hệ, version, updated_at (06 mục 16; SRC-Q1/Q6/Q7)."""
+    result = await list_orders(
+        request.app.state.engine, status=status, updated_since=updated_since, page=page, page_size=page_size
+    )
+    response.headers["X-Total-Count"] = str(result.total)
+    return result
 
 
 @router.get("/customers")
