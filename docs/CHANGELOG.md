@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T18-1/T18-2 — inbound chuyển kho & lead time mặc định] — 2026-11-09 — Dev 1 (#127)
+
+- T18-1: `planning_context.confirmed_inbound()` **không** tính inbound `source='transfer'` đang chờ (không có bằng chứng WMS đích đã chứa đúng lô hàng chuyển; `snapshot.as_of` đơn thuần không đủ). Warehouse Manager `receive` vẫn là bước đóng nghiệp vụ; không tự nhận hàng theo timestamp. Định danh đối soát transfer–batch–warehouse–SKU chờ thống nhất với Dev 2 (chưa có schema).
+- T18-2: lead time mặc định chỉ lấy từ `ref.market.config.transfer_lead_days_default` cấu hình rõ (bỏ mặc định ngầm `1` trong code); thiếu/không hợp lệ -> `409 PLAN_NOT_APPROVABLE`. `stock_transfer.suggestion.lead_time_provenance` lưu nguồn.
+- T18-3: giữ nguyên chặn hủy/đảo từ `source_confirmed` (`409 ILLEGAL_TRANSITION`).
+
 ## [06 §7 — triển khai TRANSFER_CANCELLED / TRANSFER_RECEIVED (DEC-DEV1-D1-01/02)] — 2026-11-08 — PR #127, chờ review
 
 - `Action` thêm `TRANSFER_CANCELLED` (thuộc `REASON_REQUIRED`) và `TRANSFER_RECEIVED`; `audit.decision_log.action` là `text` nên **không cần migration**.

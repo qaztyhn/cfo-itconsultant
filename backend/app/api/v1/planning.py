@@ -11,12 +11,8 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-<<<<<<< HEAD
 from app.services import approval_service, planning_service, reservation_service, transfer_service
-=======
-from app.services import approval_service, planning_service, reservation_service
 from app.services.approval_recheck import five_gate_recheck
->>>>>>> origin/main
 
 router = APIRouter(tags=["planning"])
 

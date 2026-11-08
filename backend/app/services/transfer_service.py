@@ -272,9 +272,11 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
     stock = await available_stock(session, wh_ids, ids, now=clock.now(), exclude_order_id=order.id)
     if any(all(stock[w][p] >= q for p, q in need.items()) for w in wh_ids):
         return {"items": []}  # a warehouse can already fulfil the complete order
-    default_lead = cfg.get("transfer_lead_days_default", 1)
+    # T18-2: only an explicitly configured market default may be used (no code-level fallback); its
+    # provenance is stored with every approved transfer. Missing/invalid ⇒ fail closed.
+    default_lead = cfg.get("transfer_lead_days_default")
     if type(default_lead) is not int or default_lead < 1:
-        raise _error("PLAN_NOT_APPROVABLE", "Transfer lead-time configuration unavailable.")
+        raise _error("PLAN_NOT_APPROVABLE", "Approved market transfer lead-time default is unavailable.")
     paths = (await session.scalars(select(RouteMatrix).where(RouteMatrix.warehouse_id.in_(wh_ids)))).all()
     routes = {(v.warehouse_id, v.to_lat, v.to_lon): v for v in paths}
     allow_fallback = (cfg.get("routing") or {}).get("allow_fallback", False)
@@ -408,6 +410,12 @@ async def approve(
             "route_provenance": match["route_provenance"],
             "distance_km": match["distance_km"],
             "order_version": order.version,
+            "lead_time_provenance": {
+                "source": "market_config_default",
+                "key": "transfer_lead_days_default",
+                "market_id": market.id,
+                "lead_days": lead,
+            },
         },
         approved_by=_employee_id(actor),
         approved_at=clock.now(),

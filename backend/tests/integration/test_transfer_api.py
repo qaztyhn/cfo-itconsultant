@@ -435,3 +435,42 @@ def test_T18_revoke_warehouse_approval_rights_immediately(transfer_api: Api) -> 
     )
     assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+
+
+def test_T18_2_lead_time_default_is_explicit_and_provenance_is_stored(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    suggestion = fetch(transfer_api.dsn, f"SELECT suggestion FROM ops.stock_transfer WHERE id={transfer_id}")[
+        0
+    ]["suggestion"]
+    suggestion = json.loads(suggestion) if isinstance(suggestion, str) else suggestion
+    assert suggestion["lead_time_provenance"] == {
+        "source": "market_config_default",
+        "key": "transfer_lead_days_default",
+        "market_id": 1,
+        "lead_days": 1,
+    }
+
+
+def test_T18_2_missing_market_lead_default_fails_closed(transfer_api: Api) -> None:
+    execute(
+        transfer_api.dsn,
+        'UPDATE ref.market SET config=\'{"working_days":[1,2,3,4,5],"stale_stock_min":15,'
+        '"routing":{"allow_fallback":false}}\' WHERE id=1',
+    )
+    assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
+
+
+def test_T18_1_pending_transfer_inbound_is_never_counted_as_available(transfer_api: Api) -> None:
+    from app.services.planning_context import confirmed_inbound
+    from tests.integration.test_planning_context_stock import _run  # reuse the session helper
+
+    transfer_id = approved(transfer_api)
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    # a non-transfer (ERP) confirmed inbound for the same warehouse/product is still counted
+    execute(
+        transfer_api.dsn,
+        "INSERT INTO ops.inbound_shipment (inbound_ref,warehouse_id,global_product_id,qty,eta_date,confirmed,"
+        "received,source) VALUES ('ERP-1',3,1,5,'2026-11-12',true,false,'erp')",
+    )
+    inbound = _run(transfer_api.dsn, lambda s: confirmed_inbound(s, [3], [1]))
+    assert [(i.inbound_ref, i.qty) for i in inbound[3]] == [("ERP-1", 5)]
