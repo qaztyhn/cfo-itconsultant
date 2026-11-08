@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.models import Address, Order
+from app.models import Address, Customer, Order
 from tests.integration.test_order_writes import NOW, H, complete
 
 
@@ -108,3 +108,17 @@ async def test_US_ORD_01_cancel_vs_edit_one_version_wins_without_partial_replace
     assert sorted([cancel.status_code, edit.status_code]) == [200, 409]
     async with engine.connect() as c:
         assert await c.scalar(select(Order.version)) == 2
+
+
+async def test_US_SRC_02_AC1_database_exception_repr_hides_contact_parameters(
+    order_source: tuple[AsyncClient, AsyncEngine],
+) -> None:
+    from sqlalchemy import insert
+
+    _, engine = order_source
+    with pytest.raises(IntegrityError) as error:
+        async with engine.begin() as c:
+            await c.execute(
+                insert(Customer).values(id="C1", name="private-synthetic-contact-value", type="business")
+            )
+    assert "private-synthetic-contact-value" not in str(error.value)
