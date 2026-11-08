@@ -1,5 +1,18 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
+
+- `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.
+- Adapter `SourceRisk` **chưa có**: `risk_service.recalculate` còn là stub trên `main` (M7 #131 đang mở) và watermark tín hiệu nguồn chưa có contract. Không đổi route/DDL/mã lỗi.
+
+
+## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review
+
+- Chủ dự án phê duyệt **D1-01**: `TRANSFER_CANCELLED` với người thao tác, lý do, thời điểm, trước/sau; không dùng `TRANSFER_APPROVED` cho cancel. **D1-02**: `TRANSFER_CONFIRMED` chỉ kho nguồn xác nhận xuất, `TRANSFER_RECEIVED` mới cho kho đích nhận.
+- Chủ dự án phê duyệt **D1-03**: admin có thẩm quyền quản trị/phê duyệt scope SKU CFO theo market/pilot, có version, hiệu lực, audit, không suy từ mapping. **D1-04**: Warehouse Manager cung cấp evidence kho/WMS về tồn độc lập; admin có thẩm quyền duyệt; lưu evidence/approver/version/hiệu lực/audit; thiếu xác minh => fail closed.
+- Đồng bộ tài liệu: `ASSUMPTIONS`, `04`, `05`, `06`, `09` và `docs/decisions/DEV1_D1_01_04_APPROVED_20261108.md`. **Chưa có** code, migration, route quản trị, field mới, OpenAPI parity hay E2E từ PR docs này; Dev 1/Dev 2 review thiết kế và triển khai qua PR kỹ thuật riêng. Không tự merge.
+
+
 ## [06 §16.4 — chuẩn hóa tồn kho CFO theo DEC-CFO-STOCK-SCOPE-001 và DEC-CFO-STOCK-INDEPENDENCE-001] — 2026-11-08 — chờ review Dev 1/Dev 2
 
 - `normalize_stock` nhận phạm vi SKU tường minh (ngoài phạm vi không chặn; trong phạm vi lỗi thì từ chối cả batch) và nhóm `verified_independent` (chỉ cộng nhiều SKU cùng kho cùng global product khi đã xác minh; mặc định từ chối). `GlobalStock.source_sku` đổi thành `source_skus`.
