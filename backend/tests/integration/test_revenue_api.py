@@ -283,3 +283,14 @@ def test_US_REV_01_AC5_market_currency_isolation(rev: Api) -> None:
         404,
         "NOT_FOUND",
     )
+
+
+def test_US_REV_01_AC4_market_scoped_admin_has_full_revenue_access(rev: Api) -> None:
+    execute(rev.dsn, "UPDATE ref.app_user SET roles='{admin}', kpi_scopes='{}' WHERE id=3")
+    result = rev.get("/revenue/summary", 3, view="store", **PERIOD)
+    assert result.status_code == 200, result.text
+    assert result.json()["recognised"] == "1850.50"
+    assert result.json()["share_of_market_pct"] is None
+    detail = rev.get("/revenue/orders", 3, view="store", location_id=2, **PERIOD)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["items"][0]["customer_name"] == "Test customer"
