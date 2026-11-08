@@ -16,6 +16,13 @@ def test_US_SRC_02_AC1_implemented_openapi_is_shared_by_two_instances_and_matche
     assert first == second
     baseline = yaml.safe_load((Path(__file__).parents[2] / "openapi.yaml").read_text(encoding="utf-8"))
     assert first == baseline
+    stock = first["paths"]["/api/v1/stock"]["get"]
+    assert stock["responses"]["503"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/ErrorEnvelope"
+    )
+    stock_properties = first["components"]["schemas"]["StockSnapshot"]["properties"]
+    assert {"as_of", "batch_id", "item_count", "items"} <= set(stock_properties)
+    assert "physical_stock_pool_id" not in str(first)
     expected = {
         "/orders": {"get", "post"},
         "/orders/{order_id}": {"put"},
