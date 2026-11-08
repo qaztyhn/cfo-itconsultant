@@ -72,6 +72,19 @@ class ReceivingCalendar(Timestamps, Base):
     holidays: Mapped[list[str]] = mapped_column(JSONB)
 
 
+class Store(Timestamps, Base):
+    __tablename__ = "src_store"
+    code: Mapped[str] = mapped_column(primary_key=True)
+    is_active: Mapped[bool] = mapped_column(server_default=text("true"))
+
+
+class Sales(Timestamps, Base):
+    __tablename__ = "src_sales"
+    code: Mapped[str] = mapped_column(primary_key=True)
+    store_code: Mapped[str] = mapped_column(ForeignKey("source.src_store.code"))
+    is_active: Mapped[bool] = mapped_column(server_default=text("true"))
+
+
 class Product(Timestamps, Base):
     __tablename__ = "src_product"
 

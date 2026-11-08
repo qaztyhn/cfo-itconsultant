@@ -9,9 +9,9 @@ from sqlalchemy.schema import DropSchema
 from app.config import Settings
 from app.db import create_engine
 from app.init_db import initialize
-from app.models import Address, Customer, ReceivingCalendar
+from app.models import Address, Customer, ReceivingCalendar, Sales, Store
 from app.receiving import CalendarConfig
-from app.seed_reference import seed_customers, seed_receiving_calendar
+from app.seed_reference import seed_customers, seed_receiving_calendar, seed_sales_references
 
 
 async def test_US_SRC_01_AC1_calendar_seed_and_additive_upgrade_preserve_existing_data() -> None:
@@ -36,6 +36,13 @@ async def test_US_SRC_01_AC1_calendar_seed_and_additive_upgrade_preserve_existin
             for _ in range(2):
                 await seed_customers(c, now=now)
                 await seed_receiving_calendar(c, now=now)
+                await seed_sales_references(c, now=now)
+            assert await c.scalar(select(func.count()).select_from(Store)) == 25
+            assert await c.scalar(select(func.count()).select_from(Sales)) == 100
+            assert await c.scalar(select(Sales.store_code).where(Sales.code == "DEMO-SALES")) == "ST-001"
+            await c.execute(update(Sales).where(Sales.code == "DEMO-SALES").values(is_active=False))
+            await seed_sales_references(c, now=now)
+            assert await c.scalar(select(Sales.is_active).where(Sales.code == "DEMO-SALES")) is False
             assert await c.scalar(select(func.count()).select_from(ReceivingCalendar)) == 1
             assert (
                 await c.scalar(

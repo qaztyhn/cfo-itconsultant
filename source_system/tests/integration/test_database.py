@@ -56,6 +56,8 @@ async def test_all_source_tables_and_timestamps_exist(
             "src_order",
             "src_order_line",
             "src_receiving_calendar",
+            "src_store",
+            "src_sales",
         }
         for table in tables:
             columns = await connection.run_sync(

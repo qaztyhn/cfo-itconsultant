@@ -214,3 +214,8 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   remain unknown. Clarify source DDL and address representation in 05/06 under DEC-SRC-D1-001.
 - Source validation primitive rejects uncovered/closed/outside hours; POS lifecycle/API integration
   and CFO warehouse/driver feasibility remain separate. No existing source data reset.
+# Dev 2 source sales/store references (2026-11-08)
+
+- Add source-local active store/sales references for approved D1-B validation, with FK and preserved
+  synthetic 25-store/100-sales seed. IDs align with synthetic CFO workforce fixtures without runtime
+  cross-database reads. Bootstrap is additive; no source order endpoint is enabled by this task.

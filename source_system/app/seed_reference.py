@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Customer, Product, ReceivingCalendar
+from app.models import Address, Customer, Product, ReceivingCalendar, Sales, Store
 from seed.se.catalog import catalog_products
 from seed.se.receiving import calendar_values, demo_receiving_hours
 
@@ -98,6 +98,7 @@ async def run() -> None:
             await seed_customers(connection, now=now)
             await seed_catalog(connection, now=now)
             await seed_receiving_calendar(connection, now=now)
+            await seed_sales_references(connection, now=now)
     finally:
         await engine.dispose()
 
@@ -124,6 +125,26 @@ async def seed_receiving_calendar(connection: AsyncConnection, *, now: datetime)
         )
         .on_conflict_do_nothing(index_elements=[ReceivingCalendar.id])
     )
+
+
+async def seed_sales_references(connection: AsyncConnection, *, now: datetime) -> None:
+    """Synthetic source IDs mirror the documented CFO fixture employee numbers, not live CFO reads."""
+    if now.tzinfo is None:
+        raise ValueError("Seed time must be aware")
+    for number in range(1, 26):
+        store = f"ST-{number:03d}"
+        await connection.execute(
+            insert(Store)
+            .values(code=store, created_at=now, updated_at=now)
+            .on_conflict_do_nothing(index_elements=[Store.code])
+        )
+        for member in ("MGR", "S0", "S1", "S2"):
+            code = "DEMO-SALES" if number == 1 and member == "S0" else f"DEMO-{store}-{member}"
+            await connection.execute(
+                insert(Sales)
+                .values(code=code, store_code=store, created_at=now, updated_at=now)
+                .on_conflict_do_nothing(index_elements=[Sales.code])
+            )
 
 
 if __name__ == "__main__":
