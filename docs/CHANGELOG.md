@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §6 — T16 trusted five-gate recheck nối vào `POST /plans/{id}/approve`] — 2026-11-08 — Dev 1, chờ review
+
+- `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã lưu** (kho, xe + tài xế, ngày giao) vẫn qua đủ 5 gate; lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
+- Không đổi route/payload/mã lỗi (thất bại vẫn `409 RESOURCE_CONFLICT`, `conflict=five_gates`). Gate `safety` của thị trường thật vẫn fail closed vì marker lịch sử 56 ngày (D7) chưa được lưu; adapter không bỏ qua điều đó.
+
+
 ## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review
 
 - Chủ dự án phê duyệt **D1-01**: `TRANSFER_CANCELLED` với người thao tác, lý do, thời điểm, trước/sau; không dùng `TRANSFER_APPROVED` cho cancel. **D1-02**: `TRANSFER_CONFIRMED` chỉ kho nguồn xác nhận xuất, `TRANSFER_RECEIVED` mới cho kho đích nhận.
