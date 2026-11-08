@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-SRC-001 — M1 source contract SRC-Q1–Q10] — 2026-11-08 — owner approved direction, docs-only
+
+- Chủ dự án phê duyệt hướng đề xuất tại `docs/proposals/M1_SOURCE_CONTRACT.md`: (Q1–Q3) snapshot địa chỉ/liên hệ và request/response đơn; (Q4–Q5) validation lỗi 422 + lifecycle; (Q6–Q7) danh sách nguồn phân trang mặc định **50**, tối đa **500** và đồng bộ gia tăng theo thứ tự ổn định; (Q8) bổ sung lịch nguồn/giờ nhận theo địa chỉ; (Q9) stock snapshot batch có `as_of` kể cả rỗng; (Q10) normalize SKU/units, tránh cộng hoặc ghi đè tồn kho sai.
+- Quy tắc và biên phê duyệt đã ghi tại `docs/ASSUMPTIONS.md` (DEC-SRC-001); **không đồng nhất** phân trang của source với `GET /orders` CFO.
+- **Chưa triển khai:** không sửa schema/API chuẩn `05`/`06`, không migration/code/test trong PR này. Dev 2 cần PR hợp đồng/triển khai với review Dev 1 (adapter, stock) và Dev 3 (POS), test nguồn nhiều instance. Các quyết định còn thiếu được liệt kê tại proposal; không tự điền theo suy đoán.
+
 ## [DEC-ORS-001 + DEC-NOTIFY-001 — owner approvals] — 2026-11-07 — docs-only
 
 - Owner chấp nhận retry ORS fallback sau **60 phút** mặc định theo market, gắn nhãn tuyến ước lượng; TTL đã triển khai trong #67.
