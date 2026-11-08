@@ -6,11 +6,11 @@ turns into a transfer suggestion. No order, stock snapshot or source-system writ
 import hashlib
 import json
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -285,14 +285,14 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
                 continue
             distances[(source.id, dest.id)] = path.distance_km
             sources.append(WarehouseCtx(
-                id=source.id, name=source.name, cutoff=source.loading_cutoff_time or __import__("datetime").time(0),
+                id=source.id, name=source.name, cutoff=source.loading_cutoff_time or time(0),
                 efficiency=source.efficiency_factor, stock_available=stock[source.id],
                 inbound=(), capacity={}, vehicles=(), drivers=(), route=None,
             ))
         if not sources:
             continue
         target = WarehouseCtx(
-            id=dest.id, name=dest.name, cutoff=dest.loading_cutoff_time or __import__("datetime").time(0),
+            id=dest.id, name=dest.name, cutoff=dest.loading_cutoff_time or time(0),
             efficiency=dest.efficiency_factor, stock_available=stock[dest.id],
             inbound=(), capacity={}, vehicles=(), drivers=(), route=None,
         )
