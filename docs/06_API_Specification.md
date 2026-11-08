@@ -787,6 +787,12 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 
 ### 16.4 D1-D — Calendar / stock batch / fixed-unit SKU (Q10 owner override)
 
+Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
+weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,
+working_days và không phải holiday; khung người dùng (nếu có) phải nằm trọn trong một slot nhận hàng.
+Thiếu toàn bộ lịch/giờ hoặc ngày ngoài coverage → `receiving_calendar_missing`; ngày đóng/khung ngoài
+slot → `outside_receiving_hours`. Đây là lịch nhận nguồn, không thay ca/lịch nhân viên kho hoặc tài xế CFO.
+
 - **Q8 receiving:** lịch ngày làm việc/ngày nghỉ/holiday nguồn theo source market instance, giờ nhận cụ thể theo địa chỉ; thiếu lịch hoặc giờ nhận → validation fail closed. Lịch nhận người mua **khác** lịch Warehouse Manager/tài xế mà CFO kiểm ở safety/capacity.
 - **Q9 published batch:** `GET /stock` trả `{as_of,items}` từ **một batch đã hoàn tất và publish atomically**. Batch đủ có thể có **items=[]** và khi đó phải có completeness marker đáng tin để coi là 0 tồn; batch chưa publish/nguồn lỗi **không** tự thành tồn=0. `as_of` không được tính bằng `min/max(per-row as_of)` thay cho batch chung. Chính sách thời điểm stale stock vẫn theo MarketConfig; adapter không cộng bừa row không cùng batch.
 - **Q9 Source 503 — DEC-SRC-Q9-ERROR-001 (owner-approved 08/11/2026):** khi **không có bất kỳ batch nào đã publish hoàn chỉnh**, kể cả nguồn chỉ có batch `loading`/`failed`, `GET /api/v1/stock` trả **HTTP 503** với phong bì lỗi chuẩn Source: `{ "error": { "code": "STOCK_UNAVAILABLE", "message": "Stock snapshot is unavailable.", "details": {}, "correlation_id": "<opaque>" } }`, header `X-Correlation-ID`, và xác thực `X-API-Key` như bình thường. **Không** trả `200 items=[]` khi unknown. Ngược lại, snapshot **published complete** có `items=[]` trả `200` (tồn=0 trong phạm vi snapshot). Batch mới lỗi khi vẫn có bản published cũ: chỉ serve latest **published** với `as_of` thật; CFO vẫn kiểm freshness, không tự gia hạn thời điểm. CFO gặp 503 phải báo sync failure/alert, giữ dữ liệu lịch sử để audit nhưng không dùng tồn kho stale/unknown để hứa giao. Mã này **chỉ cho Source API** (không áp dụng `GET /health`, vẫn theo health body riêng), chi tiết OpenAPI/runtime cần PR code và CI.

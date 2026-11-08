@@ -207,3 +207,10 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   `tests/unit/test_core_correlation.py`, `tests/integration/test_recorder_health.py`.
 - Frontend (Dev 3): hiển thị lỗi chung theo `correlation_id`; có thể gặp `INTERNAL_ERROR`, `NOT_FOUND`.
 - Nếu nhóm **không** duyệt: chọn mã khác cho 500 trước khi merge PR #8 (code hiện dùng `INTERNAL_ERROR`).
+# Dev 2 source receiving calendar (2026-11-08)
+
+- Implement D1-D explicit per-instance receiving coverage/timezone/holidays and per-address slots,
+  active-customer flag, additive upgrade and preserved SE demo calendar seed. Missing legacy slots
+  remain unknown. Clarify source DDL and address representation in 05/06 under DEC-SRC-D1-001.
+- Source validation primitive rejects uncovered/closed/outside hours; POS lifecycle/API integration
+  and CFO warehouse/driver feasibility remain separate. No existing source data reset.

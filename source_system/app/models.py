@@ -18,7 +18,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -44,6 +46,7 @@ class Customer(Timestamps, Base):
     email: Mapped[str | None]
     phone: Mapped[str | None]
     type: Mapped[str]
+    is_active: Mapped[bool] = mapped_column(server_default=text("true"))
 
 
 class Address(Timestamps, Base):
@@ -54,6 +57,19 @@ class Address(Timestamps, Base):
     address: Mapped[str]
     lat: Mapped[Decimal | None]
     lon: Mapped[Decimal | None]
+    receiving_hours: Mapped[dict[str, list[list[str]]] | None] = mapped_column(JSONB)
+
+
+class ReceivingCalendar(Timestamps, Base):
+    __tablename__ = "src_receiving_calendar"
+    __table_args__ = (CheckConstraint("id = 'instance'", name="ck_receiving_calendar_singleton"),)
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    timezone: Mapped[str]
+    valid_from: Mapped[date]
+    valid_to: Mapped[date]
+    working_days: Mapped[list[int]] = mapped_column(JSONB)
+    holidays: Mapped[list[str]] = mapped_column(JSONB)
 
 
 class Product(Timestamps, Base):
