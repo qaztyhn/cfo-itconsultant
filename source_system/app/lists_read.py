@@ -16,7 +16,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models import Address, Customer, Inbound, Product, VehicleCalendar
-from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, money
 
 
 def _number(value: Decimal) -> int | float:
@@ -95,7 +95,7 @@ class ProductOut(BaseModel):
 
     @field_serializer("unit_price")
     def _money(self, value: Decimal) -> str:
-        return format(value, "f")
+        return money(value)
 
 
 class ProductPage(BaseModel):

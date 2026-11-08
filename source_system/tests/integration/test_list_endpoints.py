@@ -108,7 +108,7 @@ async def test_D1_A_updated_since_is_inclusive_for_products(src: tuple[AsyncClie
     got = await http.get("/api/v1/products", headers=H, params={"updated_since": second.isoformat()})
     assert [i["sku"] for i in got.json()["items"]] == ["P-2"]
     item = items[0]
-    assert item["unit_price"] == "95" and item["units_to_base"] == 1.5 and item["weight_kg"] == 25
+    assert item["unit_price"] == "95.00" and item["units_to_base"] == 1.5 and item["weight_kg"] == 25
 
 
 async def test_D1_A_addresses_filter_by_customer_and_text_without_wildcards(
@@ -170,6 +170,11 @@ async def test_D1_A_fleet_calendar_uses_half_open_overlap(src: tuple[AsyncClient
             ],
         )
     window = {"from": "2026-11-05T10:00:00Z", "to": "2026-11-05T11:00:00Z"}
+    # Same instants written with other UTC offsets must select the same rows (aware instants, not local text).
+    offset = {"from": "2026-11-05T11:00:00+01:00", "to": "2026-11-05T05:00:00-06:00"}
+    assert (await http.get("/api/v1/fleet/calendar", headers=H, params=offset)).json()["items"][0][
+        "vehicle_code"
+    ] == "V-2"
     r = await http.get("/api/v1/fleet/calendar", headers=H, params=window)
     assert r.status_code == 200
     assert [i["vehicle_code"] for i in r.json()["items"]] == ["V-2"]  # V-1 ends exactly at `from`: excluded

@@ -98,7 +98,7 @@ async def test_US_SRC_02_order_representation_uses_snapshot_not_live_address(
     )
     assert o["receiving_restrictions"] == "Gate code 4411" and o["special_requirements"] is None
     assert [(ln["line_no"], ln["qty"], ln["unit_price"]) for ln in o["lines"]] == [
-        (1, 20, "950"),
+        (1, 20, "950.00"),
         (2, 2.5, "95.00"),
     ]
     assert datetime.fromisoformat(o["updated_at"]).tzinfo is not None

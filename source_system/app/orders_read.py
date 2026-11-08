@@ -20,6 +20,11 @@ MAX_PAGE_SIZE = 500
 DEFAULT_PAGE_SIZE = 50
 
 
+def money(value: Decimal) -> str:
+    """Money is a decimal string with exactly two decimals (DEC-SRC-D1-001), e.g. "95.00"."""
+    return format(value.quantize(Decimal("0.01")), "f")
+
+
 def _number(value: Decimal) -> int | float:
     return int(value) if value == value.to_integral_value() else float(value)
 
@@ -42,7 +47,7 @@ class OrderLineOut(BaseModel):
 
     @field_serializer("unit_price")
     def _price(self, value: Decimal) -> str:
-        return format(value, "f")  # money is a string, exactly as stored
+        return money(value)
 
 
 class OrderOut(BaseModel):
