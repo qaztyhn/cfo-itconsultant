@@ -166,9 +166,7 @@ def test_US_REV_01_AC2_out_of_scope_wrong_type_is_still_404(rev: Api) -> None:
         denied = rev.get(route, 1, view="store", location_id=4, **PERIOD)
         assert_error(denied, 404, "NOT_FOUND")
         assert "GBG" not in denied.text
-    assert_error(
-        rev.get("/revenue/orders", 1, view="store", location_id=4, **PERIOD), 404, "NOT_FOUND"
-    )
+    assert_error(rev.get("/revenue/orders", 1, view="store", location_id=4, **PERIOD), 404, "NOT_FOUND")
 
 
 def test_US_REV_01_AC4_inactive_owner_loses_access_on_next_request(rev: Api) -> None:
@@ -176,9 +174,7 @@ def test_US_REV_01_AC4_inactive_owner_loses_access_on_next_request(rev: Api) -> 
     execute(rev.dsn, "UPDATE ref.location SET is_active=false WHERE id=2")
     for path in ("/revenue/summary", "/revenue/daily", "/revenue/by-location", "/revenue/export.csv"):
         assert_error(rev.get(path, 1, view="store", **PERIOD), 403, "FORBIDDEN")
-    assert_error(
-        rev.get("/revenue/orders", 1, view="store", location_id=2, **PERIOD), 403, "FORBIDDEN"
-    )
+    assert_error(rev.get("/revenue/orders", 1, view="store", location_id=2, **PERIOD), 403, "FORBIDDEN")
 
 
 def test_US_REV_01_AC7_AC8_owner_cannot_aggregate_or_export_foreign_locations(rev: Api) -> None:
@@ -209,8 +205,14 @@ def test_US_REV_01_AC8_csv_formula_injection_and_exact_header_order(rev: Api) ->
     assert response.content.startswith(b"\xef\xbb\xbf")
     reader = csv.DictReader(StringIO(response.content.decode("utf-8-sig")))
     assert reader.fieldnames == [
-        "day", "view", "location_code", "location_name", "orders_delivered",
-        "revenue_recognised", "revenue_booked", "currency",
+        "day",
+        "view",
+        "location_code",
+        "location_name",
+        "orders_delivered",
+        "revenue_recognised",
+        "revenue_booked",
+        "currency",
     ]
     records = list(reader)
     assert records
@@ -228,9 +230,7 @@ def test_US_REV_01_AC5_empty_period_and_csv_audit(rev: Api) -> None:
     assert summary.json()["orders_delivered"] == 0
     assert summary.json()["avg_order_value"] is None
     daily = rev.get("/revenue/daily", 2, view="store", **empty)
-    assert daily.json()["points"] == [
-        {"day": "2027-02-10", "recognised": "0.00", "booked": "0.00"}
-    ]
+    assert daily.json()["points"] == [{"day": "2027-02-10", "recognised": "0.00", "booked": "0.00"}]
     orders = rev.get("/revenue/orders", 2, view="store", location_id=2, **empty)
     assert orders.json() == {"items": [], "page": 1, "page_size": 50, "total": 0}
     response = rev.get("/revenue/export.csv", 2, view="store", **empty)
@@ -280,5 +280,6 @@ def test_US_REV_01_AC5_market_currency_isolation(rev: Api) -> None:
         assert records and {row["currency"] for row in records} == {expected}
     assert_error(
         rev.get("/revenue/summary", 2, view="warehouse", location_id=5, **PERIOD),
-        404, "NOT_FOUND",
+        404,
+        "NOT_FOUND",
     )
