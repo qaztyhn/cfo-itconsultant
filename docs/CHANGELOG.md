@@ -2,7 +2,7 @@
 
 ## [06 §6 — T16 trusted five-gate recheck nối vào `POST /plans/{id}/approve`] — 2026-11-08 — Dev 1, chờ review
 
-- `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã lưu** (kho, xe + tài xế, ngày giao) vẫn qua đủ 5 gate; lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
+- `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã giữ** vẫn qua đủ 5 gate — so khớp từng `seq` (xe, tài xế, `load_kg`/`load_m3`/`load_lines`, 4 mốc giờ), các mốc giờ và giờ chuẩn bị cấp kế hoạch, khoảng cách/lái xe/dự phòng/route; Decimal so ở scale cột NUMERIC, thời điểm so như instant có múi giờ (naive không khớp); lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
 - Không đổi route/payload/mã lỗi (thất bại vẫn `409 RESOURCE_CONFLICT`, `conflict=five_gates`). Gate `safety` của thị trường thật vẫn fail closed vì marker lịch sử 56 ngày (D7) chưa được lưu; adapter không bỏ qua điều đó.
 ## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
 
