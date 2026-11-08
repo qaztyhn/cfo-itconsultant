@@ -206,6 +206,13 @@ async def _collect(
     # Improvement rows are per trip_stop; do not join them onto orders (multi-
     # vehicle deliveries would multiply all order-level KPI denominators).
     accepted: dict[int, list[bool | None]] = defaultdict(list)
+    imp_filters = [o.market_id == market.id]
+    if warehouses is not None:
+        imp_filters.append(ImprovementLog.warehouse_id.in_(warehouses))
+    if warehouse_id is not None:
+        imp_filters.append(ImprovementLog.warehouse_id == warehouse_id)
+    if store_id is not None:
+        imp_filters.append(o.origin_store_id == store_id)
     imp_rows = (
         await session.execute(
             select(
@@ -215,8 +222,7 @@ async def _collect(
             )
             .select_from(ImprovementLog)
             .join(o, o.id == ImprovementLog.order_id)
-            .outerjoin(p, p.id == o.approved_plan_id)
-            .where(*constraints)
+            .where(*imp_filters)
         )
     ).all()
     for oid, delivered, prep_err, eta_err, unchanged in imp_rows:
@@ -226,6 +232,11 @@ async def _collect(
             bucket = all_days[day]
             bucket["prep_error_min"].add(abs(Decimal(prep_err)) if prep_err is not None else None)
             bucket["eta_error_min"].add(abs(Decimal(eta_err)) if eta_err is not None else None)
+        elif day is None:
+            # Cannot assign a missing delivered timestamp to an arbitrary day.
+            for bucket in all_days.values():
+                bucket["prep_error_min"].missing = True
+                bucket["eta_error_min"].missing = True
 
     for row in orders:
         approved_day = _day(row.approved_at, zone)
@@ -249,6 +260,16 @@ async def _collect(
                 current["manual_plan_count"].sum += 1
 
         delivered_day = _day(row.delivered_at, zone) if row.status == "DELIVERED" else None
+        if row.status == "DELIVERED" and delivered_day is None:
+            for bucket in all_days.values():
+                for metric in (
+                    "on_time_rate", "failed_delivery_rate",
+                    "labour_hours_per_delivery", "km_per_delivery",
+                ):
+                    bucket[metric].missing = True
+        if row.status == "FAILED" and row.closed_at is None:
+            for bucket in all_days.values():
+                bucket["failed_delivery_rate"].missing = True
         if delivered_day in all_days:
             bucket = all_days[delivered_day]
             on_time = (
