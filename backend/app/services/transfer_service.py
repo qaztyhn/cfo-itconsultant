@@ -522,8 +522,34 @@ async def confirm_source(
         now=clock.now(),
         exclude_order_id=None,
     )
+    product_ids = [line.global_product_id for line in lines]
+    snapshots = (await session.scalars(
+        select(StockSnapshot).where(
+            StockSnapshot.warehouse_id == transfer.from_warehouse_id,
+            StockSnapshot.global_product_id.in_(product_ids),
+        )
+    )).all()
+    stale_min = (market.config or {}).get("stale_stock_min", 15)
+    if type(stale_min) is not int or stale_min <= 0:
+        raise _error("PLAN_NOT_APPROVABLE", "Stock freshness policy is unavailable.")
+    fresh = {item.global_product_id for item in snapshots
+             if item.as_of >= clock.now() - timedelta(minutes=stale_min)}
+    if any(product_id not in fresh for product_id in product_ids):
+        raise _error("RESOURCE_CONFLICT", "Source warehouse stock evidence is missing or stale.")
+    outgoing = (await session.execute(
+        select(StockTransferLine.global_product_id, func.sum(StockTransferLine.qty))
+        .join(StockTransfer, StockTransfer.id == StockTransferLine.transfer_id)
+        .where(
+            StockTransfer.from_warehouse_id == transfer.from_warehouse_id,
+            StockTransfer.status.in_(("source_confirmed", "received")),
+            StockTransferLine.global_product_id.in_(product_ids),
+        ).group_by(StockTransferLine.global_product_id)
+    )).all()
+    outstanding = {product_id: qty for product_id, qty in outgoing}
     for line in lines:
-        if stock[transfer.from_warehouse_id][line.global_product_id] < line.qty:
+        available = (stock[transfer.from_warehouse_id][line.global_product_id]
+                     - outstanding.get(line.global_product_id, Decimal(0)))
+        if available < line.qty:
             raise _error("RESOURCE_CONFLICT", "Source warehouse no longer has sufficient stock.")
     for line in lines:
         session.add(
