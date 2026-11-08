@@ -37,7 +37,7 @@ SEED = (
     rows.run_sql(3, 1),
     rows.run_sql(4, 1),
     rows.plan_sql(1, 1, 1, "approved"),
-    rows.plan_sql(2, 2, 2, "manual", manual="manual_exception"),
+    rows.plan_sql(2, 2, 2, "manual", manual="other"),
     rows.plan_sql(3, 3, 1, "approved"),
     rows.plan_sql(4, 4, 1, "approved"),
     "UPDATE ops.customer_order SET approved_plan_id=id, origin_store_id=2, "
