@@ -21,6 +21,7 @@ from app.db import database_ready
 from app.models import Stock
 from app.order_create import create
 from app.order_payloads import OrderIn
+from app.order_validation import validate_or_submit
 from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderOut, OrderPage, OrderStatus, list_orders
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -133,16 +134,22 @@ async def update_order(order_id: str) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.post("/orders/{order_id}/validate")
-async def validate_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/validate", response_model=OrderOut)
+async def validate_order(request: Request, order_id: str) -> OrderOut:
     """Sales Validation: khách, địa chỉ/tọa độ, dòng hàng, ngày và khung giờ (US-SRC-03)."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await validate_or_submit(
+            session, order_id, now=clock.now(request.app.state.settings.app_now), submit=False
+        )
 
 
-@router.post("/orders/{order_id}/submit")
-async def submit_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/submit", response_model=OrderOut)
+async def submit_order(request: Request, order_id: str) -> OrderOut:
     """Chuyển SUBMITTED_FOR_PLANNING — chỉ sau validate thành công (US-ORD-01 AC4)."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await validate_or_submit(
+            session, order_id, now=clock.now(request.app.state.settings.app_now), submit=True
+        )
 
 
 @router.post("/orders/{order_id}/cancel")

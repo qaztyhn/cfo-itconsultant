@@ -62,6 +62,16 @@ def scalar_values(payload: OrderIn) -> dict[str, object]:
     return values
 
 
+def window_times(payload: OrderIn) -> tuple[time | None, time | None]:
+    try:
+        return (
+            time.fromisoformat(payload.window_start) if payload.window_start is not None else None,
+            time.fromisoformat(payload.window_end) if payload.window_end is not None else None,
+        )
+    except ValueError:
+        raise invalid("window_start", "invalid_receiving_window") from None
+
+
 async def insert_lines(session: AsyncSession, order_id: str, payload: OrderIn, *, now: datetime) -> None:
     for line in payload.lines:
         session.add(
