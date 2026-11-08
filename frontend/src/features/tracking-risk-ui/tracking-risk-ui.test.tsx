@@ -13,7 +13,7 @@ import {
   predictedLate,
   staleRisk,
 } from "./fixtures";
-import { formatInstant, timeText } from "./presentation";
+import { formatInstant, timeText } from "./format";
 import { RiskSummary } from "./RiskSummary";
 import { MilestoneTimeline } from "./MilestoneTimeline";
 import { VehicleStatusList } from "./VehicleStatusList";
@@ -189,12 +189,12 @@ describe("US-TRK-01 / M7: event and notification read models", () => {
 
 describe("US-TRK-01 / M7: states and accessibility", () => {
   const views = [
-    ["Delivery risk summary", <RiskSummary model={null} />],
-    ["Milestones · planned vs actual vs forecast", <MilestoneTimeline model={null} />],
-    ["Vehicle execution status", <VehicleStatusList model={null} />],
-    ["Risk explanation", <RiskExplanation model={null} />],
-    ["Order event log", <OrderEventLog model={null} />],
-    ["Customer notification history", <NotificationHistory model={null} />],
+    ["Delivery risk summary", <RiskSummary key="risk" model={null} />],
+    ["Milestones · planned vs actual vs forecast", <MilestoneTimeline key="milestones" model={null} />],
+    ["Vehicle execution status", <VehicleStatusList key="vehicles" model={null} />],
+    ["Risk explanation", <RiskExplanation key="explanation" model={null} />],
+    ["Order event log", <OrderEventLog key="events" model={null} />],
+    ["Customer notification history", <NotificationHistory key="notifications" model={null} />],
   ] as const;
 
   it.each(views)("%s has an explicit accessible empty state", (title, view) => {
