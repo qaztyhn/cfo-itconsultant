@@ -161,6 +161,8 @@ class Order(Timestamps, Base):
     contact_email: Mapped[str | None]
     receiving_restrictions: Mapped[str | None]
     special_requirements: Mapped[str | None]
+    cancel_reason: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    cancelled_at: Mapped[datetime | None]
 
 
 class OrderLine(Timestamps, Base):

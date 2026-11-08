@@ -20,7 +20,8 @@ from app.core import clock
 from app.db import database_ready
 from app.models import Stock
 from app.order_create import create
-from app.order_payloads import OrderIn
+from app.order_edit import cancel, update
+from app.order_payloads import CancelIn, OrderEditIn, OrderIn
 from app.order_validation import validate_or_submit
 from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderOut, OrderPage, OrderStatus, list_orders
 
@@ -128,10 +129,11 @@ async def create_order(
         )
 
 
-@router.put("/orders/{order_id}")
-async def update_order(order_id: str) -> dict[str, object]:
+@router.put("/orders/{order_id}", response_model=OrderOut)
+async def update_order(request: Request, order_id: str, payload: OrderEditIn) -> OrderOut:
     """POS: sửa đơn, tăng version."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await update(session, order_id, payload, now=clock.now(request.app.state.settings.app_now))
 
 
 @router.post("/orders/{order_id}/validate", response_model=OrderOut)
@@ -152,10 +154,11 @@ async def submit_order(request: Request, order_id: str) -> OrderOut:
         )
 
 
-@router.post("/orders/{order_id}/cancel")
-async def cancel_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/cancel", response_model=OrderOut)
+async def cancel_order(request: Request, order_id: str, payload: CancelIn) -> OrderOut:
     """Hủy đơn ở nguồn."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await cancel(session, order_id, payload, now=clock.now(request.app.state.settings.app_now))
 
 
 @router.get("/addresses", response_model=lists.AddressPage)

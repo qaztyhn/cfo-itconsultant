@@ -786,6 +786,15 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 
 ### 16.3 D1-C — Version, sửa/hủy sau submit và CFO propagation
 
+PUT full replacement dùng cùng OrderIn + `expected_version` int≥1; optional `refresh_address=false`
+chỉ lấy snapshot mới khi true hoặc đổi address/customer reference. No-op giữ version; edit VALIDATED
+thành DRAFT, edit SUBMITTED phải validate toàn đơn và vẫn SUBMITTED. Stale version → 409 VERSION_CONFLICT.
+Cancel body `{expected_version,reason_code,reason_text?}`: reason_code token chữ thường/số/gạch dưới
+(bắt đầu bằng chữ, tối đa 64 ký tự), reason_text tối đa 1000 ký tự printable, bắt buộc nếu code=`other`.
+Retry cùng reason, với version trước hủy hoặc version hiện tại, trả cùng CANCELLED/provenance không tăng
+version; intent khác không ghi đè provenance. Common order DTO thêm nullable `cancel_reason` và
+`cancelled_at`, gồm cả GET feed status=CANCELLED; không trả dữ liệu này như thông báo khách tự do.
+
 - `PUT /orders/{id}`: bắt buộc `expected_version`, compare + row lock; đổi thực tế tăng version/updated_at, identical no-op có thể không tăng. Sai version → **409 `VERSION_CONFLICT`** (mã mới **chỉ áp dụng hợp đồng Source API**); trạng thái không hợp lệ → **409 `ILLEGAL_TRANSITION`**.
 - `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh đơn VALIDATED → DRAFT, invalidates validation. Chỉnh đơn đã `SUBMITTED_FOR_PLANNING` được phép **nếu toàn bộ nội dung mới validate thành công trong cùng transaction**; giữ status `SUBMITTED_FOR_PLANNING`, tăng source version. PUT lỗi không làm mất đơn khỏi feed.
 - `POST /orders/{id}/cancel` từ DRAFT/VALIDATED/SUBMITTED_FOR_PLANNING có `expected_version`, `reason_code` và reason_text bảo đảm an toàn khi `other`; terminal CANCELLED không được sửa/reopen/resubmit; retry cancel không nhân phiên bản/hủy trùng.

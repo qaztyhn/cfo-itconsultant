@@ -33,6 +33,8 @@ async def payload_from_order(session: AsyncSession, order: Order) -> OrderIn:
             "address",
             "lat",
             "lon",
+            "cancel_reason",
+            "cancelled_at",
         }
     )
     try:
