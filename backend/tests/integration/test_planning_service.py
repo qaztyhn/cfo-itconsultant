@@ -273,3 +273,38 @@ def test_US_PLN_08_AC8_infeasible_plan_again_requires_reason(
     assert refused.value.code == "REASON_REQUIRED"
     _request(db, monkeypatch, feasible=False, params={"reason_text": "Try again"})
     assert fetch(db, "SELECT count(*) FROM plan.planning_run WHERE order_id=1")[0][0] == 2
+
+
+def test_US_APR_04_unheld_replan_suggestion_preserves_approved_resources(
+    db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _request(db, monkeypatch)
+    execute(
+        db,
+        "UPDATE plan.fulfilment_plan SET status='approved' WHERE id=1",
+        "UPDATE plan.stock_reservation SET status='committed' WHERE run_id=1",
+        "UPDATE plan.prep_reservation SET status='committed' WHERE run_id=1",
+        "UPDATE plan.vehicle_reservation SET status='committed' WHERE run_id=1",
+        "UPDATE ops.customer_order SET status='APPROVED',approved_plan_id=1 WHERE id=1",
+    )
+    new_run = _run(
+        db,
+        lambda s: planning_service.suggest_replan(
+            1, "vehicle_issue", session=s, inputs_loader=_loader
+        ),
+    )
+    assert new_run == 2
+    assert _run(
+        db,
+        lambda s: planning_service.suggest_replan(
+            1, "vehicle_issue", session=s, inputs_loader=_loader
+        ),
+    ) == 2
+    assert fetch(db, "SELECT hold_expires_at FROM plan.planning_run WHERE id=2")[0][0] is None
+    assert fetch(db, "SELECT kind FROM plan.planning_run WHERE id=2")[0][0] == "replan_suggestion"
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "APPROVED"
+    assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=1")[0][0] == "approved"
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "committed"
+    assert fetch(db, "SELECT count(*) FROM plan.stock_reservation WHERE run_id=2")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM ops.alert WHERE type='REPLAN_SUGGESTED'")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='REPLAN_SUGGESTED'")[0][0] == 1
