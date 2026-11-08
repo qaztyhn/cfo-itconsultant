@@ -6,7 +6,7 @@ critical trước; ack ghi acknowledged_by/at.
 Owner: Dev 1 (A) — M7.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
@@ -69,6 +69,28 @@ async def resolve(session: AsyncSession, dedupe_key: str, *, now: datetime) -> i
     result = await session.execute(
         update(Alert)
         .where(Alert.dedupe_key == dedupe_key, Alert.resolved_at.is_(None))
+        .values(resolved_at=now)
+    )
+    return int(result.rowcount)  # type: ignore[attr-defined]
+
+
+async def resolve_order_alerts(
+    session: AsyncSession, *, order_id: int, market_id: int, types: Collection[str], now: datetime
+) -> int:
+    """Close the OPEN alerts of one order whose type is in `types`; returns how many rows were closed.
+
+    Scoped by order AND market so a mis-keyed row of another market is never touched; rows are never deleted
+    (history stays queryable with `resolved_at`), already-resolved rows keep their original timestamp, and
+    alerts of any other type for the same order are left alone. Joins the caller's transaction.
+    """
+    result = await session.execute(
+        update(Alert)
+        .where(
+            Alert.order_id == order_id,
+            Alert.market_id == market_id,
+            Alert.type.in_(tuple(types)),
+            Alert.resolved_at.is_(None),
+        )
         .values(resolved_at=now)
     )
     return int(result.rowcount)  # type: ignore[attr-defined]

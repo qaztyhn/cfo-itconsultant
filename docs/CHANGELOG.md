@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M7 — đóng alert rủi ro khi đơn DELIVERED] — 2026-11-08 — PR #131, chờ review
+
+- `risk_service.recalculate` với đơn `DELIVERED` đóng (`resolved_at`) các alert **mở** `RISK_ORANGE`/`PREDICTED_LATE`/`OVERDUE` của **đúng đơn và market đó** trong transaction của bên gọi, rồi trả `None`: không tính ETA, không tạo/mở lại alert. Alert không bị xóa; loại alert khác của cùng đơn (STALE_DATA, EXCEPTION, REPLAN_SUGGESTED, ORDER_CHANGED_AFTER_APPROVAL…) không bị đụng.
+- Chính sách này đến từ yêu cầu review của Dev 1/owner; **chưa có điều khoản tài liệu riêng**. `FAILED`/`CANCELLED` giữ nguyên alert (chưa có chính sách duyệt). Bên thực thi (M6) phải gọi `recalculate(order_id, ..., session=...)` sau khi chuyển `DELIVERED` trong cùng transaction.
+
+
 ## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
 
 - `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.

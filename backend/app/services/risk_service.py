@@ -57,6 +57,8 @@ _FIXED_SIGNALS = frozenset(
     }
 )
 _ACTIVE = frozenset({"APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"})
+# Alert types this service raises (US-RSK-02/03). Only these are closed when a delivery completes.
+RISK_ALERT_TYPES = ("RISK_ORANGE", "PREDICTED_LATE", "OVERDUE")
 
 
 def _missing(message: str) -> DomainError:
@@ -271,6 +273,14 @@ async def recalculate(
     order = await session.scalar(select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update())
     if order is None:
         raise DomainError("NOT_FOUND", "Order not found.")
+    if order.status == "DELIVERED":
+        # Successful completion: lateness risk no longer applies, so the order's open risk alerts are closed
+        # in this transaction (rows and history kept). Idempotent, and nothing below runs, so a completed
+        # order can never raise or reopen a risk alert. FAILED/CANCELLED keep theirs: no approved policy.
+        await alert_service.resolve_order_alerts(
+            session, order_id=order.id, market_id=order.market_id, types=RISK_ALERT_TYPES, now=now
+        )
+        return None
     if order.status not in _ACTIVE:
         return None
     if order.approved_plan_id is None or order.promise_end is None:
