@@ -26,6 +26,8 @@ PERIOD = {"from": "2026-11-10", "to": "2026-11-11"}
 
 SEED = (
     *SETUP,
+    "INSERT INTO ref.customer (market_id, external_ref, type, name) "
+    "VALUES (1, 'KPI-C-1', 'business', 'Synthetic customer')",
     rows.order_sql(1),
     rows.order_sql(2),
     rows.order_sql(3),
