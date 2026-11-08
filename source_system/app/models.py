@@ -100,13 +100,37 @@ class Product(Timestamps, Base):
 
 
 class Stock(Timestamps, Base):
-    __tablename__ = "src_stock"
+    """One stock row per (batch, warehouse, SKU), in the SKU's declared stock unit (DEC-SRC-Q10-SKU-001).
 
-    warehouse_code: Mapped[str] = mapped_column(primary_key=True)
-    sku: Mapped[str] = mapped_column(ForeignKey("source.src_product.sku"), primary_key=True)
+    Rows without a batch are legacy: they are never served (no completeness proof). Published batches keep
+    their rows; a newer batch never rewrites an older one.
+    """
+
+    __tablename__ = "src_stock"
+    __table_args__ = (UniqueConstraint("batch_id", "warehouse_code", "sku", name="ux_src_stock_batch_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("source.src_stock_snapshot_batch.id"))
+    warehouse_code: Mapped[str]
+    sku: Mapped[str] = mapped_column(ForeignKey("source.src_product.sku"))
     on_hand: Mapped[Decimal]
     reserved: Mapped[Decimal]
     as_of: Mapped[datetime]
+
+
+class StockBatch(Timestamps, Base):
+    __tablename__ = "src_stock_snapshot_batch"
+    __table_args__ = (
+        CheckConstraint("row_count >= 0", name="ck_stock_batch_count"),
+        UniqueConstraint("source_instance", "as_of", name="ux_stock_batch_capture"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    source_instance: Mapped[str]
+    as_of: Mapped[datetime]
+    published_at: Mapped[datetime | None]
+    complete: Mapped[bool] = mapped_column(server_default=text("false"))
+    row_count: Mapped[int] = mapped_column(server_default=text("0"))
+    content_hash: Mapped[str]
 
 
 class Inbound(Timestamps, Base):
@@ -161,6 +185,8 @@ class Order(Timestamps, Base):
     contact_email: Mapped[str | None]
     receiving_restrictions: Mapped[str | None]
     special_requirements: Mapped[str | None]
+    cancel_reason: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    cancelled_at: Mapped[datetime | None]
 
 
 class OrderLine(Timestamps, Base):

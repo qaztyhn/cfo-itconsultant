@@ -786,6 +786,15 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 
 ### 16.3 D1-C — Version, sửa/hủy sau submit và CFO propagation
 
+PUT full replacement dùng cùng OrderIn + `expected_version` int≥1; optional `refresh_address=false`
+chỉ lấy snapshot mới khi true hoặc đổi address/customer reference. No-op giữ version; edit VALIDATED
+thành DRAFT, edit SUBMITTED phải validate toàn đơn và vẫn SUBMITTED. Stale version → 409 VERSION_CONFLICT.
+Cancel body `{expected_version,reason_code,reason_text?}`: reason_code token chữ thường/số/gạch dưới
+(bắt đầu bằng chữ, tối đa 64 ký tự), reason_text tối đa 1000 ký tự printable, bắt buộc nếu code=`other`.
+Retry cùng reason, với version trước hủy hoặc version hiện tại, trả cùng CANCELLED/provenance không tăng
+version; intent khác không ghi đè provenance. Common order DTO thêm nullable `cancel_reason` và
+`cancelled_at`, gồm cả GET feed status=CANCELLED; không trả dữ liệu này như thông báo khách tự do.
+
 - `PUT /orders/{id}`: bắt buộc `expected_version`, compare + row lock; đổi thực tế tăng version/updated_at, identical no-op có thể không tăng. Sai version → **409 `VERSION_CONFLICT`** (mã mới **chỉ áp dụng hợp đồng Source API**); trạng thái không hợp lệ → **409 `ILLEGAL_TRANSITION`**.
 - `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh đơn VALIDATED → DRAFT, invalidates validation. Chỉnh đơn đã `SUBMITTED_FOR_PLANNING` được phép **nếu toàn bộ nội dung mới validate thành công trong cùng transaction**; giữ status `SUBMITTED_FOR_PLANNING`, tăng source version. PUT lỗi không làm mất đơn khỏi feed.
 - `POST /orders/{id}/cancel` từ DRAFT/VALIDATED/SUBMITTED_FOR_PLANNING có `expected_version`, `reason_code` và reason_text bảo đảm an toàn khi `other`; terminal CANCELLED không được sửa/reopen/resubmit; retry cancel không nhân phiên bản/hủy trùng.
@@ -793,6 +802,19 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 - **Đã DISPATCHED/đang giao:** alert Dispatcher xử lý thủ công, không tự thay chuyến/commit hoặc xóa lịch sử giao hàng. CFO không bao giờ POST/PUT/cancel ngược POS và không tự đảo routing legacy/cfo.
 
 ### 16.4 D1-D — Calendar / stock batch / fixed-unit SKU (Q10 owner override)
+
+`GET /stock` (**không phân trang**) trả `200 {as_of, batch_id, item_count, items}`; item chỉ có
+`warehouse_code, sku, on_hand, reserved` (số lượng là số JSON, theo **đơn vị tồn kho khai báo của SKU**).
+Đó là **batch published hoàn chỉnh mới nhất** (`as_of` cao nhất, rồi `batch_id`), `as_of` là thời điểm chụp
+của batch, `item_count` bằng số dòng; batch published rỗng hợp lệ trả `200` với `items=[]` (tồn 0 trong
+phạm vi batch). **Không có `physical_stock_pool_id`** hay trường nhóm/alias nào (DEC-SRC-Q10-SKU-001); mỗi batch
+tối đa một dòng `(batch_id, warehouse_code, sku)`, trùng khóa làm batch bị từ chối khi publish (không cộng,
+không last-row-wins). Không có batch published hoàn chỉnh, hoặc batch mới nhất không qua kiểm tra toàn vẹn
+(số dòng/hash/`as_of`) ⇒ **`503 STOCK_UNAVAILABLE`** (DEC-SRC-Q9-ERROR-001), thân lỗi chuẩn kèm
+`X-Correlation-ID`, sau bước xác thực `X-API-Key`; không bao giờ trả 200 rỗng thay cho "không biết". Batch
+mới lỗi khi đã có batch published cũ: batch lỗi bị rollback hoàn toàn và Source tiếp tục trả batch cũ với
+`as_of` thật của nó (CFO phải tự kiểm độ mới). Đọc marker và dòng trong cùng một MVCC snapshot. Dòng tồn
+cũ không có `batch_id` (legacy) không bao giờ được phục vụ cho đến khi có batch được publish.
 
 Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
 weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,
@@ -804,6 +826,8 @@ slot → `outside_receiving_hours`. Đây là lịch nhận nguồn, không thay
 - **Q9 published batch:** `GET /stock` trả `{as_of,items}` từ **một batch đã hoàn tất và publish atomically**. Batch đủ có thể có **items=[]** và khi đó phải có completeness marker đáng tin để coi là 0 tồn; batch chưa publish/nguồn lỗi **không** tự thành tồn=0. `as_of` không được tính bằng `min/max(per-row as_of)` thay cho batch chung. Chính sách thời điểm stale stock vẫn theo MarketConfig; adapter không cộng bừa row không cùng batch.
 - **Q9 Source 503 — DEC-SRC-Q9-ERROR-001 (owner-approved 08/11/2026):** khi **không có bất kỳ batch nào đã publish hoàn chỉnh**, kể cả nguồn chỉ có batch `loading`/`failed`, `GET /api/v1/stock` trả **HTTP 503** với phong bì lỗi chuẩn Source: `{ "error": { "code": "STOCK_UNAVAILABLE", "message": "Stock snapshot is unavailable.", "details": {}, "correlation_id": "<opaque>" } }`, header `X-Correlation-ID`, và xác thực `X-API-Key` như bình thường. **Không** trả `200 items=[]` khi unknown. Ngược lại, snapshot **published complete** có `items=[]` trả `200` (tồn=0 trong phạm vi snapshot). Batch mới lỗi khi vẫn có bản published cũ: chỉ serve latest **published** với `as_of` thật; CFO vẫn kiểm freshness, không tự gia hạn thời điểm. CFO gặp 503 phải báo sync failure/alert, giữ dữ liệu lịch sử để audit nhưng không dùng tồn kho stale/unknown để hứa giao. Mã này **chỉ cho Source API** (không áp dụng `GET /health`, vẫn theo health body riêng), chi tiết OpenAPI/runtime cần PR code và CI.
 - **Q10 local/global SKU — thay thế bằng DEC-SRC-Q10-SKU-001 (08/11):** mỗi SKU có đúng **một đơn vị tồn kho chuẩn, cố định**, `on_hand` và `reserved` trên `/stock` dùng đơn vị đó; SKU giữ nguyên đơn vị qua mọi warehouse/batch. Mỗi batch **chỉ có một dòng `(batch_id,warehouse_code,sku)`**; trùng thì reject batch, không cộng/last-row-wins. Đơn bán theo pallet/bao khác chuẩn phải được quy đổi về đơn vị tồn của **cùng SKU** trước khi trừ tồn, không sinh SKU tồn giả. CFO dùng `units_to_base` để đổi sang base unit; không dựng `physical_stock_pool_id`, không suy ra hai SKU cùng tồn chỉ vì số lượng quy đổi bằng nhau. Nếu nhiều local SKU ánh xạ một global product thì chỉ cộng tồn khi **đã xác minh lượng tồn độc lập**; chưa xác minh phải fail closed, giữ dữ liệu cũ ở trạng thái stale/unavailable, không phát hành snapshot partial như complete. API stock Q9 vẫn yêu cầu published complete batch; **mã lỗi `503 STOCK_UNAVAILABLE` đã được owner duyệt riêng theo DEC-SRC-Q9-ERROR-001**, còn các field provenance như `batch_id`/`item_count` và migration cần review kỹ thuật ở PR #101.
+
+- **DTO tồn kho thống nhất giữa Source và adapter CFO (đề xuất kỹ thuật theo DEC-SRC-Q9-ERROR-001 / DEC-SRC-Q10-SKU-001, chờ review Dev 1/Dev 2):** `200 {"as_of": <aware>, "batch_id": <int>0>, "item_count": <int≥0>, "items": [{"warehouse_code","sku","on_hand","reserved"}]}`. Không có `physical_stock_pool_id` hay bất kỳ trường định danh nhóm/alias nào; mỗi `(warehouse_code, sku)` tối đa một dòng, số lượng theo đơn vị tồn kho khai báo của SKU. Adapter CFO **từ chối** (không ghi gì) khi: thiếu `batch_id`/`item_count` (bản cũ `{as_of, items}` không chứng minh được tính đầy đủ), `item_count != len(items)`, `as_of` không có múi giờ, trùng khóa, số không hữu hạn, hoặc có trường lạ (kể cả `physical_stock_pool_id`). `503 STOCK_UNAVAILABLE` là `StockUnavailable`: giữ snapshot trước, không thay bằng rỗng; `200` với `items=[]` chỉ là batch rỗng đã publish đầy đủ. Chuẩn hóa (`backend/app/adapters/stock_batches.py`, hàm thuần): đơn vị và `units_to_base` Source khai báo phải bằng ánh xạ đã xác nhận của CFO; quy đổi **một lần** mỗi SKU; nhiều SKU cùng kho cùng một global product **không tự cộng** (thất bại cả snapshot); SKU chưa ánh xạ/chưa xác nhận hoặc mâu thuẫn → từ chối **cả** snapshot, không bao giờ trả kết quả một phần.
 
 **Implementation handoff:** Dev 2 source endpoints/DDL/OpenAPI/seed/CSV integration, Dev 1 adapter/stock normalization/cancel-replan/locks, Dev 3 POS error UX. Phải có PostgreSQL multi-instance tests cho equal timestamp, cancellation after submitted/approved/dispatched, submitted edit race, snapshot zero-row, duplicate `(batch,warehouse,sku)`, đơn vị SKU cố định, chuyển quy cách bán, nhiều SKU ánh xạ một global chưa rõ độc lập, và new-version idempotency. **Hợp đồng đã được owner duyệt, code chưa được chứng minh hoàn chỉnh bởi tài liệu này.**
 

@@ -66,6 +66,8 @@ class OrderOut(BaseModel):
     sales_code: str | None
     store_code: str | None
     lines: list[OrderLineOut]
+    cancel_reason: dict[str, object] | None = None
+    cancelled_at: datetime | None = None
 
     @field_serializer("lat", "lon")
     def _coordinate(self, value: Decimal | None) -> float | None:
@@ -102,6 +104,8 @@ def _view(order: Order, lines: list[OrderLine]) -> OrderOut:
         window_end=_hhmm(order.window_end),
         receiving_restrictions=order.receiving_restrictions,
         special_requirements=order.special_requirements,
+        cancel_reason=order.cancel_reason,
+        cancelled_at=order.cancelled_at,
         sales_code=order.sales_code,
         store_code=order.store_code,
         lines=[

@@ -99,8 +99,15 @@ class StockItemDTO:
 
 @dataclass(frozen=True)
 class StockSnapshotDTO:
+    """One complete published source batch (DEC-SRC-Q10-SKU-001): one row per (warehouse, SKU), no pools.
+
+    `batch_id`/`item_count` are the provenance and completeness markers; the adapter always sets them.
+    """
+
     as_of: datetime
     items: tuple[StockItemDTO, ...]
+    batch_id: int | None = None
+    item_count: int | None = None
 
 
 @dataclass(frozen=True)

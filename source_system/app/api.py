@@ -3,25 +3,24 @@
 Owner: Dev 2 (luồng B) — M1.
 """
 
-from datetime import datetime
-from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import AwareDatetime, BaseModel, field_serializer
-from sqlalchemy import select
+from pydantic import AwareDatetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import lists_read as lists
 from app.auth import require_api_key
 from app.core import clock
 from app.db import database_ready
-from app.models import Stock
 from app.order_create import create
-from app.order_payloads import OrderIn
+from app.order_edit import cancel, update
+from app.order_payloads import CancelIn, OrderEditIn, OrderIn
+from app.order_validation import validate_or_submit
 from app.orders_read import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, OrderOut, OrderPage, OrderStatus, list_orders
+from app.stock_batches import StockSnapshot, read_snapshot
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 health_router = APIRouter()
@@ -56,45 +55,14 @@ async def list_products(paging: lists.PagingDep) -> lists.ProductPage:
     return await lists.products(paging)
 
 
-def _number(value: Decimal) -> int | float:
-    return int(value) if value == value.to_integral_value() else float(value)
-
-
-class StockItem(BaseModel):
-    warehouse_code: str
-    sku: str
-    on_hand: Decimal
-    reserved: Decimal
-
-    @field_serializer("on_hand", "reserved")
-    def _plain_number(self, value: Decimal) -> int | float:
-        return _number(value)
-
-
-class StockSnapshot(BaseModel):
-    as_of: datetime | None
-    items: list[StockItem]
-
-
-@router.get("/stock", response_model=StockSnapshot)
+@router.get(
+    "/stock",
+    response_model=StockSnapshot,
+    responses={503: {"description": "STOCK_UNAVAILABLE: no complete published batch (never zero stock)."}},
+)
 async def stock_snapshot(request: Request) -> StockSnapshot:
-    """Ảnh chụp tồn kho toàn bộ kèm as_of (06 mục 16).
-
-    `as_of` là thời điểm CŨ NHẤT trong các dòng (không khẳng định dữ liệu mới hơn thực tế). Bảng không có dòng
-    thì trả `as_of = null` và `items = []`: nguồn chưa lưu thời điểm của lô rỗng (SRC-Q9 chưa duyệt) nên KHÔNG
-    được bịa `as_of`; adapter CFO yêu cầu `as_of` hợp lệ và sẽ từ chối thay vì coi là tồn kho 0.
-    """
-    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session:
-        rows = (
-            (await session.execute(select(Stock).order_by(Stock.warehouse_code, Stock.sku))).scalars().all()
-        )
-    return StockSnapshot(
-        as_of=min((r.as_of for r in rows), default=None),
-        items=[
-            StockItem(warehouse_code=r.warehouse_code, sku=r.sku, on_hand=r.on_hand, reserved=r.reserved)
-            for r in rows
-        ],
-    )
+    """Latest complete published batch; 503 STOCK_UNAVAILABLE when none (DEC-SRC-Q9-ERROR-001)."""
+    return await read_snapshot(request.app.state.engine)
 
 
 @router.get("/inbound", response_model=lists.InboundPage)
@@ -127,28 +95,36 @@ async def create_order(
         )
 
 
-@router.put("/orders/{order_id}")
-async def update_order(order_id: str) -> dict[str, object]:
+@router.put("/orders/{order_id}", response_model=OrderOut)
+async def update_order(request: Request, order_id: str, payload: OrderEditIn) -> OrderOut:
     """POS: sửa đơn, tăng version."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await update(session, order_id, payload, now=clock.now(request.app.state.settings.app_now))
 
 
-@router.post("/orders/{order_id}/validate")
-async def validate_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/validate", response_model=OrderOut)
+async def validate_order(request: Request, order_id: str) -> OrderOut:
     """Sales Validation: khách, địa chỉ/tọa độ, dòng hàng, ngày và khung giờ (US-SRC-03)."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await validate_or_submit(
+            session, order_id, now=clock.now(request.app.state.settings.app_now), submit=False
+        )
 
 
-@router.post("/orders/{order_id}/submit")
-async def submit_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/submit", response_model=OrderOut)
+async def submit_order(request: Request, order_id: str) -> OrderOut:
     """Chuyển SUBMITTED_FOR_PLANNING — chỉ sau validate thành công (US-ORD-01 AC4)."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await validate_or_submit(
+            session, order_id, now=clock.now(request.app.state.settings.app_now), submit=True
+        )
 
 
-@router.post("/orders/{order_id}/cancel")
-async def cancel_order(order_id: str) -> dict[str, object]:
+@router.post("/orders/{order_id}/cancel", response_model=OrderOut)
+async def cancel_order(request: Request, order_id: str, payload: CancelIn) -> OrderOut:
     """Hủy đơn ở nguồn."""
-    raise NotImplementedError
+    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session, session.begin():
+        return await cancel(session, order_id, payload, now=clock.now(request.app.state.settings.app_now))
 
 
 @router.get("/addresses", response_model=lists.AddressPage)
