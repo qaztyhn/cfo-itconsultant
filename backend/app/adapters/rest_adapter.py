@@ -7,12 +7,44 @@ Owner: Dev 2 (luồng B) — M2.
 """
 
 import json
+from collections.abc import AsyncIterator
+from datetime import datetime
 from decimal import Decimal
+from typing import cast
 
 import httpx
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
-from app.adapters.base import StockItemDTO, StockSnapshotDTO
+from app.adapters.base import CustomerDTO, ProductDTO, StockItemDTO, StockSnapshotDTO
+
+
+class _Customer(BaseModel):
+    id: str = Field(min_length=1)
+    type: str
+    name: str
+    email: str | None
+    phone: str | None
+    updated_at: AwareDatetime
+
+
+class _Product(BaseModel):
+    sku: str = Field(min_length=1)
+    name: str
+    category: str | None
+    gtin: str | None
+    sale_unit: str
+    units_to_base: Decimal = Field(gt=0, allow_inf_nan=False)
+    unit_price: Decimal = Field(ge=0, allow_inf_nan=False)
+    weight_kg: Decimal | None = Field(ge=0, allow_inf_nan=False)
+    volume_m3: Decimal | None = Field(ge=0, allow_inf_nan=False)
+    updated_at: AwareDatetime
+
+
+class _Page[T](BaseModel):
+    items: list[T]
+    page: int = Field(ge=1, strict=True)
+    page_size: int = Field(ge=1, le=500, strict=True)
+    total: int = Field(ge=0, strict=True)
 
 
 class SourceReadError(RuntimeError):
@@ -42,6 +74,7 @@ class RestMarketAdapter:
         *,
         timeout_seconds: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_pages: int = 10000,
     ) -> None:
         if not api_key.strip():
             raise ValueError("Source API key is required")
@@ -58,6 +91,80 @@ class RestMarketAdapter:
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
         self._transport = transport
+        if max_pages <= 0:
+            raise ValueError("Page safety limit must be positive")
+        self._max_pages = max_pages
+
+    async def _pages[T: _Customer | _Product](
+        self, entity: str, since: datetime, model: type[T], *, key_field: str, page_size: int = 50
+    ) -> AsyncIterator[T]:
+        if since.tzinfo is None or since.utcoffset() is None or not 1 <= page_size <= 500:
+            raise ValueError("Source checkpoint must be aware and page size in 1..500")
+        seen: set[str] = set()
+        last: tuple[datetime, str] | None = None
+        total: int | None = None
+        async with httpx.AsyncClient(
+            timeout=self._timeout_seconds, transport=self._transport, follow_redirects=False
+        ) as client:
+            for page in range(1, self._max_pages + 1):
+                try:
+                    response = await client.get(
+                        self.base_url + entity,
+                        headers={"X-API-Key": self._api_key},
+                        params={"updated_since": since.isoformat(), "page": page, "page_size": page_size},
+                    )
+                    response.raise_for_status()
+                    # JSON document is an external boundary; fractions are parsed without a float round-trip.
+                    raw: object = json.loads(response.content, parse_float=Decimal)
+                    batch = _Page[dict[str, object]].model_validate(raw)
+                    header_total = int(response.headers["X-Total-Count"])
+                except (httpx.HTTPError, ValueError, KeyError):
+                    raise SourceReadError("Source reference page is unavailable or invalid") from None
+                if (
+                    batch.page != page
+                    or batch.page_size != page_size
+                    or header_total != batch.total
+                    or (total is not None and batch.total != total)
+                ):
+                    raise SourceReadError("Source reference pagination changed; retry the feed")
+                total = batch.total
+                expected = min(page_size, max(0, total - (page - 1) * page_size))
+                if len(batch.items) != expected:
+                    raise SourceReadError("Source reference page is incomplete")
+                for row in batch.items:
+                    try:
+                        item = model.model_validate(row)
+                    except ValueError:
+                        raise SourceReadError("Source reference item is invalid") from None
+                    key = str(getattr(item, key_field))
+                    current = (item.updated_at, key)
+                    if key in seen or item.updated_at < since or (last is not None and current <= last):
+                        raise SourceReadError("Source reference keys/checkpoint ordering is invalid")
+                    seen.add(key)
+                    last = current
+                    yield cast(T, item)  # model_validate returns the runtime model passed above.
+                if page * page_size >= total:
+                    return
+        raise SourceReadError("Source reference page safety limit exceeded")
+
+    async def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]:
+        async for item in self._pages("customers", updated_since, _Customer, key_field="id"):
+            yield CustomerDTO(item.id, item.type, item.name, item.email, item.phone, item.updated_at)
+
+    async def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]:
+        async for item in self._pages("products", updated_since, _Product, key_field="sku"):
+            yield ProductDTO(
+                item.sku,
+                item.name,
+                item.category,
+                item.gtin,
+                item.sale_unit,
+                item.units_to_base,
+                item.unit_price,
+                item.weight_kg,
+                item.volume_m3,
+                item.updated_at,
+            )
 
     async def fetch_stock(self) -> StockSnapshotDTO:
         """Fetch one complete snapshot; the caller owns persistence and sync status."""
