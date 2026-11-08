@@ -261,6 +261,7 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Bypass missing external gate *only in this integration test* to test order aggregation."""
+
     async def test_driver_gate(*_args: object) -> None:
         return None
 
@@ -302,7 +303,10 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
         "(2, 2, 59, 18, '2026-11-10T08:31Z', 'simulator')",
     )
     first = send(
-        execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z",
+        execution_api,
+        DRIVER,
+        "DELIVERED",
+        "2026-11-10T09:30:00Z",
         {"trip_id": 1, "recipient_name": "Synthetic recipient"},
     )
     assert first.status_code == 200, first.text
@@ -311,7 +315,10 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     assert messages == ["DISPATCHED"]
 
     second = send(
-        execution_api, 15, "FAILED", "2026-11-10T09:35:00Z",
+        execution_api,
+        15,
+        "FAILED",
+        "2026-11-10T09:35:00Z",
         {"trip_id": 2, "failure_reason": "customer_absent"},
     )
     assert second.status_code == 200, second.text
@@ -320,6 +327,4 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     assert triggers == ["delivery_failed"]
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 0
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 2
-    assert fetch(
-        execution_api.dsn, "SELECT count(*) AS n FROM ops.alert WHERE type='EXCEPTION'"
-    )[0]["n"] == 1
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.alert WHERE type='EXCEPTION'")[0]["n"] == 1
