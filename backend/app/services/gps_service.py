@@ -44,9 +44,7 @@ def _market_config(market: Market) -> MarketConfig:
         raise DomainError("VALIDATION_ERROR", "Approved GPS configuration is unavailable.") from exc
 
 
-async def _assigned_trip(
-    session: AsyncSession, trip_id: int, actor: object
-) -> tuple[DeliveryTrip, Market]:
+async def _assigned_trip(session: AsyncSession, trip_id: int, actor: object) -> tuple[DeliveryTrip, Market]:
     employee_id = _role(actor, "driver")
     result = await session.execute(
         select(DeliveryTrip, Market)
@@ -86,11 +84,13 @@ async def ingest_positions(
     if trip.status != "on_road" or trip.ended_at is not None or trip.depart_actual_at is None:
         raise DomainError("NOT_ON_TRIP", "Trip is not actively on the road.")
     notice = await session.scalar(
-        select(ComplianceRecord.id).where(
+        select(ComplianceRecord.id)
+        .where(
             ComplianceRecord.market_id == market.id,
             ComplianceRecord.type == "GPS_NOTICE",
             ComplianceRecord.status == "approved",
-        ).limit(1)
+        )
+        .limit(1)
     )
     if notice is None:
         raise DomainError("FORBIDDEN", "An approved GPS privacy notice is required.")
@@ -103,7 +103,8 @@ async def ingest_positions(
     cfg = _market_config(market)
     existing = (
         await session.scalars(
-            select(VehiclePosition).where(VehiclePosition.trip_id == trip.id)
+            select(VehiclePosition)
+            .where(VehiclePosition.trip_id == trip.id)
             .order_by(VehiclePosition.recorded_at, VehiclePosition.id)
         )
     ).all()
@@ -124,32 +125,39 @@ async def ingest_positions(
         except (KeyError, ValueError, TypeError) as exc:
             raise DomainError("VALIDATION_ERROR", "GPS point values are invalid.") from exc
         if (
-            not lat.is_finite() or not lon.is_finite() or not -90 <= lat <= 90
-            or not -180 <= lon <= 180 or (accuracy is not None and (
-                not accuracy.is_finite() or accuracy <= 0
-            ))
+            not lat.is_finite()
+            or not lon.is_finite()
+            or not -90 <= lat <= 90
+            or not -180 <= lon <= 180
+            or (accuracy is not None and (not accuracy.is_finite() or accuracy <= 0))
         ):
             raise DomainError("VALIDATION_ERROR", "GPS point values are invalid.")
         prior = known.get(at)
         if prior is not None:
             if isinstance(prior, VehiclePosition):
                 matches = (
-                    prior.source == "device" and prior.lat == lat
-                    and prior.lon == lon and prior.accuracy_m == accuracy
+                    prior.source == "device"
+                    and prior.lat == lat
+                    and prior.lon == lon
+                    and prior.accuracy_m == accuracy
                 )
             else:
-                matches = (
-                    prior["lat"] == lat and prior["lon"] == lon
-                    and prior["accuracy_m"] == accuracy
-                )
+                matches = prior["lat"] == lat and prior["lon"] == lon and prior["accuracy_m"] == accuracy
             if not matches:
                 raise DomainError("DUPLICATE_EVENT", "Conflicting GPS timestamp.")
             continue
         known[at] = {"lat": lat, "lon": lon, "accuracy_m": accuracy}
-        new_rows.append(VehiclePosition(
-            trip_id=trip.id, vehicle_id=trip.vehicle_id, lat=lat, lon=lon,
-            accuracy_m=accuracy, recorded_at=at, source="device",
-        ))
+        new_rows.append(
+            VehiclePosition(
+                trip_id=trip.id,
+                vehicle_id=trip.vehicle_id,
+                lat=lat,
+                lon=lon,
+                accuracy_m=accuracy,
+                recorded_at=at,
+                source="device",
+            )
+        )
     times = sorted(known)
     cadence = timedelta(minutes=cfg.gps.interval_min)
     if any(b - a < cadence for a, b in zip(times, times[1:], strict=False)):
@@ -180,39 +188,33 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
     raise DomainError("FORBIDDEN", "Verified dispatcher-to-trip assignment is unavailable.")
 
 
-async def purge_trip_on_terminal(
-    session: AsyncSession, trip_id: int, *, now: datetime | None = None
-) -> int:
+async def purge_trip_on_terminal(session: AsyncSession, trip_id: int, *, now: datetime | None = None) -> int:
     """Dev 1 hook: after terminal transition, before transaction commit.
 
     Also allows cleanup when the driver shift ended or GPS is disabled;
     refuses to delete an actively authorized session by mistake.
     """
     when = _aware(now if now is not None else clock.now())
-    trip = await session.scalar(
-        select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update()
-    )
+    trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
     if trip is None:
         raise DomainError("NOT_FOUND", "Trip not found.")
     if trip_id in await active_duty(session, now=when):
         raise DomainError("NOT_ON_TRIP", "Cannot purge an active GPS tracking session.")
     removed = await session.scalars(
-        delete(VehiclePosition).where(VehiclePosition.trip_id == trip_id)
-        .returning(VehiclePosition.id)
+        delete(VehiclePosition).where(VehiclePosition.trip_id == trip_id).returning(VehiclePosition.id)
     )
     return len(removed.all())
 
 
-async def purge_expired(
-    *, session: AsyncSession | None = None, now: datetime | None = None
-) -> int:
+async def purge_expired(*, session: AsyncSession | None = None, now: datetime | None = None) -> int:
     """D3 compensating cleanup: invalid duty points are purged immediately, not after 30 days."""
     if session is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "GPS cleanup requires a transaction.")
     when = _aware(now if now is not None else clock.now())
     duty = await active_duty(session, now=when)
     authorized = or_(
-        False, *(
+        False,
+        *(
             and_(
                 VehiclePosition.trip_id == trip_id,
                 VehiclePosition.recorded_at >= start,
@@ -222,9 +224,7 @@ async def purge_expired(
             for trip_id, (start, end) in duty.items()
         ),
     )
-    removed = await session.scalars(
-        delete(VehiclePosition).where(~authorized).returning(VehiclePosition.id)
-    )
+    removed = await session.scalars(delete(VehiclePosition).where(~authorized).returning(VehiclePosition.id))
     return len(removed.all())
 
 
@@ -232,9 +232,7 @@ def _lost_key(trip_id: int) -> str:
     return f"GPS_LOST:trip:{trip_id}"
 
 
-async def lost_check(
-    *, session: AsyncSession | None = None, now: datetime | None = None
-) -> int:
+async def lost_check(*, session: AsyncSession | None = None, now: datetime | None = None) -> int:
     """US-GPS-03 AC1: deduped loss only for currently authorized trips/shifts.
 
     The existing gps_lost job and its scheduler remain unmodified.
@@ -264,8 +262,12 @@ async def lost_check(
         signal = max(started, last) if last is not None else started
         if when - signal > timedelta(minutes=_market_config(market).gps.lost_min):
             alert_id = await alert_service.raise_alert(
-                session, market_id=market.id, type_="GPS_LOST", level="warning",
-                message="Trip GPS signal overdue.", dedupe_key=_lost_key(trip_id),
+                session,
+                market_id=market.id,
+                type_="GPS_LOST",
+                level="warning",
+                message="Trip GPS signal overdue.",
+                dedupe_key=_lost_key(trip_id),
                 target_roles=("dispatcher",),
             )
             created += int(alert_id is not None)
@@ -274,7 +276,8 @@ async def lost_check(
     open_keys = (
         await session.scalars(
             select(Alert.dedupe_key).where(
-                Alert.type == "GPS_LOST", Alert.resolved_at.is_(None),
+                Alert.type == "GPS_LOST",
+                Alert.resolved_at.is_(None),
                 Alert.dedupe_key.like("GPS_LOST:trip:%"),
             )
         )

@@ -34,8 +34,11 @@ NOW = datetime(2026, 11, 10, 8, 30, tzinfo=UTC)
 
 def position(at: str, *, lat: float = 59.3, lon: float = 18.1) -> dict[str, object]:
     return {
-        "lat": lat, "lon": lon, "accuracy_m": 12.5,
-        "recorded_at": at, "source": "device",
+        "lat": lat,
+        "lon": lon,
+        "accuracy_m": 12.5,
+        "recorded_at": at,
+        "source": "device",
     }
 
 
@@ -73,18 +76,14 @@ def test_US_GPS_01_AC1_device_gps_is_accepted_without_echoing_coordinates(gps: A
     assert response.status_code == 202, response.text
     assert response.json() == {"accepted": 1, "eta": None}
     assert "lat" not in response.text.lower() and "59.3" not in response.text
-    points = fetch(
-        gps.dsn, "SELECT trip_id,vehicle_id,lat,lon,source FROM ops.vehicle_position"
-    )
+    points = fetch(gps.dsn, "SELECT trip_id,vehicle_id,lat,lon,source FROM ops.vehicle_position")
     assert len(points) == 1
     assert tuple(points[0][:2]) == (1, 1)
     assert points[0]["source"] == "device"
 
 
 def test_US_GPS_01_AC1_offline_points_can_arrive_out_of_order_in_current_shift(gps: Api) -> None:
-    response = submit(
-        gps, [position("2026-11-10T08:00:00Z"), position("2026-11-10T07:00:00Z")]
-    )
+    response = submit(gps, [position("2026-11-10T08:00:00Z"), position("2026-11-10T07:00:00Z")])
     assert response.status_code == 202 and response.json()["accepted"] == 2
     times = fetch(gps.dsn, "SELECT recorded_at FROM ops.vehicle_position ORDER BY recorded_at")
     assert [r["recorded_at"].hour for r in times] == [7, 8]
@@ -108,9 +107,10 @@ def test_US_GPS_01_AC1_rejects_high_frequency_sampling_without_partial_insert(gp
         "VALIDATION_ERROR",
     )
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
-    assert submit(
-        gps, [position("2026-11-10T07:00:00Z"), position("2026-11-10T07:30:00Z")]
-    ).json()["accepted"] == 2
+    assert (
+        submit(gps, [position("2026-11-10T07:00:00Z"), position("2026-11-10T07:30:00Z")]).json()["accepted"]
+        == 2
+    )
 
 
 def test_US_GPS_01_AC2_disabled_market_rejects_without_storing(gps: Api) -> None:
@@ -206,9 +206,7 @@ def test_US_GPS_03_AC2_terminal_hook_erases_points_in_same_transaction(gps: Api)
 
     assert transact(gps.dsn, finish_and_purge) == 1
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
-    assert transact(
-        gps.dsn, lambda s: gps_service.purge_trip_on_terminal(s, 1, now=NOW)
-    ) == 0
+    assert transact(gps.dsn, lambda s: gps_service.purge_trip_on_terminal(s, 1, now=NOW)) == 0
     assert_error(submit(gps, [position("2026-11-10T07:00:00Z")]), 409, "NOT_ON_TRIP")
 
 
@@ -230,14 +228,16 @@ def test_US_GPS_03_AC2_shift_end_cleanup_does_not_touch_duty_history(gps: Api) -
 def test_US_GPS_03_AC1_lost_signal_dedupes_and_resolves_after_recovery(gps: Api) -> None:
     assert transact(gps.dsn, lambda s: gps_service.lost_check(session=s, now=NOW)) == 1
     assert transact(gps.dsn, lambda s: gps_service.lost_check(session=s, now=NOW)) == 0
-    assert fetch(
-        gps.dsn, "SELECT count(*) FROM ops.alert WHERE type='GPS_LOST' AND resolved_at IS NULL"
-    )[0][0] == 1
+    assert (
+        fetch(gps.dsn, "SELECT count(*) FROM ops.alert WHERE type='GPS_LOST' AND resolved_at IS NULL")[0][0]
+        == 1
+    )
     assert submit(gps, [position("2026-11-10T08:25:00Z")]).status_code == 202
     assert transact(gps.dsn, lambda s: gps_service.lost_check(session=s, now=NOW)) == 0
-    assert fetch(
-        gps.dsn, "SELECT count(*) FROM ops.alert WHERE type='GPS_LOST' AND resolved_at IS NULL"
-    )[0][0] == 0
+    assert (
+        fetch(gps.dsn, "SELECT count(*) FROM ops.alert WHERE type='GPS_LOST' AND resolved_at IS NULL")[0][0]
+        == 0
+    )
     alert = fetch(gps.dsn, "SELECT message FROM ops.alert WHERE type='GPS_LOST'")[0]
     assert "59" not in alert["message"] and "driver" not in alert["message"].lower()
 
@@ -271,13 +271,15 @@ def test_US_GPS_03_AC2_concurrent_terminal_commit_prevents_late_offline_upload(g
                     await gps_service.ingest_positions(
                         1,
                         actor,
-                        [{
-                            "lat": Decimal("59.30000"),
-                            "lon": Decimal("18.10000"),
-                            "accuracy_m": Decimal("12.5"),
-                            "recorded_at": datetime(2026, 11, 10, 7, tzinfo=UTC),
-                            "source": "device",
-                        }],
+                        [
+                            {
+                                "lat": Decimal("59.30000"),
+                                "lon": Decimal("18.10000"),
+                                "accuracy_m": Decimal("12.5"),
+                                "recorded_at": datetime(2026, 11, 10, 7, tzinfo=UTC),
+                                "source": "device",
+                            }
+                        ],
                         session=session,
                         now=NOW,
                     )
