@@ -211,3 +211,110 @@ def test_US_RES_01_AC4_replan_suggestion_does_not_hold(db: str) -> None:
         _run(db, lambda s: reservation.hold(1, session=s))
     assert denied.value.code == "PLAN_NOT_APPROVABLE"
     assert fetch(db, "SELECT count(*) FROM plan.stock_reservation")[0][0] == 0
+
+
+def _new_run_same_order(db: str) -> None:
+    """Run 3 is a fresh `rerun` on order 1, not a duplicate customer order."""
+    execute(
+        db,
+        rows.run_sql(1, 2, kind="rerun"),
+        rows.plan_sql(3, 1, 1),
+        rows.plan_vehicle_sql(3, 1, 1, 1),
+        "UPDATE plan.fulfilment_plan SET workload = "
+        """'{"prep_by_day":{"2026-11-10":"1.500"}}'::jsonb WHERE id=3""",
+    )
+
+
+def test_DEC_HOLD_001_timeout_resets_only_own_planned_order(db: str) -> None:
+    """A due latest run transitions PLANNED → SUBMITTED, preserving old expired plans."""
+    _run(db, lambda s: reservation.hold(1, session=s))
+    execute(db, "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1")
+    clock.set_now(clock.now() + timedelta(minutes=16))
+    assert _run(db, lambda s: reservation.expire_due(session=s)) == 1
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "SUBMITTED"
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=2")[0][0] == "SUBMITTED"
+    assert _rows(db, "fulfilment_plan", "status") == [("expired",), ("expired",)]
+    audit = fetch(
+        db,
+        "SELECT before->>'order_status', after->>'order_status', after->>'plan_again_required' "
+        "FROM audit.decision_log WHERE action='HOLD_EXPIRED'",
+    )
+    assert [tuple(row) for row in audit] == [("PLANNED", "SUBMITTED", "true")]
+    assert _run(db, lambda s: reservation.expire_due(session=s)) == 0
+
+
+def test_DEC_HOLD_001_plan_again_is_new_run_same_order(db: str) -> None:
+    _run(db, lambda s: reservation.hold(1, session=s))
+    execute(db, "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1")
+    clock.set_now(clock.now() + timedelta(minutes=16))
+    _run(db, lambda s: reservation.expire_due(session=s))
+    with pytest.raises(DomainError) as stale:
+        _run(db, lambda s: reservation.hold(1, session=s))
+    assert stale.value.code == "HOLD_EXPIRED"
+    _new_run_same_order(db)
+    _run(db, lambda s: reservation.hold(3, session=s))
+    _run(db, lambda s: reservation.hold(3, session=s))  # duplicate request is idempotent
+    runs = fetch(db, "SELECT id, order_id, run_no FROM plan.planning_run WHERE order_id=1 ORDER BY run_no")
+    assert [tuple(row) for row in runs] == [(1, 1, 1), (3, 1, 2)]
+    assert _rows(db, "stock_reservation", "run_id, status") == [(1, "expired"), (3, "held")]
+    assert _rows(db, "vehicle_reservation", "run_id, status")[-1] == (3, "held")
+    assert fetch(db, "SELECT count(*) FROM ops.customer_order WHERE id=1")[0][0] == 1
+
+
+def test_DEC_HOLD_001_late_sweeper_does_not_reset_newer_planned_run(db: str) -> None:
+    """Old hold can expire after a new plan has acquired fresh reservations."""
+    _run(db, lambda s: reservation.hold(1, session=s))
+    execute(
+        db,
+        "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1",
+        "UPDATE plan.stock_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.prep_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.vehicle_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.planning_run SET hold_expires_at='2026-11-04T08:00:00Z' WHERE id=1",
+    )
+    _new_run_same_order(db)
+    _run(db, lambda s: reservation.hold(3, session=s))
+    assert _run(db, lambda s: reservation.expire_due(session=s)) == 1
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
+    assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=3")[0][0] == "proposed"
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=3")[0][0] == "held"
+    assert fetch(db, "SELECT status FROM plan.vehicle_reservation WHERE run_id=3")[0][0] == "held"
+    assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=1")[0][0] == "expired"
+
+
+def test_DEC_HOLD_001_expired_plan_approval_rejected_even_before_job(db: str) -> None:
+    _run(db, lambda s: reservation.hold(1, session=s))
+    clock.set_now(clock.now() + timedelta(minutes=16))
+    with pytest.raises(DomainError) as timed_out:
+        _run(db, lambda s: reservation.commit_plan(1, resources_validated=True, session=s))
+    assert timed_out.value.code == "HOLD_EXPIRED"
+    _run(db, lambda s: reservation.expire_due(session=s))
+    with pytest.raises(DomainError) as expired:
+        _run(db, lambda s: reservation.commit_plan(1, resources_validated=True, session=s))
+    assert expired.value.code == "HOLD_EXPIRED"
+    assert fetch(db, "SELECT count(*) FROM plan.stock_reservation WHERE status='committed'")[0][0] == 0
+
+
+def test_DEC_HOLD_001_approved_committed_plan_immune_to_sweeper(db: str) -> None:
+    _run(db, lambda s: reservation.hold(1, session=s))
+
+    async def approved(session: AsyncSession) -> None:
+        plan = await session.get(FulfilmentPlan, 1)
+        assert plan is not None
+        plan.status = "approved"  # stand-in for T16 approval checks and locks
+        await session.flush()
+        await reservation.commit_plan(1, resources_validated=True, session=session)
+
+    _run(db, approved)
+    execute(
+        db,
+        "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1",
+        "UPDATE ops.customer_order SET status='APPROVED', approved_plan_id=1 WHERE id=1",
+        "UPDATE plan.fulfilment_plan SET status='superseded' WHERE id=2",
+    )
+    clock.set_now(clock.now() + timedelta(minutes=16))
+    assert _run(db, lambda s: reservation.expire_due(session=s)) == 0
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "APPROVED"
+    assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=1")[0][0] == "approved"
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "committed"
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='HOLD_EXPIRED'")[0][0] == 0
