@@ -433,21 +433,28 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | GET | `/driver/trips?date=` | Chuyến của tôi (xe, kho, điểm dừng, địa chỉ, liên hệ, cửa sổ nhận hàng, trạng thái) |
 | GET | `/driver/trips/{id}` | Chi tiết chuyến |
 
-## 9. GPS (chỉ khi `market.gps_enabled`)
+## 9. GPS (DEC-DEV2-D3-001, owner-approved policy, contract implementation pending)
 
-| Phương thức | Đường dẫn | Vai trò | Mô tả |
+**Quyền/phiên:** đọc GPS chỉ cho Dispatcher **được gán rõ cho trip**, không phải mọi Dispatcher của market. Trip phải `on_road`, `market.gps_enabled=true`, tài xế đúng chuyến và thuộc **ca chính thức đang có hiệu lực**; ngoài ca/trước hoặc sau chuyến không đọc/thu điểm. Driver xác thực JWT, ID tài xế từ server-side assignment; **không nhận driver_id tự khai**. Thiếu mapping Dispatcher–trip thì fail closed, cần Dev 1/2 thống nhất migration/RBAC. Driver chỉ gửi/nhận ack của điểm chuyến mình; CS/Sales/warehouse/admin/customer/viewer không bao giờ thấy tọa độ.
+
+| Phương thức | Đường dẫn | Vai trò | Hợp đồng mục tiêu |
 |---|---|---|---|
-| POST | `/trips/{id}/positions` | driver (chuyến mình) | Gửi lô vị trí. Chuyến phải `on_road` → ngược lại `409 NOT_ON_TRIP`; GPS tắt → `403 GPS_DISABLED` |
-| GET | `/trips/{id}/positions?since=` | dispatcher | Lịch sử điểm |
-| GET | `/gps/live` | dispatcher | Vị trí mới nhất của mọi chuyến đang chạy, kèm ETA và rủi ro |
-| GET/PUT | `/markets/{code}/gps-settings` | admin | `{ "gps_enabled": true, "interval_min": 30, "lost_min": 60, "retention_days": 30 }`; bật `gps_enabled` khi chưa có `compliance_record(DPIA).status='approved'` vẫn được (bản demo) nhưng API trả `warnings: ["DPIA_MISSING"]` và UI hiện biểu ngữ |
-| GET/POST/PATCH | `/compliance-records` | admin | DPIA, tham vấn nhân viên, thông báo GPS |
+| POST | `/trips/{id}/positions` | driver (chuyến mình) | Gửi lô vị trí sau mỗi **30 phút** khi trip/shift hợp lệ; suggest max 100 điểm/lô. Offline queue chỉ đồng bộ nếu trip **vẫn on_road** và điểm ghi trong ca; khi hoàn tất/hết ca phải xóa local queue và server từ chối upload muộn; `409 NOT_ON_TRIP`, `403 GPS_DISABLED` giữ tương thích |
+| GET | `/trips/{id}/positions?since=&until=&page=&page_size=` | Dispatcher **được gán trip** | Lịch sử **chỉ trong chuyến và ca đang hoạt động**, không đọc sau trip terminal/hết ca; đề xuất page_size=50/max=500, sort `recorded_at,id` |
+| GET | `/gps/live` | Dispatcher **được gán trip** | Chỉ các chuyến mà Dispatcher được ủy quyền, đang `on_road` trong ca; điểm mới nhất, `recorded_at`, `accuracy_m`, `gps_status=fresh|lost|no_fix`, ETA và risk nếu đã tính; **không** trả toàn market |
+| GET/PUT | `/markets/{code}/gps-settings` | admin | `gps_enabled`, `interval_min=30`, `lost_min=60`, `retention_mode=trip_end_delete` / `retention_days=0` mang nghĩa chuyển tiếp; cài đặt không cho phép vượt scope ca/chuyến; demo DPIA missing vẫn cảnh báo, không GPS người thật trước compliance review |
+| GET/POST/PATCH | `/compliance-records` | admin | DPIA/nhân viên/thông báo GPS; không cho phép admin đọc vị trí qua endpoint này |
 
 ```json
-// POST /trips/930/positions
+// POST /trips/930/positions — employee/driver ID derived from JWT+trip, not sent by client
 { "positions": [ { "lat": 57.7001, "lon": 11.9801, "accuracy_m": 12.5, "recorded_at": "2026-11-13T05:40:00Z", "source": "device" } ] }
+// Existing success code 202 preserved until code/contract review
 // 202 { "accepted": 1, "eta": { "forecast_eta": "2026-11-13T07:05:00Z", "risk": "ON_TRACK" } }
 ```
+
+**Xóa dữ liệu GPS đã chốt:** khi **trip kết thúc/hủy** hoặc driver hết ca hợp lệ (mốc đến trước), dừng định vị và purge toàn bộ `ops.vehicle_position` của phiên GPS, cache và queue thiết bị; không còn lịch sử GPS để đọc ở endpoint sau khi hoàn tất. Nếu trip có nhiều stop, không kết thúc GPS chỉ vì một stop/đơn đã giao; kết thúc khi trip thực sự terminal. Job cleanup 1 phút chỉ là bù lỗi nếu transaction/event cleanup thất bại; **không** thay bằng retention 30 ngày. Không xóa duty/tachograph records theo quy tắc GPS. `GPS_LOST` chỉ trong ca/trip hợp lệ, sau >60 phút không nhận fix; không tiếp tục GPS ngoài ca. Dữ liệu GPS trong backup cần rà soát riêng theo GDPR, không tuyên bố xóa vật lý tức thời khỏi provider backup.
+
+**Lưu ý implementation:** DTO/rate limit/assignment scope cần migration/contract tests và cross-review; PR docs này chưa triển khai. IMY Thụy Điển: <https://www.imy.se/verksamhet/dataskydd/dataskydd-pa-olika-omraden/arbetsliv/kontroll-och-overvakning-av-anstallda/>.
 
 ## 10. Rủi ro, cảnh báo, thông báo
 
@@ -457,11 +464,15 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | POST | `/alerts/{id}/ack` | dispatcher, admin | Xác nhận đã xem |
 | GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status` |
 | GET | `/orders/{id}/notifications` | dispatcher, CS | Lịch sử thông báo của đơn |
-| POST | `/notifications/{id}/send` | dispatcher | Gửi bản nháp `DELAY`: `{ "eta_window": { "start": "…", "end": "…" }, "body": "…(tùy chọn sửa)" }`. Ghi `NOTIFICATION_SENT` |
-| POST | `/notifications/{id}/discard` | dispatcher | Bỏ bản nháp, `{ "reason_text": "…" }` (bắt buộc), ghi `NOTIFICATION_SUPPRESSED` |
-| POST | `/orders/{id}/delay-notice` | dispatcher | Tự soạn thông báo trễ không cần bản nháp của hệ thống |
+| POST | `/notifications/{id}/send` | dispatcher | D4: chỉ Send bản nháp `DELAY` với `eta_window` đã validate, `reason_code`/phrase từ template allowlist, `Idempotency-Key`; **không** nhận body/subject free-text. Ghi `NOTIFICATION_SENT` |
+| POST | `/notifications/{id}/discard` | dispatcher | Discard `DELAY` với `reason_text` bắt buộc cho audit nội bộ; **không** chèn reason_text vào thư gửi khách |
+| POST | `/orders/{id}/delay-notice` | dispatcher | Chỉ tạo **draft** từ template đã kiểm tra, không có đường gửi trực tiếp bỏ qua Dispatcher |
 
-Thông báo tự động (`CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`) do hệ thống tạo, không có endpoint gửi tay. Nội dung chỉ gồm trạng thái và khung ETA; không toạ độ, không GPS.
+**D4 owner-approved (2026-11-08):** server render `CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `DELAY` theo template có phiên bản. Biến chỉ từ `public_order_ref`, trạng thái/khung đã duyệt, ETA và reason_code thuộc enum/câu mẫu đã duyệt. Tuyệt đối không lấy arbitrary POS/CS/free-text, tên tài xế/nhân viên, tên người nhận, GPS/tọa độ, thông tin riêng tư hoặc risk scores. Trường `body` tự do trước đây **bị thay thế** bởi các biến có kiểu; request chứa body không khớp render phải trả 422, không đưa thẳng tới provider. `DELAY` luôn cần Dispatcher xem trước/duyệt gửi hoặc Discard. Giữ quiet hours market-local 21:00–07:00 (ngoại lệ gửi DELAY do Dispatcher kích hoạt), cap 3 attempts và `DEC-NOTIFY-001`: chỉ Mailpit/test recipient, chưa gửi khách thật. Retry 5/15 phút là đề xuất Dev 2, chưa tự owner-approved; Dev 2 cần trình policy/code review.
+
+**D2 CSV owner-approved:** schema UTF-8/version/ISO/decimal và SHA-256, retry `failed`, IT review `partial`, trùng `ok` bỏ qua; thao tác nhập nguồn admin-only, CFO không ghi ngược POS. Cần cập nhật OpenAPI/migration/test trước khi coi đã triển khai.
+
+**D5 GDPR owner-approved policy:** raw GPS xóa khi trip/ca hợp lệ chấm dứt (D3 supersedes 30 days); customer/contact/CS 90 ngày, nonfinancial operational order 365 ngày, employee nonstatutory contacts 90 ngày, workforce shifts/attendance 24 tháng (cần pháp lý), logs tech/security 30/90 ngày, staging backup 30 ngày; tachograph/driver working-time và Swedish accounting giữ theo luật áp dụng. DSAR, ROPA, DPIA/GPS, legal holds và retention theo mục đích cần sign-off trước dữ liệu người thật; không xem legacy config `personal=365/order=730` là GDPR compliant. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
 
 ## 11. Nhật ký liên hệ khách (CS)
 
@@ -703,6 +714,8 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 | GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer có `ops` | Nhật ký quyết định (chỉ đọc) |
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
 | POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
+
+**D8 chưa được owner phê duyệt:** danh sách job, market scope, giờ chạy Europe/Stockholm và lỗi/response chưa là hợp đồng cuối. Đề xuất tách riêng tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md`: 5 phút ingest/stock/gps-lost/stale/milestone, 1 phút hold expiry/outbox, morning 07:00 và nightly 04:00/04:15 giờ Thụy Điển; bảo vệ DB lock/mỗi job/market, không tác động đến ca/GPS ngoài giờ, không tự approve hay gửi DELAY, D6 hosting chờ owner. Chưa thay route/code trong tài liệu này.
 
 **Cách B:** Hệ thống nguồn giữ nguyên thao tác POS create/validate/submit và database riêng. CFO đọc API nguồn theo yêu cầu Sales bằng các GET sẵn có, không thay POS. Nếu API nguồn thực tế không thể truy vấn đơn vừa nộp nhanh, trả Retry/Wait; không mặc định mọi POS có khả năng real-time.
 
