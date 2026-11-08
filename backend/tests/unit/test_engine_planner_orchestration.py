@@ -1,7 +1,7 @@
 """T13: exercise the pure planner with verified warehouse and driver fixtures."""
 
 from dataclasses import replace
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from app.engine.planner import plan_order
@@ -21,7 +21,7 @@ from app.engine.types import (
 )
 
 D = Decimal
-TZ = timezone.utc
+TZ = UTC
 DAY = date(2026, 11, 9)
 
 
@@ -77,8 +77,8 @@ def order(*, date_to: date = DAY) -> OrderCtx:
 def warehouse(
     warehouse_id: int,
     *,
-    stock: Decimal = D("100"),
-    distance: Decimal = D("10"),
+    stock: Decimal | None = None,
+    distance: Decimal | None = None,
     driver_shift: bool = True,
 ) -> WarehouseCtx:
     vehicle = VehicleCtx(
@@ -107,7 +107,7 @@ def warehouse(
         name=f"Warehouse {warehouse_id}",
         cutoff=time(15),
         efficiency=D("1"),
-        stock_available={1: stock},
+        stock_available={1: stock if stock is not None else D("100")},
         inbound=(),
         capacity={
             DAY: DayCapacity(
@@ -116,7 +116,7 @@ def warehouse(
         },
         vehicles=(vehicle,),
         drivers=(driver,),
-        route=RouteInfo(distance, 30, "ors"),
+        route=RouteInfo(distance if distance is not None else D("10"), 30, "ors"),
         loading_windows=((at(7), at(15)),),
     )
 
