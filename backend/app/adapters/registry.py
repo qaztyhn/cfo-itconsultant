@@ -27,12 +27,13 @@ class AdapterRegistry:
         key_ref: str | None,
         *,
         environment: Mapping[str, str] | None = None,
+        market_timezone: str | None = None,
     ) -> None:
         env = os.environ if environment is None else environment
         if not base_url or not key_ref or not env.get(key_ref, "").strip():
             raise AdapterConfigurationError("Source URL and API key reference must be configured")
         try:
-            adapter = RestMarketAdapter(market_code, base_url, env[key_ref])
+            adapter = RestMarketAdapter(market_code, base_url, env[key_ref], market_timezone=market_timezone)
         except ValueError:
             raise AdapterConfigurationError("Invalid source adapter configuration") from None
         self._adapters[market_code] = adapter
