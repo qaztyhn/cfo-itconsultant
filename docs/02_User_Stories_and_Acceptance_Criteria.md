@@ -378,7 +378,7 @@
 
 **US-NOT-03 — Giờ yên lặng và gửi lại** · FR-NOT-03
 - AC1. *Given* thông báo `DISPATCHED` tạo lúc 22:30, *Then* `scheduled_for` = 07:00 hôm sau.
-- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* **tuân thủ giờ yên lặng market-local và chính sách retry hiện có**, không tự vượt quiet hours; đợi thời điểm được phép gửi, trừ khi có hợp đồng ngoại lệ riêng được chủ dự án duyệt (N5).
+- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* gửi ngay **theo ngoại lệ đã ghi trong AC hiện có**, nhưng vẫn chỉ đến Mailpit/test recipients. Quyết định N5 giữ retry cap và không duyệt backoff mới; nếu thay đổi ngoại lệ quiet-hours cần owner review riêng.
 - AC3. *Given* SMTP lỗi, *Then* thử lại tối đa 3 lần rồi `failed` kèm `last_error`.
 - AC4. *Then* `dedupe_key` ngăn gửi trùng một mẫu cho cùng đơn, cùng kế hoạch/lần giao và cùng trạng thái; sau khi lập lại kế hoạch, `CONFIRMED`/`DISPATCHED` của kế hoạch mới vẫn được tạo.
 
