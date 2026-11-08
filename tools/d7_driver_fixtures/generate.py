@@ -252,7 +252,8 @@ def generate(*, check: bool) -> list[str]:
         target = FIXTURES / name
         data = encoded(payload)
         if check:
-            if not target.is_file() or target.read_bytes() != data:
+            # Existing Windows checkouts may have converted committed LF to CRLF.
+            if not target.is_file() or target.read_bytes().replace(b"\r\n", b"\n") != data:
                 errors.append(f"Missing or nondeterministic fixture: {name}")
         else:
             target.write_bytes(data)
