@@ -77,7 +77,7 @@ describe("US-ADM-01 AC1: admin operational dashboard", () => {
   it("shows exactly five sources, source freshness, partial failure and separate unmapped count", async () => {
     mockApi();
     renderDashboard();
-    expect(document.querySelectorAll('[data-testid^="feed-"]')).toHaveLength(5);
+    await waitFor(() => expect(document.querySelectorAll('[data-testid^="feed-"]')).toHaveLength(5));
     expect(await screen.findByText("Recent integration runs")).toBeInTheDocument();
     const inbound = screen.getByTestId("feed-inbound");
     const products = screen.getByTestId("feed-products");
