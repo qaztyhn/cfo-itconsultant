@@ -339,9 +339,7 @@ def test_US_WH_04_AC1_assigned_shift_supervisor_can_record_event(
         "UPDATE ref.app_user SET roles='{warehouse}' WHERE id=4",
     )
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
-    result = send(
-        execution_api, 4, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 2}
-    )
+    result = send(execution_api, 4, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 2})
     assert result.status_code == 200, result.text
     assert result.json()["order_status"] == "PREPARING"
 
