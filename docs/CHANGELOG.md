@@ -1,5 +1,14 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-SRC-D1-001 — owner-approved detailed Source D1-A–D] — 2026-11-08 — docs-only
+
+- Owner trả lời **“ĐƯỢC ĐỒNG Ý”** với toàn bộ D1-A/B/C/D trong [PR #84](https://github.com/qaztyhn/cfo-itconsultant/pull/84). Ghi `DEC-SRC-D1-001` tại `ASSUMPTIONS` và hồ sơ quyết định `docs/decisions/DEC_SRC_D1_APPROVED_20261108.md`.
+- **D1-A:** GET `/orders,/customers,/products,/inbound,/fleet/calendar,/addresses` phân trang `items,page,page_size,total` 50/max500, sort `updated_at,natural_key`, inclusive `updated_since >=`; đơn `CANCELLED` cần feed đồng bộ riêng; `/stock` không phân trang.
+- **D1-B:** persisted DRAFT cần customer/address/store/date_mode; Validate/Submit yêu cầu contact/lines, qty dương, `unit_price` decimal chuỗi hai số (0 hợp lệ), date/hours nhận kiểm nguồn, 422 với stable path/reason không echo PII; source-known SKU chưa mapping không được POS chặn.
+- **D1-C:** PUT sau submit full validation + `expected_version`, `409 VERSION_CONFLICT`; CANCELLED terminal có version/reason/idempotency. CFO chưa duyệt phải close/release hold qua state transition/audit; đã APPROVED chưa DISPATCHED tự tính `replan_suggestion` **không giữ chỗ/auto-approve**, Dispatcher mới quyết định; sau DISPATCHED alert-only.
+- **D1-D:** lịch nhận market/address fail-closed nếu thiếu, tồn kho batch published atomically kể cả batch rỗng, nguồn chưa publish không phải tồn=0, normalize `units_to_base` và stock pool alias chống cộng trùng.
+- Đồng bộ `03/05/06/09`; PR **docs-only** và không chứng minh endpoint, database migration hay tests đã xong. D6 tiếp tục owner tự tổ chức riêng, D8 mới là proposal; D2–D5 và D7 đã có owner approval độc lập.
+
 ## [DEC-DEV2-D2/3/4/5-001 — owner approvals; D6 deferred; D8 proposed] — 2026-11-08 — docs-only
 
 - **D2:** chốt CSV UTF-8 versioned/schema, ISO dates/timezone + decimal, SHA-256 idempotent: file `ok` trùng skip; `failed` retry run mới; `partial` cần IT review, tuyệt đối không cộng/trùng stock hoặc ghi approval.
