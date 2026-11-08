@@ -90,7 +90,7 @@ def test_US_EXE_01_AC1_driver_trip_list_only_own_safe_fields(execution_api: Api)
     trips = response.json()["items"]
     assert len(trips) == 1
     assert {row["vehicle_code"] for row in trips} == {"V-EX-1"}
-    other = execution_api.get("/driver/trips", 15, date="2026-11-10")
+    other = execution_api.get("/driver/trips", 14, date="2026-11-10")
     assert other.status_code == 200
     assert [row["vehicle_code"] for row in other.json()["items"]] == ["V-EX-2"]
     assert_error(execution_api.get("/driver/trips/2", DRIVER), 404, "NOT_FOUND")
@@ -292,7 +292,7 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
         (WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
         (WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
         (DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
-        (15, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2}),
+        (14, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2}),
     )
     for actor, kind, at, data in steps:
         response = send(execution_api, actor, kind, at, data)
@@ -319,7 +319,7 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
 
     second = send(
         execution_api,
-        15,
+        14,
         "FAILED",
         "2026-11-10T09:35:00Z",
         {"trip_id": 2, "failure_reason": "customer_absent"},
@@ -368,7 +368,7 @@ def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
         "LICENCE_EXPIRED",
     )
     assert_error(
-        send(execution_api, 15, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        send(execution_api, 14, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
         403,
         "FORBIDDEN",
     )
