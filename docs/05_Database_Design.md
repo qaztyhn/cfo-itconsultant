@@ -361,6 +361,8 @@ CREATE TABLE hr.driver_duty_log (
 );
 CREATE INDEX ix_driver_duty_log_emp ON hr.driver_duty_log (employee_id, duty_start);
 
+**D7 — fixture synthetic (`DEC-DEV2-D7-001`, owner approved 2026-11-08):** Dev 2 tạo 56 ngày lịch sử tài xế có nguồn giả lập rõ ràng, thời điểm ca/lái/nghỉ thống nhất múi giờ với market; `driver_duty_log` là dữ liệu duty/driving, không phải công cụ thay cho lịch phân ca chính thức. `ref.vehicle.capacity_kg` là khả năng chở hàng; `max_permissible_mass_kg` là khối lượng tối đa xe được phép, **không suy ra cái sau từ cái trước**. Phân loại `regulation_561_scope` dựa trên trường hợp thị trường/loại vận tải/xe/rơ-moóc, không dựa duy nhất vào nhãn van/truck; thiếu dữ liệu bắt buộc → `unknown` và fail-closed. Nếu fixture cần lưu thêm metadata cấu trúc/độ đầy đủ lịch sử chưa có trong schema, Dev 1+2 phải bổ sung migration/contract được review; không coi đoạn hướng dẫn này là thay đổi DDL đã triển khai. Test các trường hợp 11h nghỉ, dưới 11h, giờ làm vs giờ lái, mất dữ liệu, scope unknown, bằng hết hạn và ca qua nửa đêm; tránh seed ghi đè lịch đã xác nhận.
+
 CREATE TABLE hr.attendance (                    -- điểm danh từng người (kho + tài xế) [C]
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   employee_id bigint NOT NULL REFERENCES hr.employee(id),
