@@ -39,10 +39,13 @@ SEED = (
     "'latest', '2026-11-10', '2026-11-04T09:00Z', 'SEK', '2026-11-04T09:00Z', 'APPROVED')",
     rows.run_sql(1, 1),
     rows.plan_sql(1, 1, 1, "approved"),
+    rows.plan_vehicle_sql(1, 1, 1, 5),
+    rows.plan_vehicle_sql(1, 2, 2, 11),
+    "UPDATE plan.fulfilment_plan SET vehicle_count=2 WHERE id=1",
     "UPDATE ops.customer_order SET approved_plan_id=1 WHERE id=1",
-    "INSERT INTO ops.delivery_trip (warehouse_id, vehicle_id, driver_employee_id,"
+    "INSERT INTO ops.delivery_trip (plan_vehicle_id, warehouse_id, vehicle_id, driver_employee_id,"
     " depart_planned_at) VALUES "
-    "(1, 1, 5, '2026-11-10T08:00Z'), (1, 2, 11, '2026-11-10T08:00Z')",
+    "(1, 1, 1, 5, '2026-11-10T08:00Z'), (2, 1, 2, 11, '2026-11-10T08:00Z')",
     "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) VALUES "
     "(1, 1, 1, '2026-11-10T10:00Z'), (2, 1, 1, '2026-11-10T10:30Z')",
 )
@@ -370,3 +373,31 @@ def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
         "FORBIDDEN",
     )
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
+
+
+def test_US_EXE_02_AC5_prior_cancelled_trip_does_not_block_current_plan(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Historic stops remain visible for audit, but never count toward current plan aggregation."""
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    execute(
+        execution_api.dsn,
+        "INSERT INTO ops.delivery_trip (warehouse_id, vehicle_id, driver_employee_id, "
+        "status, depart_planned_at) VALUES "
+        "(1, 1, 5, 'cancelled', '2026-11-10T08:00Z')",
+        "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at, status) "
+        "VALUES (3, 1, 1, '2026-11-10T10:00Z', 'cancelled')",
+    )
+    for event, at, payload in (
+        ("START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        ("GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        ("LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        ("LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+    ):
+        result = send(execution_api, WAREHOUSE, event, at, payload)
+        assert result.status_code == 200, result.text
+    assert result.json()["order_status"] == "LOADED"
+    assert fetch(
+        execution_api.dsn,
+        "SELECT status::text AS status FROM ops.delivery_trip WHERE id=3",
+    )[0]["status"] == "cancelled"
