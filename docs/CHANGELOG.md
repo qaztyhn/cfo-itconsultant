@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-SRC-Q10-SKU-001 — owner revises Q10, Q9 unchanged] — 2026-11-08 — docs-only PR #101
+
+- **Owner-directed change:** Owner requires **one stable inventory unit per product SKU**; changing packaging/order unit is a conversion into the SKU's declared stock unit, **not** a second inventory record. This **supersedes only the physical-stock-pool/alias portion of the earlier D1-D Q10 approval**. Do not introduce `physical_stock_pool_id` or infer shared inventory from numerically equal quantities.
+- For each published batch, warehouse and SKU, accept **one stock row** `(batch_id,warehouse_code,sku)`. Source rejects duplicate rows; CFO converts quantities via `units_to_base` and only aggregates different SKUs into one global product if independence is positively verified. Unknown mapping/independence => fail closed and never expose incomplete replacement as a complete snapshot.
+- **Q9 stays approved and unchanged:** atomic published complete batch, including authoritative zero-row batch; no published batch is unavailable/unknown (not zero). The new source-only `503 STOCK_UNAVAILABLE` is still only **proposed**, not owner-approved by this request.
+- Synchronized `ASSUMPTIONS`, Q10 portions of `DEC_SRC_D1_APPROVED_20261108`, `05`, `06`, `09`, and PR #101 proposal; no code, SQL migration, OpenAPI regeneration or E2E in this PR. Dev 1+2 must review exact target schema/adapter/test and implement in subsequent PR(s).
+
+
 ## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
 
 - Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.
