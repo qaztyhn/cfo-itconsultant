@@ -166,9 +166,7 @@ async def official_warehouse_capacity(
             )
         ).all()
     }
-    grouped: dict[date, dict[tuple[time, time, Decimal], set[int]]] = defaultdict(
-        lambda: defaultdict(set)
-    )
+    grouped: dict[date, dict[tuple[time, time, Decimal], set[int]]] = defaultdict(lambda: defaultdict(set))
     for shift, template, status in rows:
         if (shift.employee_id, shift.work_date) in absent:
             continue
@@ -205,12 +203,9 @@ async def official_driver_context(
     if not days:
         return vehicles, drivers
     vehicle_ids = {v.id for v in vehicles}
-    vehicle_rows = (
-        await session.scalars(select(Vehicle).where(Vehicle.id.in_(vehicle_ids)))
-    ).all()
+    vehicle_rows = (await session.scalars(select(Vehicle).where(Vehicle.id.in_(vehicle_ids)))).all()
     scope = {
-        v.id: {"in_scope": True, "out_of_scope": False}.get(v.regulation_561_scope)
-        for v in vehicle_rows
+        v.id: {"in_scope": True, "out_of_scope": False}.get(v.regulation_561_scope) for v in vehicle_rows
     }
     vehicles = tuple(replace(v, regulation_561=scope.get(v.id)) for v in vehicles)
     ids = {d.employee_id for d in drivers}
@@ -325,9 +320,7 @@ async def load_inputs(
     skus = [line.local_sku for line in lines]
     products = {
         row.local_sku: row
-        for row in (
-            await session.scalars(select(ProductSE).where(ProductSE.local_sku.in_(skus)))
-        ).all()
+        for row in (await session.scalars(select(ProductSE).where(ProductSE.local_sku.in_(skus)))).all()
     }
     global_ids = {line.global_product_id for line in lines if line.global_product_id is not None}
     globals_ = {
@@ -336,9 +329,7 @@ async def load_inputs(
             await session.scalars(select(ProductGlobal).where(ProductGlobal.id.in_(global_ids)))
         ).all()
     }
-    groups = {
-        row.id: row for row in (await session.scalars(select(HandlingGroup))).all()
-    }
+    groups = {row.id: row for row in (await session.scalars(select(HandlingGroup))).all()}
     flags = {row.code: row.multiplier for row in (await session.scalars(select(SpecialFlag))).all()}
     order_lines: list[LineCtx] = []
     for line in lines:
@@ -397,9 +388,11 @@ async def load_inputs(
         date_mode=cast(DateModeT, order.date_mode),
         date_from=order.date_from,
         date_to=date_to,
-        window=(order.window_start, order.window_end)
-        if order.window_start is not None and order.window_end is not None
-        else None,
+        window=(
+            (order.window_start, order.window_end)
+            if order.window_start is not None and order.window_end is not None
+            else None
+        ),
         lines=tuple(order_lines),
         now=local,
     )
