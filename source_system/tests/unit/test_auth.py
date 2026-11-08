@@ -17,7 +17,7 @@ ROUTES = [
     ("GET", "/products"),
     ("GET", "/stock"),
     ("GET", "/inbound"),
-    ("GET", "/fleet/calendar?date_from=2026-11-01&date_to=2026-11-02"),
+    ("GET", "/fleet/calendar?from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z"),
     ("GET", "/addresses"),
     ("POST", "/orders"),
     ("PUT", "/orders/test"),
