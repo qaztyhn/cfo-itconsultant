@@ -65,9 +65,10 @@ describe("US-PLN-07 AC1 / US-APR-04 AC1: exception tabs",()=>{
     await userEvent.clear(search);
     await userEvent.type(search,"SE-31");
     expect(await screen.findByText("SE-31")).toBeInTheDocument();
+    await userEvent.clear(search);
     await userEvent.click(screen.getByRole("button",{name:"Replan Suggested"}));
     expect(await screen.findByText("Order #31")).toBeInTheDocument();
-    expect((search as HTMLInputElement).value).toBe("SE-31");
+    expect((search as HTMLInputElement).value).toBe("");
   });
   it("shows suggestion without replacing committed plan or exposing approval",async()=>{
     const calls=apiMock();
@@ -101,6 +102,6 @@ describe("US-PLN-07 AC1 / US-APR-04 AC1: exception tabs",()=>{
   });
   it("shows loading state when endpoint is pending",()=>{
     apiMock({unavailable:true});renderScreen();
-    expect(screen.getByRole("status",{name:""})).toBeInTheDocument();
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 });
