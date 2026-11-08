@@ -151,12 +151,10 @@ def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
     report = kpi.get("/kpi/summary", ADMIN, **PERIOD)
     assert report.status_code == 200
     assert report.json()["metrics"]["planning_time_min"] == {"value": 15, "baseline": 15.0, "change": 0.0}
-    assert fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline") == [
-        ("planning_time_min", "15", "manual")
-    ]
-    assert fetch(kpi.dsn, "SELECT action,entity FROM audit.decision_log") == [
-        ("CONFIG_CHANGED", "kpi_baseline")
-    ]
+    baselines = fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline")
+    assert [tuple(record) for record in baselines] == [("planning_time_min", "15", "manual")]
+    audit = fetch(kpi.dsn, "SELECT action,entity FROM audit.decision_log")
+    assert [tuple(record) for record in audit] == [("CONFIG_CHANGED", "kpi_baseline")]
 
 
 def test_US_LOG_01_AC1_AC3_redacts_raw_decisions_and_respects_market(kpi: Api) -> None:
