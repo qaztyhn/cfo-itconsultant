@@ -172,7 +172,9 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
     }
     if event_type not in permitted:
         raise DomainError("VALIDATION_ERROR", "Unknown execution event type.")
-    if set(data).difference(permitted[event_type]) or any(k not in data for k in required.get(event_type, ())):
+    if set(data).difference(permitted[event_type]) or any(
+        k not in data for k in required.get(event_type, ())
+    ):
         raise DomainError("VALIDATION_ERROR", "Event payload is incomplete or contains unknown fields.")
     for field in ("crew_size", "trip_id", "vehicle_id", "qty_missing", "qty"):
         if field in data:
@@ -185,7 +187,9 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         except ValueError as exc:
             raise DomainError("VALIDATION_ERROR", "Invalid shift date.") from exc
     for field in ("recipient_name", "failure_reason", "sku", "note"):
-        if field in data and (not isinstance(data[field], str) or (field != "note" and not data[field].strip())):
+        if field in data and (
+            not isinstance(data[field], str) or (field != "note" and not data[field].strip())
+        ):
             raise DomainError("VALIDATION_ERROR", f"Invalid {field}.")
     if event_type == "FAILED" and data["failure_reason"] not in FAILURE_CODES:
         raise DomainError("VALIDATION_ERROR", "Unknown failure reason.")
@@ -403,8 +407,12 @@ async def record_event(session: AsyncSession, order_id: int, actor: object, even
         trip.status, trip.ended_at = "completed", occurred_at
         session.add(ProofOfDelivery(
             trip_stop_id=stop.id, order_id=order.id, result=outcome, completed_at=occurred_at,
-            recipient_name=payload.get("recipient_name") if isinstance(payload.get("recipient_name"), str) else None,
-            failure_reason=payload.get("failure_reason") if isinstance(payload.get("failure_reason"), str) else None,
+            recipient_name=(
+                payload.get("recipient_name") if isinstance(payload.get("recipient_name"), str) else None
+            ),
+            failure_reason=(
+                payload.get("failure_reason") if isinstance(payload.get("failure_reason"), str) else None
+            ),
             note=payload.get("note") if isinstance(payload.get("note"), str) else None,
         ))
         if all(s.status in ("delivered", "failed") for _, s in trips):
