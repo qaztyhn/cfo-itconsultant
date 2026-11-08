@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Date, cast, func, or_, select
+from sqlalchemy import Date, cast, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ from app.domain.models.ops import (
     MilestoneEvent,
     ProofOfDelivery,
     TripStop,
+    VehiclePosition,
 )
 from app.domain.models.plan import FulfilmentPlan
 from app.domain.models.ref import Location, Market, Vehicle
@@ -117,20 +118,27 @@ async def _warehouse(session: AsyncSession, actor: object, warehouse_id: int, ma
     if warehouse is None:
         raise DomainError("NOT_FOUND", "Warehouse not found.")
     local_day = clock.now().astimezone(ZoneInfo(market.timezone)).date()
-    authorised = await session.scalar(
-        select(WarehouseStaff.employee_id)
-        .join(LocationManager, LocationManager.employee_id == WarehouseStaff.employee_id)
-        .where(
-            WarehouseStaff.employee_id == _employee(actor),
-            WarehouseStaff.role.in_(("manager", "deputy", "supervisor")),
-            LocationManager.location_id == warehouse_id,
-            LocationManager.valid_from <= local_day,
-            or_(LocationManager.valid_to.is_(None), LocationManager.valid_to >= local_day),
-        )
-        .limit(1)
+    staff_role = await session.scalar(
+        select(WarehouseStaff.role).where(WarehouseStaff.employee_id == _employee(actor))
     )
-    if authorised is None:
-        raise DomainError("FORBIDDEN", "Active warehouse manager or supervisor required.")
+    if staff_role not in ("manager", "deputy", "supervisor"):
+        raise DomainError("FORBIDDEN", "Warehouse manager or shift supervisor required.")
+    # Shift supervisors are assigned staff, not necessarily location_manager rows.
+    # Only managers/deputies require an effective location_manager record.
+    if staff_role in ("manager", "deputy"):
+        authorised = await session.scalar(
+            select(LocationManager.id).where(
+                LocationManager.employee_id == _employee(actor),
+                LocationManager.location_id == warehouse_id,
+                LocationManager.valid_from <= local_day,
+                or_(
+                    LocationManager.valid_to.is_(None),
+                    LocationManager.valid_to >= local_day,
+                ),
+            ).limit(1)
+        )
+        if authorised is None:
+            raise DomainError("FORBIDDEN", "Active warehouse manager required.")
     return warehouse
 
 
@@ -424,6 +432,7 @@ async def record_event(
     if previous and occurred_at < previous[-1].occurred_at:
         raise DomainError("ILLEGAL_TRANSITION", "Event occurred before the last recorded event.")
     segments: list[LabourSegment] = []
+    changed_to: str | None = None
     event_data = dict(payload)
     if event_type in {"START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY"}:
         if event_type == "START_PREP" and order.status != "APPROVED":
@@ -458,6 +467,7 @@ async def record_event(
         trip.status, trip.depart_actual_at = "on_road", occurred_at
         if order.status == "LOADED":
             await transition(session, order.id, OrderStatus.DISPATCHED, "driver")
+            changed_to = "DISPATCHED"
     elif event_type in ("DELIVERED", "FAILED"):
         assert trip is not None and stop is not None
         if order.status != "DISPATCHED" or trip.status != "on_road" or stop.status != "pending":
@@ -465,6 +475,11 @@ async def record_event(
         outcome = "delivered" if event_type == "DELIVERED" else "failed"
         stop.status, stop.completed_at = outcome, occurred_at
         trip.status, trip.ended_at = "completed", occurred_at
+        # D3: raw trip GPS is deleted when the trip actually becomes terminal.
+        # One completed stop does not purge GPS for the other active vehicles.
+        await session.execute(
+            delete(VehiclePosition).where(VehiclePosition.trip_id == trip.id)
+        )
         session.add(
             ProofOfDelivery(
                 trip_stop_id=stop.id,
@@ -483,6 +498,7 @@ async def record_event(
         if all(s.status in ("delivered", "failed") for _, s in trips):
             if all(s.status == "delivered" for _, s in trips):
                 await transition(session, order.id, OrderStatus.DELIVERED, "driver")
+                changed_to = "DELIVERED"
                 order.delivered_at = occurred_at
             else:
                 failed_reason = (
@@ -497,6 +513,20 @@ async def record_event(
                 if not failed_reason:
                     raise DomainError("PLAN_NOT_APPROVABLE", "Failed stop reason is unavailable.")
                 await transition(session, order.id, OrderStatus.FAILED, "driver", failed_reason)
+                changed_to = "FAILED"
+                await alert_service.raise_alert(
+                    session,
+                    market_id=market.id,
+                    order_id=order.id,
+                    type_="EXCEPTION",
+                    level="critical",
+                    message="Delivery failed; dispatcher action required.",
+                    target_roles=["dispatcher"],
+                    dedupe_key=f"delivery-failed:{order.id}:{order.approved_plan_id}",
+                )
+                await planning_service.suggest_replan(
+                    order.id, "delivery_failed", session=session
+                )
     elif event_type == "VEHICLE_ISSUE":
         if not any(t.vehicle_id == payload["vehicle_id"] for t, _ in trips):
             raise DomainError("NOT_FOUND", "Vehicle not assigned to this order.")
@@ -543,18 +573,12 @@ async def record_event(
     assert new_event is not None
     try:
         risk = await risk_service.recalculate(order.id, f"event:{event_type}")
-        if order.status in ("DISPATCHED", "DELIVERED", "FAILED"):
-            current_type = (
-                "DISPATCHED"
-                if event_type == "DISPATCHED"
-                else (
-                    "DELIVERED"
-                    if order.status == "DELIVERED"
-                    else "FAILED" if order.status == "FAILED" else None
-                )
+        # Notify only when the *order* crosses a notification boundary.
+        # A second vehicle dispatch cannot generate a second DISPATCHED notice.
+        if changed_to is not None:
+            await notify_service.enqueue(
+                order.id, changed_to, plan_id=order.approved_plan_id
             )
-            if current_type is not None:
-                await notify_service.enqueue(order.id, current_type, plan_id=order.approved_plan_id)
     except NotImplementedError as exc:
         raise DomainError(
             "PLAN_NOT_APPROVABLE", "Mandatory ETA or notification integration is not available."
