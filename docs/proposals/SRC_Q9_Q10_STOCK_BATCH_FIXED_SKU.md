@@ -48,7 +48,7 @@ There is **NO `physical_stock_pool_id`** anywhere in Q9/Q10 target DDL or `/stoc
 
 - Publish in **one database transaction**: stage exact items → verify expected row count, unique `(warehouse_code, sku)`, SKU exists, stable unit and valid conversion → mark batch published. If validation fails, roll back / mark failed; **never** serve a partial batch.
 - `GET /stock` serves only the **latest completely published** batch (highest `as_of`, then `batch_id`). It must not mix batches or compute the response's `as_of` using `min/max(row.as_of)`.
-- An empty published batch is a valid explicit statement. If **no** batch is published, or only loading/failed batches exist, the response is unavailable; proposed source-only HTTP **503 `STOCK_UNAVAILABLE`** remains **a technical proposal awaiting explicit owner/contract approval**, not automatically approved by changing Q10.
+- An empty published batch is a valid explicit statement. If **no completed/published batch exists** (including when all batches are still loading or failed), Source responds with **HTTP 503 `STOCK_UNAVAILABLE` — explicitly approved by the owner on 2026-11-08 as `DEC-SRC-Q9-ERROR-001`**. This is a **source-only** error, distinct from a published complete empty batch (valid `200` with `items=[]`). If a prior published batch exists while a newer batch fails, `GET /stock` may still expose only the latest **published** batch with its real `as_of`; CFO must check freshness, not pretend the older snapshot is fresh.
 - The CFO adapter treats unavailable as a failed stock sync; do not overwrite the last successful snapshot with `[]`. Historical snapshot may be retained only as historical/auditable data, **not** silently promoted into a fresh/current commitment; stock-freshness gate must fail closed if stale/unknown.
 - Legacy `src_stock` rows have no trustworthy completeness marker. Keep them isolated/unpublished while migrating. The initial `batch_id` cannot be made globally NOT NULL over existing rows without a staged migration; do not create fake published snapshots. Preserve manual source changes.
 - A published batch cannot be changed silently; new stock must be a **new batch**, with appropriate audit/provenance. Source batch publication is internal, not a public POS stock write route.
@@ -67,6 +67,25 @@ Proposed additive `GET /stock` DTO:
 ```
 
 The existing `{as_of,items}` contract remains supported. `batch_id`/`item_count` additions are for provenance and explicit completeness; **no stock pool identity field**.
+
+### Approved Source API behavior for unavailable stock — DEC-SRC-Q9-ERROR-001
+
+Owner explicitly approved option A on **2026-11-08**. When **no complete published batch** is available for the source instance, `GET /api/v1/stock` returns HTTP **503** (after the usual Source authentication) using the existing standardized Source error envelope:
+
+```json
+{
+  "error": {
+    "code": "STOCK_UNAVAILABLE",
+    "message": "Stock snapshot is unavailable.",
+    "details": {},
+    "correlation_id": "<opaque-correlation-id>"
+  }
+}
+```
+
+The response includes `X-Correlation-ID`. Neither error message nor log may echo stock customer/order PII, raw exceptions, or internal diagnostics. `200 {"as_of": "...", "items": []}` remains valid **only for a complete, explicitly published empty batch**. Do not confuse this source-specific 503 with `GET /health` (health response keeps its own body), or a normal failed upstream connection in the CFO adapter. On HTTP 503, CFO keeps the previous snapshot for historical/audit reference, reports a source sync failure, and gates new planning on freshness/availability; it does **not** replace stock with zero or re-stamp the old `as_of`.
+
+**Contract tests required (both source instances):** 503 with `STOCK_UNAVAILABLE` for no batch, only loading batches, only failed batches; 200 with `items=[]` for a published zero-row batch; 200 with latest published batch when a newer *unpublished* load fails, preserving the original `as_of`; 503 `X-Correlation-ID` and error envelope; CFO stock safety when stale/unavailable. Production implementation and OpenAPI baseline update belong to later code PR(s), not this documentation PR.
 
 ## Q10 — fixed-unit SKU, one row per warehouse and SKU
 
@@ -90,14 +109,14 @@ The existing `{as_of,items}` contract remains supported. `batch_id`/`item_count`
 These are technical implementation choices **not** new permission to add stock pools:
 
 1. Exact table/column names, safe legacy migration from the current one-row-per-warehouse/SKU table to per-batch rows, and when/how older rows are archived as unpublished.
-2. OpenAPI additive fields `batch_id`, `item_count`, exact 503 error DTO/code (requires explicit separate decision for `STOCK_UNAVAILABLE`).
+2. OpenAPI additive fields `batch_id`, `item_count` and the **approved** `503 STOCK_UNAVAILABLE` source-only error contract. The error code/status are owner-approved; the exact migration/DTO details are Dev 1/2 technical-review items.
 3. Which source catalogue field is authoritative for the fixed SKU stock unit; how unit changes are versioned; Decimal conversion precision/rounding policy (no float).
 4. Dev 1's staging/quarantine and full-replacement boundary for **ambiguous multiple local SKUs mapping to one global product** without inventing any shared-stock pool.
 5. Full-batch completeness and freshness gates, with auditable `batch_id`, `as_of` and source instance. Seed one explicit, independently managed stock row per warehouse+SKU; do not manufacture duplicate presentation rows.
 
 ## Test plan / acceptance criteria for implementation PRs
 
-- **Q9 source PostgreSQL:** atomic publication, incomplete/failed batch unavailable, complete empty batch authoritative zero, newest published selection with tied `as_of`, rollback on malformed rows, repeatable additive migration, legacy rows unpublished, two source instances isolated, nonpaginated GET, authoritative batch timestamp, OpenAPI baseline.
+- **Q9 source PostgreSQL:** atomic publication, when **no published batch** (including only loading/failed) then `503 STOCK_UNAVAILABLE` with standard error envelope and correlation ID, complete empty batch = **200, items=[]**, newest published selection with tied `as_of` and a later failed load, rollback on malformed rows, repeatable additive migration, legacy rows unpublished, two source instances isolated, nonpaginated GET, authoritative batch timestamp, OpenAPI baseline.
 - **Q10 source:** exactly one row per `(batch,warehouse,SKU)`; duplicate rejected; SKU stock unit never changes within a snapshot; stock stays in declared SKU unit; invalid factor/unknown SKU rejected; order quantity expressed in alternate packaging is correctly converted **without introducing an alias stock row**.
 - **CFO adapter Dev 1:** per-SKU Decimal conversion, independent warehouses, no blind alias/pool grouping, no last-row-wins; multiple local SKUs to one global requires explicit independence or **fail closed**; invalid/partial source batch does not publish partial CFO replacement; no batch retains prior snapshot as stale only and blocks planning; complete empty batch clears applicable stock scope.
 - **Integration:** Source-to-CFO cross-instance contract, DB uniqueness, stable sync provenance, freshness and test showing 5 pallets × 20 bags consume 100 units of a bag-SKU without double counting.
