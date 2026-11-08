@@ -47,7 +47,8 @@ async def initialize(engine: AsyncEngine, schema: str) -> None:
         await connection.execute(text(f"""
             CREATE OR REPLACE FUNCTION {quoted_schema}.set_updated_at()
             RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN NEW.updated_at = clock_timestamp(); RETURN NEW; END;
+            BEGIN NEW.updated_at = COALESCE(NULLIF(current_setting('source.app_now', true),'')::timestamptz,
+                                            clock_timestamp()); RETURN NEW; END;
             $$
         """))
         for table in Base.metadata.sorted_tables:

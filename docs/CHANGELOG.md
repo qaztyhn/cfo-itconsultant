@@ -211,3 +211,10 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   clock with APP_NOW injection and additive src_create_request storage; document 05/06 behavior.
 - DRAFT may omit lines/contact/date details; zero-price source lines are accepted without CFO mapping.
   Full validate/edit/submit/cancel and CFO ingestion remain separate implementation tasks.
+# Dev 2 source validate/submit (2026-11-08)
+
+- Implement locked source DRAFT→VALIDATED→SUBMITTED_FOR_PLANNING with source-only customer/reference,
+  contact, SKU/lines, snapshot coordinates, date-mode and explicit receiving-calendar checks (D1-B/C).
+- Validation failure preserves version/status; retries and concurrent submit bump only once. Recheck
+  references/calendar on submit, inject APP_NOW into the source timestamp trigger within the transaction.
+- CFO planning, stock feasibility, mapping, routing, approval and source PUT/cancel remain separate.
