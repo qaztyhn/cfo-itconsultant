@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-HOLD-001 — hết hold phải Plan Again, không hồi sinh plan cũ] — 2026-11-08 — owner approved, docs-only
+
+- Hold hết hạn: trả giữ chỗ, đặt plan `expired`, trả đơn `PLANNED` về trạng thái chờ lập kế hoạch `SUBMITTED` **chỉ khi đúng run vừa hết hạn và chưa có run/approval mới**. Không được duyệt plan expired kể cả Dispatcher, dù nguồn lực vẫn còn.
+- Người dùng muốn tiếp tục phải chủ động Plan Again: tạo `planning_run`/candidate/hold mới cho **cùng customer_order**, kiểm lại nguồn, ca kho, xe/tài xế và 5 gate; không sao chép đơn. Đây là quy tắc thay thế ngoại lệ cũ trong `04` §7 cho Dispatcher duyệt sau timeout.
+- `04`, `05`, `06`, `ASSUMPTIONS` đồng bộ theo quyết định chủ dự án khi review #78; không có code/migration trong PR này. T14/T15/T16 cần test timeout, double click/race và status reset.
+
 ## [DEC-SRC-001 — M1 source contract SRC-Q1–Q10] — 2026-11-08 — owner approved direction, docs-only
 
 - Chủ dự án phê duyệt hướng đề xuất tại `docs/proposals/M1_SOURCE_CONTRACT.md`: (Q1–Q3) snapshot địa chỉ/liên hệ và request/response đơn; (Q4–Q5) validation lỗi 422 + lifecycle; (Q6–Q7) danh sách nguồn phân trang mặc định **50**, tối đa **500** và đồng bộ gia tăng theo thứ tự ổn định; (Q8) bổ sung lịch nguồn/giờ nhận theo địa chỉ; (Q9) stock snapshot batch có `as_of` kể cả rỗng; (Q10) normalize SKU/units, tránh cộng hoặc ghi đè tồn kho sai.
