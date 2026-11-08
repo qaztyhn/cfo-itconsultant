@@ -381,9 +381,7 @@ def test_T28_concurrent_identical_approval_keys_create_exactly_one_trip(db: str)
                 )
 
         try:
-            first, second = await asyncio.wait_for(
-                asyncio.gather(submit(), submit()), timeout=20
-            )
+            first, second = await asyncio.wait_for(asyncio.gather(submit(), submit()), timeout=20)
             return first, second
         finally:
             await engine.dispose()
@@ -402,9 +400,7 @@ def test_T28_idempotent_approval_replay_does_not_bypass_revoked_role(db: str) ->
     _hold(db)
     original = _run(
         db,
-        lambda s: approval_service.approve(
-            1, _actor(), {}, "t28-revoked-role", session=s, recheck=_recheck
-        ),
+        lambda s: approval_service.approve(1, _actor(), {}, "t28-revoked-role", session=s, recheck=_recheck),
     )
     assert original["order"]["status"] == "APPROVED"
     with pytest.raises(DomainError) as denied:
