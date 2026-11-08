@@ -20,12 +20,13 @@ H = {"X-API-Key": "synthetic-orders-key"}
 NOW = "2026-11-04T09:05:00+00:00"
 
 
-@pytest.fixture
-async def source() -> AsyncIterator[tuple[AsyncClient, AsyncEngine]]:
+@pytest.fixture(params=(("se", "Europe/Stockholm"), ("shadow", "UTC")))
+async def source(request: pytest.FixtureRequest) -> AsyncIterator[tuple[AsyncClient, AsyncEngine]]:
     url = os.environ.get("SOURCE_TEST_DATABASE_URL")
     if not url:
         pytest.fail("SOURCE_TEST_DATABASE_URL required")
-    schema = "src_test_" + uuid4().hex
+    label, timezone = request.param
+    schema = f"src_test_{label}_" + uuid4().hex
     settings = Settings(url, schema, H["X-API-Key"], NOW)
     engine = create_engine(settings)
     await initialize(engine, schema)
@@ -42,7 +43,7 @@ async def source() -> AsyncIterator[tuple[AsyncClient, AsyncEngine]]:
         await c.execute(
             insert(ReceivingCalendar).values(
                 id="instance",
-                timezone="UTC",
+                timezone=timezone,
                 valid_from=date(2026, 1, 1),
                 valid_to=date(2027, 12, 31),
                 working_days=[1, 2, 3, 4, 5],
