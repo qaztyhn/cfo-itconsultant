@@ -89,6 +89,7 @@ async def transition(
     reason_text: str | None = None,
     *,
     expired_hold_run_id: int | None = None,
+    sales_approved_plan_id: int | None = None,
 ) -> "Transitioned":
     """Đổi trạng thái đơn trong transaction của caller; trả trạng thái cũ và kế hoạch đã đóng (nếu có).
 
@@ -128,7 +129,31 @@ async def transition(
         and expired_hold_run_id is not None
         and await _eligible_expired_hold(session, order_id, expired_hold_run_id)
     )
-    if actor_role not in allowed and not timeout_reset:
+    # Q14: Sales may confirm only after ApprovalService has marked a plan
+    # approved and linked it to this order in the same locked transaction.
+    # This DOES NOT allow Sales to select plans or change order dates.
+    sales_confirm = False
+    if (
+        actor_role == "sales"
+        and from_status == S.PLANNED
+        and to_status == S.APPROVED
+        and sales_approved_plan_id is not None
+    ):
+        approved = await session.scalar(
+            select(FulfilmentPlan.id)
+            .join(CustomerOrder, CustomerOrder.id == FulfilmentPlan.order_id)
+            .where(
+                FulfilmentPlan.id == sales_approved_plan_id,
+                FulfilmentPlan.order_id == order_id,
+                FulfilmentPlan.rank == 1,
+                FulfilmentPlan.status == "approved",
+                FulfilmentPlan.vehicle_count == 1,
+                CustomerOrder.approved_plan_id == sales_approved_plan_id,
+                CustomerOrder.committed_date == FulfilmentPlan.target_date,
+            )
+        )
+        sales_confirm = approved is not None
+    if actor_role not in allowed and not timeout_reset and not sales_confirm:
         raise DomainError("FORBIDDEN", "Role may not perform this transition.")
     if rule.requires_reason and not (reason_text and reason_text.strip()):
         raise DomainError("REASON_REQUIRED", "This transition requires a reason.")
