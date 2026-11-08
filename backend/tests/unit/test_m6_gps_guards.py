@@ -1,7 +1,7 @@
 """M6 D3 fail-closed boundaries, independent of database integration."""
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +19,7 @@ def test_US_GPS_01_AC1_requires_shared_transaction() -> None:
 
 def test_US_GPS_01_AC2_untrusted_naive_time_is_rejected() -> None:
     with pytest.raises(DomainError) as caught:
-        gps_service._aware(datetime(2026, 11, 10, 7, 0))
+        gps_service._aware(datetime(2026, 11, 10, 7, 0, tzinfo=UTC).replace(tzinfo=None))
     assert caught.value.code == "VALIDATION_ERROR"
 
 
