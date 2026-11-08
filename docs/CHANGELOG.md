@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §7 — triển khai TRANSFER_CANCELLED / TRANSFER_RECEIVED (DEC-DEV1-D1-01/02)] — 2026-11-08 — PR #127, chờ review
+
+- `Action` thêm `TRANSFER_CANCELLED` (thuộc `REASON_REQUIRED`) và `TRANSFER_RECEIVED`; `audit.decision_log.action` là `text` nên **không cần migration**.
+- `POST /transfers/{id}/cancel` đã triển khai (thay cho 409 fail-closed tạm thời); `receive` không còn tái dùng `TRANSFER_CONFIRMED`; audit của confirm/receive/cancel có `before`/`after`.
+- Không đổi route/payload/enum; hủy sau `source_confirmed`/`received` vẫn fail closed (chưa có contract hoàn nguyên WMS).
+
+
 ## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review
 
 - Chủ dự án phê duyệt **D1-01**: `TRANSFER_CANCELLED` với người thao tác, lý do, thời điểm, trước/sau; không dùng `TRANSFER_APPROVED` cho cancel. **D1-02**: `TRANSFER_CONFIRMED` chỉ kho nguồn xác nhận xuất, `TRANSFER_RECEIVED` mới cho kho đích nhận.

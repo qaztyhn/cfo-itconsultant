@@ -1,5 +1,6 @@
 """T18 real-PostgreSQL transfer API tests (US-ATP-02 AC1-3, US-ATP-03 AC1-3)."""
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -120,13 +121,8 @@ def test_US_ATP_03_AC1_AC3_source_confirm_and_dest_receive_in_one_transaction(
     assert received.status_code == 200, received.text
     assert received.json()["status"] == "received"
     assert fetch(transfer_api.dsn, "SELECT received FROM ops.inbound_shipment")[0]["received"] is True
-    assert (
-        fetch(
-            transfer_api.dsn,
-            "SELECT count(*) AS n FROM audit.decision_log " "WHERE action='TRANSFER_CONFIRMED'",
-        )[0]["n"]
-        == 2
-    )
+    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1  # source warehouse only
+    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 1  # destination warehouse has its own action
     assert_error(
         post(
             transfer_api,
@@ -155,32 +151,193 @@ def test_US_ATP_03_AC2_RBAC_location_scope_and_market(transfer_api: Api) -> None
     assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", SALES), 403, "FORBIDDEN")
 
 
-def test_T18_cancel_fails_closed_until_audit_contract_is_approved(transfer_api: Api) -> None:
+def audit_count(client: Api, action: str) -> int:
+    rows = fetch(client.dsn, "SELECT count(*) AS n FROM audit.decision_log WHERE action=$1", action)
+    return int(rows[0]["n"])
+
+
+def audit_rows(client: Api, action: str) -> list[dict[str, object]]:
+    def decode(row: dict[str, object]) -> dict[str, object]:
+        for column in ("before", "after"):
+            if isinstance(row[column], str):  # asyncpg returns raw JSON text without a codec
+                row[column] = json.loads(row[column])  # type: ignore[arg-type]
+        return row
+
+    return [
+        decode(dict(r))
+        for r in fetch(
+            client.dsn,
+            "SELECT actor_user_id,actor_employee_id,actor_role,entity,entity_id,order_id,reason_text,"
+            "ts,before,after FROM audit.decision_log WHERE action=$1 ORDER BY id",
+            action,
+        )
+    ]
+
+
+def status_of(client: Api) -> str:
+    return str(fetch(client.dsn, "SELECT status FROM ops.stock_transfer ORDER BY id LIMIT 1")[0]["status"])
+
+
+FAIL_AUDIT = (
+    "CREATE FUNCTION audit.qa_reject() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+    "IF NEW.action = '{action}' THEN RAISE EXCEPTION 'qa: audit insert refused'; END IF; RETURN NEW; END $$",
+    "CREATE TRIGGER qa_reject BEFORE INSERT ON audit.decision_log "
+    "FOR EACH ROW EXECUTE FUNCTION audit.qa_reject()",
+)
+DROP_FAIL_AUDIT = ("DROP TRIGGER qa_reject ON audit.decision_log", "DROP FUNCTION audit.qa_reject()")
+
+
+def test_D1_01_cancel_records_transfer_cancelled_once_in_the_same_transaction(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    key = str(uuid4())
+    body = {"reason_text": "  Customer cancelled the transfer  "}
+    first = post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body, key)
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "cancelled"
+    assert status_of(transfer_api) == "cancelled"
+    [row] = audit_rows(transfer_api, "TRANSFER_CANCELLED")
+    assert (
+        row["actor_role"] == "dispatcher" and row["actor_user_id"] == DISPATCHER and row["actor_employee_id"]
+    )
+    assert (row["entity"], row["entity_id"], row["order_id"]) == ("stock_transfer", str(transfer_id), 1)
+    assert row["reason_text"] == "Customer cancelled the transfer" and row["ts"] is not None
+    assert (row["before"]["status"], row["after"]["status"]) == ("approved", "cancelled")  # type: ignore[index]
+    assert (
+        audit_count(transfer_api, "TRANSFER_APPROVED") == 1
+    )  # the original approval only: cancel never reuses it
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+    again = post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body, key)
+    assert again.status_code == 200 and again.json() == first.json()  # idempotent replay
+    assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 1
+    other = {"reason_text": "A different reason"}
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, other, key),
+        409,
+        "IDEMPOTENCY_CONFLICT",
+    )
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 409, "ILLEGAL_TRANSITION"
+    )
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE), 409, "ILLEGAL_TRANSITION"
+    )
+    assert (
+        audit_count(transfer_api, "TRANSFER_CANCELLED") == 1
+        and audit_count(transfer_api, "TRANSFER_CONFIRMED") == 0
+    )
+    assert transfer_api.get("/transfers", DISPATCHER, status="cancelled").json()["total"] == 1
+
+
+@pytest.mark.parametrize("body", [{}, {"reason_text": ""}])
+def test_D1_01_cancel_requires_a_reason_at_the_api(transfer_api: Api, body: dict[str, object]) -> None:
     transfer_id = approved(transfer_api)
     assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, {}),
-        422,
-        "VALIDATION_ERROR",
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 422, "VALIDATION_ERROR"
     )
-    requested = {"reason_text": "Customer cancelled transfer"}
-    for _ in range(2):
-        assert_error(
-            post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, requested),
-            409,
-            "PLAN_NOT_APPROVABLE",
-        )
-    # A rejected cancellation must not mutate the transfer or write a deceptive APPROVED audit.
-    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
+    assert status_of(transfer_api) == "approved" and audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
+
+
+def test_D1_01_blank_reason_is_refused_by_the_service(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    blank = {"reason_text": "   "}
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, blank), 422, "REASON_REQUIRED"
+    )
+    assert status_of(transfer_api) == "approved" and audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
+
+
+def test_D1_01_cancel_rbac_and_unknown_transfer(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    body = {"reason_text": "No longer needed"}
+    for actor in (SALES, WAREHOUSE, 7, ZZ_WAREHOUSE, ADMIN):  # only the dispatcher may cancel (06 section 7)
+        assert_error(post(transfer_api, f"/transfers/{transfer_id}/cancel", actor, body), 403, "FORBIDDEN")
+    assert_error(post(transfer_api, "/transfers/999/cancel", DISPATCHER, body), 404, "NOT_FOUND")
+    assert status_of(transfer_api) == "approved" and audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
+
+
+def test_D1_01_cancel_after_source_confirmation_or_receipt_fails_closed(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    body = {"reason_text": "Too late"}
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 409, "ILLEGAL_TRANSITION"
+    )
+    assert status_of(transfer_api) == "source_confirmed"
+    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7).status_code == 200
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 409, "ILLEGAL_TRANSITION"
+    )
+    assert status_of(transfer_api) == "received"
+    inbound = fetch(transfer_api.dsn, "SELECT confirmed,received FROM ops.inbound_shipment")
+    assert [(r["confirmed"], r["received"]) for r in inbound] == [(True, True)]  # no reversal, no WMS effect
+    assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
+
+
+def test_D1_01_cancel_rolls_back_when_the_audit_insert_fails(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    execute(transfer_api.dsn, FAIL_AUDIT[0].format(action="TRANSFER_CANCELLED"), FAIL_AUDIT[1])
+    key = str(uuid4())
+    body = {"reason_text": "Audit will fail"}
+    with pytest.raises(Exception):  # noqa: B017, PT011 - the harness re-raises the server error
+        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body, key)
+    assert status_of(transfer_api) == "approved"  # never `cancelled` without its audit row
+    execute(transfer_api.dsn, *DROP_FAIL_AUDIT)
+    retry = post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body, key)
+    assert retry.status_code == 200, retry.text  # the failed attempt did not poison the idempotency key
+    assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 1
+
+
+def test_D1_02_receive_records_transfer_received_not_confirmed(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "ILLEGAL_TRANSITION"
+    )  # not confirmed yet
+    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    [confirmed] = audit_rows(transfer_api, "TRANSFER_CONFIRMED")
+    assert confirmed["actor_role"] == "warehouse"
+    assert (confirmed["before"]["status"], confirmed["after"]["status"]) == ("approved", "source_confirmed")  # type: ignore[index]
+    key = str(uuid4())
+    first = post(transfer_api, f"/transfers/{transfer_id}/receive", 7, None, key)
+    assert first.status_code == 200, first.text
+    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7, None, key).json() == first.json()
+    [received] = audit_rows(transfer_api, "TRANSFER_RECEIVED")
+    assert received["actor_role"] == "warehouse" and received["actor_user_id"] == 7
+    assert (received["entity"], received["entity_id"], received["order_id"]) == (
+        "stock_transfer",
+        str(transfer_id),
+        1,
+    )
+    assert (received["before"]["status"], received["after"]["status"]) == ("source_confirmed", "received")  # type: ignore[index]
+    assert received["ts"] is not None
+    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1  # receipt never reuses the source action
+    assert not fetch(
+        transfer_api.dsn, "SELECT 1 FROM audit.decision_log WHERE snapshot->>'stage' = 'warehouse_received'"
+    )
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "ILLEGAL_TRANSITION")
+    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 1
+
+
+def test_D1_02_receive_is_destination_scoped_and_rolls_back_with_its_audit(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    for actor in (
+        WAREHOUSE,
+        SALES,
+        DISPATCHER,
+        ZZ_WAREHOUSE,
+    ):  # not the source manager, not other roles/markets
+        assert post(transfer_api, f"/transfers/{transfer_id}/receive", actor).status_code in (403, 404)
     assert (
-        fetch(
-            transfer_api.dsn,
-            "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_APPROVED'",
-        )[0]["n"]
-        == 1
+        status_of(transfer_api) == "source_confirmed" and audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
     )
-    confirmed = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
-    assert confirmed.status_code == 200, confirmed.text
-    assert confirmed.json()["status"] == "source_confirmed"
+    execute(transfer_api.dsn, FAIL_AUDIT[0].format(action="TRANSFER_RECEIVED"), FAIL_AUDIT[1])
+    with pytest.raises(Exception):  # noqa: B017, PT011
+        post(transfer_api, f"/transfers/{transfer_id}/receive", 7)
+    assert status_of(transfer_api) == "source_confirmed"
+    assert fetch(transfer_api.dsn, "SELECT received FROM ops.inbound_shipment")[0]["received"] is False
+    execute(transfer_api.dsn, *DROP_FAIL_AUDIT)
+    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7).status_code == 200
 
 
 def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfer_api: Api) -> None:

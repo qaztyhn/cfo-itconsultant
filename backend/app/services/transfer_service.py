@@ -574,16 +574,18 @@ async def confirm_source(
                 transfer_id=transfer.id,
             )
         )
+    before = _out(transfer)
     transfer.status = "source_confirmed"
     transfer.source_confirmed_by = _employee_id(actor)
     transfer.source_confirmed_at = clock.now()
     await session.flush()
     await record_decision(
         session,
-        Action.TRANSFER_CONFIRMED,
+        Action.TRANSFER_CONFIRMED,  # source warehouse only (DEC-DEV1-D1-02); receipt has its own action
         "stock_transfer",
         str(transfer.id),
         order_id=transfer.order_id,
+        before=before,
         after=_out(transfer),
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
@@ -624,20 +626,20 @@ async def receive(
         (line.global_product_id, line.qty) for line in lines
     }:
         raise _error("RESOURCE_CONFLICT", "Transfer inbound rows are missing or inconsistent.")
+    before = _out(transfer)
     for row in inbound:
         row.received = True
     transfer.status = "received"
     transfer.received_at = clock.now()
     await session.flush()
-    # Approved codes include CONFIRMED but no separate receipt action; the status
-    # transition is explicit in the audit payload; a dedicated code needs owner approval.
+    # DEC-DEV1-D1-02: the destination's receipt has its own action; TRANSFER_CONFIRMED is never reused for it.
     await record_decision(
         session,
-        Action.TRANSFER_CONFIRMED,
+        Action.TRANSFER_RECEIVED,
         "stock_transfer",
         str(transfer.id),
         order_id=transfer.order_id,
-        snapshot={"stage": "warehouse_received"},
+        before=before,
         after=_out(transfer),
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
@@ -649,18 +651,45 @@ async def receive(
 async def cancel(
     session: AsyncSession, actor: object, transfer_id: int, reason_text: str, idempotency_key: str
 ) -> dict[str, object]:
-    """Fail closed until a dedicated cancellation audit action is approved.
+    """DEC-DEV1-D1-01: cancel a suggested/approved transfer with `TRANSFER_CANCELLED`.
 
-    TRANSFER_APPROVED must never be recorded for a cancellation: that would
-    corrupt audit consumers and could suggest a cancelled transfer was approved.
+    Allowed only from `suggested`/`approved`: nothing has left the source warehouse and no inbound row
+    exists, so no stock or WMS effect has to be reverted. From `source_confirmed`/`received` an inbound
+    exists (goods may be in transit or already counted) and there is no approved reversal contract, so the
+    request fails closed and nothing changes. The audit row (actor, mandatory reason, before/after) is
+    written in the same transaction as the status change and is never TRANSFER_APPROVED; a replayed
+    Idempotency-Key returns the stored result without a second audit row.
     """
     _can_dispatch(actor)
-    transfer, _ = await _transfer(session, actor, transfer_id, lock=False)
-    if not reason_text.strip():
+    reason = reason_text.strip()
+    if not reason:
         raise _error("REASON_REQUIRED", "Cancelling a transfer requires a reason.")
-    if transfer.status not in ("suggested", "approved"):
-        raise _error("ILLEGAL_TRANSITION", "Confirmed or received transfers cannot be cancelled here.")
-    raise _error(
-        "PLAN_NOT_APPROVABLE",
-        "Transfer cancellation is blocked pending an approved cancellation audit action.",
+    transfer, _ = await _transfer(session, actor, transfer_id, lock=False)
+    record, replay = await _claim(
+        session, actor, f"POST /transfers/{transfer_id}/cancel", idempotency_key, {"reason_text": reason}
     )
+    if replay is not None:
+        return replay
+    transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
+    if transfer.status not in ("suggested", "approved"):
+        raise _error(
+            "ILLEGAL_TRANSITION",
+            "Only a suggested or approved transfer can be cancelled; later stages have no reversal contract.",
+        )
+    before = _out(transfer)
+    transfer.status = "cancelled"
+    await session.flush()
+    await record_decision(
+        session,
+        Action.TRANSFER_CANCELLED,
+        "stock_transfer",
+        str(transfer.id),
+        order_id=transfer.order_id,
+        reason_text=reason,
+        before=before,
+        after=_out(transfer),
+        actor_user_id=_user_id(actor),
+        actor_employee_id=_employee_id(actor),
+        actor_role="dispatcher",
+    )
+    return _save(record, _out(transfer))
