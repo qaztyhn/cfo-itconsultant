@@ -365,3 +365,83 @@ def test_US_APR_01_AC11_concurrent_labour_approval_single_winner(db: str) -> Non
     assert len(winners) == 1
     assert failures == ["RESOURCE_CONFLICT"]
     assert fetch(db, "SELECT count(*) FROM plan.prep_reservation WHERE status='committed'")[0][0] == 1
+
+
+def test_T28_concurrent_identical_approval_keys_create_exactly_one_trip(db: str) -> None:
+    """Two real transactions replay one committed result, never double-approve."""
+    _hold(db)
+
+    async def race() -> tuple[dict[str, object], dict[str, object]]:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+
+        async def submit() -> dict[str, object]:
+            async with async_sessionmaker(engine)() as session, session.begin():
+                return await approval_service.approve(
+                    1, _actor(), {}, "t28-same-key", session=session, recheck=_recheck
+                )
+
+        try:
+            first, second = await asyncio.wait_for(
+                asyncio.gather(submit(), submit()), timeout=20
+            )
+            return first, second
+        finally:
+            await engine.dispose()
+
+    first, second = asyncio.run(race())
+    assert first == second
+    assert first["order"]["status"] == "APPROVED"
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM ops.trip_stop")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 1
+
+
+def test_T28_idempotent_approval_replay_does_not_bypass_revoked_role(db: str) -> None:
+    """Even an already successful request cannot be replayed by a downgraded actor."""
+    _hold(db)
+    original = _run(
+        db,
+        lambda s: approval_service.approve(
+            1, _actor(), {}, "t28-revoked-role", session=s, recheck=_recheck
+        ),
+    )
+    assert original["order"]["status"] == "APPROVED"
+    with pytest.raises(DomainError) as denied:
+        _run(
+            db,
+            lambda s: approval_service.approve(
+                1, _actor("viewer"), {}, "t28-revoked-role", session=s, recheck=_recheck
+            ),
+        )
+    assert denied.value.code == "FORBIDDEN"
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
+
+
+def test_T28_failed_fresh_safety_gate_rolls_back_all_approval_writes(db: str) -> None:
+    """A genuine failed gate is not replaced by the green stored planning checks."""
+    _hold(db)
+
+    async def rejected_safety(session: AsyncSession, plan_id: int) -> RecheckProof:
+        proof = await _recheck(session, plan_id)
+        return RecheckProof(
+            plan_id=proof.plan_id,
+            order_version=proof.order_version,
+            source_version=proof.source_version,
+            gates={**proof.gates, "safety": False},
+            checked_at=proof.checked_at,
+        )
+
+    with pytest.raises(DomainError) as denied:
+        _run(
+            db,
+            lambda s: approval_service.approve(
+                1, _actor(), {}, "t28-unsafe", session=s, recheck=rejected_safety
+            ),
+        )
+    assert denied.value.code == "RESOURCE_CONFLICT"
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
+    assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=1")[0][0] == "proposed"
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "held"
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
