@@ -40,7 +40,9 @@ export function isAuthUser(value: unknown): value is AuthUser {
     Array.isArray(v.location_ids) &&
     v.location_ids.every((id) => typeof id === "number") &&
     Array.isArray(v.kpi_scopes) &&
-    v.kpi_scopes.every((scope) => KPI_SCOPES.includes(scope))
+    v.kpi_scopes.every((scope) => KPI_SCOPES.includes(scope)) &&
+    (v.owned_location_ids === undefined ||
+      (Array.isArray(v.owned_location_ids) && v.owned_location_ids.every((id) => typeof id === "number")))
   );
 }
 

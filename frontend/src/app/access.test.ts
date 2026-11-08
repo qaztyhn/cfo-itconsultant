@@ -147,7 +147,44 @@ describe("sidebar menu by role (docs/03 mục 3.2)", () => {
     expect(new Set(rulePaths).size).toBe(rulePaths.length);
   });
 
-  it.todo("shows 'Revenue · my location' to location owners — needs an owner signal from Dev 1 (ASM-E)");
+  describe("Revenue · my location (docs/06 mục 3.1, ASM-E)", () => {
+    const revenueLabel = (u: AuthUser) =>
+      buildMenu(u)
+        .flatMap((g) => g.items)
+        .find((i) => i.to === PATHS.revenue)?.label;
+    const storeOwner: AuthUser = { ...base, roles: ["sales"], location_ids: [21], owned_location_ids: [21] };
+    const warehouseOwner: AuthUser = { ...base, roles: ["warehouse"], location_ids: [7], kpi_scopes: ["ops"], owned_location_ids: [7] };
+
+    it("opens Revenue for a store or warehouse owner and labels it 'Revenue · my location'", () => {
+      for (const owner of [storeOwner, warehouseOwner]) {
+        expect(canAccessPath(owner, PATHS.revenue)).toBe(true);
+        expect(revenueLabel(owner)).toBe("Revenue · my location");
+      }
+    });
+
+    it("keeps the plain 'Revenue' label for admin and Business owner, even if they also own a location", () => {
+      const admin: AuthUser = { ...base, roles: ["admin"] };
+      const businessOwner: AuthUser = { ...base, roles: ["viewer"], kpi_scopes: ["revenue_all"], owned_location_ids: [21] };
+
+      expect(revenueLabel(admin)).toBe("Revenue");
+      expect(revenueLabel(businessOwner)).toBe("Revenue");
+    });
+
+    it("does not infer ownership from roles or location_ids; empty or missing owned_location_ids is not an owner", () => {
+      const storeStaff: AuthUser = { ...base, roles: ["sales"], location_ids: [21] };
+      const warehouseStaff: AuthUser = { ...base, roles: ["warehouse"], location_ids: [7], kpi_scopes: ["ops"], owned_location_ids: [] };
+
+      expect(canAccessPath(storeStaff, PATHS.revenue)).toBe(false);
+      expect(canAccessPath(warehouseStaff, PATHS.revenue)).toBe(false);
+      expect(revenueLabel(storeStaff)).toBeUndefined();
+    });
+
+    it("keeps the owner's role workspace as the landing path", () => {
+      expect(landingPath(storeOwner)).toBe(PATHS.storeOrders);
+      expect(landingPath(warehouseOwner)).toBe(PATHS.warehousePrep);
+    });
+  });
+
 });
 
 describe("badges (docs/06 mục 5)", () => {

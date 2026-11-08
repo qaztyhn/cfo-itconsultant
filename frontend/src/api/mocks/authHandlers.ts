@@ -18,7 +18,7 @@ export interface MockAccount {
   user: AuthUser;
 }
 
-const common = { market: "SE", locale: "en" };
+const common = { market: "SE", locale: "en", owned_location_ids: [] as number[] }; // ASM-E: demo chưa có owner nào
 
 /** Email theo docs/08 mục 5 (driver1@ chưa được xác nhận — chờ Dev 2). id/employee_id/location_ids chỉ là giá trị mock. */
 export const MOCK_ACCOUNTS: MockAccount[] = [

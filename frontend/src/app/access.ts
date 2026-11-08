@@ -16,8 +16,15 @@ export const anyRole =
 export const isAdmin = anyRole("admin");
 /** ASM-D: KPI vận hành = admin hoặc kpi_scopes có `ops`. */
 export const canViewKpi: AccessRule = (user) => isAdmin(user) || user.kpi_scopes.includes("ops");
-/** ASM-D/E: doanh thu toàn thị trường. Owner kho/cửa hàng chờ tín hiệu từ backend (Dev 1). */
-export const canViewRevenue: AccessRule = (user) => isAdmin(user) || user.kpi_scopes.includes("revenue_all");
+/** Admin hoặc `revenue_all` (Business owner): doanh thu toàn thị trường (ASM-D). */
+export const canViewAllRevenue: AccessRule = (user) => isAdmin(user) || user.kpi_scopes.includes("revenue_all");
+/**
+ * ASM-E: owner của ít nhất một kho/cửa hàng (docs/06 mục 3.1) — chỉ dựa trên `owned_location_ids` do backend trả,
+ * KHÔNG suy ra từ vai trò hay `location_ids` (nơi làm việc).
+ */
+export const ownsLocation: AccessRule = (user) => (user.owned_location_ids?.length ?? 0) > 0;
+/** Doanh thu: tất cả (admin/revenue_all) hoặc phần của mình (owner). Backend vẫn kiểm `/revenue/*`, rỗng → 403. */
+export const canViewRevenue: AccessRule = (user) => canViewAllRevenue(user) || ownsLocation(user);
 
 export const PATHS = {
   login: "/login",

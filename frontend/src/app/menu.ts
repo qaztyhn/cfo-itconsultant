@@ -3,7 +3,7 @@
  * Driver không dùng sidebar (PWA riêng) nên không có mục nào.
  * Owner: Dev 3 (luồng C) — M0.
  */
-import { PATHS, anyRole, ruleFor, type AccessRule } from "./access";
+import { PATHS, anyRole, canViewAllRevenue, ruleFor, type AccessRule } from "./access";
 import type { AuthUser } from "../api/contracts/auth";
 
 export type BadgeKey = "order_queue" | "plan_review" | "exceptions" | "tracking_risk";
@@ -77,7 +77,8 @@ export function buildMenu(user: AuthUser): MenuGroup[] {
     label,
     items: DEFS.filter((d) => d.group === label && d.allow(user)).map(({ id, label: itemLabel, to, external, badge }) => ({
       id,
-      label: itemLabel,
+      // docs/03 mục 3.2: owner kho/cửa hàng thấy "Revenue · my location"; admin và Business owner thấy "Revenue".
+      label: to === PATHS.revenue && !canViewAllRevenue(user) ? "Revenue · my location" : itemLabel,
       to,
       external,
       badge,

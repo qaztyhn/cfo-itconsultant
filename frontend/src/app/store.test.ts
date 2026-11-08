@@ -61,6 +61,14 @@ describe("auth store", () => {
     expect(isAuthUser({ ...user, market: undefined })).toBe(false);
   });
 
+  it("accepts an optional owned_location_ids list of numbers (ASM-E)", () => {
+    expect(isAuthUser(user)).toBe(true); // phiên cũ không có trường này vẫn hợp lệ
+    expect(isAuthUser({ ...user, owned_location_ids: [] })).toBe(true);
+    expect(isAuthUser({ ...user, owned_location_ids: [21, 7] })).toBe(true);
+    expect(isAuthUser({ ...user, owned_location_ids: ["21"] })).toBe(false);
+    expect(isAuthUser({ ...user, owned_location_ids: 21 })).toBe(false);
+  });
+
   it("keeps the session after reload when employee_id, name and market are null", () => {
     const nullableUser = { ...user, employee_id: null, name: null, market: null };
     useAuthStore.getState().setAuth(

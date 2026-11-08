@@ -25,6 +25,12 @@ export interface AuthUser {
   location_ids: number[];
   locale: string;
   kpi_scopes: KpiScope[];
+  /**
+   * Địa điểm (kho/cửa hàng) mà nhân viên là owner: `location.owner_employee_id = employee_id` (docs/06 mục 3.1, ASM-E).
+   * Rỗng = không sở hữu nơi nào. Khác `location_ids` (nơi làm việc). Optional trong lúc chờ backend trả trường này;
+   * DEPENDENCY (Dev 1): bỏ `?` khi đã có trong docs/06 mục 4 và backend.
+   */
+  owned_location_ids?: number[];
 }
 
 export interface LoginResponse {

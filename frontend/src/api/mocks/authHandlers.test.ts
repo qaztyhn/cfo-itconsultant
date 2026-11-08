@@ -41,10 +41,11 @@ describe("login (US-EMP-03)", () => {
     async (email, roles, scopes) => {
         const { user } = await login({ email: email.toUpperCase(), password: "x" }); // email không phân biệt hoa thường
 
-        const expectedKeys = ["id", "employee_id", "name", "roles", "market", "location_ids", "locale", "kpi_scopes"];
+        const expectedKeys = ["id", "employee_id", "name", "roles", "market", "location_ids", "locale", "kpi_scopes", "owned_location_ids"];
         expect(Object.keys(user).sort()).toEqual([...expectedKeys].sort());
         expect(user.roles).toEqual(roles);
         expect(user.kpi_scopes).toEqual(scopes);
+        expect(user.owned_location_ids).toEqual([]);
     },
   );
 
@@ -112,7 +113,7 @@ describe("session endpoints", () => {
   });
 });
 
-describe("GET /orders/counts follows docs/06 mục 5", () => {
+describe("GET /orders/counts follows docs/06 mục 5.4", () => {
   interface Counts {
     all: number;
     needs_plan: number;
@@ -127,44 +128,98 @@ describe("GET /orders/counts follows docs/06 mục 5", () => {
     total: number;
     items: { status: string; risk_color: string | null }[];
   }
+  interface AlertList {
+    items: { type: string; resolved_at?: string | null }[];
+  }
 
-  it("returns `all` and `nav`, consistent with the mock order list", async () => {
+  it("returns the v1.4 shape: `all`, the bucket counts and `nav` (no `total`)", async () => {
     const counts = await apiGet<Counts>("/orders/counts");
-    const orders = await apiGet<OrderList>("/orders");
 
-    expect(counts).toEqual(
-      expect.objectContaining({
-        all: expect.any(Number),
-        needs_plan: expect.any(Number),
-        awaiting_approval: expect.any(Number),
-        no_feasible_date: expect.any(Number),
-        in_execution: expect.any(Number),
-        replan_suggested: expect.any(Number),
-        delivered_today: expect.any(Number),
-      }),
-    );
     expect(counts).not.toHaveProperty("total");
-    expect(counts.all).toBe(orders.total);
-    expect(counts.all).toBe(orders.items.length);
-    expect(counts.nav.order_queue).toBe(counts.needs_plan);
-    expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
-    expect(counts.nav.tracking_risk).toBe(orders.items.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length);
+    expect(Object.keys(counts).sort()).toEqual(
+      ["all", "awaiting_approval", "delivered_today", "in_execution", "nav", "needs_plan", "no_feasible_date", "replan_suggested"],
+    );
+    expect(Object.keys(counts.nav).sort()).toEqual(["exceptions", "order_queue", "tracking_risk"]);
+  });
+
+  it("matches the demo seed bucket by bucket (APPROVED in in_execution, delivered today only)", async () => {
+    const counts = await apiGet<Counts>("/orders/counts");
+
+    expect(counts).toEqual({
+      all: 9,
+      needs_plan: 0,
+      awaiting_approval: 2,
+      no_feasible_date: 2,
+      in_execution: 4,
+      replan_suggested: 0,
+      delivered_today: 1,
+      nav: { order_queue: 4, exceptions: 2, tracking_risk: 1 },
+    });
+  });
+
+  it("derives nav.exceptions from open EXCEPTION / REPLAN_SUGGESTED alerts, not from order status", async () => {
+    const counts = await apiGet<Counts>("/orders/counts");
+    const alerts = await apiGet<AlertList>("/alerts");
+    const open = alerts.items.filter((a) => ["EXCEPTION", "REPLAN_SUGGESTED"].includes(a.type) && !a.resolved_at);
+
+    expect(counts.nav.exceptions).toBe(open.length);
   });
 
   it("keeps legacy BLOCKED_UNMAPPED_SKU orders out of the CFO list, detail and counts (DEC-ROUTING-002)", async () => {
-    const counts = await apiGet<Counts>("/orders/counts");
     const orders = await apiGet<OrderList>("/orders");
     const filtered = await apiGet<OrderList>("/orders", { status: "BLOCKED_UNMAPPED_SKU" });
+    const counts = await apiGet<Counts>("/orders/counts");
 
     expect(orders.items.some((o) => o.status === "BLOCKED_UNMAPPED_SKU")).toBe(false);
     expect(filtered.total).toBe(0);
-    expect(counts.all).toBe(orders.total);
-    expect(counts.needs_plan).toBe(orders.items.filter((o) => o.status === "SUBMITTED").length);
-    expect(counts.nav.exceptions).toBe(orders.items.filter((o) => o.status === "NO_FEASIBLE_DATE").length + counts.replan_suggested);
+    expect(counts.all).toBe(orders.items.length); // seed không có đơn đóng trước hôm nay, nên all = số đơn CFO
   });
 
   it("returns 404 for the legacy order detail instead of serving it as a CFO order", async () => {
     await expect(apiGet("/orders/156")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+  });
+});
+
+describe("GET /orders follows docs/06 mục 5.4", () => {
+  interface ListBody {
+    items: { id: number; [key: string]: unknown }[];
+    page: number;
+    page_size: number;
+    total: number;
+  }
+  const idsOf = (body: ListBody) => body.items.map((i) => i.id);
+
+  it("returns {items, page, page_size, total}, default order = submitted_at ASC, id ASC", async () => {
+    const body = await apiGet<ListBody>("/orders");
+
+    expect(body).toMatchObject({ page: 1, page_size: 50, total: 9 });
+    expect(idsOf(body)).toEqual([118, 131, 141, 138, 129, 144, 160, 123, 137]);
+  });
+
+  it("items have the v1.4 fields (no legacy site_name/date_from/created_at)", async () => {
+    const body = await apiGet<ListBody>("/orders");
+
+    expect(Object.keys(body.items[0]).sort()).toEqual([
+      "block_reason", "committed_date", "currency", "customer_name", "date_request", "id", "order_no", "origin_store",
+      "promise_end", "risk_color", "site", "status", "submitted_at", "total_amount", "warehouse",
+    ]);
+  });
+
+  it("paginates with page and page_size", async () => {
+    const body = await apiGet<ListBody>("/orders", { page: "2", page_size: "2" });
+
+    expect(body).toMatchObject({ page: 2, page_size: 2, total: 9 });
+    expect(idsOf(body)).toEqual([141, 138]);
+  });
+
+  it("filters by warehouse_id and q (order_no, external_ref, customer)", async () => {
+    expect(idsOf(await apiGet<ListBody>("/orders", { warehouse_id: "1" }))).toEqual([118, 160, 123]);
+    expect(idsOf(await apiGet<ListBody>("/orders", { q: "pos-141" }))).toEqual([141]);
+  });
+
+  it("rejects invalid paging/sort with 422 VALIDATION_ERROR", async () => {
+    await expect(apiGet("/orders", { page_size: "201" })).rejects.toMatchObject({ status: 422, code: "VALIDATION_ERROR" });
+    await expect(apiGet("/orders", { sort: "customer_name" })).rejects.toMatchObject({ status: 422, code: "VALIDATION_ERROR" });
   });
 });
 

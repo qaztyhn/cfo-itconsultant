@@ -4,6 +4,8 @@
  */
 import { http, HttpResponse } from "msw";
 import { API_BASE_URL } from "../config";
+import { computeOrderCounts } from "./orderCounts";
+import { listOrders, type OrderRecord, type RefCode } from "./orderList";
 
 // Dùng chung API_BASE_URL (đã gồm /api/v1) để dev:mock hoạt động với mọi cấu hình VITE_API_URL.
 const BASE = API_BASE_URL;
@@ -202,6 +204,7 @@ const ORDERS = [
     risk_color: "green",
     risk_status: "ON_TRACK",
     approved_plan_id: 118,
+    delivered_at: "2026-11-04T09:20:00+01:00",
     created_at: "2026-11-03T07:00:00+01:00",
   },
 ];
@@ -229,26 +232,49 @@ export const LEGACY_ORDERS = [{
   },
 ];
 
-const needsPlan = ORDERS.filter((o) => o.status === "SUBMITTED").length;
-const noFeasibleDate = ORDERS.filter((o) => o.status === "NO_FEASIBLE_DATE").length;
-const replanSuggested = 0;
+// Mốc "bây giờ" của dữ liệu demo (khớp APP_NOW trong .env.example và data_as_of của integration overview).
+// Cố định để delivered_today không tự về 0 khi đồng hồ thật qua ngày.
+const MOCK_NOW = "2026-11-04T10:05:00+01:00";
+const MARKET_TIMEZONE = "Europe/Stockholm"; // ref.market.timezone (docs/05)
 
-// Hình dạng theo docs/06 mục 5 (`all` + `nav`). ORDERS chỉ chứa đơn CFO (đơn legacy nằm ở LEGACY_ORDERS,
-// DEC-ROUTING-002) nên mọi số liệu suy ra từ ORDERS, khớp đúng với GET /orders.
-const COUNTS = {
-  all: ORDERS.length,
-  needs_plan: needsPlan,
-  awaiting_approval: ORDERS.filter((o) => o.status === "PLANNED").length,
-  no_feasible_date: noFeasibleDate,
-  in_execution: ORDERS.filter((o) => ["PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"].includes(o.status)).length,
-  replan_suggested: replanSuggested,
-  delivered_today: ORDERS.filter((o) => o.status === "DELIVERED").length,
-  nav: {
-    order_queue: needsPlan,
-    exceptions: noFeasibleDate + replanSuggested,
-    tracking_risk: ORDERS.filter((o) => o.risk_color === "orange" || o.risk_color === "red").length,
-  },
-};
+// Danh sách đơn theo docs/06 mục 5.4 (v1.4): dựng từ seed ORDERS. Trường seed chưa có là giá trị MOCK, ghi rõ bên dưới.
+const WAREHOUSE_REFS: Record<string, RefCode> = {
+  GBG: { id: 1, code: "GBG" },
+  STO: { id: 2, code: "STO" },
+  MLM: { id: 3, code: "MLM" },
+}; // id khớp GET /locations của mock
+const ORIGIN_STORE: RefCode = { id: 101, code: "GBG-V" }; // MOCK: id 101 theo location_ids của tài khoản Sales; mã theo ví dụ docs/06 mục 5.4
+const ORDER_AMOUNTS: Record<number, string> = {
+  123: "48300.00",
+  137: "31200.00",
+  141: "22750.00",
+  138: "15400.00",
+  129: "67800.00",
+  131: "12950.00",
+  144: "9800.00",
+  160: "18600.00",
+  118: "25300.00",
+}; // MOCK: seed chưa có tiền
+
+const ORDER_RECORDS: OrderRecord[] = ORDERS.map((o) => ({
+  id: o.id,
+  order_no: o.order_no,
+  external_ref: `POS-${o.id}`, // MOCK
+  status: o.status,
+  customer_name: o.customer_name,
+  site: (o.site_address.split(",").pop() ?? "").trim(), // docs/06: phần sau dấu phẩy cuối của delivery_address
+  warehouse: o.warehouse_code ? (WAREHOUSE_REFS[o.warehouse_code] ?? null) : null,
+  origin_store: ORIGIN_STORE,
+  date_request: { mode: o.date_mode, date_from: o.date_from, date_to: o.date_to },
+  // Đơn đã có kế hoạch được duyệt thì có ngày cam kết và hạn hứa; suy ra từ ngày/giờ yêu cầu của seed.
+  committed_date: o.approved_plan_id !== null ? o.date_from : null,
+  promise_end: o.approved_plan_id !== null ? `${o.date_to}T${o.window_end}:00+01:00` : null,
+  risk_color: o.risk_color,
+  block_reason: null,
+  total_amount: ORDER_AMOUNTS[o.id] ?? "0.00",
+  currency: "SEK",
+  submitted_at: o.created_at, // MOCK: seed chưa tách submitted_at khỏi created_at
+}));
 
 const PLAN_CANDIDATES = [
   {
@@ -456,6 +482,28 @@ const ALERTS = [
     order_id: 138,
     created_at: "2026-11-04T10:30:00+01:00",
     acknowledged_at: null,
+  },
+    {
+    id: 3,
+    type: "EXCEPTION",
+    level: "warning",
+    message: "SE-2026-000137 · no feasible delivery date before 2026-11-12",
+    detail: "Planning found no feasible date for the requested day; earliest feasible date is 2026-11-12.",
+    order_id: 137,
+    created_at: "2026-11-04T08:05:00+01:00",
+    acknowledged_at: null,
+    resolved_at: null,
+  },
+  {
+    id: 4,
+    type: "EXCEPTION",
+    level: "warning",
+    message: "SE-2026-000144 · no feasible delivery date",
+    detail: "Planning found no feasible delivery date for this order.",
+    order_id: 144,
+    created_at: "2026-11-04T07:05:00+01:00",
+    acknowledged_at: null,
+    resolved_at: null,
   },
 ];
 
@@ -720,22 +768,19 @@ export const handlers = [
   // Orders — chỉ đơn CFO (DEC-ROUTING-002). Đơn legacy (LEGACY_ORDERS) không có trong list/detail/counts;
   // GET /orders/:id của đơn legacy trả 404 NOT_FOUND.
   http.get(`${BASE}/orders`, ({ request }) => {
-    const url = new URL(request.url);
-    const status = url.searchParams.get("status");
-    const q = url.searchParams.get("q")?.toLowerCase();
-    let orders = [...ORDERS];
-    if (status) orders = orders.filter((o) => o.status === status);
-    if (q)
-      orders = orders.filter(
-        (o) =>
-          o.order_no.toLowerCase().includes(q) ||
-          o.customer_name.toLowerCase().includes(q),
+    const result = listOrders(ORDER_RECORDS, new URL(request.url).searchParams);
+    if (!result.ok) {
+      const cid = request.headers.get("X-Correlation-ID") ?? crypto.randomUUID();
+      return HttpResponse.json(
+        { error: { code: "VALIDATION_ERROR", message: result.message, correlation_id: cid } },
+        { status: 422, headers: { "X-Correlation-ID": cid } },
       );
-    return HttpResponse.json({ items: orders, total: orders.length, page: 1, page_size: 50 });
+    }
+    return HttpResponse.json(result.body);
   }),
 
   http.get(`${BASE}/orders/counts`, () => {
-    return HttpResponse.json(COUNTS);
+    return HttpResponse.json(computeOrderCounts(ORDERS, ALERTS, { now: MOCK_NOW, timezone: MARKET_TIMEZONE }));
   }),
 
   http.get(`${BASE}/orders/:id`, ({ params }) => {
