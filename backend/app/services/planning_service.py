@@ -82,14 +82,11 @@ def engine_config(cfg: MarketConfig, holidays: Iterable[date]) -> EngineConfig:
     )
 
 
-
 InputLoader = Callable[..., Awaitable[PlanningInputs]]
 _VALID_KEYS = frozenset(
     {"target_date", "exclude_warehouse_ids", "exclude_vehicle_ids", "weights", "reason_code", "reason_text"}
 )
-_VALID_TRIGGERS = frozenset(
-    {"source_change", "plan_invalidated", "vehicle_issue", "delivery_failed"}
-)
+_VALID_TRIGGERS = frozenset({"source_change", "plan_invalidated", "vehicle_issue", "delivery_failed"})
 
 
 def _fail(code: str, message: str) -> DomainError:
@@ -206,8 +203,7 @@ async def _save_candidates(
                     load_kg=vehicle.load_kg,
                     load_m3=vehicle.load_m3,
                     load_lines=[
-                        {"line_no": number, "qty_base": str(qty)}
-                        for number, qty in vehicle.load_lines
+                        {"line_no": number, "qty_base": str(qty)} for number, qty in vehicle.load_lines
                     ],
                     loading_start_at=vehicle.loading_start_at,
                     depart_at=vehicle.depart_at,
@@ -243,8 +239,7 @@ async def _authorize(
     if not roles.intersection({"dispatcher", "sales"}):
         raise _fail("FORBIDDEN", "Only Dispatcher or Sales may plan.")
     if "dispatcher" not in roles and (
-        order.origin_store_id is None
-        or order.origin_store_id not in getattr(actor, "location_ids", ())
+        order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
     ):
         raise _fail("NOT_FOUND", "Order not found.")
     return order, market
@@ -291,9 +286,7 @@ async def _execute_plan(
         if not (params.get("reason_code") or params.get("reason_text")):
             raise _fail("REASON_REQUIRED", "Plan Again requires an auditable reason.")
     if order.status in ("PLANNED", "NO_FEASIBLE_DATE"):
-        changed = await transition(
-            session, order.id, OrderStatus.SUBMITTED, "dispatcher", "Plan Again"
-        )
+        changed = await transition(session, order.id, OrderStatus.SUBMITTED, "dispatcher", "Plan Again")
         await record_decision(
             session,
             Action.CRITERIA_CHANGED_RERUN,
@@ -422,9 +415,7 @@ def _vehicle_out(vehicle: PlanVehicle, *, compact: bool) -> dict[str, object]:
     }
 
 
-async def _plan_out(
-    session: AsyncSession, row: FulfilmentPlan, *, compact: bool
-) -> dict[str, object]:
+async def _plan_out(session: AsyncSession, row: FulfilmentPlan, *, compact: bool) -> dict[str, object]:
     allocations = (
         await session.scalars(
             select(PlanVehicle).where(PlanVehicle.plan_id == row.id).order_by(PlanVehicle.seq)
@@ -465,9 +456,7 @@ async def _plan_out(
     }
 
 
-async def get_run(
-    run_id: int, actor: object, *, session: AsyncSession | None = None
-) -> dict[str, object]:
+async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = None) -> dict[str, object]:
     """Read the persisted run; Sales sees rank1/hold/ETA only, never scores or driver/GPS."""
     if session is None:
         async with get_sessionmaker()() as db:
@@ -479,9 +468,7 @@ async def get_run(
     compact = "dispatcher" not in _roles(actor)
     plans = (
         await session.scalars(
-            select(FulfilmentPlan)
-            .where(FulfilmentPlan.run_id == run.id)
-            .order_by(FulfilmentPlan.rank)
+            select(FulfilmentPlan).where(FulfilmentPlan.run_id == run.id).order_by(FulfilmentPlan.rank)
         )
     ).all()
     if compact:
@@ -508,16 +495,14 @@ async def get_run(
             and plans[0].target_date == order.date_to
             and run.kind == "initial"
         )
-        response["sales_block_reason"] = (
-            None if response["sales_approvable"] else "PLAN_NOT_APPROVABLE"
-        )
+        response["sales_block_reason"] = None if response["sales_approvable"] else "PLAN_NOT_APPROVABLE"
     else:
         response.update(
             {
                 "failed_check": run.failed_check,
-                "earliest_feasible_date": run.earliest_feasible_date.isoformat()
-                if run.earliest_feasible_date
-                else None,
+                "earliest_feasible_date": (
+                    run.earliest_feasible_date.isoformat() if run.earliest_feasible_date else None
+                ),
                 "planning_reserve_min": run.planning_reserve_min,
                 "workload": run.input_snapshot.get("workload", {}),
                 "rejected_candidates": run.input_snapshot.get("rejected_candidates", []),
@@ -527,9 +512,7 @@ async def get_run(
     return response
 
 
-async def get_plan(
-    plan_id: int, actor: object, *, session: AsyncSession
-) -> dict[str, object]:
+async def get_plan(plan_id: int, actor: object, *, session: AsyncSession) -> dict[str, object]:
     plan = await session.get(FulfilmentPlan, plan_id)
     if plan is None:
         raise _fail("NOT_FOUND", "Plan not found.")
@@ -540,9 +523,7 @@ async def get_plan(
     return await _plan_out(session, plan, compact=compact)
 
 
-async def list_runs(
-    order_id: int, actor: object, *, session: AsyncSession
-) -> dict[str, object]:
+async def list_runs(order_id: int, actor: object, *, session: AsyncSession) -> dict[str, object]:
     await _authorize(session, order_id, actor, lock=False)
     runs = (
         await session.scalars(
@@ -565,9 +546,7 @@ async def list_runs(
     }
 
 
-async def list_date_negotiations(
-    order_id: int, actor: object, *, session: AsyncSession
-) -> dict[str, object]:
+async def list_date_negotiations(order_id: int, actor: object, *, session: AsyncSession) -> dict[str, object]:
     if "dispatcher" not in _roles(actor):
         raise _fail("FORBIDDEN", "Only Dispatcher may read negotiation history.")
     await _authorize(session, order_id, actor, lock=False)
