@@ -225,7 +225,7 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
     if last is None or last.failed_check != "stock":
         return {"items": []}
     lines = (await session.scalars(select(OrderLine).where(OrderLine.order_id == order.id))).all()
-    if not lines or any(l.global_product_id is None or l.qty_base is None for l in lines):
+    if not lines or any(line.global_product_id is None or line.qty_base is None for line in lines):
         raise _error("PLAN_NOT_APPROVABLE", "Unverified order quantities; no transfer can be suggested.")
     need: dict[int, Decimal] = defaultdict(Decimal)
     for line in lines:
@@ -328,10 +328,10 @@ async def approve(
                   c["from_warehouse_id"] == wanted["from_warehouse_id"]
                   and c["to_warehouse_id"] == wanted["to_warehouse_id"]
                   and c["lead_days"] == wanted["lead_days"]
-                  and sorted((int(l["global_product_id"]), Decimal(str(l["qty"])))
-                             for l in c["lines"]) ==
-                      sorted((int(l["global_product_id"]), Decimal(str(l["qty"])))
-                             for l in wanted["lines"] if isinstance(l, dict))
+                  and sorted((int(line["global_product_id"]), Decimal(str(line["qty"])))
+                             for line in c["lines"]) ==
+                      sorted((int(line["global_product_id"]), Decimal(str(line["qty"])))
+                             for line in wanted["lines"] if isinstance(line, dict))
                   ), None) if isinstance(wanted["lines"], list) else None
     if match is None:
         raise _error("PLAN_NOT_APPROVABLE", "Transfer is not an eligible current suggestion.")
@@ -469,7 +469,7 @@ async def receive(
         ).with_for_update()
     )).all()
     if not lines or {(i.global_product_id, i.qty) for i in inbound} != {
-        (l.global_product_id, l.qty) for l in lines
+        (l.global_product_id, l.qty) for line in lines
     }:
         raise _error("RESOURCE_CONFLICT", "Transfer inbound rows are missing or inconsistent.")
     for row in inbound:
