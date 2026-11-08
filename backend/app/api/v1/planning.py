@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.services import approval_service, planning_service, reservation_service
+from app.services import approval_service, planning_service, reservation_service, transfer_service
 
 router = APIRouter(tags=["planning"])
 
@@ -126,6 +126,5 @@ async def list_date_negotiations(order_id: int, user: AuthUser, db: DbSession) -
 
 @router.get("/orders/{order_id}/transfer-suggestions")
 async def transfer_suggestions(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """No synthetic warehouse-to-warehouse distances; T18 owns real suggestions."""
-    await planning_service.list_runs(order_id, user, session=db)
-    return {"items": []}
+    """Only verified market stock/route data; T18 owns the suggestion lifecycle."""
+    return await transfer_service.suggestions(db, user, order_id)
