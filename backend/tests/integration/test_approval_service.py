@@ -42,7 +42,7 @@ def db(empty_db: str) -> Iterator[str]:
         "INSERT INTO ops.stock_snapshot (warehouse_id,global_product_id,on_hand,wms_reserved,as_of) "
         "VALUES (1,1,40,0,'2026-11-04T09:05Z')",
         "INSERT INTO hr.warehouse_staff (employee_id,role,counts_in_capacity) "
-        "VALUES (1,'worker',true)",
+        "VALUES (1,'operator',true)",
         "INSERT INTO hr.driver_staff (employee_id,home_warehouse_id,licence_class,licence_expires_on) "
         "VALUES (1,1,'C','2027-01-01')",
         "INSERT INTO hr.shift_template "
