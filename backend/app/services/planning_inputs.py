@@ -41,18 +41,19 @@ from app.domain.models.ref import (
 )
 from app.engine.types import (
     DayCapacity,
+    DateModeT,
     DriverCtx,
     HandlingGroupCtx,
     LineCtx,
     OrderCtx,
     PrepUnitT,
+    ProductCtx,
     ShiftCapacity,
     VehicleCtx,
     WarehouseCtx,
 )
 from app.services.hr_service import day_capacities
 from app.services.planning_context import available_stock, confirmed_inbound, fleet_context, route_info
-from app.services.planning_service import engine_config
 
 
 @dataclass(frozen=True)
@@ -236,8 +237,11 @@ async def official_driver_context(
     ).all()
     today = now.astimezone(zone).date()
     intervals: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
+    allowed_days = {d.employee_id: d.available_days for d in drivers}
     for shift, template, status in records:
         if not _attendance_ok(status, shift.work_date, today):
+            continue
+        if shift.work_date not in allowed_days.get(shift.employee_id, frozenset()):
             continue
         times = _shift_times(shift, template)
         if times is None:
@@ -306,6 +310,8 @@ async def load_inputs(
             )
         )
     ).all()
+    from app.services.planning_service import engine_config
+
     ecfg = engine_config(cfg, holidays)
     lines = (
         await session.scalars(
@@ -350,7 +356,7 @@ async def load_inputs(
             raise _problem("Handling group or required special flag is missing.")
         order_lines.append(
             LineCtx(
-                product=__import__("app.engine.types", fromlist=["ProductCtx"]).ProductCtx(
+                product=ProductCtx(
                     global_product_id=global_product.id,
                     group=HandlingGroupCtx(
                         group.code,
@@ -386,7 +392,7 @@ async def load_inputs(
         version=order.version,
         lat=float(order.delivery_lat),
         lon=float(order.delivery_lon),
-        date_mode=cast("DateModeT", order.date_mode),
+        date_mode=cast(DateModeT, order.date_mode),
         date_from=order.date_from,
         date_to=date_to,
         window=(order.window_start, order.window_end)
