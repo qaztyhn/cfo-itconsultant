@@ -54,10 +54,10 @@ def main() -> int:
     actual = getattr(importlib.import_module(module), name).openapi()
     if actual != baseline:
         print(
-            "FAIL: generated OpenAPI differs from the approved artifact; review contract changes"
+            "FAIL: generated OpenAPI differs from the baseline artifact; review contract changes"
         )
         return 1
-    print("PASS: generated OpenAPI matches the approved artifact")
+    print("PASS: generated OpenAPI matches the baseline artifact (review approval is separate)")
     return 0
 
 

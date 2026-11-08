@@ -1,5 +1,1641 @@
-# Hợp đồng nguồn dùng chung mọi nước (06 mục 16; US-SRC-02). Sinh/đồng bộ từ source_system/app/api.py.
-# Contract test chạy với instance SE và một instance giả khác. TODO(#M1-source-contract)
+# Source D1 OpenAPI candidate regenerated from actual implemented routes; review required.
 openapi: 3.1.0
-info: {title: CFO Source System (mock), version: 0.1.0}
-paths: {}
+info:
+  title: CFO Source System (mock)
+  version: 0.1.0
+paths:
+  /api/v1/orders:
+    get:
+      summary: List Orders Endpoint
+      description: Đơn kèm dòng, bản chụp địa chỉ/liên hệ, version, updated_at (06
+        mục 16; SRC-Q1/Q6/Q7).
+      operationId: list_orders_endpoint_api_v1_orders_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - DRAFT
+          - VALIDATED
+          - SUBMITTED_FOR_PLANNING
+          - CANCELLED
+          type: string
+          default: SUBMITTED_FOR_PLANNING
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      summary: Create Order
+      description: 'POS: tạo đơn nháp (DRAFT).'
+      operationId: create_order_api_v1_orders_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: idempotency-key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOut'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Conflict
+  /api/v1/customers:
+    get:
+      summary: List Customers
+      description: Khách (D1-A).
+      operationId: list_customers_api_v1_customers_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/products:
+    get:
+      summary: List Products
+      description: Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân
+        nặng, thể tích) (D1-A).
+      operationId: list_products_api_v1_products_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/stock:
+    get:
+      summary: Stock Snapshot
+      description: Latest complete published batch; 503 STOCK_UNAVAILABLE when none
+        (DEC-SRC-Q9-ERROR-001).
+      operationId: stock_snapshot_api_v1_stock_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockSnapshot'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: 'STOCK_UNAVAILABLE: no complete published batch (never zero
+            stock).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      security:
+      - APIKeyHeader: []
+  /api/v1/inbound:
+    get:
+      summary: Inbound
+      description: 'Hàng nhập: inbound_ref, warehouse_code, sku, qty, eta_date, confirmed,
+        received (D1-A).'
+      operationId: inbound_api_v1_inbound_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/fleet/calendar:
+    get:
+      summary: Fleet Calendar
+      description: Khoảng bận của xe giao nửa mở [from, to) (D1-A).
+      operationId: fleet_calendar_api_v1_fleet_calendar_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: From
+      - name: to
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: To
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/orders/{order_id}:
+    put:
+      summary: Update Order
+      description: 'POS: sửa đơn, tăng version.'
+      operationId: update_order_api_v1_orders__order_id__put
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderEditIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOut'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Conflict
+  /api/v1/orders/{order_id}/validate:
+    post:
+      summary: Validate Order
+      description: 'Sales Validation: khách, địa chỉ/tọa độ, dòng hàng, ngày và khung
+        giờ (US-SRC-03).'
+      operationId: validate_order_api_v1_orders__order_id__validate_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOut'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Conflict
+  /api/v1/orders/{order_id}/submit:
+    post:
+      summary: Submit Order
+      description: Chuyển SUBMITTED_FOR_PLANNING — chỉ sau validate thành công (US-ORD-01
+        AC4).
+      operationId: submit_order_api_v1_orders__order_id__submit_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOut'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Conflict
+  /api/v1/orders/{order_id}/cancel:
+    post:
+      summary: Cancel Order
+      description: Hủy đơn ở nguồn.
+      operationId: cancel_order_api_v1_orders__order_id__cancel_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOut'
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Not Found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: Conflict
+  /api/v1/addresses:
+    get:
+      summary: Addresses
+      description: Địa chỉ seed sẵn kèm tọa độ (thay geocoding thật); lọc theo khách
+        / văn bản địa chỉ (D1-A).
+      operationId: addresses_api_v1_addresses_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: customer_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Id
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressPage'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/health:
+    get:
+      summary: Health
+      description: Public health probe; do not report healthy when the database is
+        unavailable.
+      operationId: health_api_v1_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+components:
+  schemas:
+    AddressOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        customer_id:
+          type: string
+          title: Customer Id
+        address:
+          type: string
+          title: Address
+        lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lat
+        lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lon
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        receiving_hours:
+          anyOf:
+          - additionalProperties:
+              items:
+                items:
+                  type: string
+                type: array
+              type: array
+            type: object
+          - type: 'null'
+          title: Receiving Hours
+      type: object
+      required:
+      - id
+      - customer_id
+      - address
+      - lat
+      - lon
+      - updated_at
+      title: AddressOut
+    AddressPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AddressOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: AddressPage
+    CancelIn:
+      properties:
+        expected_version:
+          type: integer
+          minimum: 1.0
+          title: Expected Version
+        reason_code:
+          type: string
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          title: Reason Code
+        reason_text:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Reason Text
+      additionalProperties: false
+      type: object
+      required:
+      - expected_version
+      - reason_code
+      title: CancelIn
+    Contact:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+      type: object
+      required:
+      - name
+      - phone
+      - email
+      title: Contact
+    ContactIn:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+      additionalProperties: false
+      type: object
+      title: ContactIn
+    CustomerOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+        type:
+          type: string
+          title: Type
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - phone
+      - type
+      - updated_at
+      title: CustomerOut
+    CustomerPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CustomerOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: CustomerPage
+    ErrorBody:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+        details:
+          $ref: '#/components/schemas/ErrorDetails'
+        correlation_id:
+          type: string
+          format: uuid
+          title: Correlation Id
+      additionalProperties: false
+      type: object
+      required:
+      - code
+      - message
+      - details
+      - correlation_id
+      title: ErrorBody
+    ErrorDetails:
+      properties:
+        errors:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ErrorItem'
+            type: array
+          - type: 'null'
+          title: Errors
+      type: object
+      title: ErrorDetails
+    ErrorEnvelope:
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+      type: object
+      required:
+      - error
+      title: ErrorEnvelope
+    ErrorItem:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Loc
+        type:
+          type: string
+          title: Type
+        msg:
+          type: string
+          title: Msg
+      type: object
+      required:
+      - loc
+      - type
+      - msg
+      title: ErrorItem
+    FleetPage:
+      properties:
+        items:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: FleetPage
+    HealthOut:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - error
+          title: Status
+        db:
+          type: string
+          enum:
+          - ok
+          - unavailable
+          title: Db
+      type: object
+      required:
+      - status
+      - db
+      title: HealthOut
+    InboundOut:
+      properties:
+        inbound_ref:
+          type: string
+          title: Inbound Ref
+        warehouse_code:
+          type: string
+          title: Warehouse Code
+        sku:
+          type: string
+          title: Sku
+        qty:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Qty
+        eta_date:
+          type: string
+          format: date
+          title: Eta Date
+        confirmed:
+          type: boolean
+          title: Confirmed
+        received:
+          type: boolean
+          title: Received
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - inbound_ref
+      - warehouse_code
+      - sku
+      - qty
+      - eta_date
+      - confirmed
+      - received
+      - updated_at
+      title: InboundOut
+    InboundPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InboundOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: InboundPage
+    LineIn:
+      properties:
+        line_no:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Line No
+        sku:
+          type: string
+          minLength: 1
+          title: Sku
+        qty:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Qty
+        unit_price:
+          type: string
+          pattern: ^[0-9]+\.[0-9]{2}$
+          title: Unit Price
+      additionalProperties: false
+      type: object
+      required:
+      - line_no
+      - sku
+      - qty
+      - unit_price
+      title: LineIn
+    OrderEditIn:
+      properties:
+        customer_id:
+          type: string
+          minLength: 1
+          title: Customer Id
+        address_id:
+          type: string
+          minLength: 1
+          title: Address Id
+        store_code:
+          type: string
+          minLength: 1
+          title: Store Code
+        date_mode:
+          type: string
+          enum:
+          - exact
+          - range
+          - latest
+          title: Date Mode
+        sales_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sales Code
+        contact:
+          anyOf:
+          - $ref: '#/components/schemas/ContactIn'
+          - type: 'null'
+        date_from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date From
+        date_to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date To
+        window_start:
+          anyOf:
+          - type: string
+            pattern: ^[0-2][0-9]:[0-5][0-9]$
+          - type: 'null'
+          title: Window Start
+        window_end:
+          anyOf:
+          - type: string
+            pattern: ^[0-2][0-9]:[0-5][0-9]$
+          - type: 'null'
+          title: Window End
+        receiving_restrictions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Receiving Restrictions
+        special_requirements:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Special Requirements
+        lines:
+          items:
+            $ref: '#/components/schemas/LineIn'
+          type: array
+          title: Lines
+        expected_version:
+          type: integer
+          minimum: 1.0
+          title: Expected Version
+        refresh_address:
+          type: boolean
+          title: Refresh Address
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - customer_id
+      - address_id
+      - store_code
+      - date_mode
+      - expected_version
+      title: OrderEditIn
+    OrderIn:
+      properties:
+        customer_id:
+          type: string
+          minLength: 1
+          title: Customer Id
+        address_id:
+          type: string
+          minLength: 1
+          title: Address Id
+        store_code:
+          type: string
+          minLength: 1
+          title: Store Code
+        date_mode:
+          type: string
+          enum:
+          - exact
+          - range
+          - latest
+          title: Date Mode
+        sales_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sales Code
+        contact:
+          anyOf:
+          - $ref: '#/components/schemas/ContactIn'
+          - type: 'null'
+        date_from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date From
+        date_to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date To
+        window_start:
+          anyOf:
+          - type: string
+            pattern: ^[0-2][0-9]:[0-5][0-9]$
+          - type: 'null'
+          title: Window Start
+        window_end:
+          anyOf:
+          - type: string
+            pattern: ^[0-2][0-9]:[0-5][0-9]$
+          - type: 'null'
+          title: Window End
+        receiving_restrictions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Receiving Restrictions
+        special_requirements:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Special Requirements
+        lines:
+          items:
+            $ref: '#/components/schemas/LineIn'
+          type: array
+          title: Lines
+      additionalProperties: false
+      type: object
+      required:
+      - customer_id
+      - address_id
+      - store_code
+      - date_mode
+      title: OrderIn
+    OrderLineOut:
+      properties:
+        line_no:
+          type: integer
+          title: Line No
+        sku:
+          type: string
+          title: Sku
+        qty:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Qty
+        unit_price:
+          type: string
+          title: Unit Price
+      type: object
+      required:
+      - line_no
+      - sku
+      - qty
+      - unit_price
+      title: OrderLineOut
+    OrderOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        version:
+          type: integer
+          title: Version
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - VALIDATED
+          - SUBMITTED_FOR_PLANNING
+          - CANCELLED
+          title: Status
+        customer_id:
+          type: string
+          title: Customer Id
+        address_id:
+          type: string
+          title: Address Id
+        address:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Address
+        lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lat
+        lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lon
+        contact:
+          $ref: '#/components/schemas/Contact'
+        date_mode:
+          type: string
+          title: Date Mode
+        date_from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date From
+        date_to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date To
+        window_start:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Window Start
+        window_end:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Window End
+        receiving_restrictions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Receiving Restrictions
+        special_requirements:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Special Requirements
+        sales_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sales Code
+        store_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Store Code
+        lines:
+          items:
+            $ref: '#/components/schemas/OrderLineOut'
+          type: array
+          title: Lines
+        cancel_reason:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Cancel Reason
+        cancelled_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Cancelled At
+      type: object
+      required:
+      - id
+      - version
+      - updated_at
+      - status
+      - customer_id
+      - address_id
+      - address
+      - lat
+      - lon
+      - contact
+      - date_mode
+      - date_from
+      - date_to
+      - window_start
+      - window_end
+      - receiving_restrictions
+      - special_requirements
+      - sales_code
+      - store_code
+      - lines
+      title: OrderOut
+    OrderPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OrderOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: OrderPage
+    ProductOut:
+      properties:
+        sku:
+          type: string
+          title: Sku
+        name:
+          type: string
+          title: Name
+        category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+        gtin:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gtin
+        sale_unit:
+          type: string
+          title: Sale Unit
+        units_to_base:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Units To Base
+        unit_price:
+          type: string
+          title: Unit Price
+        weight_kg:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Weight Kg
+        volume_m3:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Volume M3
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - sku
+      - name
+      - category
+      - gtin
+      - sale_unit
+      - units_to_base
+      - unit_price
+      - weight_kg
+      - volume_m3
+      - updated_at
+      title: ProductOut
+    ProductPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ProductOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: ProductPage
+    StockItem:
+      properties:
+        warehouse_code:
+          type: string
+          minLength: 1
+          title: Warehouse Code
+        sku:
+          type: string
+          minLength: 1
+          title: Sku
+        on_hand:
+          anyOf:
+          - type: integer
+          - type: number
+          title: On Hand
+        reserved:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Reserved
+      additionalProperties: false
+      type: object
+      required:
+      - warehouse_code
+      - sku
+      - on_hand
+      - reserved
+      title: StockItem
+      description: One inventory row in the SKU's declared stock unit; unknown fields
+        (e.g. a pool id) are refused.
+    StockSnapshot:
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          title: As Of
+        batch_id:
+          type: integer
+          title: Batch Id
+        item_count:
+          type: integer
+          title: Item Count
+        items:
+          items:
+            $ref: '#/components/schemas/StockItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - as_of
+      - batch_id
+      - item_count
+      - items
+      title: StockSnapshot
+      description: '`GET /stock` 200 body: the latest complete published batch.'
+  securitySchemes:
+    APIKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
