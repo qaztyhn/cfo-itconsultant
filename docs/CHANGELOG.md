@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [05 §10 / 06 §16 — bản chụp đơn nguồn và GET /orders] — 2026-11-08 — theo DEC-SRC-001, chờ review
+
+- `05` §10: `src_order` thêm 8 cột bản chụp (SRC-Q1), nullable; nâng cấp cộng thêm, giữ dữ liệu.
+- `06` §16: ghi rõ `GET /orders` — phong bì `{items,page,page_size,total}`, `page_size` mặc định 50 tối đa 500, `updated_since` bao gồm (`>=`), thứ tự `(updated_at, id)`, biểu diễn đơn, lỗi 422 không phản chiếu giá trị.
+- Không đổi mã lỗi/route/enum; không thêm migration CFO. **Chưa** có: ghi đơn, validate/submit/cancel, các danh sách khác, OpenAPI baseline.
+
+
 ## [DEC-SRC-001 — M1 source contract SRC-Q1–Q10] — 2026-11-08 — owner approved direction, docs-only
 
 - Chủ dự án phê duyệt hướng đề xuất tại `docs/proposals/M1_SOURCE_CONTRACT.md`: (Q1–Q3) snapshot địa chỉ/liên hệ và request/response đơn; (Q4–Q5) validation lỗi 422 + lifecycle; (Q6–Q7) danh sách nguồn phân trang mặc định **50**, tối đa **500** và đồng bộ gia tăng theo thứ tự ổn định; (Q8) bổ sung lịch nguồn/giờ nhận theo địa chỉ; (Q9) stock snapshot batch có `as_of` kể cả rỗng; (Q10) normalize SKU/units, tránh cộng hoặc ghi đè tồn kho sai.

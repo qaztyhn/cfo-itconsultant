@@ -120,3 +120,14 @@ Independent slice already implemented on `feat/m1-source-auth`: X-API-Key
 protection on business routes (health public), instance-local secret configuration,
 credential-free auth errors and OpenAPI security declarations. This is only
 the authentication portion of US-SRC-02, not the full source contract.
+
+## Implementation status (2026-11-08, after DEC-SRC-001)
+
+Implemented in `feat/dev2-source-orders-read`: SRC-Q1 snapshot columns on `src_order` (additive upgrade) and the read
+side of `GET /orders` with SRC-Q3 representation, SRC-Q6 envelope/limits and SRC-Q7 inclusive incremental paging, plus
+the standard 422 error body. Contract text is in `05` §10 and `06` §16 for review.
+
+Still open and **not implemented** (stubs returning 500): order writes and validate/submit/cancel (Q2, Q4, Q5, Q8
+details), pagination of customers/products/inbound/fleet/addresses (endpoint inventory), stock batch storage (Q9),
+local/global SKU normalization (Q10), cancelled-order visibility to CFO, OpenAPI baseline and the two-instance contract
+test. The Source contract and E2E remain incomplete.

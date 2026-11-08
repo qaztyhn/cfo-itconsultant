@@ -10,6 +10,17 @@ from app.config import Settings
 from app.db import create_engine
 from app.models import Base
 
+ORDER_SNAPSHOT_COLUMNS = (
+    ("address", "text"),
+    ("lat", "numeric"),
+    ("lon", "numeric"),
+    ("contact_name", "text"),
+    ("contact_phone", "text"),
+    ("contact_email", "text"),
+    ("receiving_restrictions", "text"),
+    ("special_requirements", "text"),
+)
+
 
 async def initialize(engine: AsyncEngine, schema: str) -> None:
     # Validate identifiers even when called directly by development tools/tests.
@@ -18,6 +29,12 @@ async def initialize(engine: AsyncEngine, schema: str) -> None:
     async with engine.begin() as connection:
         await connection.execute(CreateSchema(schema, if_not_exists=True))
         await connection.run_sync(Base.metadata.create_all)
+        # create_all never alters existing tables: add the SRC-Q1 snapshot columns to older instances
+        # (additive, keeps data, safe to repeat).
+        for column, kind in ORDER_SNAPSHOT_COLUMNS:
+            await connection.execute(
+                text(f"ALTER TABLE {quoted_schema}.src_order ADD COLUMN IF NOT EXISTS {column} {kind}")
+            )
         await connection.execute(text(f"""
             CREATE OR REPLACE FUNCTION {quoted_schema}.set_updated_at()
             RETURNS trigger LANGUAGE plpgsql AS $$

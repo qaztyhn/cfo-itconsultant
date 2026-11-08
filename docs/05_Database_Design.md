@@ -915,7 +915,7 @@ Dùng chung cho mọi nước (cùng mã nguồn, dữ liệu seed riêng). CFO 
 | `src_stock` | warehouse_code, sku, on_hand, reserved, as_of |
 | `src_inbound` | inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received |
 | `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind |
-| `src_order`, `src_order_line` | id, version, customer_id, address_id, date_mode, date_from, date_to, window_start, window_end, sales_code, store_code, status (`DRAFT`,`VALIDATED`,`SUBMITTED_FOR_PLANNING`,`CANCELLED`), updated_at |
+| `src_order`, `src_order_line` | id, version, customer_id, address_id, date_mode, date_from, date_to, window_start, window_end, sales_code, store_code, status (`DRAFT`,`VALIDATED`,`SUBMITTED_FOR_PLANNING`,`CANCELLED`), updated_at; **bản chụp tại thời điểm ghi đơn (SRC-Q1, DEC-SRC-001):** address, lat, lon, contact_name, contact_phone, contact_email, receiving_restrictions, special_requirements — đều nullable ở DB (nâng cấp cộng thêm `ADD COLUMN IF NOT EXISTS`, giữ dữ liệu cũ); không bị ghi đè khi hồ sơ khách/địa chỉ đổi |
 
 Quy tắc: đơn chỉ vào CFO khi `status = SUBMITTED_FOR_PLANNING` (sau bước "Sales Validation" của form POS giả lập). Mọi bảng có `updated_at` để CFO kéo theo `updated_since`.
 
