@@ -58,7 +58,7 @@ class CustomerDTO:
 class ProductDTO:
     sku: str
     name: str
-    category: str
+    category: str | None
     gtin: str | None
     sale_unit: str
     units_to_base: Decimal
