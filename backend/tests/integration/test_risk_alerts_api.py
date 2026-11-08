@@ -145,4 +145,23 @@ def test_US_RSK_03_AC2_AC3_concurrent_raise_keeps_single_open_record(alerts: Api
 def test_US_RSK_03_AC3_resolved_key_can_recur(alerts: Api) -> None:
     execute(alerts.dsn, "UPDATE ops.alert SET resolved_at='2026-11-10T09:00Z' WHERE id=1")
     assert alerts.get("/alerts", DISPATCHER, resolved=True).json()["total"] == 1
-    # Other service-level integration test covers reopen and concurrent insert.
+    async def reopen() -> int | None:
+        engine = create_async_engine(async_url(alerts.dsn), poolclass=NullPool)
+        try:
+            async with async_sessionmaker(engine)() as session, session.begin():
+                return await raise_alert(
+                    session,
+                    market_id=1,
+                    type_="RISK_ORANGE",
+                    level="warning",
+                    message="Recurrent risk",
+                    dedupe_key="risk:1:orange",
+                    target_roles=("dispatcher",),
+                    order_id=1,
+                )
+        finally:
+            await engine.dispose()
+
+    second = asyncio.run(reopen())
+    assert second is not None and second != 1
+    assert alerts.get("/alerts", DISPATCHER, resolved=False, type="RISK_ORANGE").json()["total"] == 1
