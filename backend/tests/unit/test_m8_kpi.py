@@ -1,12 +1,13 @@
 """M8 KPI deterministic date, missing-evidence and weighted capacity tests."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.core.errors import DomainError
-from app.services.kpi_service import METRICS, Measure, Period
+from app.services.kpi_service import METRICS, Measure, Period, _day
 
 
 def test_US_KPI_01_AC1_period_is_inclusive_at_366_days() -> None:
@@ -46,3 +47,11 @@ def test_US_KPI_01_AC1_all_contract_metrics_have_unique_keys() -> None:
     assert "km_per_delivery" in METRICS
     assert "labour_hours_per_delivery" in METRICS
     assert "manual_plan_count" in METRICS
+
+
+def test_US_KPI_01_AC1_stockholm_dst_repeated_hour_is_same_local_day() -> None:
+    stockholm = ZoneInfo("Europe/Stockholm")
+    first = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)
+    second = datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
+    assert first.astimezone(stockholm).hour == second.astimezone(stockholm).hour == 2
+    assert _day(first, stockholm) == _day(second, stockholm) == date(2026, 10, 25)
