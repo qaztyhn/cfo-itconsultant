@@ -3,6 +3,7 @@
 All writes join the request transaction. An unverified source snapshot/route never
 turns into a transfer suggestion. No order, stock snapshot or source-system writes.
 """
+
 import hashlib
 import json
 from collections import defaultdict
@@ -80,9 +81,7 @@ async def _order(session: AsyncSession, actor: object, order_id: int) -> tuple[C
     _can_dispatch(actor)
     market = await _market(session, actor)
     order = await session.scalar(
-        select(CustomerOrder).where(
-            CustomerOrder.id == order_id, CustomerOrder.market_id == market.id
-        )
+        select(CustomerOrder).where(CustomerOrder.id == order_id, CustomerOrder.market_id == market.id)
     )
     if order is None:
         raise _error("NOT_FOUND", "Order not found.")
@@ -104,9 +103,7 @@ async def _transfer(
     if transfer is None:
         raise _error("NOT_FOUND", "Transfer not found.")
     dest = await session.scalar(
-        select(Location).where(
-            Location.id == transfer.to_warehouse_id, Location.market_id == market.id
-        )
+        select(Location).where(Location.id == transfer.to_warehouse_id, Location.market_id == market.id)
     )
     if dest is None:
         raise _error("NOT_FOUND", "Transfer not found.")
@@ -135,9 +132,7 @@ async def _manager(session: AsyncSession, actor: object, warehouse_id: int, mark
 
 
 def _digest(endpoint: str, body: dict[str, object]) -> str:
-    raw = json.dumps(
-        {"endpoint": endpoint, "body": body}, sort_keys=True, separators=(",", ":"), default=str
-    )
+    raw = json.dumps({"endpoint": endpoint, "body": body}, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -205,10 +200,16 @@ async def _arrival(session: AsyncSession, market: Market, lead_days: int) -> dat
         raise _error("PLAN_NOT_APPROVABLE", "Market working-day calendar unavailable.")
     today = _today(market)
     holidays = set(
-        (await session.execute(select(MarketHoliday.holiday_date).where(
-            MarketHoliday.market_id == market.id,
-            MarketHoliday.holiday_date.between(today, today + timedelta(days=365)),
-        ))).scalars().all()
+        (
+            await session.execute(
+                select(MarketHoliday.holiday_date).where(
+                    MarketHoliday.market_id == market.id,
+                    MarketHoliday.holiday_date.between(today, today + timedelta(days=365)),
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
     return _working_day_arrival(today, lead_days, set(days), holidays)
 
@@ -219,8 +220,10 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
     if order.status != "NO_FEASIBLE_DATE":
         return {"items": []}
     last = await session.scalar(
-        select(PlanningRun).where(PlanningRun.order_id == order.id)
-        .order_by(PlanningRun.run_no.desc()).limit(1)
+        select(PlanningRun)
+        .where(PlanningRun.order_id == order.id)
+        .order_by(PlanningRun.run_no.desc())
+        .limit(1)
     )
     if last is None or last.failed_check != "stock":
         return {"items": []}
@@ -231,30 +234,39 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
     for line in lines:
         assert line.global_product_id is not None and line.qty_base is not None
         need[line.global_product_id] += line.qty_base
-    warehouses = (await session.scalars(
-        select(Location).where(
-            Location.market_id == market.id,
-            Location.type == "warehouse",
-            Location.is_active.is_(True),
-        ).order_by(Location.id)
-    )).all()
+    warehouses = (
+        await session.scalars(
+            select(Location)
+            .where(
+                Location.market_id == market.id,
+                Location.type == "warehouse",
+                Location.is_active.is_(True),
+            )
+            .order_by(Location.id)
+        )
+    ).all()
     if len(warehouses) < 2:
         return {"items": []}
     wh_ids = [w.id for w in warehouses]
     ids = sorted(need)
-    snapshots = (await session.scalars(
-        select(StockSnapshot).where(
-            StockSnapshot.warehouse_id.in_(wh_ids),
-            StockSnapshot.global_product_id.in_(ids),
+    snapshots = (
+        await session.scalars(
+            select(StockSnapshot).where(
+                StockSnapshot.warehouse_id.in_(wh_ids),
+                StockSnapshot.global_product_id.in_(ids),
+            )
         )
-    )).all()
+    ).all()
     # A missing/stale pair is unknown, not zero stock or an eligible source.
     cfg = market.config or {}
     stale_min = cfg.get("stale_stock_min", 15)
     if type(stale_min) is not int or stale_min <= 0:
         raise _error("PLAN_NOT_APPROVABLE", "Stock freshness configuration missing.")
-    verified = {(s.warehouse_id, s.global_product_id) for s in snapshots
-                if s.as_of >= clock.now() - timedelta(minutes=stale_min)}
+    verified = {
+        (s.warehouse_id, s.global_product_id)
+        for s in snapshots
+        if s.as_of >= clock.now() - timedelta(minutes=stale_min)
+    }
     if any((w, p) not in verified for w in wh_ids for p in ids):
         raise _error("PLAN_NOT_APPROVABLE", "Verified market stock snapshots are incomplete or stale.")
     stock = await available_stock(session, wh_ids, ids, now=clock.now(), exclude_order_id=order.id)
@@ -263,9 +275,7 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
     default_lead = cfg.get("transfer_lead_days_default", 1)
     if type(default_lead) is not int or default_lead < 1:
         raise _error("PLAN_NOT_APPROVABLE", "Transfer lead-time configuration unavailable.")
-    paths = (await session.scalars(select(RouteMatrix).where(
-        RouteMatrix.warehouse_id.in_(wh_ids)
-    ))).all()
+    paths = (await session.scalars(select(RouteMatrix).where(RouteMatrix.warehouse_id.in_(wh_ids)))).all()
     routes = {(v.warehouse_id, v.to_lat, v.to_lon): v for v in paths}
     allow_fallback = (cfg.get("routing") or {}).get("allow_fallback", False)
     candidates: list[dict[str, object]] = []
@@ -284,39 +294,64 @@ async def suggestions(session: AsyncSession, actor: object, order_id: int) -> di
             if path is None or (path.provider != "ors" and not allow_fallback):
                 continue
             distances[(source.id, dest.id)] = path.distance_km
-            sources.append(WarehouseCtx(
-                id=source.id, name=source.name, cutoff=source.loading_cutoff_time or time(0),
-                efficiency=source.efficiency_factor, stock_available=stock[source.id],
-                inbound=(), capacity={}, vehicles=(), drivers=(), route=None,
-            ))
+            sources.append(
+                WarehouseCtx(
+                    id=source.id,
+                    name=source.name,
+                    cutoff=source.loading_cutoff_time or time(0),
+                    efficiency=source.efficiency_factor,
+                    stock_available=stock[source.id],
+                    inbound=(),
+                    capacity={},
+                    vehicles=(),
+                    drivers=(),
+                    route=None,
+                )
+            )
         if not sources:
             continue
         target = WarehouseCtx(
-            id=dest.id, name=dest.name, cutoff=dest.loading_cutoff_time or time(0),
-            efficiency=dest.efficiency_factor, stock_available=stock[dest.id],
-            inbound=(), capacity={}, vehicles=(), drivers=(), route=None,
+            id=dest.id,
+            name=dest.name,
+            cutoff=dest.loading_cutoff_time or time(0),
+            efficiency=dest.efficiency_factor,
+            stock_available=stock[dest.id],
+            inbound=(),
+            capacity={},
+            vehicles=(),
+            drivers=(),
+            route=None,
         )
         for choice in suggest_transfers(target, shortage, sources, {}, distances, default_lead):
-            candidates.append({
-                "from_warehouse_id": choice.from_warehouse_id,
-                "to_warehouse_id": choice.to_warehouse_id,
-                "lead_days": choice.lead_days,
-                "distance_km": str(choice.distance_km),
-                "route_provenance": routes[(choice.from_warehouse_id, dest.lat, dest.lon)].provider,
-                "lines": [{"global_product_id": p, "qty": str(q)} for p, q in choice.lines],
-            })
-    candidates.sort(key=lambda c: (c["lead_days"], Decimal(str(c["distance_km"])),
-                                   c["from_warehouse_id"], c["to_warehouse_id"]))
+            candidates.append(
+                {
+                    "from_warehouse_id": choice.from_warehouse_id,
+                    "to_warehouse_id": choice.to_warehouse_id,
+                    "lead_days": choice.lead_days,
+                    "distance_km": str(choice.distance_km),
+                    "route_provenance": routes[(choice.from_warehouse_id, dest.lat, dest.lon)].provider,
+                    "lines": [{"global_product_id": p, "qty": str(q)} for p, q in choice.lines],
+                }
+            )
+    candidates.sort(
+        key=lambda c: (
+            c["lead_days"],
+            Decimal(str(c["distance_km"])),
+            c["from_warehouse_id"],
+            c["to_warehouse_id"],
+        )
+    )
     return {"items": candidates[:3]}
 
 
 async def approve(
-    session: AsyncSession, actor: object, order_id: int,
-    payload: dict[str, object], idempotency_key: str
+    session: AsyncSession, actor: object, order_id: int, payload: dict[str, object], idempotency_key: str
 ) -> dict[str, object]:
     """Approve exactly one freshly recomputed candidate, not arbitrary client stock."""
     order, market = await _order(session, actor, order_id)
-    record, replay = await _claim(session, actor, f"POST /orders/{order_id}/transfers", idempotency_key, payload)
+    record, replay = await _claim(
+        session, actor, f"POST /orders/{order_id}/transfers", idempotency_key, payload
+    )
     if replay is not None:
         return replay
     # Serialize competing approvals for this order before reading current available stock.
@@ -324,53 +359,91 @@ async def approve(
     available = (await suggestions(session, actor, order_id))["items"]
     fields = ("from_warehouse_id", "to_warehouse_id", "lead_days", "lines")
     wanted = {k: payload.get(k) for k in fields}
-    match = next((c for c in available if
-                  c["from_warehouse_id"] == wanted["from_warehouse_id"]
-                  and c["to_warehouse_id"] == wanted["to_warehouse_id"]
-                  and c["lead_days"] == wanted["lead_days"]
-                  and sorted((int(line["global_product_id"]), Decimal(str(line["qty"])))
-                             for line in c["lines"]) ==
-                      sorted((int(line["global_product_id"]), Decimal(str(line["qty"])))
-                             for line in wanted["lines"] if isinstance(line, dict))
-                  ), None) if isinstance(wanted["lines"], list) else None
+    match = (
+        next(
+            (
+                c
+                for c in available
+                if c["from_warehouse_id"] == wanted["from_warehouse_id"]
+                and c["to_warehouse_id"] == wanted["to_warehouse_id"]
+                and c["lead_days"] == wanted["lead_days"]
+                and sorted((int(line["global_product_id"]), Decimal(str(line["qty"]))) for line in c["lines"])
+                == sorted(
+                    (int(line["global_product_id"]), Decimal(str(line["qty"])))
+                    for line in wanted["lines"]
+                    if isinstance(line, dict)
+                )
+            ),
+            None,
+        )
+        if isinstance(wanted["lines"], list)
+        else None
+    )
     if match is None:
         raise _error("PLAN_NOT_APPROVABLE", "Transfer is not an eligible current suggestion.")
     lead = int(match["lead_days"])
     arrival = await _arrival(session, market, lead)
     transfer = StockTransfer(
-        order_id=order.id, from_warehouse_id=int(match["from_warehouse_id"]),
-        to_warehouse_id=int(match["to_warehouse_id"]), status="approved",
-        lead_days=lead, expected_arrival_date=arrival,
-        suggestion={"source": "rule_based", "route_provenance": match["route_provenance"],
-                    "distance_km": match["distance_km"], "order_version": order.version},
-        approved_by=_employee_id(actor), approved_at=clock.now(),
+        order_id=order.id,
+        from_warehouse_id=int(match["from_warehouse_id"]),
+        to_warehouse_id=int(match["to_warehouse_id"]),
+        status="approved",
+        lead_days=lead,
+        expected_arrival_date=arrival,
+        suggestion={
+            "source": "rule_based",
+            "route_provenance": match["route_provenance"],
+            "distance_km": match["distance_km"],
+            "order_version": order.version,
+        },
+        approved_by=_employee_id(actor),
+        approved_at=clock.now(),
     )
     session.add(transfer)
     await session.flush()
     for line in match["lines"]:
-        session.add(StockTransferLine(
-            transfer_id=transfer.id, global_product_id=int(line["global_product_id"]),
-            qty=Decimal(str(line["qty"])),
-        ))
+        session.add(
+            StockTransferLine(
+                transfer_id=transfer.id,
+                global_product_id=int(line["global_product_id"]),
+                qty=Decimal(str(line["qty"])),
+            )
+        )
     await session.flush()
-    await record_decision(session, Action.TRANSFER_APPROVED, "stock_transfer", str(transfer.id),
-                          order_id=order.id, after=_out(transfer),
-                          actor_user_id=_user_id(actor), actor_employee_id=_employee_id(actor),
-                          actor_role="dispatcher")
+    await record_decision(
+        session,
+        Action.TRANSFER_APPROVED,
+        "stock_transfer",
+        str(transfer.id),
+        order_id=order.id,
+        after=_out(transfer),
+        actor_user_id=_user_id(actor),
+        actor_employee_id=_employee_id(actor),
+        actor_role="dispatcher",
+    )
     return _save(record, _out(transfer))
 
 
 async def list_transfers(
-    session: AsyncSession, actor: object, *,
-    status: str | None = None, warehouse_id: int | None = None, page: int = 1, page_size: int = 50
+    session: AsyncSession,
+    actor: object,
+    *,
+    status: str | None = None,
+    warehouse_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
 ) -> dict[str, object]:
     roles = _roles(actor)
     if "dispatcher" not in roles and "warehouse" not in roles:
         raise _error("FORBIDDEN", "Transfer access requires dispatcher or warehouse role.")
     market = await _market(session, actor)
     src = Location
-    statement = select(StockTransfer).join(src, src.id == StockTransfer.from_warehouse_id).where(
-        src.market_id == market.id,
+    statement = (
+        select(StockTransfer)
+        .join(src, src.id == StockTransfer.from_warehouse_id)
+        .where(
+            src.market_id == market.id,
+        )
     )
     if "dispatcher" not in roles:
         allowed = tuple(getattr(actor, "location_ids", ()))
@@ -379,8 +452,7 @@ async def list_transfers(
         if warehouse_id is not None and warehouse_id not in allowed:
             raise _error("NOT_FOUND", "Warehouse not found.")
         statement = statement.where(
-            (StockTransfer.from_warehouse_id.in_(allowed)) |
-            (StockTransfer.to_warehouse_id.in_(allowed))
+            (StockTransfer.from_warehouse_id.in_(allowed)) | (StockTransfer.to_warehouse_id.in_(allowed))
         )
     if status is not None:
         if status not in ("suggested", "approved", "source_confirmed", "received", "cancelled"):
@@ -388,15 +460,17 @@ async def list_transfers(
         statement = statement.where(StockTransfer.status == status)
     if warehouse_id is not None:
         statement = statement.where(
-            (StockTransfer.from_warehouse_id == warehouse_id) |
-            (StockTransfer.to_warehouse_id == warehouse_id)
+            (StockTransfer.from_warehouse_id == warehouse_id)
+            | (StockTransfer.to_warehouse_id == warehouse_id)
         )
-    total = int((await session.scalar(
-        select(func.count()).select_from(statement.order_by(None).subquery())
-    )) or 0)
-    rows = (await session.scalars(
-        statement.order_by(StockTransfer.id.desc()).limit(page_size).offset((page - 1) * page_size)
-    )).all()
+    total = int(
+        (await session.scalar(select(func.count()).select_from(statement.order_by(None).subquery()))) or 0
+    )
+    rows = (
+        await session.scalars(
+            statement.order_by(StockTransfer.id.desc()).limit(page_size).offset((page - 1) * page_size)
+        )
+    ).all()
     return {"items": [_out(row) for row in rows], "page": page, "page_size": page_size, "total": total}
 
 
@@ -413,36 +487,60 @@ async def confirm_source(
     transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
     if transfer.status != "approved" or transfer.expected_arrival_date is None:
         raise _error("ILLEGAL_TRANSITION", "Source confirmation requires an approved transfer.")
-    lines = (await session.scalars(select(StockTransferLine)
-              .where(StockTransferLine.transfer_id == transfer.id).order_by(StockTransferLine.global_product_id))).all()
+    lines = (
+        await session.scalars(
+            select(StockTransferLine)
+            .where(StockTransferLine.transfer_id == transfer.id)
+            .order_by(StockTransferLine.global_product_id)
+        )
+    ).all()
     if not lines:
         raise _error("PLAN_NOT_APPROVABLE", "Transfer has no verified lines.")
     # Lock the stock resources in deterministic order to avoid confirming beyond available supply.
     for line in lines:
-        await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {
-            "k": f"stock:{transfer.from_warehouse_id}:{line.global_product_id}"
-        })
-    stock = await available_stock(session, [transfer.from_warehouse_id],
-                                  [line.global_product_id for line in lines],
-                                  now=clock.now(), exclude_order_id=None)
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+            {"k": f"stock:{transfer.from_warehouse_id}:{line.global_product_id}"},
+        )
+    stock = await available_stock(
+        session,
+        [transfer.from_warehouse_id],
+        [line.global_product_id for line in lines],
+        now=clock.now(),
+        exclude_order_id=None,
+    )
     for line in lines:
         if stock[transfer.from_warehouse_id][line.global_product_id] < line.qty:
             raise _error("RESOURCE_CONFLICT", "Source warehouse no longer has sufficient stock.")
     for line in lines:
-        session.add(InboundShipment(
-            inbound_ref=f"TRANSFER-{transfer.id}", warehouse_id=transfer.to_warehouse_id,
-            global_product_id=line.global_product_id, qty=line.qty,
-            eta_date=transfer.expected_arrival_date, confirmed=True, received=False,
-            source="transfer", transfer_id=transfer.id,
-        ))
+        session.add(
+            InboundShipment(
+                inbound_ref=f"TRANSFER-{transfer.id}",
+                warehouse_id=transfer.to_warehouse_id,
+                global_product_id=line.global_product_id,
+                qty=line.qty,
+                eta_date=transfer.expected_arrival_date,
+                confirmed=True,
+                received=False,
+                source="transfer",
+                transfer_id=transfer.id,
+            )
+        )
     transfer.status = "source_confirmed"
     transfer.source_confirmed_by = _employee_id(actor)
     transfer.source_confirmed_at = clock.now()
     await session.flush()
-    await record_decision(session, Action.TRANSFER_CONFIRMED, "stock_transfer", str(transfer.id),
-                          order_id=transfer.order_id, after=_out(transfer),
-                          actor_user_id=_user_id(actor), actor_employee_id=_employee_id(actor),
-                          actor_role="warehouse")
+    await record_decision(
+        session,
+        Action.TRANSFER_CONFIRMED,
+        "stock_transfer",
+        str(transfer.id),
+        order_id=transfer.order_id,
+        after=_out(transfer),
+        actor_user_id=_user_id(actor),
+        actor_employee_id=_employee_id(actor),
+        actor_role="warehouse",
+    )
     return _save(record, _out(transfer))
 
 
@@ -459,15 +557,21 @@ async def receive(
     transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
     if transfer.status != "source_confirmed":
         raise _error("ILLEGAL_TRANSITION", "Receiving requires a source-confirmed transfer.")
-    lines = (await session.scalars(
-        select(StockTransferLine).where(StockTransferLine.transfer_id == transfer.id)
-    )).all()
-    inbound = (await session.scalars(
-        select(InboundShipment).where(
-            InboundShipment.transfer_id == transfer.id, InboundShipment.source == "transfer",
-            InboundShipment.confirmed.is_(True), InboundShipment.received.is_(False),
-        ).with_for_update()
-    )).all()
+    lines = (
+        await session.scalars(select(StockTransferLine).where(StockTransferLine.transfer_id == transfer.id))
+    ).all()
+    inbound = (
+        await session.scalars(
+            select(InboundShipment)
+            .where(
+                InboundShipment.transfer_id == transfer.id,
+                InboundShipment.source == "transfer",
+                InboundShipment.confirmed.is_(True),
+                InboundShipment.received.is_(False),
+            )
+            .with_for_update()
+        )
+    ).all()
     if not lines or {(i.global_product_id, i.qty) for i in inbound} != {
         (l.global_product_id, l.qty) for line in lines
     }:
@@ -479,25 +583,30 @@ async def receive(
     await session.flush()
     # Approved codes include CONFIRMED but no separate receipt action; the status
     # transition is explicit in the audit payload; a dedicated code needs owner approval.
-    await record_decision(session, Action.TRANSFER_CONFIRMED, "stock_transfer", str(transfer.id),
-                          order_id=transfer.order_id,
-                          snapshot={"stage": "warehouse_received"}, after=_out(transfer),
-                          actor_user_id=_user_id(actor), actor_employee_id=_employee_id(actor),
-                          actor_role="warehouse")
+    await record_decision(
+        session,
+        Action.TRANSFER_CONFIRMED,
+        "stock_transfer",
+        str(transfer.id),
+        order_id=transfer.order_id,
+        snapshot={"stage": "warehouse_received"},
+        after=_out(transfer),
+        actor_user_id=_user_id(actor),
+        actor_employee_id=_employee_id(actor),
+        actor_role="warehouse",
+    )
     return _save(record, _out(transfer))
 
 
 async def cancel(
-    session: AsyncSession, actor: object, transfer_id: int,
-    reason_text: str, idempotency_key: str
+    session: AsyncSession, actor: object, transfer_id: int, reason_text: str, idempotency_key: str
 ) -> dict[str, object]:
     _can_dispatch(actor)
     transfer, _ = await _transfer(session, actor, transfer_id, lock=False)
     if not reason_text.strip():
         raise _error("REASON_REQUIRED", "Cancelling a transfer requires a reason.")
     record, replay = await _claim(
-        session, actor, f"POST /transfers/{transfer_id}/cancel",
-        idempotency_key, {"reason_text": reason_text}
+        session, actor, f"POST /transfers/{transfer_id}/cancel", idempotency_key, {"reason_text": reason_text}
     )
     if replay is not None:
         return replay
@@ -509,9 +618,18 @@ async def cancel(
     await session.flush()
     # No TRANSFER_CANCELLED action exists in the approved audit vocabulary. Do not
     # invent one; reuse the existing transfer decision action with explicit stage.
-    await record_decision(session, Action.TRANSFER_APPROVED, "stock_transfer", str(transfer.id),
-                          order_id=transfer.order_id, reason_text=reason_text,
-                          snapshot={"stage": "cancelled"}, before=before, after=_out(transfer),
-                          actor_user_id=_user_id(actor), actor_employee_id=_employee_id(actor),
-                          actor_role="dispatcher")
+    await record_decision(
+        session,
+        Action.TRANSFER_APPROVED,
+        "stock_transfer",
+        str(transfer.id),
+        order_id=transfer.order_id,
+        reason_text=reason_text,
+        snapshot={"stage": "cancelled"},
+        before=before,
+        after=_out(transfer),
+        actor_user_id=_user_id(actor),
+        actor_employee_id=_employee_id(actor),
+        actor_role="dispatcher",
+    )
     return _save(record, _out(transfer))

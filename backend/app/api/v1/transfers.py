@@ -1,4 +1,5 @@
 """T18 transfer REST API (06 §7): thin request validation; service owns guards and writes."""
+
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
@@ -81,6 +82,4 @@ async def cancel_transfer(
     idempotency_key: IdempotencyHeader,
     body: Annotated[TransferCancelIn, Body()],
 ) -> dict[str, object]:
-    return await transfer_service.cancel(
-        db, user, transfer_id, body.reason_text, str(idempotency_key)
-    )
+    return await transfer_service.cancel(db, user, transfer_id, body.reason_text, str(idempotency_key))
