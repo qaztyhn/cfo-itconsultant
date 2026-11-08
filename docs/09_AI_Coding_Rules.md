@@ -138,9 +138,11 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 - CORS giới hạn origin; giới hạn tần suất `/auth/login`; `/internal/*` bằng khóa riêng.
 - **Log kỹ thuật** JSONL theo `04` mục 10: `ts, level, service, correlation_id, order_id, market, event, duration_ms, extra`; **không PII**; không in toàn bộ body request chứa dữ liệu khách.
 - **Nhật ký quyết định** trong DB: `record_decision(action, entity, entity_id, order_id?, plan_id?, reason_code?, reason_text?, snapshot?, before?, after?)`; dùng đúng mã hành động ở `04` mục 10.
-- **GPS:** kiểm `gps_enabled` theo nước; xóa sau `retention_days`; hiển thị cờ/biểu ngữ DPIA; không có báo cáo năng suất cá nhân.
-- **Thông báo:** nội dung chỉ trạng thái và ETA; không toạ độ, không tên tài xế, không GPS.
-- Ẩn danh dữ liệu cá nhân quá hạn lưu giữ qua `retention_job`.
+- **D3 owner-approved GPS:** thu mỗi **30 phút**, offline queue chỉ trong trip `on_road` và ca chính thức, server derive employee từ JWT; chỉ Dispatcher **được gán trip** được xem live/history trong ca (không mở toàn market). Trip terminal hoặc hết ca ⇒ dừng, purge GPS thô DB/cache/queue device ngay, từ chối offline replay, không retain 30 ngày; lịch sử duty/tachograph không bị xóa theo GPS. Thiếu mapping Dispatcher–trip phải fail closed; migration/contract test trước khi mở API. GPS không dùng để chấm công hoặc đo giờ nghỉ nhân viên. Không theo dõi ngoài ca; DPIA/notice trước dữ liệu thật.
+- **D4 owner-approved notification:** dùng server template versioned `CONFIRMED|DISPATCHED|DELIVERED|FAILED|DELAY`, chỉ biến allowlist từ public order/status/approved ETA/reason enum; **không free-text subject/body, GPS, tên tài xế, tên người nhận hay CS notes**. Dispatcher chỉ chỉnh ETA và câu/lý do mẫu, duyệt DELAY draft. Giữ Mailpit/test-only, quiet-hours 21:00–07:00 theo market và retry cap hiện có; 5/15 phút backoff chưa là quyết định owner.
+- **D5 owner-approved GDPR/retention:** GPS xóa khi trip/ca kết thúc. Customer contact/CS 90 ngày, operational order 365 ngày, employee nonstatutory contact 90 ngày, shifts/attendance 24 tháng (legal review), app/security logs 30/90 ngày, staging backup tối đa 30 ngày; luật riêng cho tachograph/driver work time/accounting. Không xóa audit/milestone bất biến; chỉ xóa/ẩn danh theo per-category policy có anchor/legal hold và dry-run, review privacy/legal trước real data. `data_retention_days` legacy không chứng nhận GDPR. D2 CSV UTF-8/version/ISO/SHA idempotent retry controlled, không đi qua approval. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
+
+**D8: CHƯA PHÊ DUYỆT.** Tất cả scheduler ticks phải tôn trọng ca làm, 11h rest, GPS end-of-trip deletion và role scopes; không tự tạo thông báo DELAY gửi khách, không approve plan, không ghi routing không có Sales/Dispatcher. Chi tiết cadence tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md` chỉ là đề xuất cần owner chốt.
 
 ## 11. Quy tắc test
 
