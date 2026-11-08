@@ -1,0 +1,26 @@
+name: M6 final safety formatter
+on:
+  push:
+    branches: [feat/m6-execution-backend]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Black and remove temporary workflow
+        run: |
+          python -m pip install "black==26.10.1"
+          black --line-length 110 backend/app/services/execution_service.py backend/app/api/v1/execution.py backend/tests/integration/test_execution_api.py
+          git rm .github/workflows/m6-final-safety-format.yml
+          git add backend/app/services/execution_service.py backend/app/api/v1/execution.py backend/tests/integration/test_execution_api.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(execution): format approved safety guards and regression tests"
+          git push origin HEAD:feat/m6-execution-backend
