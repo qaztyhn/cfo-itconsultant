@@ -192,3 +192,49 @@ def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfe
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
     execute(transfer_api.dsn, "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1")
     assert transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER).json() == {"items": []}
+
+
+def test_US_ATP_02_AC3_distinct_key_cannot_approve_same_shortage_twice(transfer_api: Api) -> None:
+    body = selection(transfer_api)
+    transfer_id = approved(transfer_api)
+    assert transfer_id > 0
+    assert_error(
+        post(transfer_api, "/orders/1/transfers", DISPATCHER, body),
+        409,
+        "RESOURCE_CONFLICT",
+    )
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.stock_transfer")[0]["n"] == 1
+
+
+def test_US_ATP_03_AC1_source_confirmation_cannot_reuse_confirmed_outbound_stock(
+    transfer_api: Api,
+) -> None:
+    transfer_id = approved(transfer_api)
+    execute(
+        transfer_api.dsn,
+        "INSERT INTO ops.stock_transfer (order_id,from_warehouse_id,to_warehouse_id,status,"
+        "lead_days,suggestion) VALUES (NULL,1,3,'source_confirmed',1,'{}')",
+        "INSERT INTO ops.stock_transfer_line (transfer_id,global_product_id,qty) "
+        "VALUES (2,1,30)",
+    )
+    denied = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
+    assert_error(denied, 409, "RESOURCE_CONFLICT")
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+    assert fetch(
+        transfer_api.dsn,
+        "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_CONFIRMED'",
+    )[0]["n"] == 0
+
+
+def test_US_ATP_03_AC1_source_snapshot_staleness_blocks_confirmation(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    execute(
+        transfer_api.dsn,
+        "UPDATE ops.stock_snapshot SET as_of='2026-11-01T09:00Z' WHERE warehouse_id=1",
+    )
+    assert_error(
+        post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
+        409,
+        "RESOURCE_CONFLICT",
+    )
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
