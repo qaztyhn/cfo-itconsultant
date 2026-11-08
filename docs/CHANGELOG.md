@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [06 §16.4 — DTO tồn kho phía CFO theo fixed-SKU] — 2026-11-08 — thiết kế lại #107, chờ review Dev 1/Dev 2
+
+- Ghi rõ DTO `GET /stock` thống nhất (`as_of`, `batch_id`, `item_count`, `items`) và các quy tắc từ chối/chuẩn hóa của adapter CFO theo DEC-SRC-Q10-SKU-001 và DEC-SRC-Q9-ERROR-001. Không pool.
+- Không đổi DDL/route/mã lỗi mới ngoài `STOCK_UNAVAILABLE` đã duyệt; chưa có persistence tồn kho CFO.
+
 ## [05 §10 / 06 §16.4 — PR #105 căn chỉnh theo DEC-SRC-Q9-ERROR-001 và DEC-SRC-Q10-SKU-001] — 2026-11-08 — chờ review
 
 - `GET /stock` nguồn: `200 {as_of, batch_id, item_count, items[{warehouse_code, sku, on_hand, reserved}]}` từ batch published hoàn chỉnh mới nhất; **`503 STOCK_UNAVAILABLE`** khi không có batch published hoặc batch mới nhất không qua kiểm tra toàn vẹn; `200` với `items=[]` chỉ cho batch published rỗng. Thay thế phản hồi `200 {complete:false, as_of:null}`.
