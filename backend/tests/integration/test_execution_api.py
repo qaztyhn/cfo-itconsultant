@@ -360,7 +360,17 @@ def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
         assert send(execution_api, WAREHOUSE, event, at, payload).status_code == 200
     execute(
         execution_api.dsn,
-        "UPDATE hr.driver_staff SET licence_expires_on='2026-11-09' WHERE employee_id=5",
+        "UPDATE hr.driver_staff SET licence_class='B' WHERE employee_id=5",
+    )
+    assert_error(
+        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        409,
+        "PLAN_NOT_APPROVABLE",
+    )
+    execute(
+        execution_api.dsn,
+        "UPDATE hr.driver_staff SET licence_class='CE', "
+        "licence_expires_on='2026-11-09' WHERE employee_id=5",
     )
     assert_error(
         send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
