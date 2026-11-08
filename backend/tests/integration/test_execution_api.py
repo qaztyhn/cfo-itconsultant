@@ -1,4 +1,4 @@
-"""M6 PostgreSQL tests for scoped execution, labour hours and fail-closed safety."""
+"""M6 PostgreSQL tests: scoped execution, driver safety and transaction rollback."""
 
 import json
 from datetime import UTC, datetime
