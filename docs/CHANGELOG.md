@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M7 — đóng alert rủi ro khi đơn DELIVERED] — 2026-11-08 — PR #131, chờ review
+
+- `risk_service.recalculate` với đơn `DELIVERED` đóng (`resolved_at`) các alert **mở** `RISK_ORANGE`/`PREDICTED_LATE`/`OVERDUE` của **đúng đơn và market đó** trong transaction của bên gọi, rồi trả `None`: không tính ETA, không tạo/mở lại alert. Alert không bị xóa; loại alert khác của cùng đơn (STALE_DATA, EXCEPTION, REPLAN_SUGGESTED, ORDER_CHANGED_AFTER_APPROVAL…) không bị đụng.
+- Chính sách này đến từ yêu cầu review của Dev 1/owner; **chưa có điều khoản tài liệu riêng**. `FAILED`/`CANCELLED` giữ nguyên alert (chưa có chính sách duyệt). Bên thực thi (M6) phải gọi `recalculate(order_id, ..., session=...)` sau khi chuyển `DELIVERED` trong cùng transaction.
+
 ## [Plan vehicle DTO — object `vehicle` lồng] — 2026-11-08 — Dev 1 (chủ dự án chọn Option B)
 
 - `GET /planning-runs/{id}` và `GET /plans/{id}` (view Dispatcher): mỗi phần tử `vehicles[]` giữ nguyên field cũ (`vehicle_id`, `driver_employee_id`, `load_*`, mốc giờ) và **thêm** `vehicle: {id, code, name, capacity_kg, capacity_m3}` từ `ref.vehicle` thật; capacity là chuỗi thập phân không số 0 thừa (`"12000"`, `"40"`). Không có biển số, bằng lái, lịch xe, GPS hay dữ liệu tài xế.
