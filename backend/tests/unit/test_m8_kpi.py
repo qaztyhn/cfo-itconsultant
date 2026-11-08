@@ -1,0 +1,48 @@
+"""M8 KPI deterministic date, missing-evidence and weighted capacity tests."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from app.core.errors import DomainError
+from app.services.kpi_service import METRICS, Measure, Period
+
+
+def test_US_KPI_01_AC1_period_is_inclusive_at_366_days() -> None:
+    period = Period.resolve(date(2026, 1, 1), date(2027, 1, 1), date(2026, 11, 10))
+    assert len(period.days()) == 366
+    assert period.days()[0] == date(2026, 1, 1)
+    assert period.days()[-1] == date(2027, 1, 1)
+
+
+def test_US_KPI_01_AC1_invalid_period_fails_422() -> None:
+    with pytest.raises(DomainError) as error:
+        Period.resolve(date(2026, 12, 1), date(2026, 11, 1), date(2026, 11, 10))
+    assert error.value.http_status == 422
+    with pytest.raises(DomainError):
+        Period.resolve(date(2026, 1, 1), date(2027, 1, 2), date(2026, 11, 10))
+
+
+def test_US_KPI_01_AC1_missing_denominator_is_not_zero_rate() -> None:
+    data = Measure()
+    assert data.value() is None
+    data.add(None)
+    data.add(Decimal(1))
+    assert data.value() is None
+
+
+def test_US_KPI_01_AC3_capacity_is_total_booked_over_total_available() -> None:
+    first = Measure()
+    first.add(Decimal(2), Decimal(4))
+    second = Measure()
+    second.add(Decimal(6), Decimal(12))
+    first.combine(second)
+    assert first.value() == 0.5
+
+
+def test_US_KPI_01_AC1_all_contract_metrics_have_unique_keys() -> None:
+    assert len(METRICS) == len(set(METRICS)) == 10
+    assert "km_per_delivery" in METRICS
+    assert "labour_hours_per_delivery" in METRICS
+    assert "manual_plan_count" in METRICS
