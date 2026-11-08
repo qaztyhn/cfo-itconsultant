@@ -15,6 +15,7 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
+      - run: black --diff tests/integration/test_planning_service.py
       - run: black --check .
       - run: mypy app/engine
       - run: lint-imports
