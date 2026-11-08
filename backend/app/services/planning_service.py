@@ -602,14 +602,10 @@ async def suggest_replan(
     if session is None:
         async with get_sessionmaker()() as db, db.begin():
             return await suggest_replan(order_id, trigger, session=db, inputs_loader=inputs_loader)
-    order = await session.scalar(
-        select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update()
-    )
+    order = await session.scalar(select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update())
     if order is None:
         raise _fail("NOT_FOUND", "Order not found.")
-    if order.status not in (
-        "APPROVED", "PREPARING", "GOODS_READY", "LOADED", "FAILED", "DISPATCHED"
-    ):
+    if order.status not in ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "FAILED", "DISPATCHED"):
         return None
     latest = await _latest_run(session, order.id)
     if (
@@ -626,9 +622,7 @@ async def suggest_replan(
     now = clock.now()
     if order.status == "DISPATCHED":
         dedupe = f"replan-after-dispatch:{order.id}:{order.version}:{trigger}"
-        existing_alert = await session.scalar(
-            select(Alert.id).where(Alert.dedupe_key == dedupe)
-        )
+        existing_alert = await session.scalar(select(Alert.id).where(Alert.dedupe_key == dedupe))
         if existing_alert is None:
             session.add(
                 Alert(
