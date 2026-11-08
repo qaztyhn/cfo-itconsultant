@@ -269,8 +269,7 @@ def test_T18_revoke_warehouse_approval_rights_immediately(transfer_api: Api) -> 
     transfer_id = approved(transfer_api)
     execute(
         transfer_api.dsn,
-        "UPDATE hr.location_manager SET can_approve=false "
-        "WHERE location_id=1 AND employee_id=3",
+        "UPDATE hr.location_manager SET can_approve=false " "WHERE location_id=1 AND employee_id=3",
     )
     assert_error(
         post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
