@@ -6,7 +6,7 @@ No database, clock, network or environment access is permitted in the engine.
 
 from dataclasses import replace
 from datetime import datetime, timedelta
-from decimal import Decimal
+from typing import cast
 
 from app.engine.atp import check_atp, stock_check
 from app.engine.delivery import choose_vehicle_sets, plan_delivery, planning_reserve_min
@@ -22,7 +22,9 @@ from app.engine.types import (
     PlanningResult,
     RankWeights,
     RejectedCandidate,
+    ReserveClassT,
     WarehouseCtx,
+    Workload,
 )
 from app.engine.workload import compute_workload, warehouse_labour_hours
 
@@ -35,7 +37,7 @@ def _reject(warehouse_id: int, checks: tuple[CheckResult, ...]) -> RejectedCandi
 
 
 def _attempt(
-    order: OrderCtx, warehouse: WarehouseCtx, cfg: EngineConfig, labour_hours: Decimal
+    order: OrderCtx, warehouse: WarehouseCtx, cfg: EngineConfig, workload: Workload
 ) -> tuple[list[PlanCandidate], list[RejectedCandidate], list[tuple[CheckResult, ...]]]:
     """Run the existing ATP → preparation → truck/date/safety gates for one warehouse."""
     candidates: list[PlanCandidate] = []
@@ -44,10 +46,10 @@ def _attempt(
     atp = check_atp(order, warehouse, cfg)
     stock = stock_check(atp)
     if not stock.passed or atp.stock_ready_date is None:
-        checks = (stock,)
+        checks: tuple[CheckResult, ...] = (stock,)
         return candidates, [_reject(warehouse.id, checks)], [checks]
 
-    prep_hours = warehouse_labour_hours(labour_hours, warehouse.efficiency)
+    prep_hours = warehouse_labour_hours(workload, warehouse.efficiency)
     prep = schedule_preparation(prep_hours, atp.stock_ready_date, order.now, warehouse, cfg)
     first = (stock, prep.check)
     if not prep.check.passed or prep.goods_ready_at is None or prep.loading_start_at is None:
@@ -117,7 +119,7 @@ def _unrestricted_order(order: OrderCtx, cfg: EngineConfig) -> OrderCtx:
 
 def _earliest_options(order: OrderCtx, warehouse: WarehouseCtx, cfg: EngineConfig) -> list[PlanCandidate]:
     relaxed = _unrestricted_order(order, cfg)
-    workload = compute_workload(relaxed.lines, cfg).labour_hours
+    workload = compute_workload(relaxed.lines, cfg)
     options, _, _ = _attempt(relaxed, warehouse, cfg, workload)
     return options
 
@@ -129,7 +131,7 @@ def plan_order(
 
     This function never persists holds, changes customer dates, or approves plans.
     """
-    workload = compute_workload(order.lines, cfg).labour_hours
+    workload = compute_workload(order.lines, cfg)
     feasible: list[PlanCandidate] = []
     rejected: list[RejectedCandidate] = []
     reached: list[tuple[CheckResult, ...]] = []
@@ -175,7 +177,7 @@ def plan_order(
             tuple(rejected),
             None,
             None,
-            reserve_class(winner.planning_reserve_min, cfg),
+            cast(ReserveClassT, reserve_class(winner.planning_reserve_min, cfg)),
             winner.planning_reserve_min,
             (),
         )
