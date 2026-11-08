@@ -22,7 +22,7 @@ No automatic merge is enabled. Historical PR links below preserve the delivery t
 | [#68](https://github.com/qaztyhn/cfo-itconsultant/pull/68) | SMTP and simulated SMS transports |
 | [#69](https://github.com/qaztyhn/cfo-itconsultant/pull/69) | Queued notification delivery, retries/quiet hours/audit |
 | [#70](https://github.com/qaztyhn/cfo-itconsultant/pull/70) | Explicit maintenance CLI and GPS simulator |
-| Current roster PR, branch `feat/dev2-confirmed-roster-seed` | Explicit warehouse demo roster after migrations 0009/0010; own CI must pass |
+| [#82](https://github.com/qaztyhn/cfo-itconsultant/pull/82) | Explicit warehouse demo roster after migrations 0009/0010; exact-head CI tracked in PR |
 
 The roster fixture is an offline synthetic dataset attributed to the demo Warehouse Manager,
 not a production job or a replacement for the schedule API. It neither creates attendance nor
