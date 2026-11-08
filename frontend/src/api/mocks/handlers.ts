@@ -276,192 +276,6 @@ const ORDER_RECORDS: OrderRecord[] = ORDERS.map((o) => ({
   submitted_at: o.created_at, // MOCK: seed chưa tách submitted_at khỏi created_at
 }));
 
-const PLAN_CANDIDATES = [
-  {
-    id: 1,
-    rank: 1,
-    warehouse_id: 1,
-    warehouse_name: "Göteborg DC",
-    warehouse_code: "GBG",
-    score: 0.26,
-    distance_km: "48",
-    capacity_fill: "0.60",
-    prep_hours: "10.15",
-    goods_ready_at: "2026-11-10T09:30:00+01:00",
-    depart_at: "2026-11-10T10:48:00+01:00",
-    eta_at: "2026-11-10T12:38:00+01:00",
-    trip_end_at: "2026-11-10T13:40:00+01:00",
-    planning_reserve_min: 5220,
-    reserve_class: "safe",
-    complexity_points: 1,
-    route_provenance: "ors",
-    reason_codes: ["LOWEST_SCORE_OF_3"],
-    explanation:
-      "Göteborg DC has stock ready today and 60% warehouse capacity used. 48 km drive, 1h 50min. Planning reserve 3.6 days (safe).",
-    vehicles: [
-      {
-        seq: 1,
-        vehicle_code: "GBG-12-03",
-        vehicle_type: "Truck 12 t",
-        driver_name: "Björn Eriksson",
-        capacity_kg: "12000",
-        load_kg: "4120",
-        capacity_m3: "40",
-        load_m3: "9.6",
-        depart_at: "2026-11-10T10:48:00+01:00",
-        eta_at: "2026-11-10T12:38:00+01:00",
-      },
-    ],
-    checks: [
-      { name: "stock", passed: true, code: "STOCK_OK", detail: { message: "All 4 lines in stock at Göteborg DC." } },
-      { name: "preparation", passed: true, code: "PREP_OK", detail: { message: "10.15 h fits in 2 shifts before loading cut-off." } },
-      { name: "truck", passed: true, code: "TRUCK_OK", detail: { message: "GBG-12-03 available, licence CE, 4120 kg / 9.6 m³ fits." } },
-      { name: "site_date", passed: true, code: "DATE_OK", detail: { message: "Tue 10 Nov is a working day; ETA 12:38 within site window 08:00–14:30." } },
-      { name: "safety", passed: true, code: "SAFETY_OK", detail: { message: "Driver hours within limit." } },
-    ],
-    prep_by_day: { "2026-11-09": "10.15" },
-  },
-  {
-    id: 2,
-    rank: 2,
-    warehouse_id: 3,
-    warehouse_name: "Malmö DC",
-    warehouse_code: "MLM",
-    score: 0.50,
-    distance_km: "262",
-    capacity_fill: "0.50",
-    prep_hours: "10.15",
-    goods_ready_at: "2026-11-10T09:30:00+01:00",
-    depart_at: "2026-11-10T10:48:00+01:00",
-    eta_at: "2026-11-10T14:38:00+01:00",
-    trip_end_at: "2026-11-10T15:30:00+01:00",
-    planning_reserve_min: 2400,
-    reserve_class: "safe",
-    complexity_points: 1,
-    route_provenance: "ors",
-    reason_codes: [],
-    explanation:
-      "Malmö DC has full stock but 262 km drive increases distance score. Planning reserve 1.7 days.",
-    vehicles: [
-      {
-        seq: 1,
-        vehicle_code: "MLM-18-01",
-        vehicle_type: "Truck 18 t",
-        driver_name: "Per Magnusson",
-        capacity_kg: "18000",
-        load_kg: "4120",
-        capacity_m3: "60",
-        load_m3: "9.6",
-        depart_at: "2026-11-10T10:48:00+01:00",
-        eta_at: "2026-11-10T14:38:00+01:00",
-      },
-    ],
-    checks: [
-      { name: "stock", passed: true, code: "STOCK_OK", detail: { message: "All lines in stock." } },
-      { name: "preparation", passed: true, code: "PREP_OK", detail: { message: "10.15 h fits in 2 shifts." } },
-      { name: "truck", passed: true, code: "TRUCK_OK", detail: { message: "MLM-18-01 available." } },
-      { name: "site_date", passed: true, code: "DATE_OK", detail: { message: "ETA 14:38 within site window." } },
-      { name: "safety", passed: true, code: "SAFETY_OK", detail: { message: "Driver hours OK." } },
-    ],
-    prep_by_day: { "2026-11-09": "10.15" },
-  },
-  {
-    id: 3,
-    rank: 3,
-    warehouse_id: 1,
-    warehouse_name: "Göteborg DC",
-    warehouse_code: "GBG",
-    score: 0.50,
-    distance_km: "48",
-    capacity_fill: "0.60",
-    prep_hours: "10.15",
-    goods_ready_at: "2026-11-10T09:30:00+01:00",
-    depart_at: "2026-11-10T11:30:00+01:00",
-    eta_at: "2026-11-10T13:20:00+01:00",
-    trip_end_at: "2026-11-10T14:30:00+01:00",
-    planning_reserve_min: 3800,
-    reserve_class: "safe",
-    complexity_points: 1,
-    route_provenance: "ors",
-    reason_codes: [],
-    explanation:
-      "Same Göteborg DC, larger truck GBG-18-01. Same distance score, tie-break: larger total capacity.",
-    vehicles: [
-      {
-        seq: 1,
-        vehicle_code: "GBG-18-01",
-        vehicle_type: "Truck 18 t",
-        driver_name: "Anders Pettersen",
-        capacity_kg: "18000",
-        load_kg: "4120",
-        capacity_m3: "60",
-        load_m3: "9.6",
-        depart_at: "2026-11-10T11:30:00+01:00",
-        eta_at: "2026-11-10T13:20:00+01:00",
-      },
-    ],
-    checks: [
-      { name: "stock", passed: true, code: "STOCK_OK", detail: { message: "All lines in stock." } },
-      { name: "preparation", passed: true, code: "PREP_OK", detail: { message: "10.15 h fits." } },
-      { name: "truck", passed: true, code: "TRUCK_OK", detail: { message: "GBG-18-01 available." } },
-      { name: "site_date", passed: true, code: "DATE_OK", detail: { message: "ETA within window." } },
-      { name: "safety", passed: true, code: "SAFETY_OK", detail: { message: "Driver hours OK." } },
-    ],
-    prep_by_day: { "2026-11-09": "10.15" },
-  },
-];
-
-const REJECTED_CANDIDATES = [
-  {
-    warehouse_id: 2,
-    warehouse_name: "Stockholm DC",
-    vehicle_code: "STO-12-04",
-    failed_check: "site_date",
-    code: "OUTSIDE_RECEIVING_HOURS",
-    detail: { message: "ETA 15:45 is outside site window 08:00–14:30." },
-  },
-  {
-    warehouse_id: 1,
-    warehouse_name: "Göteborg DC",
-    vehicle_code: "GBG-03-02",
-    failed_check: "truck",
-    code: "NO_TRUCK_FIT",
-    detail: { message: "Order weighs 4 120 kg; van GBG-03-02 carries 3 500 kg.", reason: "combined_capacity" },
-  },
-  {
-    warehouse_id: 3,
-    warehouse_name: "Malmö DC",
-    vehicle_code: "MLM-12-02",
-    failed_check: "truck",
-    code: "TRUCK_BUSY",
-    detail: { message: "MLM-12-02 is committed to SE-2026-000131 on Tue 10 Nov." },
-  },
-  {
-    warehouse_id: 1,
-    warehouse_name: "Göteborg DC",
-    vehicle_code: "GBG-26-01",
-    failed_check: "safety",
-    code: "DRIVER_HOURS_EXCEEDED",
-    detail: { message: "Return trip GBG→Kungsbacka→GBG exceeds 9 h driver limit." },
-  },
-  {
-    warehouse_id: 2,
-    warehouse_name: "Stockholm DC",
-    vehicle_code: "STO-CR-01",
-    failed_check: "safety",
-    code: "DRIVER_HOURS_EXCEEDED",
-    detail: { message: "Drive time exceeds 9 h limit for STO → Kungsbacka." },
-  },
-  {
-    warehouse_id: 2,
-    warehouse_name: "Stockholm DC",
-    vehicle_code: "STO-12-04",
-    failed_check: "truck",
-    code: "TRUCK_BUSY",
-    detail: { message: "STO-12-04 assigned to SE-2026-000141 on Tue 10 Nov." },
-  },
-];
-
 const ALERTS = [
   {
     id: 1,
@@ -762,6 +576,7 @@ const REVENUE_DAILY = Array.from({ length: 30 }, (_, i) => {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 import { authHandlers, errorResponse } from "./authHandlers";
+import { planningHandlers } from "./planningHandlers";
 import {
   authorize,
   GPS_READ_ROLES,
@@ -774,6 +589,7 @@ import {
 
 export const handlers = [
   ...authHandlers,
+  ...planningHandlers,
   // Orders — chỉ đơn CFO (DEC-ROUTING-002). Đơn legacy (LEGACY_ORDERS) không có trong list/detail/counts;
   // GET /orders/:id của đơn legacy trả 404 NOT_FOUND.
   http.get(`${BASE}/orders`, ({ request }) => {
@@ -819,29 +635,6 @@ export const handlers = [
       return errorResponse(request, 404, "NOT_FOUND", "Order not found."); // ngoài phạm vi cũng 404, không lộ sự tồn tại
     }
     return HttpResponse.json(projectOrderDetail(auth.account.user, order));
-  }),
-
-  // Planning
-  http.get(`${BASE}/planning-runs/:id`, () => {
-    return HttpResponse.json({
-      id: 412,
-      order_id: 123,
-      kind: "initial",
-      duration_ms: 412,
-      candidates: PLAN_CANDIDATES,
-      rejected_candidates: REJECTED_CANDIDATES,
-      hold_expires_at: new Date(Date.now() + 11 * 60 * 1000).toISOString(),
-      hold_extensions_remaining: 2,
-    });
-  }),
-
-  http.post(`${BASE}/orders/:id/plan`, () => {
-    return HttpResponse.json({ run_id: 412, status: "planned" });
-  }),
-
-  // Approve
-  http.post(`${BASE}/planning-runs/:runId/approve`, () => {
-    return HttpResponse.json({ plan_id: 1, order_status: "APPROVED" });
   }),
 
   // Alerts
