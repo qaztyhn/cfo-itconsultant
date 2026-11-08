@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-GDPR-001 — D5 GDPR compliance-by-design] — 2026-11-08 — owner approved direction, docs-only
+
+- Chủ dự án chốt mục tiêu D5 phải tuân thủ GDPR; không coi mốc xóa 365/730/30 ngày là bằng chứng compliance. Yêu cầu lawful basis, ROPA, DSAR, retention theo từng mục đích và luật quốc gia, DPIA/GPS, DPA/transfer và hạn chế PII trong immutable logs. Chỉ synthetic trên staging trước legal review.
+- Đồng bộ ASSUMPTIONS, 04/05/06/09; không có code/DDL/API mới và chưa xác nhận tuân thủ. D1–D4, D6, D8 chưa được chốt.
+
 ## [05 §10 / 06 §16 — bản chụp đơn nguồn và GET /orders] — 2026-11-08 — theo DEC-SRC-001, chờ review
 
 - `05` §10: `src_order` thêm 8 cột bản chụp (SRC-Q1), nullable; nâng cấp cộng thêm, giữ dữ liệu.
