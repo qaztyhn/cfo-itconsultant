@@ -22,7 +22,7 @@
 | [DEC-AUDIT-001](#dec-audit-001--q13-mã-nhật-ký-nhân-sự) | Q13 chấp thuận 3 mã audit mới và quy tắc hồi tố | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53) | Chờ cập nhật contract/code |
 | [DEC-DRIVER-001](#dec-driver-001--khung-giờ-làm-nghỉ-và-giới-hạn-lái-xe) | Kiểm ca tài xế và nhân viên kho; nghỉ mặc định 11h; lái xe/nghỉ theo phạm vi pháp luật | 07/11 | [PR #53](https://github.com/qaztyhn/cfo-itconsultant/pull/53), [PR #54](https://github.com/qaztyhn/cfo-itconsultant/pull/54) | Quy tắc MVP đã duyệt; engine/schema cần nghiệm thu |
 | [DEC-NOTIFY-001](#dec-notify-001--giới-hạn-email-thử-nghiệm-và-ngăn-gửi-trùng) | Email MVP chỉ qua Mailpit hoặc staging kiểm soát với địa chỉ demo; chưa gửi khách thật khi thiếu chống trùng/đối soát | 07/11 | Chủ dự án xác nhận sau review [PR #69](https://github.com/qaztyhn/cfo-itconsultant/pull/69) | Quyết định đã duyệt; #68–#70 đã lên `main` (#74); chặn người nhận staging bằng code trong PR `fix/notify-staging-recipient-guard` (chờ review); chống trùng/đối soát chưa có |
-| [DEC-SRC-001](#dec-src-001--phê-duyệt-hướng-source-contract-src-q1đếnq10) | Phê duyệt hướng giải quyết SRC-Q1–Q10 cho hệ thống nguồn: snapshot, API ghi, lỗi, lifecycle, phân trang, tăng dần, lịch nhận, tồn kho, local/global SKU | 08/11 | Chủ dự án xác nhận trong phiên làm việc 08/11; [proposal](proposals/M1_SOURCE_CONTRACT.md) | Đã duyệt nguyên tắc; 05/06, migration, contract test và code chưa cập nhật trong quyết định này |
+| [DEC-SRC-001](#dec-src-001--source-contract-src-q1q10) | Phê duyệt hướng giải quyết SRC-Q1–Q10 cho hệ thống nguồn: snapshot, API ghi, lỗi, lifecycle, phân trang, tăng dần, lịch nhận, tồn kho, local/global SKU | 08/11 | Chủ dự án xác nhận trong phiên làm việc 08/11; [proposal](proposals/M1_SOURCE_CONTRACT.md) | Đã duyệt nguyên tắc; 05/06, migration, contract test và code chưa cập nhật trong quyết định này |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -313,7 +313,7 @@
 - **Tình trạng:** quyết định nghiệp vụ **đã chốt**. Code #68–#70 đã lên `main` qua #74. Chặn người nhận staging: `SmtpEmailProvider` với host ngoài Mailpit/localhost chỉ chấp nhận đúng một địa chỉ thuộc `SMTP_ALLOWED_RECIPIENT_DOMAINS` (mặc định `test`, rỗng → từ chối khởi tạo); địa chỉ khác bị từ chối **trước khi mở kết nối SMTP**, dòng notification chuyển `suppressed` với `suppressed_reason = recipient_not_allowed`, ghi `NOTIFICATION_SUPPRESSED`, không tính là lần thử và không retry (PR `fix/notify-staging-recipient-guard`, chờ review). **Chống trùng/đối soát vẫn chưa có**; chưa cho phép gửi email khách thật. Không đưa miền email thật (ví dụ miền của khách) vào danh sách cho phép.
 
 
-## DEC-SRC-001 — Phê duyệt hướng source contract SRC-Q1–Q10
+## DEC-SRC-001 — Source contract SRC-Q1–Q10
 
 - **Ngày chốt:** 2026-11-08. **Duyệt bởi:** chủ dự án trong cuộc trò chuyện 2026-11-08 sau khi xem bảng SRC-Q1–Q10 tại [M1_SOURCE_CONTRACT.md](proposals/M1_SOURCE_CONTRACT.md); xác nhận “đc tôi đồng ý”.
 - **Phạm vi:** contract **hệ thống nguồn giả lập/POS và adapter đọc vào CFO**. Không thay đổi nguyên tắc CFO chỉ đọc từ nguồn, không thay thế POS cũ. Quyết định này **không** phải xác nhận rằng code, API hay migration đã triển khai.
