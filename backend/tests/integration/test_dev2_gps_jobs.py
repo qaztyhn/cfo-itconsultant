@@ -13,29 +13,40 @@ pytestmark = pytest.mark.integration
 NOW = datetime(2026, 11, 7, tzinfo=UTC)
 
 
-def test_US_GPS_03_AC2_retention_uses_end_time_not_point_age(empty_db: str) -> None:
-    command.upgrade(alembic_config(empty_db), "0007")
+def _duty(db: str) -> None:
+    execute(
+        db,
+        "UPDATE ref.market SET gps_enabled=true,timezone='UTC'",
+        "INSERT INTO hr.driver_staff(employee_id,home_warehouse_id,licence_class,licence_expires_on) "
+        "VALUES(1,1,'C','2027-01-01') ON CONFLICT DO NOTHING",
+        "INSERT INTO hr.employee_assignment(employee_id,location_id,start_date) "
+        "SELECT 1,1,'2026-01-01' WHERE NOT EXISTS(SELECT 1 FROM hr.employee_assignment)",
+        "INSERT INTO hr.employee_shift_schedule(employee_id,warehouse_id,work_date,start_time,end_time,"
+        "assigned_by,assigned_at) SELECT 1,1,'2026-11-06','22:00','04:00',1,'2026-11-05T00:00Z' "
+        "WHERE NOT EXISTS(SELECT 1 FROM hr.employee_shift_schedule)",
+    )
+
+
+def test_US_GPS_03_AC2_terminal_positions_are_purged_immediately(empty_db: str) -> None:
+    command.upgrade(alembic_config(empty_db), "0009")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1), rows.trip_sql(2), rows.trip_sql(1))
     execute(
         empty_db,
         "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-10-07T00:00Z' WHERE id=1",
         "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-10-08T00:00Z' WHERE id=2",
-        "UPDATE ops.delivery_trip SET status='on_road' WHERE id=3",
+        "UPDATE ops.delivery_trip SET status='on_road',depart_actual_at='2026-11-06T22:00Z' WHERE id=3",
         "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) "
         "SELECT id,vehicle_id,59,18,'2026-01-01T00:00Z','simulator' FROM ops.delivery_trip",
     )
-    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 1
-    assert [r[0] for r in fetch(empty_db, "SELECT trip_id FROM ops.vehicle_position ORDER BY trip_id")] == [
-        2,
-        3,
-    ]
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 3
+    assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
     assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
 
 
 def test_US_GPS_03_AC1_loss_check_is_scoped_deduplicated_and_respects_threshold(
     empty_db: str,
 ) -> None:
-    command.upgrade(alembic_config(empty_db), "0007")
+    command.upgrade(alembic_config(empty_db), "0009")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1), rows.trip_sql(2))
     execute(
         empty_db,
@@ -44,6 +55,7 @@ def test_US_GPS_03_AC1_loss_check_is_scoped_deduplicated_and_respects_threshold(
         "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) "
         "VALUES (2,2,59,18,'2026-11-06T23:00Z','simulator')",
     )
+    _duty(empty_db)
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 0
     row = fetch(empty_db, "SELECT target_roles,message FROM ops.alert")[0]
@@ -54,7 +66,7 @@ def test_US_GPS_03_AC1_loss_check_is_scoped_deduplicated_and_respects_threshold(
 
 
 def _on_road_with_old_signal(db: str) -> None:
-    command.upgrade(alembic_config(db), "0007")
+    command.upgrade(alembic_config(db), "0009")
     execute(db, *rows.REF_HR, rows.trip_sql(1))
     execute(
         db,
@@ -71,6 +83,7 @@ def _open_gps_lost(db: str) -> list[object]:
 
 def test_US_GPS_03_AC1_alert_resolves_when_signal_recovers(empty_db: str) -> None:
     _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
     assert len(_open_gps_lost(empty_db)) == 1
     execute(
@@ -98,6 +111,7 @@ def test_US_GPS_03_AC1_alert_resolves_when_signal_recovers(empty_db: str) -> Non
 )
 def test_US_GPS_03_AC1_alert_resolves_when_trip_is_no_longer_tracked(empty_db: str, change: str) -> None:
     _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
     execute(empty_db, change)
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 0
@@ -108,18 +122,74 @@ def test_US_GPS_03_AC1_alert_resolves_when_trip_is_no_longer_tracked(empty_db: s
 def test_US_GPS_03_AC2_finished_trip_without_end_time_does_not_keep_gps_forever(
     empty_db: str, status: str
 ) -> None:
-    command.upgrade(alembic_config(empty_db), "0007")
+    command.upgrade(alembic_config(empty_db), "0009")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1))
     execute(
         empty_db,
         f"UPDATE ops.delivery_trip SET status='{status}',ended_at=NULL",
         "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) VALUES "
-        "(1,1,59,18,'2026-01-01T00:00Z','simulator'), "  # quá thời hạn (mặc định 30 ngày)
-        "(1,1,59,18,'2026-11-01T00:00Z','simulator')",  # còn trong thời hạn
+        "(1,1,59,18,'2026-01-01T00:00Z','simulator'), "
+        "(1,1,59,18,'2026-11-01T00:00Z','simulator')",  # Recent points are purged too.
     )
-    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 1
-    remaining = [r[0] for r in fetch(empty_db, "SELECT recorded_at FROM ops.vehicle_position")]
-    assert remaining == [datetime(2026, 11, 1, tzinfo=UTC)]
-    later = datetime(2026, 12, 15, tzinfo=UTC)
-    assert transact(empty_db, lambda s: purge_positions(s, now=later)) == 1
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 2
     assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+    later = datetime(2026, 12, 15, tzinfo=UTC)
+    assert transact(empty_db, lambda s: purge_positions(s, now=later)) == 0
+    assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-11-07T00:00Z'",
+        "UPDATE ops.delivery_trip SET status='cancelled'",
+        "UPDATE hr.employee_shift_schedule SET end_time='00:00'",
+        "UPDATE hr.employee_shift_schedule SET status='cancelled',cancelled_at='2026-11-07T00:00Z'",
+        "UPDATE hr.employee SET status='terminated',end_date='2026-11-06'",
+        "UPDATE ref.market SET gps_enabled=false",
+        "DELETE FROM hr.employee_assignment",
+        "DELETE FROM hr.employee_shift_schedule",
+    ],
+)
+def test_US_GPS_03_AC2_cleanup_obeys_verified_duty_and_resolves_loss(empty_db: str, change: str) -> None:
+    _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
+    assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
+    execute(empty_db, change)
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 1
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
+    assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 0
+    assert _open_gps_lost(empty_db) == []
+
+
+def test_US_GPS_03_AC2_only_current_trip_duty_points_survive_until_shift_end(
+    empty_db: str,
+) -> None:
+    _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
+    execute(
+        empty_db,
+        "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) VALUES "
+        "(1,1,59,18,'2026-11-06T21:59Z','simulator'),"  # before departure/shift
+        "(1,1,59,18,'2026-11-07T00:01Z','simulator')",  # future upload
+    )
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 2
+    assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
+    assert (
+        transact(
+            empty_db,
+            lambda s: purge_positions(s, now=datetime(2026, 11, 7, 4, tzinfo=UTC)),
+        )
+        == 1
+    )
+    assert fetch(empty_db, "SELECT count(*) FROM hr.employee_shift_schedule")[0][0] == 1
+
+
+def test_US_GPS_03_AC2_market_timezone_drives_overnight_duty(empty_db: str) -> None:
+    _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
+    execute(empty_db, "UPDATE ref.market SET timezone='Europe/Stockholm'")
+    # 00:00 UTC is 01:00 Stockholm: previous day's 22–04 schedule is still active.
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
+    ended = datetime(2026, 11, 7, 3, tzinfo=UTC)  # 04:00 market-local, exclusive end.
+    assert transact(empty_db, lambda s: purge_positions(s, now=ended)) == 1
