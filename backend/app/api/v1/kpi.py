@@ -39,8 +39,12 @@ async def kpi_summary(
 ) -> dict[str, object]:
     """US-KPI-01 AC1–4: source-based market-local metrics; unknown is null."""
     return await kpi_service.summary(
-        db, user, date_from=date_from, date_to=date_to,
-        warehouse_id=warehouse_id, store_id=store_id,
+        db,
+        user,
+        date_from=date_from,
+        date_to=date_to,
+        warehouse_id=warehouse_id,
+        store_id=store_id,
     )
 
 
@@ -63,9 +67,7 @@ async def kpi_diagnostics(user: AuthUser, db: DbSession) -> dict[str, object]:
 
 
 @router.put("/kpi/baseline/{metric}")
-async def put_baseline(
-    metric: str, body: BaselineInput, user: AuthUser, db: DbSession
-) -> dict[str, object]:
+async def put_baseline(metric: str, body: BaselineInput, user: AuthUser, db: DbSession) -> dict[str, object]:
     """US-KPI-02 AC1: admin-only baseline write with existing decision audit."""
     return await kpi_service.put_baseline(db, user, metric=metric, value=body.value)
 
@@ -83,6 +85,12 @@ async def audit_decisions(
 ) -> dict[str, object]:
     """US-LOG-01: read-only paginated audit, with server-side PII redaction."""
     return await kpi_service.decision_log(
-        db, user, order_id=order_id, action=action, date_from=date_from,
-        date_to=date_to, page=page, page_size=page_size,
+        db,
+        user,
+        order_id=order_id,
+        action=action,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size,
     )

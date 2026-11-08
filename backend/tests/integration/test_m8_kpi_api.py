@@ -10,7 +10,14 @@ from tests.integration import rows
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import execute, fetch
 from tests.integration.hr_fixture import (
-    ADMIN, CS, DISPATCHER, SALES, SETUP, SYSTEM_ADMIN, VIEWER, WAREHOUSE,
+    ADMIN,
+    CS,
+    DISPATCHER,
+    SALES,
+    SETUP,
+    SYSTEM_ADMIN,
+    VIEWER,
+    WAREHOUSE,
 )
 
 pytestmark = pytest.mark.integration
@@ -18,8 +25,14 @@ PERIOD = {"from": "2026-11-10", "to": "2026-11-11"}
 
 SEED = (
     *SETUP,
-    rows.order_sql(1), rows.order_sql(2), rows.order_sql(3), rows.order_sql(4),
-    rows.run_sql(1, 1), rows.run_sql(2, 1), rows.run_sql(3, 1), rows.run_sql(4, 1),
+    rows.order_sql(1),
+    rows.order_sql(2),
+    rows.order_sql(3),
+    rows.order_sql(4),
+    rows.run_sql(1, 1),
+    rows.run_sql(2, 1),
+    rows.run_sql(3, 1),
+    rows.run_sql(4, 1),
     rows.plan_sql(1, 1, 1, "approved"),
     rows.plan_sql(2, 2, 2, "manual", manual="manual_exception"),
     rows.plan_sql(3, 3, 1, "approved"),
@@ -92,8 +105,7 @@ def test_US_KPI_01_AC1_market_local_midnight_determines_daily_bucket(kpi: Api) -
 def test_US_KPI_01_AC4_operational_scope_excludes_revenue_owner(kpi: Api) -> None:
     for user_id in (VIEWER, SALES, CS):
         assert_error(kpi.get("/kpi/summary", user_id, **PERIOD), 403, "FORBIDDEN")
-        assert_error(kpi.get("/kpi/daily", user_id, metric="on_time_rate", **PERIOD),
-                     403, "FORBIDDEN")
+        assert_error(kpi.get("/kpi/daily", user_id, metric="on_time_rate", **PERIOD), 403, "FORBIDDEN")
         assert_error(kpi.get("/kpi/diagnostics", user_id), 403, "FORBIDDEN")
     assert_error(kpi.get("/kpi/summary", None, **PERIOD), 401, "AUTH_INVALID")
     assert_error(kpi.get("/kpi/summary", SYSTEM_ADMIN, **PERIOD), 403, "FORBIDDEN")
@@ -104,17 +116,13 @@ def test_US_KPI_01_AC4_operational_scope_excludes_revenue_owner(kpi: Api) -> Non
 
 def test_US_KPI_01_AC4_warehouse_location_and_market_filters(kpi: Api) -> None:
     assert kpi.get("/kpi/summary", WAREHOUSE, warehouse_id=1, **PERIOD).status_code == 200
-    assert_error(kpi.get("/kpi/summary", WAREHOUSE, warehouse_id=3, **PERIOD),
-                 404, "NOT_FOUND")
-    assert_error(kpi.get("/kpi/summary", WAREHOUSE, warehouse_id=4, **PERIOD),
-                 404, "NOT_FOUND")
-    assert_error(kpi.get("/kpi/summary", DISPATCHER, warehouse_id=2, **PERIOD),
-                 422, "VALIDATION_ERROR")
+    assert_error(kpi.get("/kpi/summary", WAREHOUSE, warehouse_id=3, **PERIOD), 404, "NOT_FOUND")
+    assert_error(kpi.get("/kpi/summary", WAREHOUSE, warehouse_id=4, **PERIOD), 404, "NOT_FOUND")
+    assert_error(kpi.get("/kpi/summary", DISPATCHER, warehouse_id=2, **PERIOD), 422, "VALIDATION_ERROR")
     result = kpi.get("/kpi/summary", DISPATCHER, warehouse_id=3, **PERIOD)
     assert result.status_code == 200
     assert result.json()["metrics"]["on_time_rate"]["value"] is None
-    assert_error(kpi.get("/kpi/summary", DISPATCHER, store_id=99, **PERIOD),
-                 404, "NOT_FOUND")
+    assert_error(kpi.get("/kpi/summary", DISPATCHER, store_id=99, **PERIOD), 404, "NOT_FOUND")
 
 
 def test_US_KPI_01_AC1_empty_period_and_validation_are_not_fabricated(kpi: Api) -> None:
@@ -124,26 +132,25 @@ def test_US_KPI_01_AC1_empty_period_and_validation_are_not_fabricated(kpi: Api) 
     assert response.json()["metrics"]["on_time_rate"]["value"] is None
     assert response.json()["metrics"]["capacity_utilisation"]["value"] is None
     assert response.json()["metrics"]["manual_plan_count"]["value"] == 0
-    assert_error(kpi.get("/kpi/daily", ADMIN, metric="unknown_metric", **PERIOD),
-                 422, "VALIDATION_ERROR")
-    assert_error(kpi.get("/kpi/summary", ADMIN, **{
-        "from": "2026-12-01", "to": "2026-11-01"}), 422, "VALIDATION_ERROR")
+    assert_error(kpi.get("/kpi/daily", ADMIN, metric="unknown_metric", **PERIOD), 422, "VALIDATION_ERROR")
+    assert_error(
+        kpi.get("/kpi/summary", ADMIN, **{"from": "2026-12-01", "to": "2026-11-01"}), 422, "VALIDATION_ERROR"
+    )
 
 
 def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
     for role in (DISPATCHER, WAREHOUSE, VIEWER):
         assert_error(
             kpi.send("PUT", "/kpi/baseline/planning_time_min", role, {"value": "15"}),
-            403, "FORBIDDEN",
+            403,
+            "FORBIDDEN",
         )
     response = kpi.send("PUT", "/kpi/baseline/planning_time_min", ADMIN, {"value": "15"})
     assert response.status_code == 200, response.text
     assert response.json()["value"] == 15
     report = kpi.get("/kpi/summary", ADMIN, **PERIOD)
     assert report.status_code == 200
-    assert report.json()["metrics"]["planning_time_min"] == {
-        "value": 15, "baseline": 15.0, "change": 0.0
-    }
+    assert report.json()["metrics"]["planning_time_min"] == {"value": 15, "baseline": 15.0, "change": 0.0}
     assert fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline") == [
         ("planning_time_min", "15", "manual")
     ]
@@ -161,7 +168,7 @@ def test_US_LOG_01_AC1_AC3_redacts_raw_decisions_and_respects_market(kpi: Api) -
         "('00000000-0000-0000-0000-000000000001', 2, 'dispatcher', "
         "'PLAN_APPROVED', 'order', 'SECRET-ADDRESS', 1, 'RULE_APPROVED', "
         "'PRIVATE CUSTOMER PHONE', '{\"recipient\":\"PRIVATE-EMAIL\"}', "
-        "'{\"phone\":\"PRIVATE-BEFORE\"}', '{\"address\":\"PRIVATE-AFTER\"}', "
+        '\'{"phone":"PRIVATE-BEFORE"}\', \'{"address":"PRIVATE-AFTER"}\', '
         "'2026-11-10T10:00Z')",
         "INSERT INTO audit.decision_log "
         "(correlation_id, actor_employee_id, actor_role, action, entity, order_id, ts) VALUES "
@@ -173,8 +180,13 @@ def test_US_LOG_01_AC1_AC3_redacts_raw_decisions_and_respects_market(kpi: Api) -
     assert result.json()["total"] == 1
     assert result.json()["items"][0]["action"] == "PLAN_APPROVED"
     assert result.json()["items"][0]["correlation_id"] == "00000000-0000-0000-0000-000000000001"
-    for forbidden in ("SECRET-ADDRESS", "PRIVATE CUSTOMER PHONE", "PRIVATE-EMAIL",
-                      "PRIVATE-BEFORE", "PRIVATE-AFTER"):
+    for forbidden in (
+        "SECRET-ADDRESS",
+        "PRIVATE CUSTOMER PHONE",
+        "PRIVATE-EMAIL",
+        "PRIVATE-BEFORE",
+        "PRIVATE-AFTER",
+    ):
         assert forbidden not in result.text
     assert_error(kpi.get("/audit/decisions", VIEWER, **PERIOD), 403, "FORBIDDEN")
     assert_error(kpi.get("/audit/decisions", WAREHOUSE, **PERIOD), 403, "FORBIDDEN")
@@ -198,8 +210,9 @@ def test_US_LOG_01_AC1_filters_sort_and_paginate(kpi: Api) -> None:
     assert page.json()["items"][0]["ts"].startswith("2026-11-10T10:02")
     filtered = kpi.get("/audit/decisions", ADMIN, order_id=1, action="PLAN_APPROVED", **PERIOD)
     assert filtered.json()["total"] == 2
-    assert_error(kpi.get("/audit/decisions", ADMIN, action="a@example.test", **PERIOD),
-                 422, "VALIDATION_ERROR")
+    assert_error(
+        kpi.get("/audit/decisions", ADMIN, action="a@example.test", **PERIOD), 422, "VALIDATION_ERROR"
+    )
 
 
 def test_US_KPI_01_AC1_diagnostics_do_not_fabricate_missing_source_metrics(kpi: Api) -> None:

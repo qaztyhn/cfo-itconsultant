@@ -3,6 +3,7 @@
 No revenue data, raw customer fields, or unapproved default KPI numbers are used.
 All market, warehouse and audit scopes are enforced before aggregation/pagination.
 """
+
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -26,21 +27,31 @@ from app.domain.models.ops import CustomerOrder
 from app.domain.models.plan import FulfilmentPlan, PrepReservation
 from app.domain.models.ref import Location, Market, MarketHoliday
 
-
 # The current docs call these "8 KPI", but docs/05 and the docs/06 JSON
 # individually name ten keys. Keep all ten as written; owner must reconcile count.
 METRICS: tuple[str, ...] = (
-    "planning_time_min", "on_time_rate", "labour_hours_per_delivery",
-    "km_per_delivery", "prep_error_min", "eta_error_min",
-    "plan_acceptance_rate", "failed_delivery_rate", "capacity_utilisation",
+    "planning_time_min",
+    "on_time_rate",
+    "labour_hours_per_delivery",
+    "km_per_delivery",
+    "prep_error_min",
+    "eta_error_min",
+    "plan_acceptance_rate",
+    "failed_delivery_rate",
+    "capacity_utilisation",
     "manual_plan_count",
 )
 UNITS = {
-    "planning_time_min": "min", "on_time_rate": "ratio",
-    "labour_hours_per_delivery": "hours", "km_per_delivery": "km",
-    "prep_error_min": "min", "eta_error_min": "min",
-    "plan_acceptance_rate": "ratio", "failed_delivery_rate": "ratio",
-    "capacity_utilisation": "ratio", "manual_plan_count": "count",
+    "planning_time_min": "min",
+    "on_time_rate": "ratio",
+    "labour_hours_per_delivery": "hours",
+    "km_per_delivery": "km",
+    "prep_error_min": "min",
+    "eta_error_min": "min",
+    "plan_acceptance_rate": "ratio",
+    "failed_delivery_rate": "ratio",
+    "capacity_utilisation": "ratio",
+    "manual_plan_count": "count",
 }
 CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
@@ -90,6 +101,7 @@ class Measure:
 
 def _day(instant: object, zone: ZoneInfo) -> date | None:
     from datetime import datetime
+
     if not isinstance(instant, datetime):
         return None
     if instant.tzinfo is None or instant.utcoffset() is None:
@@ -101,10 +113,10 @@ async def _context(
     session: AsyncSession, user: CurrentUser, *, audit: bool = False
 ) -> tuple[Market, ZoneInfo]:
     roles = set(user.roles)
-    if not (("admin" in roles) or (
-        "ops" in user.kpi_scopes and
-        bool(roles.intersection({"dispatcher", "warehouse", "viewer"}))
-    )):
+    if not (
+        ("admin" in roles)
+        or ("ops" in user.kpi_scopes and bool(roles.intersection({"dispatcher", "warehouse", "viewer"})))
+    ):
         raise DomainError("FORBIDDEN", "Operational KPI access denied.")
     if audit and not roles.intersection({"admin", "dispatcher", "viewer"}):
         raise DomainError("FORBIDDEN", "Decision-log access denied.")
@@ -193,10 +205,20 @@ async def _collect(
         constraints.append(o.origin_store_id == store_id)
     result = await session.execute(
         select(
-            o.id, o.status, o.submitted_at, o.approved_at, o.delivered_at,
-            o.closed_at, o.promise_end, o.committed_date,
-            p.id.label("plan_id"), p.rank, p.status.label("plan_status"),
-            p.manual_reason_code, p.prep_hours, p.distance_km,
+            o.id,
+            o.status,
+            o.submitted_at,
+            o.approved_at,
+            o.delivered_at,
+            o.closed_at,
+            o.promise_end,
+            o.committed_date,
+            p.id.label("plan_id"),
+            p.rank,
+            p.status.label("plan_status"),
+            p.manual_reason_code,
+            p.prep_hours,
+            p.distance_km,
         )
         .select_from(o)
         .outerjoin(p, p.id == o.approved_plan_id)
@@ -216,8 +238,10 @@ async def _collect(
     imp_rows = (
         await session.execute(
             select(
-                ImprovementLog.order_id, ImprovementLog.delivered_at,
-                ImprovementLog.prep_error_min, ImprovementLog.eta_error_min,
+                ImprovementLog.order_id,
+                ImprovementLog.delivered_at,
+                ImprovementLog.prep_error_min,
+                ImprovementLog.eta_error_min,
                 ImprovementLog.accepted_unchanged,
             )
             .select_from(ImprovementLog)
@@ -265,8 +289,10 @@ async def _collect(
         if row.status == "DELIVERED" and delivered_day is None:
             for bucket in all_days.values():
                 for metric in (
-                    "on_time_rate", "failed_delivery_rate",
-                    "labour_hours_per_delivery", "km_per_delivery",
+                    "on_time_rate",
+                    "failed_delivery_rate",
+                    "labour_hours_per_delivery",
+                    "km_per_delivery",
                 ):
                     bucket[metric].missing = True
         if row.status == "FAILED" and row.closed_at is None:
@@ -282,15 +308,14 @@ async def _collect(
             )
             bucket["on_time_rate"].add(
                 Decimal(int(on_time))
-                if row.promise_end is not None and row.committed_date is not None else None
+                if row.promise_end is not None and row.committed_date is not None
+                else None
             )
             bucket["failed_delivery_rate"].add(Decimal(0))
             bucket["labour_hours_per_delivery"].add(
                 Decimal(row.prep_hours) if row.prep_hours is not None else None
             )
-            bucket["km_per_delivery"].add(
-                Decimal(row.distance_km) if row.distance_km is not None else None
-            )
+            bucket["km_per_delivery"].add(Decimal(row.distance_km) if row.distance_km is not None else None)
         failed_day = _day(row.closed_at, zone) if row.status == "FAILED" else None
         if failed_day in all_days:
             all_days[failed_day]["failed_delivery_rate"].add(Decimal(1))
@@ -318,7 +343,8 @@ async def _collect(
     committed = (
         await session.execute(
             select(
-                PrepReservation.work_date, PrepReservation.warehouse_id,
+                PrepReservation.work_date,
+                PrepReservation.warehouse_id,
                 func.sum(PrepReservation.hours),
             )
             .join(Location, Location.id == PrepReservation.warehouse_id)
@@ -329,7 +355,8 @@ async def _collect(
     staffed = (
         await session.execute(
             select(
-                Attendance.work_date, ShiftTemplate.warehouse_id,
+                Attendance.work_date,
+                ShiftTemplate.warehouse_id,
                 func.sum(ShiftTemplate.useful_hours_per_staff),
             )
             .join(ShiftTemplate, ShiftTemplate.id == Attendance.shift_template_id)
@@ -340,22 +367,21 @@ async def _collect(
         )
     ).all()
     holidays = set(
-        (await session.scalars(
-            select(MarketHoliday.holiday_date).where(
-                MarketHoliday.market_id == market.id,
-                MarketHoliday.holiday_date.between(period.start, period.end),
+        (
+            await session.scalars(
+                select(MarketHoliday.holiday_date).where(
+                    MarketHoliday.market_id == market.id,
+                    MarketHoliday.holiday_date.between(period.start, period.end),
+                )
             )
-        )).all()
+        ).all()
     )
     try:
         share = Decimal(str(MarketConfig.model_validate(market.config or {}).delivery_share))
     except ValueError as exc:
         raise DomainError("VALIDATION_ERROR", "Market capacity configuration is invalid.") from exc
     committed_map = {(d, w): Decimal(h) for d, w, h in committed}
-    staffed_map = {
-        (d, w): Decimal(0) if d in holidays else Decimal(h) * share
-        for d, w, h in staffed
-    }
+    staffed_map = {(d, w): Decimal(0) if d in holidays else Decimal(h) * share for d, w, h in staffed}
     for day, wh in committed_map.keys() | staffed_map.keys():
         booked = committed_map.get((day, wh), Decimal(0))
         capacity = staffed_map.get((day, wh))
@@ -389,9 +415,7 @@ async def summary(
     for group in rows.values():
         for metric in METRICS:
             totals[metric].combine(group[metric])
-    baselines = (
-        await session.scalars(select(KpiBaseline).where(KpiBaseline.market_id == market.id))
-    ).all()
+    baselines = (await session.scalars(select(KpiBaseline).where(KpiBaseline.market_id == market.id))).all()
     baseline_by_metric = {b.metric: b for b in baselines}
     output: dict[str, dict[str, float | int | None]] = {}
     for key in METRICS:
@@ -453,8 +477,12 @@ async def put_baseline(
     stmt = (
         insert(KpiBaseline)
         .values(
-            market_id=market.id, metric=metric, value=value,
-            unit=UNITS[metric], source="manual", measured_on=today,
+            market_id=market.id,
+            metric=metric,
+            value=value,
+            unit=UNITS[metric],
+            source="manual",
+            measured_on=today,
         )
         .on_conflict_do_update(
             index_elements=[KpiBaseline.market_id, KpiBaseline.metric],
@@ -464,11 +492,14 @@ async def put_baseline(
     await session.execute(stmt)
     # CONFIG_CHANGED is the existing approved action for configuration inputs.
     await record_decision(
-        session, Action.CONFIG_CHANGED, entity="kpi_baseline",
+        session,
+        Action.CONFIG_CHANGED,
+        entity="kpi_baseline",
         entity_id=f"{market.code.strip()}:{metric}",
         before={"value": str(previous.value)} if previous is not None else None,
         after={"value": str(value), "unit": UNITS[metric], "measured_on": today.isoformat()},
-        actor_user_id=user.id, actor_employee_id=user.employee_id,
+        actor_user_id=user.id,
+        actor_employee_id=user.employee_id,
         actor_role="admin",
     )
     return {"metric": metric, "value": float(value), "unit": UNITS[metric], "measured_on": today.isoformat()}
@@ -488,12 +519,16 @@ async def decision_log(
     market, zone = await _context(session, user, audit=True)
     period = Period.resolve(date_from, date_to, clock.now().astimezone(zone).date())
     local_day = cast(func.timezone(market.timezone, DecisionLog.ts), Date)
-    same_market_order = select(CustomerOrder.id).where(
-        CustomerOrder.id == DecisionLog.order_id, CustomerOrder.market_id == market.id
-    ).exists()
-    same_market_employee = select(Employee.id).where(
-        Employee.id == DecisionLog.actor_employee_id, Employee.market_id == market.id
-    ).exists()
+    same_market_order = (
+        select(CustomerOrder.id)
+        .where(CustomerOrder.id == DecisionLog.order_id, CustomerOrder.market_id == market.id)
+        .exists()
+    )
+    same_market_employee = (
+        select(Employee.id)
+        .where(Employee.id == DecisionLog.actor_employee_id, Employee.market_id == market.id)
+        .exists()
+    )
     stmt = select(DecisionLog).where(
         or_(
             same_market_order,
@@ -507,13 +542,12 @@ async def decision_log(
         if not CODE.fullmatch(action):
             raise DomainError("VALIDATION_ERROR", "Invalid decision action filter.")
         stmt = stmt.where(DecisionLog.action == action)
-    total = int(
-        (await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))) or 0
-    )
+    total = int((await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))) or 0)
     records = (
         await session.scalars(
             stmt.order_by(DecisionLog.ts.desc(), DecisionLog.id.desc())
-            .limit(page_size).offset((page - 1) * page_size)
+            .limit(page_size)
+            .offset((page - 1) * page_size)
         )
     ).all()
     # Decision snapshots and reason_text are JSON/free text that may contain
@@ -526,16 +560,36 @@ async def decision_log(
             "action": entry.action if CODE.fullmatch(entry.action) else None,
             "actor_role": (
                 entry.actor_role
-                if entry.actor_role in {
-                    "admin", "dispatcher", "warehouse", "sales", "driver",
-                    "customer_service", "viewer",
+                if entry.actor_role
+                in {
+                    "admin",
+                    "dispatcher",
+                    "warehouse",
+                    "sales",
+                    "driver",
+                    "customer_service",
+                    "viewer",
                 }
                 else None
             ),
-            "entity": entry.entity if entry.entity in {
-                "order", "plan", "stock", "transfer", "kpi_baseline", "reservation",
-                "notification", "mapping", "employee", "location", "routing",
-            } else None,
+            "entity": (
+                entry.entity
+                if entry.entity
+                in {
+                    "order",
+                    "plan",
+                    "stock",
+                    "transfer",
+                    "kpi_baseline",
+                    "reservation",
+                    "notification",
+                    "mapping",
+                    "employee",
+                    "location",
+                    "routing",
+                }
+                else None
+            ),
             "order_id": entry.order_id,
             "plan_id": entry.plan_id,
             "reason_code": (
