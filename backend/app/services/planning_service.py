@@ -26,7 +26,7 @@ from app.core.config import MarketConfig
 from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
-from app.domain.models.ops import CustomerOrder, DateNegotiation, OrderRouting
+from app.domain.models.ops import Alert, CustomerOrder, DateNegotiation, OrderRouting
 from app.domain.models.plan import FulfilmentPlan, PlanningRun, PlanVehicle
 from app.domain.models.ref import Location, Market
 from app.domain.transitions import transition
@@ -154,7 +154,7 @@ def _line_payload(candidate: PlanCandidate) -> dict[str, object]:
 
 
 def _candidate_row(
-    run: PlanningRun, candidate: PlanCandidate, actor_id: int, weights: RankWeights
+    run: PlanningRun, candidate: PlanCandidate, actor_id: int | None, weights: RankWeights
 ) -> FulfilmentPlan:
     return FulfilmentPlan(
         run_id=run.id,
@@ -193,7 +193,7 @@ def _candidate_row(
 
 
 async def _save_candidates(
-    session: AsyncSession, run: PlanningRun, result: PlanningResult, actor_id: int, weights: RankWeights
+    session: AsyncSession, run: PlanningRun, result: PlanningResult, actor_id: int | None, weights: RankWeights
 ) -> None:
     for candidate in result.candidates:
         row = _candidate_row(run, candidate, actor_id, weights)
@@ -580,11 +580,109 @@ async def list_date_negotiations(order_id: int, actor: object, *, session: Async
     }
 
 
-async def suggest_replan(order_id: int, trigger: str) -> int | None:
-    """Fail closed until T07 integrates the approved source-change event and D7 history attestations.
+async def suggest_replan(
+    order_id: int,
+    trigger: str,
+    *,
+    session: AsyncSession | None = None,
+    inputs_loader: InputLoader = load_inputs,
+) -> int | None:
+    """Create an unheld advisory run for an approved/pre-dispatch order.
 
-    No live plan is changed here. T16 must not automatically approve suggestions.
+    Only T07-approved signals may call this internal service; it never approves
+    automatically or mutates the currently committed plan. After DISPATCHED
+    the dispatcher receives an alert instead of a replacement plan.
     """
     if trigger not in _VALID_TRIGGERS:
         raise _fail("VALIDATION_ERROR", "Unknown replanning signal.")
-    return None
+    if session is None:
+        async with get_sessionmaker()() as db, db.begin():
+            return await suggest_replan(order_id, trigger, session=db, inputs_loader=inputs_loader)
+    order = await session.scalar(
+        select(CustomerOrder).where(CustomerOrder.id == order_id).with_for_update()
+    )
+    if order is None:
+        raise _fail("NOT_FOUND", "Order not found.")
+    if order.status not in (
+        "APPROVED", "PREPARING", "GOODS_READY", "LOADED", "FAILED", "DISPATCHED"
+    ):
+        return None
+    latest = await _latest_run(session, order.id)
+    if (
+        latest is not None
+        and latest.kind == "replan_suggestion"
+        and latest.params.get("trigger") == trigger
+        and latest.order_version == order.version
+        and latest.input_snapshot.get("source_version") == order.source_version
+    ):
+        return latest.id
+    market = await session.get(Market, order.market_id)
+    if market is None:
+        raise _fail("NOT_FOUND", "Market not found.")
+    now = clock.now()
+    if order.status == "DISPATCHED":
+        dedupe = f"replan-after-dispatch:{order.id}:{order.version}:{trigger}"
+        existing_alert = await session.scalar(
+            select(Alert.id).where(Alert.dedupe_key == dedupe)
+        )
+        if existing_alert is None:
+            session.add(
+                Alert(
+                    order_id=order.id,
+                    market_id=market.id,
+                    level="warning",
+                    type="REPLAN_SUGGESTED",
+                    message="Order needs dispatcher review; delivery is already dispatched.",
+                    target_roles=["dispatcher"],
+                    dedupe_key=dedupe,
+                )
+            )
+        return None
+    # Excluding reservations from this very order mirrors 04 §7.10.
+    inputs = await inputs_loader(session, order, market, now=now, params={})
+    cfg = cast(EngineConfig, inputs.config)
+    result = plan_order(inputs.order, list(inputs.warehouses), cfg)
+    run = PlanningRun(
+        order_id=order.id,
+        order_version=order.version,
+        triggered_by=None,
+        kind="replan_suggestion",
+        run_no=1 if latest is None else latest.run_no + 1,
+        params={"trigger": trigger},
+        input_snapshot=inputs.snapshot,
+        result=result.result,
+        failed_check=result.failed_check,
+        earliest_feasible_date=result.earliest_feasible_date,
+        planning_reserve_min=result.planning_reserve_min,
+        reserve_class=result.reserve_class,
+    )
+    session.add(run)
+    await session.flush()
+    weights = RankWeights(cfg.w_km, cfg.w_fill)
+    await _save_candidates(session, run, result, None, weights)
+    dedupe_key = f"replan:{order.id}:{run.id}"
+    session.add(
+        Alert(
+            order_id=order.id,
+            market_id=market.id,
+            level="warning",
+            type="REPLAN_SUGGESTED",
+            message="A replacement plan is available for dispatcher review.",
+            target_roles=["dispatcher"],
+            dedupe_key=dedupe_key,
+        )
+    )
+    await record_decision(
+        session,
+        Action.REPLAN_SUGGESTED,
+        "planning_run",
+        str(run.id),
+        order_id=order.id,
+        snapshot={
+            "trigger": trigger,
+            "existing_approved_plan_id": order.approved_plan_id,
+            "order_version": order.version,
+        },
+        after={"new_run_id": run.id, "result": result.result, "hold_created": False},
+    )
+    return run.id
