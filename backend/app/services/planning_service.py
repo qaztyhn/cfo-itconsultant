@@ -11,7 +11,7 @@ KHÔNG giữ chỗ, alert REPLAN_SUGGESTED (06 mục 6.6; US-APR-04).
 Owner: Dev 1 (A) — M4.
 """
 
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import cast
@@ -28,7 +28,7 @@ from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
 from app.domain.models.ops import Alert, CustomerOrder, DateNegotiation, OrderRouting
 from app.domain.models.plan import FulfilmentPlan, PlanningRun, PlanVehicle
-from app.domain.models.ref import Location, Market
+from app.domain.models.ref import Location, Market, Vehicle
 from app.domain.transitions import transition
 from app.engine.planner import plan_order
 from app.engine.types import EngineConfig, PlanCandidate, PlanningResult, RankWeights
@@ -407,16 +407,39 @@ def _safe_json(value: object) -> object:
     return value
 
 
-def _vehicle_out(vehicle: PlanVehicle, *, compact: bool) -> dict[str, object]:
+def _plain(value: Decimal) -> str:
+    """Capacity as a plain decimal string without trailing zeros (12000.000 -> "12000")."""
+    return format(value.normalize(), "f")
+
+
+def _vehicle_ref(vehicle: Vehicle) -> dict[str, object]:
+    """Public fleet fields only: no plate, licence, availability, GPS or driver data."""
+    return {
+        "id": vehicle.id,
+        "code": vehicle.code,
+        "name": vehicle.name,
+        "capacity_kg": _plain(vehicle.capacity_kg),
+        "capacity_m3": _plain(vehicle.capacity_m3),
+    }
+
+
+def _vehicle_out(
+    vehicle: PlanVehicle, *, compact: bool, catalog: Mapping[int, Vehicle] | None = None
+) -> dict[str, object]:
     if compact:
         return {
             "seq": vehicle.seq,
             "eta_at": vehicle.eta_at.isoformat(),
         }
+    record = (catalog or {}).get(vehicle.vehicle_id)
+    if record is None:
+        # A stored allocation always references ref.vehicle (FK); fail closed instead of a partial DTO.
+        raise _fail("INTERNAL_ERROR", "Plan vehicle record is unavailable.")
     return {
         "seq": vehicle.seq,
         "vehicle_id": vehicle.vehicle_id,
         "driver_employee_id": vehicle.driver_employee_id,
+        "vehicle": _vehicle_ref(record),
         "load_kg": str(vehicle.load_kg),
         "load_m3": str(vehicle.load_m3),
         "load_lines": vehicle.load_lines,
@@ -427,12 +450,38 @@ def _vehicle_out(vehicle: PlanVehicle, *, compact: bool) -> dict[str, object]:
     }
 
 
-async def _plan_out(session: AsyncSession, row: FulfilmentPlan, *, compact: bool) -> dict[str, object]:
-    allocations = (
-        await session.scalars(
-            select(PlanVehicle).where(PlanVehicle.plan_id == row.id).order_by(PlanVehicle.seq)
+async def _load_allocations(session: AsyncSession, plan_ids: Sequence[int]) -> dict[int, list[PlanVehicle]]:
+    """All allocations of the given plans in one query, ordered by seq."""
+    grouped: dict[int, list[PlanVehicle]] = {plan_id: [] for plan_id in plan_ids}
+    if plan_ids:
+        rows = await session.scalars(
+            select(PlanVehicle).where(PlanVehicle.plan_id.in_(plan_ids)).order_by(PlanVehicle.seq)
         )
-    ).all()
+        for row in rows:
+            grouped[row.plan_id].append(row)
+    return grouped
+
+
+async def _load_catalog(session: AsyncSession, allocations: Iterable[PlanVehicle]) -> dict[int, Vehicle]:
+    """Referenced ref.vehicle rows in one query (no per-vehicle lookups)."""
+    ids = {a.vehicle_id for a in allocations}
+    if not ids:
+        return {}
+    return {v.id: v for v in await session.scalars(select(Vehicle).where(Vehicle.id.in_(ids)))}
+
+
+async def _plan_out(
+    session: AsyncSession,
+    row: FulfilmentPlan,
+    *,
+    compact: bool,
+    allocations: Sequence[PlanVehicle] | None = None,
+    catalog: Mapping[int, Vehicle] | None = None,
+) -> dict[str, object]:
+    if allocations is None:
+        allocations = (await _load_allocations(session, [row.id]))[row.id]
+    if catalog is None and not compact:
+        catalog = await _load_catalog(session, allocations)
     basic: dict[str, object] = {
         "id": row.id,
         "rank": row.rank,
@@ -440,7 +489,7 @@ async def _plan_out(session: AsyncSession, row: FulfilmentPlan, *, compact: bool
         "target_date": row.target_date.isoformat(),
         "eta_at": row.eta_at.isoformat(),
         "vehicle_count": row.vehicle_count,
-        "vehicles": [_vehicle_out(v, compact=compact) for v in allocations],
+        "vehicles": [_vehicle_out(v, compact=compact, catalog=catalog) for v in allocations],
     }
     if compact:
         return basic
@@ -485,6 +534,8 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
     ).all()
     if compact:
         plans = [plan for plan in plans if plan.rank == 1]
+    by_plan = await _load_allocations(session, [plan.id for plan in plans])
+    catalog = None if compact else await _load_catalog(session, (a for v in by_plan.values() for a in v))
     response: dict[str, object] = {
         "id": run.id,
         "order_id": order.id,
@@ -494,7 +545,10 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
         "reserve_class": run.reserve_class,
         "hold_expires_at": run.hold_expires_at.isoformat() if run.hold_expires_at else None,
         "hold_extensions": run.hold_extensions,
-        "plans": [await _plan_out(session, plan, compact=compact) for plan in plans],
+        "plans": [
+            await _plan_out(session, plan, compact=compact, allocations=by_plan[plan.id], catalog=catalog)
+            for plan in plans
+        ],
     }
     if compact:
         response["sales_approvable"] = bool(

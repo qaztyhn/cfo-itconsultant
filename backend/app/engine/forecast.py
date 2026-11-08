@@ -10,7 +10,7 @@ Owner: Dev 1 (luồng A).
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
@@ -18,7 +18,7 @@ from typing import Literal
 @dataclass(frozen=True)
 class MilestoneState:
     planned_goods_ready: datetime
-    planned_start_prep: datetime
+    planned_start_prep: datetime | None
     planned_depart: datetime
     drive_min: int
     loading_min: int
@@ -44,11 +44,18 @@ class RiskAssessment:
     risk_color: Literal["green", "yellow", "orange", "red"]
 
 
+def _require_aware(*timestamps: datetime) -> None:
+    if any(ts.tzinfo is None or ts.utcoffset() is None for ts in timestamps):
+        raise ValueError("Forecast timestamps must be offset-aware")
+
+
 def ceil_to_step(ts: datetime, step_min: int) -> datetime:
     """Làm tròn LÊN tới bội số `step_min` phút (giây lẻ cũng làm tròn lên)."""
     if step_min <= 0:
         raise ValueError("step_min must be positive")
-    base = ts.replace(second=0, microsecond=0)
+    _require_aware(ts)
+    # UTC arithmetic avoids constructing nonexistent local times across DST changes.
+    base = ts.astimezone(UTC).replace(second=0, microsecond=0)
     minutes = base.hour * 60 + base.minute + (1 if (ts.second or ts.microsecond) else 0)
     rounded = -(-minutes // step_min) * step_min
     return base.replace(hour=0, minute=0) + timedelta(minutes=rounded)
@@ -61,6 +68,8 @@ def _pre_loaded_depart(state: MilestoneState, now: datetime) -> datetime:
     else:
         delay = timedelta(0)
         if state.actual_start_prep is not None:
+            if state.planned_start_prep is None:
+                raise ValueError("Approved planned prep start is missing")
             delay = max(timedelta(0), state.actual_start_prep - state.planned_start_prep)
         goods_ready = state.planned_goods_ready + delay
         if state.paused or now > goods_ready:
@@ -73,6 +82,15 @@ def _pre_loaded_depart(state: MilestoneState, now: datetime) -> datetime:
 
 def forecast_eta(state: MilestoneState, now: datetime, eta_round_min: int, after_loaded_min: int) -> datetime:
     """ETA dự báo theo mốc hiện có (một xe), làm tròn lên `eta_round_min` (04 mục 6.3)."""
+    _require_aware(now, state.planned_goods_ready, state.planned_depart)
+    if state.planned_start_prep is not None:
+        _require_aware(state.planned_start_prep)
+    if state.drive_min < 0 or state.loading_min < 0 or after_loaded_min < 0:
+        raise ValueError("Forecast durations cannot be negative")
+    if (state.gps_recorded_at is None) != (state.gps_remaining_min is None):
+        raise ValueError("GPS requires a trusted timestamp and remaining travel minutes")
+    if state.gps_remaining_min is not None and state.gps_remaining_min < 0:
+        raise ValueError("GPS remaining minutes cannot be negative")
     if state.gps_recorded_at is not None and state.gps_remaining_min is not None:
         eta = state.gps_recorded_at + timedelta(minutes=state.gps_remaining_min)
     elif state.departed_at is not None:
@@ -87,7 +105,10 @@ def forecast_eta(state: MilestoneState, now: datetime, eta_round_min: int, after
 
 
 def order_forecast(vehicle_etas: list[datetime]) -> datetime:
-    """Đơn nhiều xe: forecast của đơn = xe tới muộn nhất."""
+    """Đơn nhiều xe: forecast của đơn = xe tới muộn nhất; thiếu xe phải fail closed."""
+    if not vehicle_etas:
+        raise ValueError("No verified vehicle ETAs")
+    _require_aware(*vehicle_etas)
     return max(vehicle_etas)
 
 
@@ -108,6 +129,11 @@ def assess_risk(
     này ≥ `risk.consecutive_min_gap_min` (US-RSK-02 AC4); nếu quá gần, service không gọi lại để đếm.
     OVERDUE chỉ áp dụng cho đơn chưa giao (service không gọi cho đơn đã DELIVERED).
     """
+    _require_aware(planned_eta, forecast, promise_end, now)
+    if not 0 <= yellow_pct < orange_pct <= 100:
+        raise ValueError("Invalid approved risk thresholds")
+    if min_reserve_min < 1 or consecutive_needed < 1 or prev_consecutive_negative < 0:
+        raise ValueError("Invalid approved risk policy")
     reserve_total = max(min_reserve_min, _minutes(promise_end - planned_eta))
     slack = _minutes(promise_end - forecast)
     consumption = max(

@@ -404,3 +404,17 @@ Hai lớp (chi tiết cột ở `05_Database_Design.md`): **nhật ký quyết �
 ## 15. Điểm mở rộng đã chừa sẵn
 
 `evaluate_rules()` / `rank_candidates()` (Drools, OR-Tools) · quản lý và xếp lịch thiết bị kho (bỏ khỏi MVP v1.1) · ghép nhiều đơn trên một xe · `delivery_trip`/`trip_stop` nhiều điểm dừng (ghép đơn) · `HandlingGroupSuggester` và `TransferSuggester` (AI) · `location.efficiency_factor` (học định mức) · `SmsProvider` thật · `PodStorage` (ảnh) · `status page` · `MarketAdapter` thật cho WMS/ERP/POS · cửa hàng làm nguồn hàng (`location.type = 'store'` đã có, kèm xe riêng qua `vehicle.home_warehouse_id` mở rộng thành `home_location_id`).
+
+## 16. Owner-approved 2026-11-09 — architectural integration contracts
+
+Reference: [27 approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md), `DEC-OWNER-20261109` in `ASSUMPTIONS.md`. **Policy approved; implementation still needs reviewed PRs, migrations, tests and qualified legal assessment.**
+
+- **T07/Stock (S1–S5):** Explicit market-scoped Admin grants with separate authors/approvers; Warehouse Manager-submitted WMS independence proof; SE market-wide, immutable effective SKU scope version tied to the published batch's `as_of`; complete warehouse × in-scope SKU coverage (missing ≠ zero). Evidence valid ≤30 pilot days; mapping/unit/scope changes revoke evidence. Incomplete/untrusted data never becomes available stock.
+- **T18 (T18-1–3):** Transfer inbound cannot be double-counted; destination WMS snapshot timestamp by itself does not prove included quantity. Require verifiable transfer-to-batch/warehouse/SKU evidence; otherwise no additional inbound stock available. Explicit manager receipt remains authoritative; lead default requires approved market config/provenance; reversal remains blocked after source confirmation.
+- **D7/M6:** Independent verified 56-day daily proof with qualified verifier, explicit off-duty vs missing, separation of duty/driving/rest and future manager-approved shifts; uninterrupted 11h rest; unknown licence/mass/Regulation 561 scope fail closed. Successful POD unique per `trip_stop`, not per multi-vehicle order; migration required.
+- **GPS (G1–5):** Market-granted assigner sets **one primary Dispatcher per trip** with audit/handover, and only this person's active trip+shift may be read. Individual versioned driver notice+ack and privacy/legal/DPIA signoff before real-worker data. 30-minute device cadence; upload ≤100 points/batch; raw coordinates purged at trip/duty end, whichever first. Separate authenticated synthetic simulator.
+- **D4 (N1–5):** Dispatcher approves explicit versioned DELAY start/end; changed date requires agreed date-negotiation. Persist pinned template version + typed allowlisted inputs. Event/risk/outbox write in the same transaction; transport after commit only; existing retry cap and Mailpit/test recipients.
+- **API/M8:** `checks.<gate>.passed`, flat `rejected_candidates`; 10 operational KPI metric keys, no invented diagnostic data (`null`), market-local cohorts by approval/delivery/work_date.
+
+**Ownership:** Dev 1 planning/approval/storage/POD/transfer, Dev 2 Source/WMS/D7 imports/GPS/notification outbox, Dev 3 new hotfix PR for already-merged #136. Existing fail-closed guards remain until integration proven on PostgreSQL. No direct POS/WMS write-back and no automatic merge of PR code.
+
