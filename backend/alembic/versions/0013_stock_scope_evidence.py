@@ -33,7 +33,8 @@ UPGRADE: tuple[str, ...] = (
   user_id bigint NOT NULL REFERENCES ref.app_user(id),
   capability text NOT NULL CHECK (capability IN ('scope','evidence')),
   valid_from timestamptz NOT NULL, valid_to timestamptz,
-  granted_by bigint NOT NULL REFERENCES ref.app_user(id), reason_text text NOT NULL CHECK (btrim(reason_text) <> ''),
+  granted_by bigint NOT NULL REFERENCES ref.app_user(id),
+  reason_text text NOT NULL CHECK (btrim(reason_text) <> ''),
   revoked_at timestamptz, revoked_by bigint REFERENCES ref.app_user(id), revoke_reason text,
   {TS},
   CONSTRAINT ck_grant_window CHECK (valid_to IS NULL OR valid_to > valid_from),
@@ -92,7 +93,8 @@ UPGRADE: tuple[str, ...] = (
   source_batch_id bigint NOT NULL CHECK (source_batch_id > 0), as_of timestamptz NOT NULL,
   scope_version_id bigint REFERENCES ops.stock_scope_version(id),
   evidence_ids bigint[] NOT NULL DEFAULT '{{}}',
-  expected_rows int NOT NULL CHECK (expected_rows >= 0), recorded_rows int NOT NULL CHECK (recorded_rows >= 0),
+  expected_rows int NOT NULL CHECK (expected_rows >= 0),
+  recorded_rows int NOT NULL CHECK (recorded_rows >= 0),
   status text NOT NULL CHECK (status IN ('accepted','rejected')),
   reject_code text,
   {TS},
@@ -138,7 +140,8 @@ BEGIN
      OR NEW.version IS DISTINCT FROM OLD.version OR NEW.scope_version_id IS DISTINCT FROM OLD.scope_version_id
      OR NEW.local_skus IS DISTINCT FROM OLD.local_skus
      OR NEW.mapping_fingerprint IS DISTINCT FROM OLD.mapping_fingerprint
-     OR NEW.evidence_ref IS DISTINCT FROM OLD.evidence_ref OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
+     OR NEW.evidence_ref IS DISTINCT FROM OLD.evidence_ref
+     OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
      OR (OLD.status IN ('approved','revoked') AND (NEW.approved_by IS DISTINCT FROM OLD.approved_by
          OR NEW.approved_at IS DISTINCT FROM OLD.approved_at OR NEW.valid_from IS DISTINCT FROM OLD.valid_from
          OR NEW.valid_to IS DISTINCT FROM OLD.valid_to))
