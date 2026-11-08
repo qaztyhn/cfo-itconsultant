@@ -161,6 +161,14 @@ async def inbound(session: AsyncSession, market: Market, value: SourceInbound, r
             inbound_ref=value.inbound_ref, warehouse_id=warehouse, global_product_id=product_id, source="erp"
         )
         session.add(row)
+        changed = True
+    else:
+        changed = (row.qty, row.eta_date, row.confirmed, row.received) != (
+            qty,
+            value.eta_date,
+            value.confirmed,
+            value.received,
+        )
     row.qty, row.eta_date, row.confirmed, row.received, row.run_id = (
         qty,
         value.eta_date,
@@ -168,7 +176,7 @@ async def inbound(session: AsyncSession, market: Market, value: SourceInbound, r
         value.received,
         run_id,
     )
-    return RowOutcome(changed=True)
+    return RowOutcome(changed=changed)
 
 
 async def fleet(session: AsyncSession, market: Market, value: SourceFleet) -> RowOutcome:
@@ -197,6 +205,8 @@ async def fleet(session: AsyncSession, market: Market, value: SourceFleet) -> Ro
                 vehicle_id=vehicle_id, during=during, kind=value.kind, source="fleet_calendar"
             )
         )
+        changed = True
     else:
+        changed = row.kind != value.kind
         row.kind = value.kind
-    return RowOutcome(changed=True)
+    return RowOutcome(changed=changed)
