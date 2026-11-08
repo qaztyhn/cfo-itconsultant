@@ -10,15 +10,17 @@ export interface DecisionBarProps {
   plan: Plan | null;
   expired: boolean;
   approved: boolean;
+  blockedReason?: string | null;
   onApprove: () => void;
   className?: string;
 }
 
-export function DecisionBar({ plan, expired, approved, onApprove, className }: DecisionBarProps) {
-  const blocked = !plan || expired || approved;
+export function DecisionBar({ plan, expired, approved, blockedReason, onApprove, className }: DecisionBarProps) {
+  const blocked = !plan || expired || approved || Boolean(blockedReason);
   let status = "Select a plan to approve.";
   if (approved) status = "Plan approved.";
   else if (expired) status = "Hold expired. Use Plan Again to continue.";
+  else if (blockedReason) status = blockedReason;
   else if (plan) {
     const noun = plan.vehicle_count === 1 ? "vehicle" : "vehicles";
     status = `Selected plan #${plan.rank} · ${plan.warehouse?.name ?? "warehouse"} · ${plan.vehicle_count} ${noun} · ETA ${formatTime(plan.eta_at)}`;

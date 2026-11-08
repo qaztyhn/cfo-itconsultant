@@ -74,11 +74,11 @@ function holdFor(runId: number): HoldState {
 }
 
 const ALL_PASS: PlanChecks = {
-  stock: { pass: true, code: "STOCK_OK" },
-  preparation: { pass: true, code: "PREP_OK" },
-  truck: { pass: true, code: "TRUCK_OK" },
-  site_date: { pass: true, code: "DATE_OK" },
-  safety: { pass: true, code: "SAFETY_OK" },
+  stock: { passed: true, code: "STOCK_OK" },
+  preparation: { passed: true, code: "PREP_OK" },
+  truck: { passed: true, code: "TRUCK_OK" },
+  site_date: { passed: true, code: "DATE_OK" },
+  safety: { passed: true, code: "SAFETY_OK" },
 };
 
 interface VehicleSeed {
@@ -89,7 +89,6 @@ interface VehicleSeed {
   capKg: string;
   capM3: string;
   driverId: number;
-  driver: string;
   loadKg: string;
   loadM3: string;
   departAt: string;
@@ -99,14 +98,16 @@ interface VehicleSeed {
 function vehicle(v: VehicleSeed): PlanVehicle {
   return {
     seq: v.seq,
+    vehicle_id: v.id,
+    driver_employee_id: v.driverId,
     vehicle: { id: v.id, code: v.code, name: v.name, capacity_kg: v.capKg, capacity_m3: v.capM3 },
-    driver: { employee_id: v.driverId, name: v.driver },
     load_kg: v.loadKg,
     load_m3: v.loadM3,
     load_lines: [{ line_no: v.seq, qty_base: "100" }],
     loading_start_at: "2026-11-10T09:30:00+01:00",
     depart_at: v.departAt,
     eta_at: v.etaAt,
+    trip_end_at: "2026-11-10T13:40:00+01:00",
   };
 }
 
@@ -134,13 +135,12 @@ function fullPlan(runId: number, s: PlanSeed): Plan {
     vehicle_count: s.vehicles.length,
     vehicles: s.vehicles,
     warehouse: s.warehouse,
-    total_capacity_kg: sum((v) => Number(v.vehicle.capacity_kg)),
-    total_capacity_m3: sum((v) => Number(v.vehicle.capacity_m3)),
+    total_capacity_kg: sum((v) => Number(v.vehicle?.capacity_kg)),
+    total_capacity_m3: sum((v) => Number(v.vehicle?.capacity_m3)),
     goods_ready_at: "2026-11-10T09:30:00+01:00",
     loading_start_at: "2026-11-10T09:30:00+01:00",
     depart_at: s.vehicles[0].depart_at,
     trip_end_at: "2026-11-10T13:40:00+01:00",
-    promise_window_preview: { start: "2026-11-10T08:00:00+01:00", end: "2026-11-10T14:30:00+01:00" },
     distance_km: s.km,
     drive_min: 110,
     prep_hours: "10.15",
@@ -165,16 +165,7 @@ function compactPlan(p: Plan): Plan {
     target_date: p.target_date,
     eta_at: p.eta_at,
     vehicle_count: p.vehicle_count,
-    vehicles: p.vehicles.map((v) => ({
-      seq: v.seq,
-      vehicle: v.vehicle,
-      load_kg: v.load_kg,
-      load_m3: v.load_m3,
-      load_lines: v.load_lines,
-      loading_start_at: v.loading_start_at,
-      depart_at: v.depart_at,
-      eta_at: v.eta_at,
-    })),
+    vehicles: p.vehicles.map((v) => ({ seq: v.seq, eta_at: v.eta_at })),
   };
 }
 
@@ -187,19 +178,19 @@ function normalPlans(runId: number): Plan[] {
       rank: 1, warehouse: GBG, km: "48", fill: "0.60", score: "0.26", reserveMin: 5220,
       reasons: ["LOWEST_SCORE_OF_3", "STOCK_OK", "TRUCK_OK", "RESERVE_SAFE"],
       explanation: "Lowest score of 3 feasible plans. Göteborg DC has stock, capacity fill 60%, 48 km, reserve 3.6 days (safe).",
-      vehicles: [vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, driver: "Björn Eriksson", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" })],
     }),
     fullPlan(runId, {
       rank: 2, warehouse: MLM, km: "262", fill: "0.50", score: "0.50", reserveMin: 2400,
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Malmö DC has full stock but a 262 km drive increases the distance score. Reserve 1.7 days.",
-      vehicles: [vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, driver: "Per Magnusson", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" })],
     }),
     fullPlan(runId, {
       rank: 3, warehouse: GBG, km: "48", fill: "0.60", score: "0.50", reserveMin: 3800,
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Same Göteborg DC with the larger truck GBG-18-01. Same distance score; tie-break on total capacity.",
-      vehicles: [vehicle({ seq: 1, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, driver: "Anders Pettersen", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T11:30:00+01:00", etaAt: "2026-11-10T13:20:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T11:30:00+01:00", etaAt: "2026-11-10T13:20:00+01:00" })],
     }),
   ];
 }
@@ -211,8 +202,8 @@ function multiVehiclePlans(runId: number): Plan[] {
       reasons: ["FEWEST_VEHICLES", "STOCK_OK", "TRUCK_OK"],
       explanation: "Order of 20 000 kg needs two vehicles; both leave Göteborg DC and arrive together.",
       vehicles: [
-        vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, driver: "Björn Eriksson", loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" }),
-        vehicle({ seq: 2, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, driver: "Anders Pettersen", loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T12:45:00+01:00" }),
+        vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" }),
+        vehicle({ seq: 2, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T12:45:00+01:00" }),
       ],
     }),
     fullPlan(runId, {
@@ -220,18 +211,18 @@ function multiVehiclePlans(runId: number): Plan[] {
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Malmö DC can also serve the order with two trucks but the route is much longer.",
       vehicles: [
-        vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, driver: "Per Magnusson", loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" }),
-        vehicle({ seq: 2, id: 22, code: "MLM-12-02", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 74, driver: "Nils Holm", loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T14:45:00+01:00" }),
+        vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" }),
+        vehicle({ seq: 2, id: 22, code: "MLM-12-02", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 74, loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T14:45:00+01:00" }),
       ],
     }),
   ];
 }
 
 const REJECTED: RejectedCandidate[] = [
-  { warehouse: { id: 2, name: "Stockholm DC" }, vehicle: { code: "STO-12-04" }, failed_check: "site_date", code: "OUTSIDE_RECEIVING_HOURS", detail: { message: "ETA 15:45 is outside site window 08:00–14:30." } },
-  { warehouse: { id: 1, name: "Göteborg DC" }, vehicle: { code: "GBG-03-02" }, failed_check: "truck", code: "NO_TRUCK_FIT", detail: { message: "Order weighs 4 120 kg; van GBG-03-02 carries 3 500 kg." } },
-  { warehouse: { id: 3, name: "Malmö DC" }, vehicle: { code: "MLM-12-02" }, failed_check: "truck", code: "TRUCK_BUSY", detail: { message: "MLM-12-02 is committed to SE-2026-000131 on Tue 10 Nov." } },
-  { warehouse: { id: 2, name: "Stockholm DC" }, vehicle: null, failed_check: "safety", code: "DRIVER_HOURS_EXCEEDED", detail: { message: "Drive time exceeds the 9 h limit for STO → Kungsbacka." } },
+  { warehouse_id: 2, vehicle_code: "STO-12-04", failed_check: "site_date", code: "OUTSIDE_RECEIVING_HOURS", detail: { message: "ETA 15:45 is outside site window 08:00–14:30." } },
+  { warehouse_id: 1, vehicle_code: "GBG-03-02", failed_check: "truck", code: "NO_TRUCK_FIT", detail: { message: "Order weighs 4 120 kg; van GBG-03-02 carries 3 500 kg." } },
+  { warehouse_id: 3, vehicle_code: "MLM-12-02", failed_check: "truck", code: "TRUCK_BUSY", detail: { message: "MLM-12-02 is committed to SE-2026-000131 on Tue 10 Nov." } },
+  { warehouse_id: 2, vehicle_code: null, failed_check: "safety", code: "DRIVER_HOURS_EXCEEDED", detail: { message: "Drive time exceeds the 9 h limit for STO → Kungsbacka." } },
 ];
 
 function buildRun(runId: number, full: boolean): PlanningRun | undefined {
@@ -272,9 +263,26 @@ function buildRun(runId: number, full: boolean): PlanningRun | undefined {
   };
 }
 
-const isFullView = (roles: readonly UserRole[]) => roles.includes("dispatcher") || roles.includes("admin");
+const isFullView = (roles: readonly UserRole[]) => roles.includes("dispatcher");
 
 export const planningHandlers = [
+  http.get(`${BASE}/orders/:id`, ({ params, request }) => {
+    const id = Number(params.id);
+    if (id !== 161) return undefined;
+    const auth = authorize(request, PLANNING_ROLES);
+    if (!auth.ok) return auth.response;
+    return HttpResponse.json({ id, date_request: { date_to: "2026-11-10" } });
+  }),
+
+  http.get(`${BASE}/orders/:id/date-negotiations`, ({ params, request }) => {
+    const auth = authorize(request, ["dispatcher"]);
+    if (!auth.ok) return auth.response;
+    const items = Number(params.id) === 160
+      ? [{ id: 1601, proposed_date: "2026-11-10", outcome: "agreed", channel: "phone", contacted_at: "2026-11-04T12:00:00Z", remind_at: null }]
+      : [];
+    return HttpResponse.json({ items });
+  }),
+
   http.get(`${BASE}/planning-runs/:id`, ({ params, request }) => {
     const auth = authorize(request, PLANNING_ROLES);
     if (!auth.ok) return auth.response;

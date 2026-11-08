@@ -4,12 +4,12 @@
  * - Chỉ báo thành công khi backend trả order.status === "APPROVED". Không bypass 409 nào.
  * - T16 backend hiện fail-closed khi chưa có recheck adapter: lỗi PLAN_NOT_APPROVABLE được hiển thị nguyên văn, không giả thành công.
  */
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ApiError, isApiError, newIdempotencyKey } from "../../api/client";
 import { USE_MOCKS } from "../../api/config";
-import type { ApprovePlanInput, ApprovePlanResponse, Plan, PlanningRun } from "../../api/contracts/planning";
-import { approvePlan, planningKeys } from "../../api/planning";
+import { GATE_KEYS, type ApprovePlanInput, type ApprovePlanResponse, type Plan, type PlanningRun } from "../../api/contracts/planning";
+import { approvePlan, fetchDateNegotiations, fetchOrderRequestedDate, planningKeys } from "../../api/planning";
 import { DecisionBar } from "../../components/DecisionBar";
 import { ReasonModal, type ReasonOption, type ReasonResult } from "../../components/ReasonModal";
 import { describeCommit, formatDayTime, formatTime } from "../../lib/planFormat";
@@ -23,7 +23,7 @@ const ALT_REASONS: ReasonOption[] = [
 ];
 
 /** Lỗi được hiển thị thành khung cố định (không có nút bỏ qua); lỗi khác ném lại để modal hiện và cho thử lại. */
-const PANEL_CODES = new Set(["RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE", "HOLD_EXPIRED", "FORBIDDEN", "APPROVAL_NOT_CONFIRMED"]);
+const PANEL_CODES = new Set(["RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE", "HOLD_EXPIRED", "FORBIDDEN", "APPROVAL_NOT_CONFIRMED", "DATE_AGREEMENT_REQUIRED"]);
 
 const CONFLICT_CAUSE: Record<string, string> = {
   vehicle: "A selected vehicle is no longer available.",
@@ -48,15 +48,47 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [result, setResult] = useState<ApprovePlanResponse | null>(null);
+  const [tightAccepted, setTightAccepted] = useState(false);
+  const [agreementId, setAgreementId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
+  const orderQuery = useQuery({
+    queryKey: ["order-requested-date", run.order_id],
+    queryFn: ({ signal }) => fetchOrderRequestedDate(run.order_id, signal),
+  });
+  const requestedDate = orderQuery.data?.date_request?.date_to;
+  const dateChanged = Boolean(plan && requestedDate && plan.target_date !== requestedDate);
+  const negotiationsQuery = useQuery({
+    queryKey: ["date-negotiations", run.order_id],
+    queryFn: ({ signal }) => fetchDateNegotiations(run.order_id, signal),
+    enabled: dateChanged,
+  });
+  const agreements = (negotiationsQuery.data?.items ?? []).filter((item) => item.outcome === "agreed" && item.proposed_date === plan?.target_date);
+  const selectedAgreement = agreements.find((item) => item.id === agreementId);
+  const allGatesPassed = Boolean(plan?.checks && GATE_KEYS.every((key) => plan.checks?.[key]?.passed === true));
+  let blockedReason: string | null = null;
+  if (run.kind === "replan_suggestion") blockedReason = "Replan suggestions need a separate dispatcher decision.";
+  else if (run.result !== "feasible") blockedReason = "This run has no feasible plan.";
+  else if (!plan || plan.status !== "proposed") blockedReason = "Only a proposed plan can be approved.";
+  else if (!run.hold_expires_at || !Number.isFinite(Date.parse(run.hold_expires_at))) blockedReason = "No live planning hold is available.";
+  else if (!allGatesPassed) blockedReason = "All five planning gates must have verified passing evidence.";
+  else if (orderQuery.isPending) blockedReason = "Checking the requested delivery date…";
+  else if (orderQuery.isError || !requestedDate) blockedReason = "Requested delivery date is unavailable.";
+  else if (dateChanged && (negotiationsQuery.isPending || negotiationsQuery.isError)) blockedReason = "Checking customer date agreement…";
+  else if (dateChanged && !selectedAgreement) blockedReason = "Select an agreed customer date for this plan.";
+  else if (run.reserve_class === "tight" && !tightAccepted) blockedReason = "Accept the tight schedule before approving.";
+  else if (submitting) blockedReason = "Approval is being submitted…";
+
   async function handleConfirm({ reasonCode, reasonText }: ReasonResult) {
-    if (!plan || expired) return;
+    if (!plan || expired || blockedReason || result || submitting) return;
     const body: ApprovePlanInput = plan.rank > 1 ? { reason_code: reasonCode, reason_text: reasonText } : reasonText ? { note: reasonText } : {};
+    if (selectedAgreement) body.date_negotiation_id = selectedAgreement.id;
     const fingerprint = `${plan.id}:${JSON.stringify(body)}`;
     if (keyRef.current?.fingerprint !== fingerprint) keyRef.current = { fingerprint, key: newIdempotencyKey() };
 
     try {
+      setSubmitting(true);
       const response = await approvePlan(plan.id, body, keyRef.current.key);
       if (response.order?.status !== "APPROVED") {
         throw new ApiError("APPROVAL_NOT_CONFIRMED", "The backend did not return APPROVED, so the plan was not approved.");
@@ -75,6 +107,8 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
         return;
       }
       throw error;
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -82,10 +116,21 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
     <>
       {result && <SuccessPanel result={result} mock={mock} />}
       {problem && <ProblemPanel error={problem} />}
+      {dateChanged && (
+        <label className="flex flex-col gap-1 text-body text-ink">
+          Customer agreement for {plan?.target_date}
+          <select value={agreementId ?? ""} onChange={(event) => setAgreementId(event.target.value ? Number(event.target.value) : null)} className="rounded-control border bg-surface px-3 py-2">
+            <option value="">Select an agreed date</option>
+            {agreements.map((item) => <option key={item.id} value={item.id}>Agreement #{item.id} · {item.channel} · {item.contacted_at}</option>)}
+          </select>
+        </label>
+      )}
+      {run.reserve_class === "tight" && <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={tightAccepted} onChange={(event) => setTightAccepted(event.target.checked)} />I accept the tight schedule</label>}
       <DecisionBar
         plan={plan}
         expired={expired}
         approved={result !== null}
+        blockedReason={blockedReason}
         onApprove={() => {
           setProblem(null);
           setOpen(true);
@@ -93,7 +138,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
       />
       {plan && (
         <ReasonModal
-          open={open && !expired && result === null}
+          open={open && !expired && (submitting || !blockedReason) && result === null}
           title={`Approve plan #${plan.rank}`}
           description={describeCommit(plan, showDriver)}
           reasons={plan.rank > 1 ? ALT_REASONS : undefined}
@@ -153,6 +198,10 @@ function ProblemPanel({ error }: { error: ApiError }) {
     case "APPROVAL_NOT_CONFIRMED":
       title = "Approval not confirmed";
       guidance = "The order was not approved. Check the order status before trying again.";
+      break;
+    case "DATE_AGREEMENT_REQUIRED":
+      title = "Customer date agreement required";
+      guidance = "Record and select an agreed date matching this plan before approving.";
       break;
   }
 

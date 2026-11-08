@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Plan Review frontend alignment with merged #134/#139] — 2026-11-09 — Dev 3, review pending
+
+- Align Plan Review with persisted planning DTO: five gates use `passed`, vehicle allocations use nested `vehicle` plus IDs, rejected candidates use flat fields, and Sales vehicle data remains compact. No driver name or invented promise window is displayed.
+- Approval UI fails closed for suggestion/infeasible runs, missing or failed gates, absent/expired holds, and non-proposed plans. Changed delivery dates require selection of a matching `agreed` negotiation; tight reserve requires explicit acknowledgement. Backend approval remains authoritative.
+- Stop requesting the unimplemented integration overview from this screen; show unknown freshness until a trusted endpoint exists. No API, DDL, or owner decision changed.
+
 ## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
 
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
