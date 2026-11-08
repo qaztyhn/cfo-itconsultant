@@ -141,12 +141,8 @@ async def _order_and_plan(
     )
     if order is None:
         raise _fail("NOT_FOUND", "Order not found.")
-    run = await session.scalar(
-        select(PlanningRun).where(PlanningRun.id == selected.run_id).with_for_update()
-    )
-    plan = await session.scalar(
-        select(FulfilmentPlan).where(FulfilmentPlan.id == plan_id).with_for_update()
-    )
+    run = await session.scalar(select(PlanningRun).where(PlanningRun.id == selected.run_id).with_for_update())
+    plan = await session.scalar(select(FulfilmentPlan).where(FulfilmentPlan.id == plan_id).with_for_update())
     market = await session.get(Market, order.market_id)
     if run is None or plan is None or market is None:
         raise _fail("NOT_FOUND", "Planning context not found.")
@@ -160,8 +156,11 @@ async def _advisory(session: AsyncSession, key: str) -> None:
 
 
 async def _reserve_locks(
-    session: AsyncSession, warehouse_id: int, stocks: list[StockReservation], prep: list[PrepReservation],
-    assignments: list[PlanVehicle]
+    session: AsyncSession,
+    warehouse_id: int,
+    stocks: list[StockReservation],
+    prep: list[PrepReservation],
+    assignments: list[PlanVehicle],
 ) -> None:
     """Fixed global lock order: warehouse -> product -> labour date -> vehicle -> driver."""
     for item in sorted(stocks, key=lambda v: (v.warehouse_id, v.global_product_id)):
@@ -196,8 +195,13 @@ async def _reserve_locks(
 
 
 async def _stock_available(
-    session: AsyncSession, stock: list[StockReservation], order_id: int, now: datetime, cfg: MarketConfig,
-    *, sales: bool
+    session: AsyncSession,
+    stock: list[StockReservation],
+    order_id: int,
+    now: datetime,
+    cfg: MarketConfig,
+    *,
+    sales: bool,
 ) -> None:
     for entry in stock:
         snapshot = await session.get(StockSnapshot, (entry.warehouse_id, entry.global_product_id))
@@ -235,8 +239,13 @@ async def _stock_available(
 
 
 async def _labour_available(
-    session: AsyncSession, prep: list[PrepReservation], order_id: int, market: Market, cfg: MarketConfig,
-    *, sales: bool
+    session: AsyncSession,
+    prep: list[PrepReservation],
+    order_id: int,
+    market: Market,
+    cfg: MarketConfig,
+    *,
+    sales: bool,
 ) -> None:
     local_today = clock.now().astimezone(ZoneInfo(market.timezone)).date()
     for item in prep:
@@ -259,8 +268,9 @@ async def _labour_available(
             if shift.employee_id in used_staff:
                 continue
             presence = await session.scalar(
-                select(Attendance.status)
-                .where(Attendance.employee_id == shift.employee_id, Attendance.work_date == item.work_date)
+                select(Attendance.status).where(
+                    Attendance.employee_id == shift.employee_id, Attendance.work_date == item.work_date
+                )
             )
             if presence != "present" and not (presence == "planned" and item.work_date > local_today):
                 continue
@@ -315,8 +325,7 @@ def _stored_gates(plan: FulfilmentPlan) -> bool:
     if not isinstance(checks, dict):
         return False
     return all(
-        isinstance(checks.get(name), dict) and checks[name].get("passed") is True
-        for name in _GATE_NAMES
+        isinstance(checks.get(name), dict) and checks[name].get("passed") is True for name in _GATE_NAMES
     )
 
 
@@ -333,8 +342,12 @@ def _proof_valid(proof: RecheckProof, plan: FulfilmentPlan, order: CustomerOrder
 
 
 async def _approve(
-    session: AsyncSession, plan_id: int, actor: object, payload: dict[str, object], key: str,
-    recheck: Recheck | None
+    session: AsyncSession,
+    plan_id: int,
+    actor: object,
+    payload: dict[str, object],
+    key: str,
+    recheck: Recheck | None,
 ) -> dict[str, object]:
     uid = _actor_id(actor)
     identity, replay = await _claim(session, key, uid, plan_id, payload)
@@ -608,9 +621,7 @@ async def record_date_negotiation(order_id: int, actor: object, payload: dict[st
     raw_contact = payload.get("contacted_at")
     outcome = payload.get("outcome")
     channel = payload.get("channel")
-    if outcome not in ("agreed", "declined", "unreachable") or channel not in (
-        "phone", "email", "in_person"
-    ):
+    if outcome not in ("agreed", "declined", "unreachable") or channel not in ("phone", "email", "in_person"):
         raise _fail("VALIDATION_ERROR", "Invalid outcome or contact channel.")
     try:
         proposed = date.fromisoformat(raw_date) if isinstance(raw_date, str) else None
