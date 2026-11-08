@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.adapters.rest_adapter import RestMarketAdapter
+from app.core.errors import DomainError
 from app.jobs.ingest import IngestBatchError, run_market
 from app.jobs.scheduler import create_scheduler
 from tests.integration.conftest import async_url, execute, fetch
@@ -17,7 +18,11 @@ from tests.integration.test_ingest_runner import db as db
 pytestmark = pytest.mark.integration
 
 
-def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_or_schedule_stock(db: str) -> None:
+def empty_stock() -> httpx.Response:
+    return httpx.Response(200, json={"batch_id": 1, "as_of": NOW.isoformat(), "item_count": 0, "items": []})
+
+
+def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_including_stock(db: str) -> None:
     calls: list[str] = []
 
     def source(request: httpx.Request) -> httpx.Response:
@@ -25,6 +30,8 @@ def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_or_schedule_stock
         assert request.method == "GET"
         if request.url.path == "/customers":
             return httpx.Response(500, text="private-credential")
+        if request.url.path == "/stock":
+            return empty_stock()
         return page([product()] if request.url.path == "/products" else [])
 
     async def scenario():
@@ -42,10 +49,20 @@ def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_or_schedule_stock
             await engine.dispose()
 
     batch = asyncio.run(scenario())
-    assert not batch.ok and len(batch.runs) == 5 and not batch.errors
-    assert [run.status for run in batch.runs] == ["failed", "ok", "ok", "ok", "ok"]
-    assert calls == ["/customers", "/products", "/orders", "/orders", "/inbound", "/fleet/calendar"]
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 5
+    assert not batch.ok and len(batch.runs) == 6 and not batch.errors
+    assert [run.status for run in batch.runs] == ["failed", "ok", "ok", "ok", "ok", "ok"]
+    assert calls == [
+        "/customers",
+        "/products",
+        "/orders",
+        "/orders",
+        "/inbound",
+        "/fleet/calendar",
+        "/stock",
+        "/products",
+        "/stock",
+    ]
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 6
     assert fetch(db, "SELECT target_roles FROM ops.alert WHERE type='SYNC_FAILED'")[0][0] == ["admin"]
 
 
@@ -61,7 +78,7 @@ def test_T07_scheduler_build_is_market_scoped_configured_and_has_no_implicit_sta
     def adapter(code: str) -> RestMarketAdapter:
         def source(request: httpx.Request) -> httpx.Response:
             calls.append(code)
-            return page([])
+            return empty_stock() if request.url.path == "/stock" else page([])
 
         return RestMarketAdapter(
             code, "https://source.test", "synthetic-key", transport=httpx.MockTransport(source)
@@ -86,8 +103,8 @@ def test_T07_scheduler_build_is_market_scoped_configured_and_has_no_implicit_sta
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert set(calls) == {"SE"} and len(calls) == 6
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE market_id=1 AND status='ok'")[0][0] == 5
+    assert set(calls) == {"SE"} and len(calls) == 9
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE market_id=1 AND status='ok'")[0][0] == 6
 
 
 def test_T07_scheduler_does_not_report_an_incomplete_batch_as_success(db: str) -> None:
@@ -114,7 +131,7 @@ def test_T07_scheduler_does_not_report_an_incomplete_batch_as_success(db: str) -
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='failed'")[0][0] == 5
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='failed'")[0][0] == 6
 
 
 def test_T07_invalid_scheduler_interval_is_rejected_without_activating_jobs(db: str) -> None:
@@ -157,7 +174,9 @@ def test_T07_explicitly_started_apscheduler_executes_an_ingestion_job(db: str, m
                     code,
                     "https://source.test",
                     "synthetic-key",
-                    transport=httpx.MockTransport(lambda request: page([])),
+                    transport=httpx.MockTransport(
+                        lambda request: empty_stock() if request.url.path == "/stock" else page([])
+                    ),
                 ),
             )
             scheduler.remove_job("ingest:ZZ")
@@ -182,4 +201,61 @@ def test_T07_explicitly_started_apscheduler_executes_an_ingestion_job(db: str, m
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='ok'")[0][0] == 5
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='ok'")[0][0] == 6
+
+
+def test_T07_periodic_timer_uses_library_time_independent_of_frozen_business_clock(
+    db: str, monkeypatch
+) -> None:
+    import apscheduler.triggers.interval
+
+    technical_now = NOW + timedelta(days=10)
+
+    class FrozenTimer(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return technical_now.astimezone(tz) if tz else technical_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(apscheduler.triggers.interval, "datetime", FrozenTimer)
+
+    async def scenario() -> None:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+        try:
+            scheduler = await create_scheduler(maker=async_sessionmaker(engine, expire_on_commit=False))
+            job = next(job for job in scheduler.get_jobs() if job.id == "ingest:SE")
+            assert job.trigger.start_date == technical_now + timedelta(minutes=5)
+            assert not scheduler.running
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_T07_two_market_workers_cannot_interleave_dependent_feeds(db: str) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def source(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/customers":
+                entered.set()
+                await release.wait()
+            return empty_stock() if request.url.path == "/stock" else page([])
+
+        adapter = RestMarketAdapter(
+            "SE", "https://source.test", "synthetic-key", transport=httpx.MockTransport(source)
+        )
+        first = asyncio.create_task(run_market("SE", maker=maker, adapter=adapter, now=NOW))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10)
+            with pytest.raises(DomainError) as error:
+                await run_market("SE", maker=maker, adapter=adapter, now=NOW)
+            assert error.value.code == "SYNC_IN_PROGRESS"
+        finally:
+            release.set()
+            assert (await first).ok
+            await engine.dispose()
+
+    asyncio.run(scenario())
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 6

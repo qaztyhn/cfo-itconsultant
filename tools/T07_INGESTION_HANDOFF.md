@@ -132,3 +132,45 @@ Recheck during implementation: #111 merged into main at `06ab96d` after the init
 and #111 now agree on fixed-SKU/503 DTO. #106 is still open, reconciled on a new head awaiting review.
 Do not read the earlier initial audit as the current merge status or reuse superseded pool code.
 Full stock persistence/freshness still needs an all-or-nothing batch review and its own tests.
+
+## Delivery E: stock after merged Q9/Q10
+
+This delivery supersedes the earlier five-feed exclusion. It incorporates main `06ab96d`, where
+#105 and #111 are merged. The worker now polls stock last as a sixth feed. It reads a complete
+batch, the complete source product unit catalogue, and the batch again to detect publication
+changes. Confirmed CFO mapping/unit/factor must match; conversion occurs once. Any unknown SKU,
+unconfirmed mapping, ambiguous multi-SKU/global identity, unknown warehouse, invalid quantity,
+capture regression/conflict or incomplete source response rejects the whole batch. No owner rule
+was added to skip pending SKU rows or aggregate unverified inventories.
+
+Replacement is one transaction for the configured market/source namespace, including an explicitly
+published complete zero-row batch. Other markets and all CFO reservations are preserved; no snapshot
+`FOR UPDATE` is used. HTTP 503/failed validation/downstream callback rolls back replacement and keeps
+the old snapshot/capture. Replay retains the original row provenance/time. A failed batch cannot
+advance its checkpoint or be published as partial complete inventory. Batch counters count inventory
+rows, including zero for a genuinely published empty batch. Safe batch rejection metadata is recorded.
+
+`ingest_stock.usable(session,market_id,now=...)` distinguishes current successful/fresh capture from
+unavailable/failed/running/stale state, including a fresh complete empty batch. A failed latest run
+invalidates even recently cached rows. T14/T16 must consume this **in addition to** their real source
+and per-item/locked approval checks; forbidden planning/approval files are untouched. Providing this
+helper is not proof that the production five-gate availability integration already exists.
+
+The existing stale-stock threshold/key/Dispatcher warning are retained; an old source capture is never
+renewed to job time. Changes affecting approved/in-flight orders still require the trusted risk handoff;
+without it the stock run fails and rolls back. No automatic replan approval or reservation release occurs.
+
+Worker batches have an additional market lease so replicas cannot interleave dependent feeds, plus
+per-feed leases shared with manual runs. Standalone workers configure safe JSON logging and one
+correlation ID per batch. APP_NOW freezes business time, while the periodic timer uses APScheduler's
+wall clock unless a timer anchor is explicitly injected for tests. CLI supports a scoped manual retry:
+
+```powershell
+.venv/Scripts/python.exe -m app.jobs.ingest --market SE --entity orders --retry-run-id 123
+```
+
+Tests use only temporary PostgreSQL databases and mocked read-only HTTP. Full final CI/verification
+is recorded in the PR; focused PostgreSQL cases cover duplicates, partial/failure/retry, stale versions,
+concurrency, protected approved data, scheduler execution/clock, stock empty/unavailable/scope, mapping
+failures, capture integrity and preservation of CFO commitments. Source OpenAPI #106 remains a separate
+review gate. No live deployment, extended D8 tick contract or whole-M2/E2E acceptance is claimed.

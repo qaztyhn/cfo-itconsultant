@@ -1,5 +1,43 @@
 # Dev 2 — independent work and remaining dependencies
 
+## Current T07 update — 2026-11-08
+
+The sections dated 07/11 below are historical evidence, not the current decision backlog.
+Owner-approved D1–D5/D7 and the superseding fixed-SKU Q10 are applied. D6 is deferred; expanded
+D8 scheduling remains unapproved. This task changes no planning/approval/API-planning files,
+database migrations, authentication, design contract or frontend UI.
+
+T07 is delivered as a review stack: [#115](https://github.com/qaztyhn/cfo-itconsultant/pull/115)
+runner → [#116](https://github.com/qaztyhn/cfo-itconsultant/pull/116) reference persistence →
+[#118](https://github.com/qaztyhn/cfo-itconsultant/pull/118) existing CFO order versions/guards →
+[#119](https://github.com/qaztyhn/cfo-itconsultant/pull/119) ingest worker/scheduler → stock follow-up
+on `feat/t07-stock-ingestion`. Each part has tests and its own PR; no auto-merge is enabled.
+Use merge commits, then retarget/recheck the next PR on main. Parent branches were reconciled with
+merged #111 using normal merge commits, without rewriting their published history.
+
+Implemented: durable runs/rejects, two-minute inclusive overlap, transactional upserts, independent
+submitted/cancelled checkpoints, new-run retry, interruption recovery, source failure alerts, feed/market
+leases, scoped reference sync, immutable routing/legacy protection, approved-order/commitment protection,
+and an explicit APScheduler ingest worker. After #105/#111 merged at `06ab96d`, the stock extension
+adds all-or-nothing fixed-SKU replacement, complete empty batches, unavailable/capture/mapping guards,
+retained old data on failure and a latest-run availability/freshness helper. It introduces no pool IDs
+or policy to silently skip unmapped stock. Timer cadence stays independent of frozen APP_NOW data.
+
+Verification so far: initial five-feed Harness **PASS** (856 backend tests, 138 source tests,
+frontend lint / 1 test / build), before the final stock/timer additions. Focused final PostgreSQL
+cases and strict adapter/service/job typing are run separately; final exact-head CI and final local
+Harness results are recorded in the stock PR. No unexecuted check or OpenAPI readiness is a PASS.
+
+Remaining handoffs: authorized Sync & check/initial order creation, source staging for unresolved
+orders, real T14 fresh-source replan and risk adapters/audit, reviewed cancellation transitions,
+availability checks in the forbidden planning/approval modules, source deletion/provenance for
+inbound/fleet/customer reconciliation, and review of #106's current Source OpenAPI. Tests with fake
+planner/risk callbacks establish the handoff guards only, not real five-gate or E2E acceptance.
+Detailed behavior, commands, file responsibilities and dependencies:
+[T07_INGESTION_HANDOFF.md](T07_INGESTION_HANDOFF.md).
+
+## Historical independent-delivery record
+
 Date: 2026-11-07. Branch: `feat/dev2-independent-services`.
 Integrated `origin/main` at `e1eb333` (PRs #44, #49, #50), merge commit `b6be5d6`.
 Subsequently integrated main `798aa22` (including #37, #53, #54 and the decisions register),

@@ -3,6 +3,35 @@
 2026-11-08. This is a review checklist, **not approval**, an API baseline or a modification of 05/06.
 No sensitive business rule is inferred from CI success. Assumptions/decisions register was reviewed.
 
+## Current decision register and T07 handoff — 2026-11-08
+
+This section supersedes the historical D1–D8 questions below. Consult `docs/ASSUMPTIONS.md` and
+the approved decision documents; historical proposal wording does not reopen an approved decision.
+
+| Item | Current state |
+|---|---|
+| D1 | Approved DEC-SRC-D1-001; Q10 pool direction **superseded** by DEC-SRC-Q10-SKU-001. #105/#111 both merged, fixed SKU units and 503 STOCK_UNAVAILABLE. #106 current reconciled OpenAPI candidate still needs review. |
+| D2 | Approved encoding/schema/hash/retry policy. Offline bundle validation exists; CSV upload/durable retry repository still needs the reviewed migration/index and IT-only API handoff. |
+| D3 | Approved 30-minute, on-road + official-shift GPS and immediate purge; missing Dispatcher-trip assignment/terminal/PWA integration remains an engineering dependency. |
+| D4 | Approved server templates/allowlist, no free text, test-only transports; enqueue/execution/risk integration is separate. No owner-approved 5/15-minute retry schedule. |
+| D5 | Approved category retention policy; production eligibility/legal-hold classification and legal review remain separate. No immutable audit rewrite or blanket GDPR claim. |
+| D6 | Explicitly deferred by owner; no cloud deployment. |
+| D7 | Approved synthetic driver/vehicle policy; completeness/provenance/official-duty schema handoffs still required. |
+| D8 | Expanded tick/jobs/cadence proposal remains unapproved. T07 implements only the existing market sync interval, with an explicitly started ingest worker. |
+
+T07 review stack: #115 → #116 → #118 → #119 → `feat/t07-stock-ingestion` follow-up. It does not
+change `planning_service.py`, `approval_service.py` or `api/v1/planning.py`. Real replan/risk,
+authorized Sync & check/initial CFO order creation, source staging, system cancellation transitions
+and consuming latest-stock-run availability in approval are Dev 1/2 engineering handoffs, not
+requests to choose new business rules. Inbound/fleet deletion and per-record source provenance
+also need reviewed schema/source handoffs. See [T07_INGESTION_HANDOFF.md](T07_INGESTION_HANDOFF.md).
+
+Stock currently fails closed for unconfirmed SKU or unverified multi-SKU/global aggregation,
+as in merged #111. Skipping rows or adding ambiguous inventories is not implemented or inferred
+from CI. Any proposed alternative needs an explicit approved rule; valid complete mapped batches
+can be tested without choosing that alternative. Full T07/M2/E2E is not claimed complete while
+the listed production handoffs remain outstanding.
+
 ## Delivered PRs and review order
 
 The earlier components were delivered as separate incremental PRs with exact-head CI passing.
@@ -28,7 +57,7 @@ The roster fixture is an offline synthetic dataset attributed to the demo Wareho
 not a production job or a replacement for the schedule API. It neither creates attendance nor
 invents driver duty history or vehicle regulation data. Existing schedules/cancellations are retained.
 
-## Decisions needed from the owner
+## Historical questions — superseded by the current register above
 
 | ID | Decision to finalize | Work held back |
 |---|---|---|

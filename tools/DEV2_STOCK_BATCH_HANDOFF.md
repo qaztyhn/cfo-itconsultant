@@ -25,7 +25,11 @@ or `503 STOCK_UNAVAILABLE`. No pool or alias field. Unknown fields are refused b
    yet; define how independence is confirmed before enabling aggregation.
 3. Persistence (full replacement of `ops.stock_snapshot` in one transaction per source/warehouse/batch), keeping the previous
    snapshot on `StockUnavailable`, durable checkpoints and the freshness gate are **not** in this slice.
-4. The source producer (#105) still uses pools and the old 200-empty "unavailable" body; it must be corrected to this DTO
-   before the adapter can read a real source. Old `{as_of, items}` bodies are refused on purpose.
+4. Update 2026-11-08: #105 and #111 are now both merged and agree on this fixed-SKU/503 DTO. The earlier
+   producer mismatch is resolved. Old `{as_of, items}` bodies are still refused on purpose.
 
 No whole-market freshness or full US-INT-03 acceptance is claimed.
+
+T07's subsequent persistence/availability work is documented in [T07_INGESTION_HANDOFF.md](T07_INGESTION_HANDOFF.md).
+The transport-only scope described above is historical; the new writer uses complete batch replacement and a
+latest-run availability helper, while production planning/approval consumption remains an explicit handoff.
