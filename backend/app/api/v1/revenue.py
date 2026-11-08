@@ -103,7 +103,9 @@ async def revenue_summary(
         recognised=_money(result.recognised), booked_not_delivered=_money(result.booked_not_delivered),
         orders_delivered=result.orders_delivered,
         avg_order_value=_money(result.avg_order_value) if result.avg_order_value is not None else None,
-        share_of_market_pct=float(result.share_of_market_pct) if result.share_of_market_pct is not None else None,
+        share_of_market_pct=(
+            float(result.share_of_market_pct) if result.share_of_market_pct is not None else None
+        ),
     )
 
 
