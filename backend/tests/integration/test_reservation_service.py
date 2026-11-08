@@ -75,7 +75,7 @@ def _rows(db: str, table: str, columns: str) -> list[tuple[Any, ...]]:
 
 
 def _actor(role: str = "dispatcher", locations: tuple[int, ...] = (1,)) -> CurrentUser:
-    return CurrentUser(id=1, employee_id=1, roles=(role,), market="ZZ", location_ids=locations)
+    return CurrentUser(id=1, employee_id=1, roles=(role,), market="SE", location_ids=locations)
 
 
 def test_US_RES_01_AC1_hold_three_alternatives_once_and_idempotent(db: str) -> None:
