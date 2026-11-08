@@ -86,33 +86,51 @@ def run_stock(
     return asyncio.run(scenario())
 
 
-def test_US_INT_03_AC1_stock_converts_once_preserves_holds_and_replay_keeps_original_capture(db: str) -> None:
+@pytest.mark.parametrize("empty", [False, True])
+def test_US_INT_03_AC1_unconfigured_scope_never_publishes_or_clears_stock(db: str, empty: bool) -> None:
     prepare(db)
     execute(
         db,
-        "UPDATE ref.product_se SET units_to_base=2 WHERE local_sku='P1'",
         rows.order_sql(1),
         rows.run_sql(1, 1),
         "INSERT INTO plan.stock_reservation(run_id,order_id,warehouse_id,global_product_id,qty,status) "
         "VALUES(1,1,1,1,5,'held')",
+        "INSERT INTO ref.location(market_id,type,code,name,lat,lon,loading_cutoff_time) "
+        "VALUES(2,'warehouse','ZZ-WH','Synthetic',59,18,'15:00')",
+        "INSERT INTO ops.stock_snapshot(warehouse_id,global_product_id,on_hand,as_of) "
+        "VALUES(3,1,50,'2026-11-04T08:35Z')",
     )
-    args = {"catalogue": [product(units_to_base="2.0000")]}
-    first, ready = run_stock(db, snapshot(), **args)
-    assert first.status == "ok" and first.rows_ok == 1 and ready
-    row = fetch(db, "SELECT on_hand,wms_reserved,as_of,run_id FROM ops.stock_snapshot")[0]
-    assert tuple(row) == (Decimal(20), Decimal(4), NOW, first.run_id)
-    second, ready = run_stock(db, snapshot(), **args)
-    assert second.status == "ok" and ready
-    assert fetch(db, "SELECT run_id FROM ops.stock_snapshot")[0][0] == first.run_id
+    result, ready = run_stock(db, snapshot(item_count=0, items=[]) if empty else snapshot())
+    assert result.status == "failed" and result.rows_ok == 0 and not ready
+    assert (
+        fetch(db, "SELECT error FROM stg.sync_run WHERE id=$1", result.run_id)[0][0]
+        == "STOCK_SCOPE_NOT_CONFIGURED"
+    )
+    assert [
+        (r[0], r[1])
+        for r in fetch(db, "SELECT warehouse_id,on_hand FROM ops.stock_snapshot ORDER BY warehouse_id")
+    ] == [(1, Decimal(99)), (3, Decimal(50))]
     assert tuple(fetch(db, "SELECT qty,status FROM plan.stock_reservation")[0]) == (Decimal(5), "held")
+    assert not fetch(db, "SELECT * FROM stg.sync_checkpoint")
+    assert fetch(db, "SELECT reason_code FROM stg.sync_reject")[0][0] == "STOCK_SCOPE_NOT_CONFIGURED"
 
 
 @pytest.mark.parametrize(
-    "failure", ["unmapped", "alias", "unit_drift", "unknown_warehouse", "older", "unavailable", "racing"]
+    "failure",
+    [
+        "unmapped",
+        "alias",
+        "unit_drift",
+        "unknown_warehouse",
+        "older",
+        "unavailable",
+        "racing",
+        "future",
+        "fractional",
+        "negative",
+    ],
 )
-def test_Q9_stock_failure_never_commits_partial_or_zero_and_retains_previous_batch(
-    db: str, failure: str
-) -> None:
+def test_Q9_stock_diagnostic_retains_previous_data_on_every_failure(db: str, failure: str) -> None:
     prepare(db)
     body, catalogue = snapshot(), [product()]
     if failure in {"unmapped", "alias"}:
@@ -120,8 +138,8 @@ def test_Q9_stock_failure_never_commits_partial_or_zero_and_retains_previous_bat
         body = snapshot(
             item_count=2,
             items=[
-                {"warehouse_code": "WH-1", "sku": "P1", "on_hand": "10.000", "reserved": "2.000"},
-                {"warehouse_code": "WH-1", "sku": "P2", "on_hand": "5.000", "reserved": "0.000"},
+                {"warehouse_code": "WH-1", "sku": "P1", "on_hand": "10", "reserved": "2"},
+                {"warehouse_code": "WH-1", "sku": "P2", "on_hand": "5", "reserved": "0"},
             ],
         )
         if failure == "alias":
@@ -134,8 +152,21 @@ def test_Q9_stock_failure_never_commits_partial_or_zero_and_retains_previous_bat
         catalogue = [product(units_to_base="2.0000")]
     elif failure == "unknown_warehouse":
         body = snapshot(items=[{"warehouse_code": "OTHER", "sku": "P1", "on_hand": "5", "reserved": "0"}])
-    elif failure == "older":
-        body = snapshot(as_of=(NOW - timedelta(hours=1)).isoformat())
+    elif failure in {"older", "future"}:
+        body = snapshot(
+            as_of=(NOW + (timedelta(minutes=1) if failure == "future" else -timedelta(hours=1))).isoformat()
+        )
+    elif failure in {"fractional", "negative"}:
+        body = snapshot(
+            items=[
+                {
+                    "warehouse_code": "WH-1",
+                    "sku": "P1",
+                    "on_hand": "1.0001" if failure == "fractional" else "-1",
+                    "reserved": "0",
+                }
+            ]
+        )
     result, ready = run_stock(
         db,
         body,
@@ -150,51 +181,23 @@ def test_Q9_stock_failure_never_commits_partial_or_zero_and_retains_previous_bat
     )
     assert not fetch(db, "SELECT * FROM stg.sync_checkpoint")
     assert fetch(db, "SELECT count(*) FROM ops.alert WHERE type='SYNC_FAILED'")[0][0] == 1
+    if failure in {"unmapped", "alias", "unit_drift", "unknown_warehouse", "older", "fractional"}:
+        # No implicit scope from confirmed mappings, and no guessed independence evidence.
+        assert fetch(db, "SELECT error FROM stg.sync_run")[0][0] == "STOCK_SCOPE_NOT_CONFIGURED"
 
 
-def test_Q9_complete_empty_batch_is_scoped_zero_and_distinct_from_unavailable(db: str) -> None:
-    prepare(db)
-    execute(
-        db,
-        "INSERT INTO ref.location(market_id,type,code,name,lat,lon,loading_cutoff_time) "
-        "VALUES(2,'warehouse','ZZ-WH','Synthetic',59,18,'15:00')",
-        "INSERT INTO ops.stock_snapshot(warehouse_id,global_product_id,on_hand,as_of) "
-        "VALUES(3,1,50,'2026-11-04T08:35Z')",
-    )
-    result, ready = run_stock(db, snapshot(item_count=0, items=[]))
-    assert result.status == "ok" and result.rows_in == result.rows_ok == 0 and ready
-    assert [(row[0], row[1]) for row in fetch(db, "SELECT warehouse_id,on_hand FROM ops.stock_snapshot")] == [
-        (3, Decimal(50))
-    ]
-    unavailable, ready = run_stock(db, snapshot(), unavailable=True)
-    assert unavailable.status == "failed" and not ready
-    assert fetch(db, "SELECT data_as_of FROM stg.sync_run WHERE status='ok'")[0][0] == NOW
-
-
-def test_Q9_same_capture_conflict_fails_and_explicit_retry_recovers_without_refreshing_time(db: str) -> None:
+def test_Q9_explicit_retry_is_new_failed_history_until_scope_handoff(db: str) -> None:
     prepare(db)
     first, _ = run_stock(db, snapshot())
-    bad = snapshot(items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "11", "reserved": "2"}])
-    failed, ready = run_stock(db, bad)
-    assert failed.status == "failed" and not ready
-    assert fetch(db, "SELECT on_hand FROM ops.stock_snapshot")[0][0] == Decimal(10)
-    recovered, ready = run_stock(db, snapshot(), retry_run_id=failed.run_id)
-    assert recovered.status == "ok" and ready
-    assert fetch(db, "SELECT as_of,run_id FROM ops.stock_snapshot")[0][1] == first.run_id
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 3
+    second, ready = run_stock(db, snapshot(), retry_run_id=first.run_id)
+    assert first.run_id != second.run_id and second.status == "failed" and not ready
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='failed'")[0][0] == 2
+    assert fetch(db, "SELECT count(*) FROM ops.alert WHERE type='SYNC_FAILED'")[0][0] == 1
+    assert not fetch(db, "SELECT * FROM stg.sync_checkpoint")
+    assert fetch(db, "SELECT on_hand FROM ops.stock_snapshot")[0][0] == Decimal(99)
 
 
-def test_US_INT_03_AC2_stale_capture_is_not_renewed_and_freshness_warning_is_deduplicated(db: str) -> None:
-    prepare(db)
-    old = NOW - timedelta(minutes=20)
-    result, ready = run_stock(db, snapshot(as_of=old.isoformat()))
-    assert result.status == "ok" and not ready
-    assert fetch(db, "SELECT as_of FROM ops.stock_snapshot")[0][0] == old
-    assert run_stock(db, snapshot(as_of=old.isoformat()))[0].status == "ok"
-    assert fetch(db, "SELECT count(*) FROM ops.alert WHERE type='STALE_DATA'")[0][0] == 1
-
-
-def test_Q9_stock_change_requires_risk_handoff_and_keeps_approved_commitments(db: str) -> None:
+def test_Q9_missing_scope_prevents_risk_callback_and_preserves_approved_commitments(db: str) -> None:
     from tests.integration.test_ingest_orders import prepare as prepare_order
 
     prepare_order(db, approved=True)
@@ -203,39 +206,13 @@ def test_Q9_stock_change_requires_risk_handoff_and_keeps_approved_commitments(db
         "INSERT INTO ops.stock_snapshot(warehouse_id,global_product_id,on_hand,wms_reserved,as_of) "
         "VALUES(1,1,99,3,'2026-11-04T08:35Z')",
     )
-    failed, ready = run_stock(db, snapshot())
-    assert failed.status == "failed" and not ready
-    assert fetch(db, "SELECT on_hand FROM ops.stock_snapshot")[0][0] == Decimal(99)
     calls: list[int] = []
 
-    async def fake_risk_contract(session, order_id, trigger):
+    async def risk(session, order_id, trigger):
         calls.append(order_id)
-        assert trigger == "source_change"
 
-    result, ready = run_stock(db, snapshot(), risk=fake_risk_contract)
-    assert result.status == "ok" and ready and calls == [1]
-    assert tuple(fetch(db, "SELECT qty,status FROM plan.stock_reservation")[0]) == (Decimal(5), "committed")
-    assert fetch(db, "SELECT status,source_version FROM ops.customer_order")[0][0] == "APPROVED"
-    assert run_stock(db, snapshot())[0].status == "ok"  # identical batch is not a new risk event.
-
-
-@pytest.mark.parametrize("failure", ["future", "fractional", "negative"])
-def test_Q9_invalid_capture_or_quantity_cannot_replace_retained_stock(db: str, failure: str) -> None:
-    prepare(db)
-    body = (
-        snapshot(as_of=(NOW + timedelta(minutes=1)).isoformat())
-        if failure == "future"
-        else snapshot(
-            items=[
-                {
-                    "warehouse_code": "WH-1",
-                    "sku": "P1",
-                    "on_hand": "1.0001" if failure == "fractional" else "-1",
-                    "reserved": "0",
-                }
-            ]
-        )
-    )
-    result, ready = run_stock(db, body)
-    assert result.status == "failed" and not ready
+    result, ready = run_stock(db, snapshot(), risk=risk)
+    assert result.status == "failed" and not ready and not calls
     assert fetch(db, "SELECT on_hand FROM ops.stock_snapshot")[0][0] == Decimal(99)
+    assert tuple(fetch(db, "SELECT qty,status FROM plan.stock_reservation")[0]) == (Decimal(5), "committed")
+    assert fetch(db, "SELECT status FROM ops.customer_order")[0][0] == "APPROVED"

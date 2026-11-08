@@ -1,5 +1,37 @@
 # T07 — ingestion and ingest-only scheduler
 
+## Current T07 contract status — 2026-11-08, main 361bd73
+
+This section supersedes earlier stock-persistence and pending-PR statements below.
+PRs #105, #106, #111 and T14 #117 are merged. T07 runner/reference/order PRs #115,
+#116 and #118 were merged by the owner. Scheduler #119 and stock-readiness #121
+remain review work; no automatic merge is enabled.
+
+DEC-CFO-STOCK-SCOPE-001 requires an explicitly fixed CFO SKU scope before ingestion;
+confirmed mappings and the Source batch cannot define that scope implicitly.
+DEC-CFO-STOCK-INDEPENDENCE-001 requires verified physical independence before summing
+SKUs. Scope/evidence storage, versions, effectivity and authority are not yet contracted.
+PR #120 is a pure-normalizer proposal, not an approved persistence repository.
+
+Accordingly the earlier whole-market stock replacement is withdrawn. Production
+scheduler runs customers, products, orders, inbound and fleet only. Explicit stock
+CLI diagnostics record a failed run/reject (STOCK_SCOPE_NOT_CONFIGURED), preserve all
+cached stock and commitments, and never advance the checkpoint. A complete empty
+Source batch also cannot clear CFO stock without the scoped contract. Stock usability
+returns false; this is a dependency gate, not implemented availability proof.
+
+T14 now has a real suggest_replan core. Its default loader reads the existing CFO
+order/version; wiring it directly to a newer Source DTO would plan the old approved
+order. A reviewed fresh-source input adapter and risk integration remain necessary.
+The trusted callback tests prove transaction guards, not a real T14/T16 E2E flow.
+No edits to planning_service.py, approval_service.py or api/v1/planning.py are made.
+
+Verification below with older commits/counts is historical. Final exact-head checks
+are recorded in PR #121. No new business decision, schema, public API or config key
+is introduced. Assumptions: reviewed; existing approved stock-scope/independence rules.
+
+## Historical implementation notes (superseded where stated above)
+
 Scope: US-INT-01 AC2–AC5, US-INT-02 AC1–AC3, US-INT-03 transport/persistence subset,
 US-ADM-01 AC2; FR-INT-02/04/05/06 and BR-ORD-01, DEC-ROUTING-002, DEC-SRC-D1-001.
 Approved decisions override older architecture examples that auto-create/route orders.

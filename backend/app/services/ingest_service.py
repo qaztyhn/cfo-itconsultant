@@ -39,7 +39,8 @@ from app.services.ingest_types import (
 )
 
 type RowWriter = Callable[[AsyncSession, Market, FeedRecord, int, datetime], Awaitable[RowOutcome]]
-ENTITIES = ("customers", "products", "orders", "inbound", "fleet", "stock")
+ENTITIES = ("customers", "products", "orders", "inbound", "fleet")
+SUPPORTED_ENTITIES = (*ENTITIES, "stock")  # Explicit stock diagnostics fail closed pending the scope handoff.
 INITIAL_CHECKPOINT = datetime.min.replace(tzinfo=UTC)
 
 
@@ -59,7 +60,7 @@ async def synchronize(
     Complete partial runs may checkpoint per 04 §5.2; invalid times and blocked downstream
     work pin the affected feed for retry. Transport failure never checkpoints.
     """
-    if entity not in ENTITIES:
+    if entity not in SUPPORTED_ENTITIES:
         raise ValueError("Unsupported or unintegrated ingestion entity")
     started = aware(now or clock.now())
     cancelled: asyncio.CancelledError | None = None
@@ -256,7 +257,7 @@ async def sync_entity(
     replan: ReplanSource | None = None,
 ) -> IngestResult:
     """Reference transport/persistence entry point; trusted dependency callbacks are server-only."""
-    if entity not in ENTITIES:
+    if entity not in SUPPORTED_ENTITIES:
         raise ValueError("Entity persistence is not integrated")
     changed_references = False
 

@@ -22,7 +22,7 @@ def empty_stock() -> httpx.Response:
     return httpx.Response(200, json={"batch_id": 1, "as_of": NOW.isoformat(), "item_count": 0, "items": []})
 
 
-def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_including_stock(db: str) -> None:
+def test_T07_failed_feed_does_not_suppress_others_or_enable_stock_without_scope(db: str) -> None:
     calls: list[str] = []
 
     def source(request: httpx.Request) -> httpx.Response:
@@ -49,8 +49,8 @@ def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_including_stock(d
             await engine.dispose()
 
     batch = asyncio.run(scenario())
-    assert not batch.ok and len(batch.runs) == 6 and not batch.errors
-    assert [run.status for run in batch.runs] == ["failed", "ok", "ok", "ok", "ok", "ok"]
+    assert not batch.ok and len(batch.runs) == 5 and not batch.errors
+    assert [run.status for run in batch.runs] == ["failed", "ok", "ok", "ok", "ok"]
     assert calls == [
         "/customers",
         "/products",
@@ -58,11 +58,8 @@ def test_T07_one_failed_feed_does_not_suppress_other_sync_runs_including_stock(d
         "/orders",
         "/inbound",
         "/fleet/calendar",
-        "/stock",
-        "/products",
-        "/stock",
     ]
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 6
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 5
     assert fetch(db, "SELECT target_roles FROM ops.alert WHERE type='SYNC_FAILED'")[0][0] == ["admin"]
 
 
@@ -103,8 +100,8 @@ def test_T07_scheduler_build_is_market_scoped_configured_and_has_no_implicit_sta
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert set(calls) == {"SE"} and len(calls) == 9
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE market_id=1 AND status='ok'")[0][0] == 6
+    assert set(calls) == {"SE"} and len(calls) == 6
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE market_id=1 AND status='ok'")[0][0] == 5
 
 
 def test_T07_scheduler_does_not_report_an_incomplete_batch_as_success(db: str) -> None:
@@ -131,7 +128,7 @@ def test_T07_scheduler_does_not_report_an_incomplete_batch_as_success(db: str) -
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='failed'")[0][0] == 6
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='failed'")[0][0] == 5
 
 
 def test_T07_invalid_scheduler_interval_is_rejected_without_activating_jobs(db: str) -> None:
@@ -201,7 +198,7 @@ def test_T07_explicitly_started_apscheduler_executes_an_ingestion_job(db: str, m
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='ok'")[0][0] == 6
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run WHERE status='ok'")[0][0] == 5
 
 
 def test_T07_periodic_timer_uses_library_time_independent_of_frozen_business_clock(
@@ -258,4 +255,4 @@ def test_T07_two_market_workers_cannot_interleave_dependent_feeds(db: str) -> No
             await engine.dispose()
 
     asyncio.run(scenario())
-    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 6
+    assert fetch(db, "SELECT count(*) FROM stg.sync_run")[0][0] == 5

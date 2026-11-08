@@ -1,40 +1,36 @@
 # Dev 2 — independent work and remaining dependencies
 
-## Current T07 update — 2026-11-08
+## Current T07 contract status — 2026-11-08, main 361bd73
 
-The sections dated 07/11 below are historical evidence, not the current decision backlog.
-Owner-approved D1–D5/D7 and the superseding fixed-SKU Q10 are applied. D6 is deferred; expanded
-D8 scheduling remains unapproved. This task changes no planning/approval/API-planning files,
-database migrations, authentication, design contract or frontend UI.
+This section supersedes earlier stock-persistence and pending-PR statements below.
+PRs #105, #106, #111 and T14 #117 are merged. T07 runner/reference/order PRs #115,
+#116 and #118 were merged by the owner. Scheduler #119 and stock-readiness #121
+remain review work; no automatic merge is enabled.
 
-T07 is delivered as a review stack: [#115](https://github.com/qaztyhn/cfo-itconsultant/pull/115)
-runner → [#116](https://github.com/qaztyhn/cfo-itconsultant/pull/116) reference persistence →
-[#118](https://github.com/qaztyhn/cfo-itconsultant/pull/118) existing CFO order versions/guards →
-[#119](https://github.com/qaztyhn/cfo-itconsultant/pull/119) ingest worker/scheduler → stock follow-up
-on `feat/t07-stock-ingestion`. Each part has tests and its own PR; no auto-merge is enabled.
-Use merge commits, then retarget/recheck the next PR on main. Parent branches were reconciled with
-merged #111 using normal merge commits, without rewriting their published history.
+DEC-CFO-STOCK-SCOPE-001 requires an explicitly fixed CFO SKU scope before ingestion;
+confirmed mappings and the Source batch cannot define that scope implicitly.
+DEC-CFO-STOCK-INDEPENDENCE-001 requires verified physical independence before summing
+SKUs. Scope/evidence storage, versions, effectivity and authority are not yet contracted.
+PR #120 is a pure-normalizer proposal, not an approved persistence repository.
 
-Implemented: durable runs/rejects, two-minute inclusive overlap, transactional upserts, independent
-submitted/cancelled checkpoints, new-run retry, interruption recovery, source failure alerts, feed/market
-leases, scoped reference sync, immutable routing/legacy protection, approved-order/commitment protection,
-and an explicit APScheduler ingest worker. After #105/#111 merged at `06ab96d`, the stock extension
-adds all-or-nothing fixed-SKU replacement, complete empty batches, unavailable/capture/mapping guards,
-retained old data on failure and a latest-run availability/freshness helper. It introduces no pool IDs
-or policy to silently skip unmapped stock. Timer cadence stays independent of frozen APP_NOW data.
+Accordingly the earlier whole-market stock replacement is withdrawn. Production
+scheduler runs customers, products, orders, inbound and fleet only. Explicit stock
+CLI diagnostics record a failed run/reject (STOCK_SCOPE_NOT_CONFIGURED), preserve all
+cached stock and commitments, and never advance the checkpoint. A complete empty
+Source batch also cannot clear CFO stock without the scoped contract. Stock usability
+returns false; this is a dependency gate, not implemented availability proof.
 
-Verification so far: initial five-feed Harness **PASS** (856 backend tests, 138 source tests,
-frontend lint / 1 test / build), before the final stock/timer additions. Focused final PostgreSQL
-cases and strict adapter/service/job typing are run separately; final exact-head CI and final local
-Harness results are recorded in the stock PR. No unexecuted check or OpenAPI readiness is a PASS.
+T14 now has a real suggest_replan core. Its default loader reads the existing CFO
+order/version; wiring it directly to a newer Source DTO would plan the old approved
+order. A reviewed fresh-source input adapter and risk integration remain necessary.
+The trusted callback tests prove transaction guards, not a real T14/T16 E2E flow.
+No edits to planning_service.py, approval_service.py or api/v1/planning.py are made.
 
-Remaining handoffs: authorized Sync & check/initial order creation, source staging for unresolved
-orders, real T14 fresh-source replan and risk adapters/audit, reviewed cancellation transitions,
-availability checks in the forbidden planning/approval modules, source deletion/provenance for
-inbound/fleet/customer reconciliation, and review of #106's current Source OpenAPI. Tests with fake
-planner/risk callbacks establish the handoff guards only, not real five-gate or E2E acceptance.
-Detailed behavior, commands, file responsibilities and dependencies:
-[T07_INGESTION_HANDOFF.md](T07_INGESTION_HANDOFF.md).
+Verification below with older commits/counts is historical. Final exact-head checks
+are recorded in PR #121. No new business decision, schema, public API or config key
+is introduced. Assumptions: reviewed; existing approved stock-scope/independence rules.
+
+See [T07_INGESTION_HANDOFF.md](T07_INGESTION_HANDOFF.md) for implementation and handoffs.
 
 ## Historical independent-delivery record
 

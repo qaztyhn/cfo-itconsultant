@@ -1,4 +1,4 @@
-"""T07 read-only source polling with complete fixed-SKU stock batches after #105/#111."""
+"""T07 read-only source polling; stock writes await the reviewed CFO scope/evidence contract."""
 
 import argparse
 import asyncio
@@ -17,7 +17,7 @@ from app.core.db import get_engine, get_sessionmaker
 from app.core.errors import DomainError
 from app.core.logging import configure_logging, log_event
 from app.domain.models.ref import Market
-from app.services.ingest_service import ENTITIES, sync_entity
+from app.services.ingest_service import ENTITIES, SUPPORTED_ENTITIES, sync_entity
 from app.services.ingest_types import IngestResult, ReplanSource, SourceRisk
 
 
@@ -127,7 +127,7 @@ async def run(market_code: str | None = None) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market")
-    parser.add_argument("--entity", choices=ENTITIES)
+    parser.add_argument("--entity", choices=SUPPORTED_ENTITIES)
     parser.add_argument("--retry-run-id", type=int)
     args = parser.parse_args()
     if args.entity and not args.market:
