@@ -159,15 +159,17 @@ def _infeasible(
 
 
 def _request(
-    db: str, monkeypatch: pytest.MonkeyPatch, *, actor: CurrentUser | None = None,
-    params: dict[str, object] | None = None, feasible: bool = True,
+    db: str,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    actor: CurrentUser | None = None,
+    params: dict[str, object] | None = None,
+    feasible: bool = True,
 ) -> int:
     monkeypatch.setattr(planning_service, "plan_order", _feasible if feasible else _infeasible)
     return _run(
         db,
-        lambda s: planning_service.plan(
-            1, actor or _actor(), params, session=s, inputs_loader=_loader
-        ),
+        lambda s: planning_service.plan(1, actor or _actor(), params, session=s, inputs_loader=_loader),
     )
 
 
@@ -178,7 +180,10 @@ def test_US_PLN_08_AC1_initial_transaction_persists_plan_vehicle_and_hold(
     assert run_id == 1
     assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
     assert fetch(db, "SELECT run_no,kind,result,reserve_class FROM plan.planning_run")[0] == (
-        1, "initial", "feasible", "safe"
+        1,
+        "initial",
+        "feasible",
+        "safe",
     )
     assert fetch(db, "SELECT count(*) FROM plan.plan_vehicle")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM plan.stock_reservation WHERE status='held'")[0][0] == 1
@@ -187,9 +192,7 @@ def test_US_PLN_08_AC1_initial_transaction_persists_plan_vehicle_and_hold(
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_PROPOSED'")[0][0] == 1
 
 
-def test_US_PLN_08_AC2_double_click_returns_existing_run(
-    db: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_US_PLN_08_AC2_double_click_returns_existing_run(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
     assert _request(db, monkeypatch) == 1
     assert _request(db, monkeypatch) == 1
     assert fetch(db, "SELECT count(*) FROM plan.planning_run")[0][0] == 1
@@ -201,9 +204,10 @@ def test_DEC_HOLD_001_plan_again_same_order_new_run(db: str, monkeypatch: pytest
     clock.set_now(NOW + timedelta(minutes=16))
     assert _request(db, monkeypatch, params={"reason_code": "criteria_change"}) == 2
     assert fetch(db, "SELECT count(*) FROM ops.customer_order WHERE id=1")[0][0] == 1
-    assert [tuple(x) for x in fetch(
-        db, "SELECT run_no,kind FROM plan.planning_run WHERE order_id=1 ORDER BY run_no"
-    )] == [(1, "initial"), (2, "rerun")]
+    assert [
+        tuple(x)
+        for x in fetch(db, "SELECT run_no,kind FROM plan.planning_run WHERE order_id=1 ORDER BY run_no")
+    ] == [(1, "initial"), (2, "rerun")]
     assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE run_id=1")[0][0] == "superseded"
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "released"
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=2")[0][0] == "held"
@@ -228,9 +232,7 @@ def test_US_PLN_08_AC4_fail_closed_mapping_is_atomic(db: str) -> None:
     assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "SUBMITTED"
 
 
-def test_US_PLN_08_AC5_sales_store_scope_and_no_criteria(
-    db: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_US_PLN_08_AC5_sales_store_scope_and_no_criteria(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(DomainError) as out:
         _request(db, monkeypatch, actor=_actor("sales", store_ids=(999,)))
     assert out.value.code == "NOT_FOUND"
