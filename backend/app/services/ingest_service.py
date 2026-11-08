@@ -24,9 +24,10 @@ from app.core.errors import DomainError
 from app.domain.models.ops import CustomerOrder
 from app.domain.models.ref import Market
 from app.domain.models.stg import SyncCheckpoint, SyncReject, SyncRun
+from app.services import ingest_orders as order_writer
 from app.services import ingest_references
 from app.services.alert_service import raise_alert, resolve
-from app.services.ingest_types import IngestResult, RowOutcome, RowRejected, SourceRisk, aware
+from app.services.ingest_types import IngestResult, ReplanSource, RowOutcome, RowRejected, SourceRisk, aware
 
 type RowWriter = Callable[[AsyncSession, Market, FeedRecord, int, datetime], Awaitable[RowOutcome]]
 ENTITIES = ("customers", "products", "orders", "inbound", "fleet")
@@ -42,6 +43,7 @@ async def synchronize(
     adapter: RestMarketAdapter | None = None,
     now: datetime | None = None,
     retry_run_id: int | None = None,
+    finalize: Callable[[AsyncSession, Market], Awaitable[None]] | None = None,
 ) -> IngestResult:
     """Retry creates a new API run; explicit partial retry replays its original lower bound.
 
@@ -161,6 +163,8 @@ async def synchronize(
                                 "RISK_DEPENDENCY_UNAVAILABLE",
                                 "ORDER_STATE_LOCKED",
                                 "ROUTING_UNRESOLVED",
+                                "CFO_ORDER_NOT_INITIALIZED",
+                                "CANCEL_TRANSITION_REQUIRES_REVIEW",
                             }:
                                 pinned.add(feed)
                         else:
@@ -176,6 +180,8 @@ async def synchronize(
                                 set_={"last_updated_since": target},
                             )
                         )
+                if finalize is not None:
+                    await finalize(session, market)
         except (Exception, asyncio.CancelledError) as error:
             failure = "SOURCE_SYNC_FAILED"
             count_ok = count_rejected = 0
@@ -220,17 +226,37 @@ async def sync_entity(
     now: datetime | None = None,
     retry_run_id: int | None = None,
     risk: SourceRisk | None = None,
+    replan: ReplanSource | None = None,
 ) -> IngestResult:
     """Reference transport/persistence entry point; trusted dependency callbacks are server-only."""
-    if entity not in {"customers", "products", "inbound", "fleet"}:
+    if entity not in ENTITIES:
         raise ValueError("Entity persistence is not integrated")
+    changed_references = False
+
+    async def affected_orders(session: AsyncSession, market: Market) -> list[int]:
+        return list(
+            (
+                await session.scalars(
+                    select(CustomerOrder.id).where(
+                        CustomerOrder.market_id == market.id,
+                        CustomerOrder.status.in_(
+                            ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
+                        ),
+                    )
+                )
+            ).all()
+        )
 
     async def write(
         session: AsyncSession, market: Market, record: FeedRecord, run_id: int, started: datetime
     ) -> RowOutcome:
+        nonlocal changed_references
+        from app.adapters.order_wire import SourceCancellation, SourceOrder
         from app.adapters.reference_wire import SourceCustomer, SourceFleet, SourceInbound, SourceProduct
 
         value = record.value
+        if isinstance(value, (SourceOrder, SourceCancellation)):
+            return await order_writer.apply(session, market, value, replan=replan)
         if isinstance(value, SourceCustomer):
             return await ingest_references.customer(session, market, value)
         if isinstance(value, SourceProduct):
@@ -242,22 +268,17 @@ async def sync_entity(
         else:
             raise RowRejected("INVALID_SOURCE_ROW")
         if outcome.changed:
-            affected = (
-                await session.scalars(
-                    select(CustomerOrder.id).where(
-                        CustomerOrder.market_id == market.id,
-                        CustomerOrder.status.in_(
-                            ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
-                        ),
-                    )
-                )
-            ).all()
+            affected = await affected_orders(session, market)
             if affected and risk is None:
-                return RowOutcome("RISK_DEPENDENCY_UNAVAILABLE", changed=True)
-            if risk is not None:
-                for order_id in affected:
-                    await risk(session, order_id, "source_change")
+                raise RowRejected("RISK_DEPENDENCY_UNAVAILABLE")
+            await session.flush()
+            changed_references = True
         return outcome
+
+    async def finish(session: AsyncSession, market: Market) -> None:
+        if changed_references and risk is not None:
+            for order_id in await affected_orders(session, market):
+                await risk(session, order_id, "source_change")
 
     return await synchronize(
         market_code,
@@ -267,6 +288,7 @@ async def sync_entity(
         adapter=adapter,
         now=now,
         retry_run_id=retry_run_id,
+        finalize=finish,
     )
 
 
@@ -279,6 +301,10 @@ async def run_entity(market_code: str, entity: str) -> int:
 
 async def ingest_customers(market_code: str) -> int:
     return await run_entity(market_code, "customers")
+
+
+async def ingest_orders(market_code: str) -> int:
+    return await run_entity(market_code, "orders")
 
 
 async def ingest_products(market_code: str) -> int:

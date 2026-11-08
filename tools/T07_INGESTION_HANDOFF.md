@@ -70,7 +70,36 @@ Per-row stale skipping is supported by orders' version and products' source_upda
 tables lack source timestamps, and their stale-record provenance requires a schema handoff.
 
 Changes to inbound/fleet with approved/in-flight orders require a trusted transactional risk callback.
-Without it, data is saved, the run is explicitly partial and the feed checkpoint is pinned for retry;
+Without it, affected row writes roll back, the run is explicitly partial and the checkpoint is pinned for retry;
 no fake risk recalculation, plan replacement or approval is performed. Reference tests cover mapping
 preservation, pending products, stale versions, unit drift, invalid/foreign rows, transfers and calendar
 idempotency/collisions. Results are tracked in the reference PR.
+
+## Delivery C: existing CFO order versions and protected source changes
+
+Polling does not implement authorized Sync & check or initial CFO order creation. It updates only
+an existing order with an explicit immutable `cfo` routing decision. Unresolved routing or a `cfo`
+decision without its initial order is partial/pinned for handoff; no guessed source staging table,
+creation timestamp, automatic mapping/route, hold or approval is introduced. Legacy stays legacy.
+An accepted newer version replaces SUBMITTED data/lines atomically, validates scoped customer/store,
+existing Sales attribution, known confirmed SKU conversion and exact quantities/money. Replays/stale
+versions do not replace lines, bump CFO version or duplicate orders/routing.
+
+APPROVED/PREPARING/GOODS_READY/LOADED source edits keep all approved order fields, lines and committed
+resources and raise a deduplicated Dispatcher warning. A trusted T14 `ReplanSource(session,order,fresh)`
+handoff must calculate all five gates with old commitments added back, create only suggestion candidates,
+audit and alert in the same transaction, and identify `params.source_version`. The runner checks suggestion
+kind/version, no holds/reservations/approved candidates and unchanged order/lines. No production handler is
+injected while T14 is unavailable: the run remains partial and retries. Fake test callbacks verify only this
+handoff/guard; they do not prove real planning acceptance. Existing valid source-version suggestions dedupe.
+
+After DISPATCHED/terminal, changes/cancellation are alert-only. Before dispatch a source cancellation never
+creates a replacement delivery. Before approval, the present transition table does not authorize system
+cancellation, so cancellation remains partial/pinned until Dev 1 reviews that transition/workflow. The worker
+never impersonates Dispatcher or directly writes status.
+
+Risk callbacks for inbound/fleet now execute once per affected order after every row/page, in the same
+transaction. Replays without a material reference change do not recalculate. Missing callback rolls back
+the affected reference row; callback failure rolls back the entire run. This keeps retry meaningful rather
+than acknowledging new data before downstream work exists. Initial risk/replan callback adapters are still
+Dev 1 handoffs, not automatically inferred from existing stub function names.
