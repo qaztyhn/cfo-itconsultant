@@ -37,3 +37,15 @@ class OrderIn(BaseModel):
     receiving_restrictions: str | None = None
     special_requirements: str | None = None
     lines: list[LineIn] = Field(default_factory=list)
+
+
+class OrderEditIn(OrderIn):
+    expected_version: int = Field(ge=1, strict=True)
+    refresh_address: bool = False
+
+
+class CancelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1, strict=True)
+    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    reason_text: str | None = Field(default=None, max_length=1000)

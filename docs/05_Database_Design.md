@@ -952,6 +952,11 @@ request_hash text NOT NULL, order_id text NOT NULL REFERENCES src_order(id))` k�
 Key UUID là tùy chọn theo request source, hash SHA-256 của typed payload; transaction lock theo key,
 cùng key khác payload không tạo đơn mới. Chỉ lưu hash và order ID, không nhân bản contact/address payload.
 
+**Provenance hủy nguồn (D1-C):** bổ sung nullable `src_order.cancel_reason jsonb` chứa
+`{reason_code,reason_text}` và `cancelled_at timestamptz`; ADD COLUMN IF NOT EXISTS giữ dữ liệu cũ.
+Trigger `trg_keep_cancellation` chặn thay status/reason/cancelled_at của hàng đã CANCELLED; API cũng
+chặn edit/reopen và không ghi provenance mới cho lịch sử legacy chưa rõ. Không sửa audit/milestone CFO.
+
 **Trạng thái: đặc tả mục tiêu đã được owner duyệt; bảng/cột bên dưới có thể cần migration mới, không đồng nghĩa đã có trên DB.** [Approved D1 contract](decisions/DEC_SRC_D1_APPROVED_20261108.md).
 
 - **Order:** lưu `id`, `source_version`, `updated_at`, `status`, `cancel_reason`, `cancelled_at`, `customer_id`, `address_id`, `store_code`, `sales_code`, địa chỉ/toạ độ/liên hệ snapshot, ngày và khung giờ, line_id/sku/qty/unit_price. `DRAFT` tồn DB khi có `customer_id,address_id,store_code,date_mode`; validate/submit cần đủ contact/line/date/calendar. Đơn `SUBMITTED_FOR_PLANNING` được PUT full replacement **chỉ sau validate lại**, có `expected_version` compare + row lock; material edit tăng version, no-op giữ nguyên, chuyển `CANCELLED` từ trạng thái được phép và không mở lại. Ghi provenance sửa/hủy để CFO xử lý theo source version, không nhân đôi đơn.

@@ -218,3 +218,10 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
 - Validation failure preserves version/status; retries and concurrent submit bump only once. Recheck
   references/calendar on submit, inject APP_NOW into the source timestamp trigger within the transaction.
 - CFO planning, stock feasibility, mapping, routing, approval and source PUT/cancel remain separate.
+# Dev 2 source versioned PUT/cancel (2026-11-08)
+
+- Complete approved D1-C source full replacement with expected_version/row lock, no-op detection,
+  explicit snapshot refresh, validation invalidation and fully revalidated submitted edits.
+- Add terminal idempotent cancellation provenance and DB immutability guard; expose cancellation
+  metadata in the existing status=CANCELLED feed. Concurrent cancel/edit has one version winner.
+- CFO transition/hold/replan/suggestion/approval propagation is not implemented by source writes.

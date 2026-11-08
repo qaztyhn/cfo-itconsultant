@@ -44,6 +44,23 @@ async def initialize(engine: AsyncEngine, schema: str) -> None:
         await connection.execute(
             text(f"ALTER TABLE {quoted_schema}.src_address ADD COLUMN IF NOT EXISTS receiving_hours jsonb")
         )
+        for column, kind in (("cancel_reason", "jsonb"), ("cancelled_at", "timestamptz")):
+            await connection.execute(
+                text(f"ALTER TABLE {quoted_schema}.src_order ADD COLUMN IF NOT EXISTS {column} {kind}")
+            )
+        await connection.execute(text(f"""
+            CREATE OR REPLACE FUNCTION {quoted_schema}.keep_cancellation_provenance()
+            RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+              IF OLD.status='CANCELLED' AND (NEW.status IS DISTINCT FROM OLD.status
+                OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason
+                OR NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at)
+              THEN RAISE EXCEPTION 'Cancelled source order provenance is immutable' USING ERRCODE='23514';
+              END IF; RETURN NEW; END $$;
+        """))
+        await connection.execute(text(f"""
+            CREATE OR REPLACE TRIGGER trg_keep_cancellation BEFORE UPDATE ON {quoted_schema}.src_order
+              FOR EACH ROW EXECUTE FUNCTION {quoted_schema}.keep_cancellation_provenance();
+        """))
         await connection.execute(text(f"""
             CREATE OR REPLACE FUNCTION {quoted_schema}.set_updated_at()
             RETURNS trigger LANGUAGE plpgsql AS $$
