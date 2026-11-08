@@ -381,7 +381,7 @@ CREATE TABLE hr.absence (
 
 **ASM-006/007 được chủ dự án chốt:** đổi phân công/quản lý/owner, nghỉ việc, thay lịch ca và sửa điểm danh phải có audit actor + before/after; thay đổi hồi tố bắt buộc lý do, giới hạn quyền. Lịch phân ca chính thức do Warehouse Manager quản lý, điểm danh chỉ ghi hiện diện thực tế. Bộ máy không tự chọn ca dựa vào `expected_staff`. Quy định này là **thiết kế mục tiêu** và phải được xác minh ở migration/API trước khi code.
 
-**Quy tắc dữ liệu nhân sự:** (1) nhân viên `active` phải có đúng một phân công đang hiệu lực (kiểm ở service); (2) mỗi kho/cửa hàng có đúng một quản lý chính đang hiệu lực (ràng buộc DB ở trên) và quản lý đó phải có phân công tại chính nơi đó (kiểm ở service); (3) `owner_employee_id` mặc định là quản lý chính, gán lại được; (4) nhân viên `terminated`: khóa `app_user.is_active`, giữ lịch sử, ẩn danh sau `data_retention_days`; (5) công suất kho dùng `counts_in_capacity = true` và điểm danh `present` (hoặc `planned` cho ngày tương lai, trừ nghỉ phép đã duyệt).
+**Quy tắc dữ liệu nhân sự:** (1) nhân viên `active` phải có đúng một phân công đang hiệu lực (kiểm ở service); (2) mỗi kho/cửa hàng có đúng một quản lý chính đang hiệu lực (ràng buộc DB ở trên) và quản lý đó phải có phân công tại chính nơi đó (kiểm ở service); (3) `owner_employee_id` mặc định là quản lý chính, gán lại được; (4) nhân viên `terminated`: khóa `app_user.is_active`, giữ lịch sử, xóa/ẩn danh theo retention schedule đã được review về GDPR (DEC-GDPR-001); `data_retention_days` demo không mặc nhiên hợp pháp; (5) công suất kho dùng `counts_in_capacity = true` và điểm danh `present` (hoặc `planned` cho ngày tương lai, trừ nghỉ phép đã duyệt).
 
 ## 5. Schema `stg` — nhập liệu từ hệ thống nguồn
 
