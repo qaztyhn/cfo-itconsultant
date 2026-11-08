@@ -284,3 +284,83 @@ def test_US_APR_01_AC9_no_active_hold_denied(db: str) -> None:
             lambda s: approval_service.approve(1, _actor(), {}, "missing-hold", session=s, recheck=_recheck),
         )
     assert got.value.code == "PLAN_NOT_APPROVABLE"
+
+
+def _second_order(db: str, *, stock: int = 30, hours: str = "1.500") -> None:
+    """Two orders hold the same warehouse stock/labour with different trucks and drivers."""
+    execute(
+        db,
+        rows.order_sql(2),
+        "UPDATE ops.customer_order SET origin_store_id=2 WHERE id=2",
+        "INSERT INTO ops.order_routing (market_id,external_ref,route,reason_code,decided_at,"
+        "decided_source_version,decided_by_user_id,decided_by_role) "
+        "VALUES (1,'EXT-2','cfo','all_confirmed','2026-11-04T09:00Z',1,1,'dispatcher')",
+        "INSERT INTO ops.order_line (order_id,line_no,local_sku,global_product_id,qty_sale,qty_base,"
+        "unit_price,line_total) VALUES (2,1,'SKU1',1,20,20,1,20)",
+        "INSERT INTO hr.driver_staff (employee_id,home_warehouse_id,licence_class,licence_expires_on) "
+        "VALUES (2,1,'C','2027-01-01')",
+        rows.run_sql(2, 1),
+        rows.plan_sql(2, 2, 1),
+        rows.plan_vehicle_sql(2, 1, 2, 2),
+        "UPDATE plan.fulfilment_plan SET workload="
+        f"""'{{"prep_by_day":{{"2026-11-10":"{hours}"}}}}'::jsonb WHERE id=2""",
+        f"UPDATE plan.fulfilment_plan SET checks='{GATES}'::jsonb WHERE id=2",
+        f"UPDATE plan.fulfilment_plan SET workload='{{\"prep_by_day\":{{\"2026-11-10\":\"{hours}\"}}}}'::jsonb WHERE id=1",
+        f"UPDATE ops.stock_snapshot SET on_hand={stock} WHERE warehouse_id=1 AND global_product_id=1",
+    )
+    _run(db, lambda s: reservation_service.hold(2, session=s))
+    execute(db, "UPDATE ops.customer_order SET status='PLANNED' WHERE id=2")
+
+
+def _parallel_approve(db: str) -> tuple[list[int], list[str]]:
+    async def go() -> tuple[list[int], list[str]]:
+        engine = create_async_engine(async_url(db), poolclass=NullPool)
+        successes: list[int] = []
+        failures: list[str] = []
+
+        async def one(plan_id: int) -> None:
+            async with async_sessionmaker(engine)() as session:
+                try:
+                    async with session.begin():
+                        await approval_service.approve(
+                            plan_id,
+                            _actor(),
+                            {},
+                            f"race-{plan_id}",
+                            session=session,
+                            recheck=_recheck,
+                        )
+                    successes.append(plan_id)
+                except DomainError as exc:
+                    failures.append(exc.code)
+
+        try:
+            await asyncio.gather(one(1), one(2))
+        finally:
+            await engine.dispose()
+        return successes, failures
+
+    return asyncio.run(go())
+
+
+def test_US_APR_01_AC10_concurrent_stock_approval_single_winner(db: str) -> None:
+    _hold(db)
+    _second_order(db, stock=30)
+    winners, failures = _parallel_approve(db)
+    assert len(winners) == 1
+    assert failures == ["RESOURCE_CONFLICT"]
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM ops.customer_order WHERE status='APPROVED'")[0][0] == 1
+
+
+def test_US_APR_01_AC11_concurrent_labour_approval_single_winner(db: str) -> None:
+    _hold(db)
+    _second_order(db, stock=100, hours="4.000")
+    execute(
+        db,
+        "UPDATE plan.prep_reservation SET hours=4.000 WHERE order_id IN (1,2)",
+    )
+    winners, failures = _parallel_approve(db)
+    assert len(winners) == 1
+    assert failures == ["RESOURCE_CONFLICT"]
+    assert fetch(db, "SELECT count(*) FROM plan.prep_reservation WHERE status='committed'")[0][0] == 1
