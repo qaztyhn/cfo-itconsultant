@@ -3,12 +3,14 @@
  * RequireAuth: phiên hợp lệ + tự đăng xuất khi hết hạn. RequireAccess: chặn theo quy tắc access.ts. GuestOnly: trang /login.
  * Owner: Dev 3 (luồng C) — M0.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { NoAccess } from "./NoAccess";
 import { PATHS, landingPath, resolvePostLoginPath, type AccessRule } from "./access";
 import { fetchMe } from "../api/auth";
 import { isAuthUser, isSessionValid, useAuthStore } from "./store";
+import { isApiError } from "../api/client";
+import { ErrorState, LoadingState } from "../components/StateViews";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -23,6 +25,9 @@ export function RequireAuth() {
   const verified = useAuthStore((s) => s.verified);
   const setUser = useAuthStore((s) => s.setUser);
 
+  const [verifyError, setVerifyError] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     if (!valid || verified) return;
     const controller = new AbortController();
@@ -31,11 +36,13 @@ export function RequireAuth() {
         if (isAuthUser(me)) setUser(me);
         else clearAuth();
       })
-      .catch(() => {
-        /* 401: client.ts đã clearAuth(). Lỗi mạng/5xx: giữ phiên, thử lại ở lần tải sau. */
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (isApiError(error) && error.status === 401) return; // client.ts đã clearAuth()
+        setVerifyError(error ?? new Error("Session check failed"));
       });
     return () => controller.abort();
-  }, [valid, verified, token, setUser, clearAuth]);
+  }, [valid, verified, token, attempt, setUser, clearAuth]);
 
   useEffect(() => {
     if (!valid) {
@@ -52,7 +59,24 @@ export function RequireAuth() {
     return <Navigate to={PATHS.login} replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
   if (!verified) {
-    return <p role="status">Đang xác thực phiên…</p>;
+    if (verifyError) {
+      return (
+        <div className="mx-auto max-w-lg p-8">
+          <ErrorState
+            error={verifyError}
+            title="Couldn't verify your session"
+            onRetry={() => {
+              setVerifyError(null);
+              setAttempt((n) => n + 1);
+            }}
+          />
+          <button type="button" onClick={clearAuth} className="mt-4 text-body underline">
+            Sign out
+          </button>
+        </div>
+      );
+    }
+    return <LoadingState rows={3} className="p-8" />;
   }
   return <Outlet />;
 }

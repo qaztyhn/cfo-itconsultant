@@ -2,6 +2,14 @@ import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "./store";
 import { currentPath, currentState, renderAt, signInAs, userByEmail } from "../test/utils";
+import { fireEvent } from "@testing-library/react";
+import { fetchMe } from "../api/auth";
+import { ApiError } from "../api/client";
+
+vi.mock("../api/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/auth")>()),
+  fetchMe: vi.fn(),
+}));
 
 const screenOf = (name: string) => document.querySelector(`[data-screen="${name}"]`);
 
@@ -14,6 +22,25 @@ afterEach(() => {
 });
 
 describe("RequireAuth", () => {
+  it("shows an error with Retry when /auth/me fails, then recovers on retry", async () => {
+    const user = userByEmail("dispatcher@cfo.demo");
+    signInAs(user);
+    useAuthStore.setState({ verified: false });
+    vi.mocked(fetchMe).mockRejectedValueOnce(new ApiError("SERVICE_UNAVAILABLE", "Service unavailable", undefined, undefined, 503));
+
+    renderAt("/dispatcher/orders");
+
+    const retry = await screen.findByRole("button", { name: /retry/i });
+    expect(currentPath()).toBe("/dispatcher/orders");
+    expect(useAuthStore.getState().token).not.toBeNull();
+
+    vi.mocked(fetchMe).mockResolvedValueOnce(user);
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /retry/i })).toBeNull());
+    expect(useAuthStore.getState().verified).toBe(true);
+  });
+
   it("sends a signed-out visitor to /login and remembers where they were going", async () => {
     renderAt("/dispatcher/orders?status=PLANNED");
 
