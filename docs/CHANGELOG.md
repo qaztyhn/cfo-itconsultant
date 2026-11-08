@@ -192,4 +192,3 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   inclusive checkpoints, deterministic composite keys and authenticated access. Clarify wire types in 06.
 - PostgreSQL contract tests exercise two isolated source schemas, auth, privacy errors, filters and
   half-open fleet intervals. Source write/stock-batch contracts and the full OpenAPI baseline remain pending.
-

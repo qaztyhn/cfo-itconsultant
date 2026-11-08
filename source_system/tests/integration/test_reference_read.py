@@ -97,7 +97,7 @@ def params(**extra: object) -> dict[str, object]:
     return {"from": NOW.isoformat(), "to": (NOW + timedelta(hours=3)).isoformat(), **extra}
 
 
-@pytest.mark.parametrize("path,key", zip(PATHS, ("id", "sku", "id", "sku", "to_ts"), strict=True))
+@pytest.mark.parametrize("path,key", tuple(zip(PATHS, ("id", "sku", "id", "sku", "to_ts"), strict=True)))
 async def test_US_SRC_02_AC1_reference_paging_and_inclusive_checkpoint(
     source: AsyncClient, path: str, key: str
 ) -> None:
