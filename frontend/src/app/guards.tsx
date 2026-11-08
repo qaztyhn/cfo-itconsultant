@@ -7,7 +7,8 @@ import { useEffect, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { NoAccess } from "./NoAccess";
 import { PATHS, landingPath, resolvePostLoginPath, type AccessRule } from "./access";
-import { isSessionValid, useAuthStore } from "./store";
+import { fetchMe } from "../api/auth";
+import { isAuthUser, isSessionValid, useAuthStore } from "./store";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -18,6 +19,23 @@ export function RequireAuth() {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const location = useLocation();
   const valid = isSessionValid({ token, user, email: null, expiresAt });
+
+  const verified = useAuthStore((s) => s.verified);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  useEffect(() => {
+    if (!valid || verified) return;
+    const controller = new AbortController();
+    fetchMe(controller.signal)
+      .then((me) => {
+        if (isAuthUser(me)) setUser(me);
+        else clearAuth();
+      })
+      .catch(() => {
+        /* 401: client.ts đã clearAuth(). Lỗi mạng/5xx: giữ phiên, thử lại ở lần tải sau. */
+      });
+    return () => controller.abort();
+  }, [valid, verified, token, setUser, clearAuth]);
 
   useEffect(() => {
     if (!valid) {
@@ -32,6 +50,9 @@ export function RequireAuth() {
 
   if (!valid) {
     return <Navigate to={PATHS.login} replace state={{ from: `${location.pathname}${location.search}` }} />;
+  }
+  if (!verified) {
+    return <p role="status">Đang xác thực phiên…</p>;
   }
   return <Outlet />;
 }

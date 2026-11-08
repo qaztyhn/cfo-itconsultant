@@ -16,7 +16,10 @@ export interface SessionState {
 }
 
 interface AuthState extends SessionState {
+  /** true khi `user` đã được xác nhận bởi server trong phiên chạy này (login hoặc /auth/me). */
+  verified: boolean;
   setAuth: (login: LoginResponse, email: string) => void;
+  setUser: (user: AuthUser) => void;
   clearAuth: () => void;
 }
 
@@ -78,7 +81,8 @@ export function readStoredSession(now: number = Date.now()): SessionState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   ...readStoredSession(),
-  setAuth: (login, email) => {
+  verified: false,
+    setAuth: (login, email) => {
     const session: SessionState = {
       token: login.access_token,
       user: login.user,
@@ -93,10 +97,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       /* phiên vẫn hoạt động trong bộ nhớ */
     }
-    set(session);
+    set({ ...session, verified: true });
+  },
+  setUser: (user) => {
+    try {
+      window.localStorage.setItem(KEYS.user, JSON.stringify(user));
+    } catch {
+      /* phiên vẫn hoạt động trong bộ nhớ */
+    }
+    set({ user, verified: true });
   },
   clearAuth: () => {
     removeStored();
-    set(EMPTY);
+    set({ ...EMPTY, verified: false });
   },
 }));

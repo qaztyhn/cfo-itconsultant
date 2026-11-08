@@ -5,6 +5,6 @@
 import type { BadgeCounts } from "../app/menu";
 import { apiGet } from "./client";
 
-export function fetchOrderCounts(signal?: AbortSignal): Promise<BadgeCounts> {
-  return apiGet<BadgeCounts>("/orders/counts", undefined, signal);
+export function fetchOrderCounts(signal?: AbortSignal, warehouseId?: number | null): Promise<BadgeCounts> {
+  return apiGet<BadgeCounts>("/orders/counts", { warehouse_id: warehouseId }, signal);
 }

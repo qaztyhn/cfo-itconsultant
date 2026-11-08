@@ -14,6 +14,33 @@ export const ORDER_READ_ROLES: readonly UserRole[] = ["admin", "dispatcher", "wa
 /** GPS: xem chỉ dispatcher (docs/06 mục 3, mục 9; 09 bất biến 4). */
 export const GPS_READ_ROLES: readonly UserRole[] = ["dispatcher"];
 
+/** MOCK D3 (DEC-DEV2-D3-001): Dispatcher chỉ thấy chuyến được phân công trực tiếp,
+ *  tài xế đang trong ca chính thức và chuyến còn on_road. */
+export interface MockGpsTrip {
+  trip_id: number;
+  vehicle_code: string;
+  status: "planned" | "on_road" | "completed" | "cancelled";
+  driver_on_shift: boolean;
+  assigned_dispatcher_ids: readonly number[];
+  lat: number;
+  lon: number;
+  recorded_minutes_ago: number;
+  accuracy_m: number;
+}
+
+export const MOCK_GPS_TRIPS: readonly MockGpsTrip[] = [
+  { trip_id: 1, vehicle_code: "MLM-12-02", status: "on_road", driver_on_shift: true, assigned_dispatcher_ids: [1], lat: 55.605, lon: 13.003, recorded_minutes_ago: 5, accuracy_m: 12 },
+  { trip_id: 2, vehicle_code: "GOT-07-01", status: "on_road", driver_on_shift: false, assigned_dispatcher_ids: [1], lat: 57.709, lon: 11.974, recorded_minutes_ago: 8, accuracy_m: 15 },
+  { trip_id: 3, vehicle_code: "MLM-12-03", status: "completed", driver_on_shift: true, assigned_dispatcher_ids: [1], lat: 55.61, lon: 13.0, recorded_minutes_ago: 40, accuracy_m: 10 },
+  { trip_id: 4, vehicle_code: "STO-03-01", status: "on_road", driver_on_shift: true, assigned_dispatcher_ids: [999], lat: 59.329, lon: 18.068, recorded_minutes_ago: 3, accuracy_m: 9 },
+];
+
+export function visibleGpsTrips(dispatcherUserId: number): MockGpsTrip[] {
+  return MOCK_GPS_TRIPS.filter(
+    (t) => t.status === "on_road" && t.driver_on_shift && t.assigned_dispatcher_ids.includes(dispatcherUserId),
+  );
+}
+
 /** Không token/sai token → 401 AUTH_INVALID; vai trò không được phép → 403 FORBIDDEN. */
 export function authorize(request: Request, allowed: readonly UserRole[]): AuthResult {
   const account = accountFromRequest(request);

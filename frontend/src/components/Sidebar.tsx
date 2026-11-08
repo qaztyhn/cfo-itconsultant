@@ -14,6 +14,7 @@ import { badgeValue, buildMenu } from "../app/menu";
 import { signOut } from "../app/session";
 import { useAuthStore } from "../app/store";
 import { ScopePicker } from "./ScopePicker";
+import { useScopeStore } from "../app/scope";
 
 export interface SidebarProps {
   className?: string;
@@ -52,9 +53,10 @@ export function Sidebar({ className }: SidebarProps) {
   const groups = useMemo(() => (user ? buildMenu(user) : []), [user]);
   const hasBadges = groups.some((group) => group.items.some((item) => item.badge));
 
+  const warehouseId = useScopeStore((s) => s.warehouseId);
   const { data: counts } = useQuery({
-    queryKey: ["orders", "counts"],
-    queryFn: ({ signal }) => fetchOrderCounts(signal),
+    queryKey: ["orders", "counts", { warehouseId }],
+    queryFn: ({ signal }) => fetchOrderCounts(signal, warehouseId),
     enabled: hasBadges,
   });
 

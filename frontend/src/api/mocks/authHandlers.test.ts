@@ -282,10 +282,10 @@ describe("mock authorization: xác thực, role/scope, lọc trường (docs/06 
   });
 
   describe("GET /gps/live chỉ dispatcher", () => {
-    it("dispatcher đọc được vị trí", async () => {
+    it("dispatcher chỉ thấy chuyến được phân công, tài xế trong ca, on_road (D3)", async () => {
       await signInAs("dispatcher@cfo.demo");
-      const body = await apiGet<{ positions: unknown[] }>("/gps/live");
-      expect(body.positions.length).toBeGreaterThan(0);
+      const body = await apiGet<{ positions: { trip_id: number }[] }>("/gps/live");
+      expect(body.positions.map((p) => p.trip_id)).toEqual([1]);
     });
 
     it.each(["admin@cfo.demo", "wm.got@cfo.demo", "sales@cfo.demo", "driver1@cfo.demo", "cs@cfo.demo", "owner@cfo.demo"])(

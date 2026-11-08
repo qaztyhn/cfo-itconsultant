@@ -765,6 +765,7 @@ import { authHandlers, errorResponse } from "./authHandlers";
 import {
   authorize,
   GPS_READ_ROLES,
+  visibleGpsTrips,
   ORDER_READ_ROLES,
   orderInScope,
   projectOrderDetail,
@@ -793,7 +794,12 @@ export const handlers = [
   http.get(`${BASE}/orders/counts`, ({ request }) => {
     const auth = authorize(request, ORDER_READ_ROLES);
     if (!auth.ok) return auth.response;
-    const ids = new Set(ORDER_RECORDS.filter((o) => orderInScope(auth.account.user, o)).map((o) => o.id));
+    const wh = new URL(request.url).searchParams.get("warehouse_id");
+    const ids = new Set(
+      ORDER_RECORDS.filter(
+        (o) => orderInScope(auth.account.user, o) && (wh === null || o.warehouse?.id === Number(wh)),
+      ).map((o) => o.id),
+    );
     return HttpResponse.json(
       computeOrderCounts(
         ORDERS.filter((o) => ids.has(o.id)),
@@ -893,23 +899,20 @@ export const handlers = [
     return HttpResponse.json({ event_id: 998, status: "recorded" });
   }),
 
-  // GPS — chỉ dispatcher được xem (docs/06 mục 3, mục 9)
+  // GPS — D3: chỉ Dispatcher được phân công chuyến, tài xế trong ca, chuyến on_road
   http.get(`${BASE}/gps/live`, ({ request }) => {
     const auth = authorize(request, GPS_READ_ROLES);
     if (!auth.ok) return auth.response;
-    return HttpResponse.json({
-      positions: [
-        {
-          trip_id: 1,
-          vehicle_code: "MLM-12-02",
-          lat: 55.605,
-          lon: 13.003,
-          recorded_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-          accuracy_m: 12,
-          source: "simulator",
-        },
-      ],
-    });
+    const positions = visibleGpsTrips(auth.account.user.id).map((t) => ({
+      trip_id: t.trip_id,
+      vehicle_code: t.vehicle_code,
+      lat: t.lat,
+      lon: t.lon,
+      recorded_at: new Date(Date.now() - t.recorded_minutes_ago * 60 * 1000).toISOString(),
+      accuracy_m: t.accuracy_m,
+      source: "simulator",
+    }));
+    return HttpResponse.json({ positions });
   }),
 
   // Revenue
