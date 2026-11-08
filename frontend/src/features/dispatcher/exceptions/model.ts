@@ -65,7 +65,7 @@ export function evidence(input: unknown): Evidence {
     failedCheck: code(check), earliest: date(raw.earliest_feasible_date),
     checkedDates: days.slice(0,40).flatMap((item) => {
       const x=object(item), day=date(x.date);
-      return day ? [{date:day,result:code(x.result),check:x.check == null ? null : code(x.check)}] : [];
+      return day ? [{date:day,result:code(typeof x.result === "string" ? x.result.toUpperCase() : x.result),check:x.check == null ? null : code(typeof x.check === "string" ? x.check.toUpperCase() : x.check)}] : [];
     }),
     warehouseChecks: warehouses.slice(0,30).map((item)=>{
       const x=object(item);
@@ -85,7 +85,7 @@ export function skuDetails(input: unknown): SkuDetail[] {
   if (!Array.isArray(lines)) return [];
   return lines.slice(0,100).flatMap(item=>{
     const row=object(item), local=safeRef(row.local_sku);
-    const status=code(row.mapping_status);
-    return local && status !== "CONFIRMED" ? [{code:local,status}] : [];
+    const status=code(typeof row.mapping_status === "string" ? row.mapping_status.toUpperCase() : row.mapping_status);
+    return local && (status === "PENDING" || status === "REJECTED") ? [{code:local,status}] : [];
   });
 }
