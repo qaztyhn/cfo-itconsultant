@@ -102,22 +102,33 @@ async def ingest_positions(
     if not positions:
         raise DomainError("VALIDATION_ERROR", "GPS batch cannot be empty.")
     cfg = _market_config(market)
-    existing = (
-        await session.scalars(
-            select(VehiclePosition)
-            .where(VehiclePosition.trip_id == trip.id, VehiclePosition.source == "device")
-            .order_by(VehiclePosition.recorded_at, VehiclePosition.id)
-        )
-    ).all()
-    known: dict[datetime, VehiclePosition | dict[str, object]] = {
-        item.recorded_at.astimezone(UTC): item for item in existing
-    }
-    new_rows: list[VehiclePosition] = []
+    cadence = timedelta(minutes=cfg.gps.interval_min)
+    requested: list[datetime] = []
     for pos in positions:
         recorded = pos.get("recorded_at")
         if not isinstance(recorded, datetime) or pos.get("source") != "device":
             raise DomainError("VALIDATION_ERROR", "Unverified GPS source or timestamp.")
-        at = _aware(recorded)
+        requested.append(_aware(recorded))
+    # The trip/recorded_at index supports exact replay and narrow cadence probes.
+    # Loading the entire trip history here grows without bound during a long trip.
+    existing = (
+        await session.scalars(
+            select(VehiclePosition)
+            .where(
+                VehiclePosition.trip_id == trip.id,
+                VehiclePosition.source == "device",
+                VehiclePosition.recorded_at.in_(set(requested)),
+            )
+        )
+    ).all()
+    known: dict[datetime, VehiclePosition | dict[str, object]] = {}
+    for item in existing:
+        at = item.recorded_at.astimezone(UTC)
+        if at in known:
+            raise DomainError("DUPLICATE_EVENT", "Conflicting GPS timestamp.")
+        known[at] = item
+    new_rows: list[VehiclePosition] = []
+    for pos, at in zip(positions, requested, strict=True):
         if not begins <= at <= timestamp or at >= ends:
             raise DomainError("NOT_ON_TRIP", "GPS point falls outside active driver duty.")
         try:
@@ -147,6 +158,18 @@ async def ingest_positions(
             if not matches:
                 raise DomainError("DUPLICATE_EVENT", "Conflicting GPS timestamp.")
             continue
+        too_close = await session.scalar(
+            select(VehiclePosition.id)
+            .where(
+                VehiclePosition.trip_id == trip.id,
+                VehiclePosition.source == "device",
+                VehiclePosition.recorded_at > at - cadence,
+                VehiclePosition.recorded_at < at + cadence,
+            )
+            .limit(1)
+        )
+        if too_close is not None:
+            raise DomainError("VALIDATION_ERROR", "GPS reporting exceeds approved cadence.")
         known[at] = {"lat": lat, "lon": lon, "accuracy_m": accuracy}
         new_rows.append(
             VehiclePosition(
@@ -159,9 +182,8 @@ async def ingest_positions(
                 source="device",
             )
         )
-    times = sorted(known)
-    cadence = timedelta(minutes=cfg.gps.interval_min)
-    if any(b - a < cadence for a, b in zip(times, times[1:], strict=False)):
+    new_times = sorted(row.recorded_at for row in new_rows)
+    if any(b - a < cadence for a, b in zip(new_times, new_times[1:], strict=False)):
         raise DomainError("VALIDATION_ERROR", "GPS reporting exceeds approved cadence.")
     session.add_all(new_rows)
     await session.flush()

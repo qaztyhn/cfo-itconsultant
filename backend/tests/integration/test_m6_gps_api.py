@@ -112,6 +112,30 @@ def test_US_GPS_01_AC1_replay_is_idempotent_and_conflict_is_atomic(gps: Api) -> 
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
 
 
+def test_US_GPS_01_AC1_duplicate_timestamp_within_batch_rolls_back(gps: Api) -> None:
+    first = position("2026-11-10T07:00:00Z")
+    conflicting = position("2026-11-10T07:00:00Z", lat=59.4)
+    assert_error(submit(gps, [first, conflicting]), 409, "DUPLICATE_EVENT")
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+
+
+def test_US_GPS_01_AC1_large_history_preserves_bounded_replay_and_cadence(gps: Api) -> None:
+    # Adversarial historical residue: upload must look up exact timestamps and nearby
+    # device points rather than materializing every old position into application memory.
+    execute(
+        gps.dsn,
+        "INSERT INTO ops.vehicle_position (trip_id,vehicle_id,lat,lon,recorded_at,source) "
+        "SELECT 1,1,59.3,18.1,'2026-10-01T00:00:00Z'::timestamptz "
+        "+ n * interval '30 minutes','device' FROM generate_series(0,1499) AS n",
+    )
+    first = position("2026-11-10T07:00:00Z")
+    assert submit(gps, [first]).json() == {"accepted": 1, "eta": None}
+    assert submit(gps, [first]).json() == {"accepted": 0, "eta": None}
+    assert_error(submit(gps, [position("2026-11-10T07:29:59Z")]), 422, "VALIDATION_ERROR")
+    assert submit(gps, [position("2026-11-10T07:30:00Z")]).json() == {"accepted": 1, "eta": None}
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1502
+
+
 def test_US_GPS_01_AC1_rejects_high_frequency_sampling_without_partial_insert(gps: Api) -> None:
     assert_error(
         submit(
