@@ -1,5 +1,20 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-SRC-Q9-ERROR-001 — Source 503 STOCK_UNAVAILABLE approved] — 2026-11-08 — docs-only PR #101
+
+- Chủ dự án đã duyệt phương án A: `GET /api/v1/stock` khi **chưa có batch tồn kho hoàn chỉnh nào đã publish** trả **HTTP 503**, `error.code = STOCK_UNAVAILABLE`, body/header lỗi chuẩn Source có `correlation_id`. Nếu published empty batch thì vẫn trả `200 items=[]` (tồn=0), không nhầm với unknown.
+- Nếu batch mới thất bại nhưng còn bản đã publish trước đó, chỉ cung cấp bản đã published với `as_of` gốc; CFO kiểm độ mới 15 phút theo cấu hình, báo alert, không dùng dữ liệu stale làm cam kết; polling 5 phút **không đổi**.
+- `STOCK_UNAVAILABLE` chỉ dùng trong Source API; không ảnh hưởng `GET /health`, không đồng nghĩa chấp thuận `501 NOT_IMPLEMENTED` đang được review ở PR #99. Triển khai handler/OpenAPI/adapter/test trong PR code sau này; **#101 chưa làm migration hay API**.
+
+
+## [DEC-SRC-Q10-SKU-001 — owner revises Q10, Q9 unchanged] — 2026-11-08 — docs-only PR #101
+
+- **Owner-directed change:** Owner requires **one stable inventory unit per product SKU**; changing packaging/order unit is a conversion into the SKU's declared stock unit, **not** a second inventory record. This **supersedes only the physical-stock-pool/alias portion of the earlier D1-D Q10 approval**. Do not introduce `physical_stock_pool_id` or infer shared inventory from numerically equal quantities.
+- For each published batch, warehouse and SKU, accept **one stock row** `(batch_id,warehouse_code,sku)`. Source rejects duplicate rows; CFO converts quantities via `units_to_base` and only aggregates different SKUs into one global product if independence is positively verified. Unknown mapping/independence => fail closed and never expose incomplete replacement as a complete snapshot.
+- **Q9 stays approved and unchanged:** atomic published complete batch, including authoritative zero-row batch; no published batch is unavailable/unknown (not zero). **Subsequent owner decision `DEC-SRC-Q9-ERROR-001` approves Source-only HTTP 503 `STOCK_UNAVAILABLE`** for the missing published batch; handler, OpenAPI and tests remain unimplemented by this docs PR.
+- Synchronized `ASSUMPTIONS`, Q10 portions of `DEC_SRC_D1_APPROVED_20261108`, `05`, `06`, `09`, and PR #101 proposal; no code, SQL migration, OpenAPI regeneration or E2E in this PR. Dev 1+2 must review exact target schema/adapter/test and implement in subsequent PR(s).
+
+
 ## [06 §16.1 — triển khai 5 danh sách nguồn] — 2026-11-08 — theo DEC-SRC-D1-001 D1-A, chờ review
 
 - Triển khai `GET /customers`, `/products`, `/inbound`, `/fleet/calendar`, `/addresses` với phong bì `{items,page,page_size,total}`, `X-Total-Count`, `updated_since` bao gồm, thứ tự `(updated_at, natural key)`.
@@ -192,3 +207,22 @@ Quyết định: Q5 = A, Q6 = A, Q8 = A (điều chỉnh theo ASM-005), Q9 = A, 
   `tests/unit/test_core_correlation.py`, `tests/integration/test_recorder_health.py`.
 - Frontend (Dev 3): hiển thị lỗi chung theo `correlation_id`; có thể gặp `INTERNAL_ERROR`, `NOT_FOUND`.
 - Nếu nhóm **không** duyệt: chọn mã khác cho 500 trước khi merge PR #8 (code hiện dùng `INTERNAL_ERROR`).
+# Dev 2 source receiving calendar (2026-11-08)
+
+- Implement D1-D explicit per-instance receiving coverage/timezone/holidays and per-address slots,
+  active-customer flag, additive upgrade and preserved SE demo calendar seed. Missing legacy slots
+  remain unknown. Clarify source DDL and address representation in 05/06 under DEC-SRC-D1-001.
+- Source validation primitive rejects uncovered/closed/outside hours; POS lifecycle/API integration
+  and CFO warehouse/driver feasibility remain separate. No existing source data reset.
+# Dev 2 source sales/store references (2026-11-08)
+
+- Add source-local active store/sales references for approved D1-B validation, with FK and preserved
+  synthetic 25-store/100-sales seed. IDs align with synthetic CFO workforce fixtures without runtime
+  cross-database reads. Bootstrap is additive; no source order endpoint is enabled by this task.
+# Dev 2 source draft creation (2026-11-08)
+
+- Enable approved D1-B POST /orders with server address/contact snapshot, source references, atomic
+  lines and optional payload-bound UUID idempotency key protected by transaction lock. Add source-local
+  clock with APP_NOW injection and additive src_create_request storage; document 05/06 behavior.
+- DRAFT may omit lines/contact/date details; zero-price source lines are accepted without CFO mapping.
+  Full validate/edit/submit/cancel and CFO ingestion remain separate implementation tasks.

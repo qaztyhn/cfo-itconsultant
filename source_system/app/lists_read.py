@@ -141,6 +141,7 @@ class AddressOut(BaseModel):
     lat: Decimal | None
     lon: Decimal | None
     updated_at: datetime
+    receiving_hours: dict[str, list[list[str]]] | None = None
 
     @field_serializer("lat", "lon")
     def _coordinate(self, value: Decimal | None) -> float | None:

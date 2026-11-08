@@ -922,7 +922,7 @@ Dùng chung cho mọi nước (cùng mã nguồn, dữ liệu seed riêng). CFO 
 | `src_customer` | id, name, email, phone, type, updated_at |
 | `src_address` | id, customer_id, address, lat, lon (địa chỉ seed sẵn kèm tọa độ) |
 | `src_product` | sku, name, category, gtin, sale_unit, units_to_base, unit_price, weight_kg, volume_m3, updated_at |
-| `src_stock` | warehouse_code, sku, **physical_stock_pool_id (schema target of DEC-SRC-D1-001)**, on_hand, reserved, as_of; stock rows only published together via a complete snapshot batch |
+| `src_stock` | batch_id (Q9: migration design target), warehouse_code, sku, on_hand, reserved; **UNIQUE(batch_id, warehouse_code, sku)** for each completed batch; quantities are expressed in the fixed declared SKU stock unit; **no physical_stock_pool_id** (owner update DEC-SRC-Q10-SKU-001) |
 | `src_inbound` | inbound_ref, warehouse_code, sku, qty, eta_date, confirmed, received |
 | `src_vehicle_calendar` | vehicle_code, from_ts, to_ts, kind, updated_at; range queries with stable `(updated_at, vehicle_code, from_ts, to_ts)` |
 | `src_order`, `src_order_line` | id, version, customer_id, address_id, date_mode, date_from, date_to, window_start, window_end, sales_code, store_code, status (`DRAFT`,`VALIDATED`,`SUBMITTED_FOR_PLANNING`,`CANCELLED`), updated_at; **bản chụp tại thời điểm ghi đơn (SRC-Q1, DEC-SRC-001):** address, lat, lon, contact_name, contact_phone, contact_email, receiving_restrictions, special_requirements — đều nullable ở DB (nâng cấp cộng thêm `ADD COLUMN IF NOT EXISTS`, giữ dữ liệu cũ); không bị ghi đè khi hồ sơ khách/địa chỉ đổi |
@@ -931,12 +931,34 @@ Dùng chung cho mọi nước (cùng mã nguồn, dữ liệu seed riêng). CFO 
 
 ### 10.1 DEC-SRC-D1-001 — Quy tắc mô hình nguồn được owner duyệt (08/11/2026)
 
+**DDL nguồn receiving (triển khai D1-D):** `src_customer.is_active boolean NOT NULL DEFAULT true`;
+`src_address.receiving_hours jsonb NULL` với object weekday ISO `"1".."7"` → list cặp giờ local
+`[["07:00","16:00"]]` (cặp giờ tăng dần, thiếu weekday nghĩa là đóng, NULL nghĩa là chưa biết).
+`src_receiving_calendar(id text PRIMARY KEY CHECK(id='instance'), timezone text NOT NULL,
+valid_from date NOT NULL, valid_to date NOT NULL, working_days jsonb NOT NULL, holidays jsonb NOT NULL,
+created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`.
+`working_days` là list ISO weekday, `holidays` là list ISO date, coverage phải tăng dần; code validate
+IANA timezone trước dùng. Mỗi schema nguồn là một instance, không có calendar dùng chung ngầm định.
+Bootstrap chỉ ADD COLUMN IF NOT EXISTS; không backfill giờ nhận cho địa chỉ cũ hoặc ghi đè calendar đã có.
+
+**Tham chiếu POS để kiểm tra sales/store (D1-B):** mỗi schema nguồn có `src_store(code text PRIMARY KEY,
+is_active boolean NOT NULL DEFAULT true)` và `src_sales(code text PRIMARY KEY, store_code text NOT NULL
+REFERENCES src_store(code), is_active boolean NOT NULL DEFAULT true)`, kèm created_at/updated_at như các
+bảng nguồn khác. Chỉ nguồn/seed quản lý danh mục này; CFO không ghi ngược. Tạo draft kiểm tra reference
+tồn tại/địa chỉ thuộc khách; validate/submit còn kiểm tra customer/store/sales active và đúng store.
+
+**Retry tạo draft (D1-C duplicate POST safety):** `src_create_request(key text PRIMARY KEY,
+request_hash text NOT NULL, order_id text NOT NULL REFERENCES src_order(id))` kèm metadata timestamps.
+Key UUID là tùy chọn theo request source, hash SHA-256 của typed payload; transaction lock theo key,
+cùng key khác payload không tạo đơn mới. Chỉ lưu hash và order ID, không nhân bản contact/address payload.
+
 **Trạng thái: đặc tả mục tiêu đã được owner duyệt; bảng/cột bên dưới có thể cần migration mới, không đồng nghĩa đã có trên DB.** [Approved D1 contract](decisions/DEC_SRC_D1_APPROVED_20261108.md).
 
 - **Order:** lưu `id`, `source_version`, `updated_at`, `status`, `cancel_reason`, `cancelled_at`, `customer_id`, `address_id`, `store_code`, `sales_code`, địa chỉ/toạ độ/liên hệ snapshot, ngày và khung giờ, line_id/sku/qty/unit_price. `DRAFT` tồn DB khi có `customer_id,address_id,store_code,date_mode`; validate/submit cần đủ contact/line/date/calendar. Đơn `SUBMITTED_FOR_PLANNING` được PUT full replacement **chỉ sau validate lại**, có `expected_version` compare + row lock; material edit tăng version, no-op giữ nguyên, chuyển `CANCELLED` từ trạng thái được phép và không mở lại. Ghi provenance sửa/hủy để CFO xử lý theo source version, không nhân đôi đơn.
 - **Receiving calendars (SRC-Q8):** định danh lịch market/source instance (timezone IANA, ngày làm việc và ngày lễ cấu hình/seed), khung giờ nhận của từng address; thiếu dữ liệu phải đánh dấu thiếu để validation chặn, **không** tự 24/7. Không đồng nhất source receiving với ca kho/tài xế ở CFO (DEC-SHIFTS-001/D7).
 - **Stock batch (SRC-Q9):** mô hình riêng `src_stock_snapshot_batch` (tên logical, cần migration review) với `batch_id, market/source_instance, as_of, published_at, complete` và nhiều `src_stock` rows cùng batch. Publish nguyên batch bằng một transaction; hỗ trợ **complete zero-row batch**: đã xuất bản và xác nhận đầy đủ mới mang nghĩa tồn=0. Chưa có batch, batch lỗi/chưa publish => **UNKNOWN/UNAVAILABLE**, không suy thành tồn=0. Không lấy `min(row.as_of)` làm batch timestamp.
-- **Alias/pool (SRC-Q10):** `physical_stock_pool_id` (tên logical được đề xuất) xác định **lượng tồn kho vật lý** theo warehouse; các local SKU alias của cùng pool chỉ count **một lần** sau chuyển số lượng về base bằng `units_to_base`. Pool độc lập mới cộng; thiếu pool ID/mapping không chắc chắn => chặn/quarantine chứ không last-row-wins/cộng mù. Dev 1+2 review uniqueness theo `(market, warehouse, physical_pool_id, batch_id)` và ngoại lệ hàng nhiều presentation; không khẳng định UNIQUE này đã được tạo.
+  - **API khi unavailable (owner-approved DEC-SRC-Q9-ERROR-001):** Source `GET /stock` trả **503 `STOCK_UNAVAILABLE`** khi không tồn tại batch published complete, không dùng `200 items=[]`; response theo lỗi chuẩn, `X-Correlation-ID`. Bản published rỗng hợp lệ trả **200**; bản published trước vẫn tồn tại dù batch đang tải mới lỗi thì phải giữ `as_of` lịch sử thực và kiểm stale ở CFO. Mã lỗi Source-only; tên bảng, migration và DTO trường batch vẫn cần review, không có code trong PR #101.
+- **Fixed-unit SKU model (SRC-Q10; owner updated by `DEC-SRC-Q10-SKU-001`):** một SKU khai báo **một đơn vị tồn kho cố định** trong `src_product` (dựa trên `sale_unit`/stock unit); mọi `on_hand/reserved` của SKU dùng đơn vị đó, không tùy dòng hay kho. **Chỉ một dòng tồn trên `(batch_id,warehouse_code,sku)`**; dòng trùng làm hỏng batch, không SUM/last-row-wins. Quy cách đặt mua khác (ví dụ pallet) phải quy đổi về đơn vị tồn SKU trước khi trừ tồn, không sinh dòng SKU/pool khác. Khi đưa sang CFO, quy đổi đúng một lần theo `units_to_base`. **Không thiết kế `physical_stock_pool_id` hoặc suy luận cùng pool từ hai SKU có số lượng quy đổi bằng nhau.** Nếu nhiều SKU mapping một global product mà chưa xác minh tồn vật lý độc lập, fail closed; không xuất bản snapshot CFO thiếu dữ liệu như complete. Dev 1+2 review source migration/adapter/mapping và tests; trạng thái chỉ là contract mục tiêu, không khẳng định DB đã có khóa batch.
 - **Bất biến CFO cancellation/replan:** preapproval source CANCELLED phải release hold và chuyển trạng thái bằng transition được phép + audit (hiện transition table chưa bao phủ mọi đường); postapproval pre-dispatch tạo alert và `replan_suggestion` **không hold**, Dispatcher mới duyệt swap bằng transaction; sau DISPATCHED alert-only. Không xóa lịch sử đã giao, không tự chuyển legacy/cfo cũ. Triển khai migration, adapter, tests sau review, không tự vượt state machine.
 
 

@@ -26,14 +26,18 @@ class SimulatorTests(unittest.IsolatedAsyncioTestCase):
             "synthetic-test-token",
             [(57.7, 11.9), (57.8, 12.0)],
             started_at=datetime(2026, 11, 4, tzinfo=UTC),
-            interval_seconds=120,
+            interval_seconds=1800,
             transport=httpx.MockTransport(receive),
             sleep=sleep,
         )
         self.assertEqual(count, 2)
-        self.assertEqual(sleeps, [120])
-        self.assertEqual(str(requests[0].url), "http://api.test/api/v1/trips/930/positions")
-        self.assertEqual(requests[0].headers["Authorization"], "Bearer synthetic-test-token")
+        self.assertEqual(sleeps, [1800])
+        self.assertEqual(
+            str(requests[0].url), "http://api.test/api/v1/trips/930/positions"
+        )
+        self.assertEqual(
+            requests[0].headers["Authorization"], "Bearer synthetic-test-token"
+        )
         self.assertEqual(
             json.loads(requests[1].content),
             {
@@ -42,7 +46,7 @@ class SimulatorTests(unittest.IsolatedAsyncioTestCase):
                         "lat": 57.8,
                         "lon": 12.0,
                         "source": "simulator",
-                        "recorded_at": "2026-11-04T00:02:00+00:00",
+                        "recorded_at": "2026-11-04T00:30:00+00:00",
                     }
                 ]
             },
@@ -79,3 +83,15 @@ class SimulatorTests(unittest.IsolatedAsyncioTestCase):
                 path.write_text(json.dumps(data), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     read_route(path)
+
+    async def test_D3_rejects_unapproved_high_frequency_sampling(self):
+        for interval in (60, 120, 1799, 1801):
+            with self.assertRaises(ValueError):
+                await simulate(
+                    "http://api.test/api/v1",
+                    930,
+                    "synthetic-test-token",
+                    [(57.7, 11.9)],
+                    started_at=datetime(2026, 11, 4, tzinfo=UTC),
+                    interval_seconds=interval,
+                )

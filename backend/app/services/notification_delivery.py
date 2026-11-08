@@ -12,7 +12,7 @@ to real customer inboxes until a dedupe key, a committed claim before sending an
 
 import os
 from datetime import UTC, datetime, time, timedelta
-from typing import Protocol
+from typing import Protocol, cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -27,6 +27,13 @@ from app.domain.models.ops import CustomerOrder, Notification
 from app.domain.models.ref import Market
 from app.providers.email_smtp import EmailDeliveryError, EmailRecipientNotAllowed, SmtpEmailProvider
 from app.providers.sms_sim import SimulatedSmsProvider
+from app.services.notification_templates import (
+    EtaWindow,
+    MessageVariables,
+    Template,
+    approved_window,
+    render_message,
+)
 
 
 class EmailTransport(Protocol):
@@ -62,7 +69,7 @@ async def deliver_queued(
     if now.tzinfo is None or limit <= 0:
         raise ValueError("Invalid outbox run parameters")
     records = await session.execute(
-        select(Notification, Market)
+        select(Notification, Market, CustomerOrder)
         .join(CustomerOrder, CustomerOrder.id == Notification.order_id)
         .join(Market, Market.id == CustomerOrder.market_id)
         .where(Notification.status == "queued", Notification.scheduled_for <= now)
@@ -71,7 +78,7 @@ async def deliver_queued(
         .with_for_update(of=Notification, skip_locked=True)
     )
     processed = 0
-    for notification, market in records:
+    for notification, market, order in records:
         config = MarketConfig.model_validate(market.config).notify
         if config.max_attempts <= 0:
             raise ValueError("Notification attempt cap must be positive")
@@ -104,6 +111,26 @@ async def deliver_queued(
         if notification.attempts >= config.max_attempts:
             notification.status = "failed"
             continue
+        try:
+            window = (
+                EtaWindow.model_validate(notification.eta_window)
+                if notification.template == "DELAY"
+                else approved_window(order.promise_start, order.promise_end)
+            )
+            rendered = render_message(
+                cast(Template, notification.template),
+                MessageVariables(public_order_ref=order.order_no, eta_window=window),
+                locale=market.locale,
+                timezone=market.timezone,
+                channel=notification.channel,
+            )
+        except (ValueError, KeyError):
+            notification.status = "failed"
+            notification.last_error = "Notification template data is invalid."
+            processed += 1
+            continue
+        # Canonical preview and transport content share the same renderer. Never forward legacy raw text.
+        notification.subject, notification.body = rendered.subject, rendered.body
         notification.attempts += 1
         try:
             if notification.channel == "email":
