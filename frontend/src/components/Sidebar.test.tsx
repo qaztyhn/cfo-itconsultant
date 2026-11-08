@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POS_URL } from "../api/config";
 import { fetchOrderCounts } from "../api/orders";
 import { signOut } from "../app/session";
+import { useScopeStore } from "../app/scope";
 import { signInAs, userByEmail } from "../test/utils";
 import { Sidebar } from "./Sidebar";
 
@@ -28,12 +29,32 @@ function renderSidebar(email: string, path = "/") {
 }
 
 beforeEach(() => {
+  useScopeStore.getState().setWarehouse(null);
   vi.mocked(fetchOrderCounts).mockReset();
   vi.mocked(fetchOrderCounts).mockResolvedValue(counts);
   vi.mocked(signOut).mockReset();
 });
 
 describe("Sidebar", () => {
+  it("does not display market-wide counts for the selected warehouse", async () => {
+    renderSidebar("dispatcher@cfo.demo");
+    await waitFor(() => expect(screen.getByRole("link", { name: /Order queue/ })).toHaveTextContent("6"));
+
+    await act(async () => {
+      useScopeStore.getState().setWarehouse(1);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(/counts for a selected warehouse are not available/i);
+    expect(screen.getByRole("link", { name: "Order queue" })).not.toHaveTextContent("6");
+    expect(fetchOrderCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fetch market-wide badge totals when mounted with a warehouse selected", () => {
+    useScopeStore.getState().setWarehouse(1);
+    renderSidebar("dispatcher@cfo.demo");
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(fetchOrderCounts).not.toHaveBeenCalled();
+  });
+
   it("shows badges from /orders/counts on the dispatcher items (Plan review = awaiting_approval)", async () => {
     renderSidebar("dispatcher@cfo.demo");
 
