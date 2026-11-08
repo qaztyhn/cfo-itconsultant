@@ -47,14 +47,14 @@ function Detail({ type, id, onClose }: { type: Tab; id: number; onClose: ()=>voi
     </div>
     {query.isPending && <LoadingState rows={2} className="mt-4" />}
     {query.isError && <FetchError error={query.error} retry={()=>void query.refetch()} />}
-    {data && type === "blocked" && <div className="mt-4">
+    {query.isSuccess && type === "blocked" && <div className="mt-4">
       <p className="text-sm text-inkMuted">Legacy record only. Missing SKU mapping does not create a CFO planning queue or reroute the order.</p>
       {skuDetails(data).length ? <ul className="mt-3 space-y-2">
         {skuDetails(data).map((sku,i)=><li key={i} className="rounded-control bg-stone p-3 font-mono text-sm">{sku.code} · {sku.status}</li>)}
       </ul> : <p className="mt-3 text-sm">No verified unmapped SKU identifiers are available from the scoped order response.</p>}
       <p className="mt-4 text-sm">Escalate to IT through the established support process. Only IT can confirm mappings; mapping cannot retroactively route a legacy order to CFO.</p>
     </div>}
-    {data && type !== "blocked" && <div className="mt-4 space-y-4">
+    {query.isSuccess && type !== "blocked" && <div className="mt-4 space-y-4">
       <p className="text-sm">Result: <strong>{info.result}</strong> · failed check: <strong>{info.failedCheck}</strong></p>
       {type === "no-feasible" && <p className="text-sm">Earliest feasible date: <strong>{info.earliest ?? "Not verified"}</strong>. Do not change a promised date without a recorded agreement.</p>}
       {type === "replan" && <div className="rounded-control bg-stone p-4 text-sm">
