@@ -65,6 +65,17 @@ class CustomerDTO:
 
 
 @dataclass(frozen=True)
+class AddressDTO:
+    external_ref: str
+    customer_ref: str
+    address: str
+    lat: float | None
+    lon: float | None
+    receiving_hours: dict[str, list[tuple[str, str]]] | None
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
 class ProductDTO:
     sku: str
     name: str
@@ -104,6 +115,8 @@ class InboundDTO:
     qty: Decimal
     eta_date: date
     confirmed: bool
+    received: bool = False
+    updated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +125,7 @@ class FleetBlockDTO:
     start: datetime
     end: datetime
     kind: str
+    updated_at: datetime | None = None
 
 
 class MarketAdapter(Protocol):
@@ -125,6 +139,9 @@ class MarketAdapter(Protocol):
     ) -> AsyncIterator[CancellationDTO]: ...
     def fetch_customers(self, updated_since: datetime) -> AsyncIterator[CustomerDTO]: ...
     def fetch_products(self, updated_since: datetime) -> AsyncIterator[ProductDTO]: ...
+    def fetch_addresses(self, updated_since: datetime) -> AsyncIterator[AddressDTO]: ...
     async def fetch_stock(self) -> StockSnapshotDTO: ...
-    async def fetch_inbound(self) -> list[InboundDTO]: ...
-    async def fetch_fleet(self, date_from: date, date_to: date) -> list[FleetBlockDTO]: ...
+    async def fetch_inbound(self, *, updated_since: datetime | None = None) -> list[InboundDTO]: ...
+    async def fetch_fleet(
+        self, date_from: date, date_to: date, *, updated_since: datetime | None = None
+    ) -> list[FleetBlockDTO]: ...
