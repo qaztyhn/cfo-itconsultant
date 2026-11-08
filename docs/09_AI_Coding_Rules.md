@@ -75,6 +75,10 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 28. **ASM-006:** mọi thay đổi phân công, owner, quản lý, nghỉ việc ghi actor + before/after và `decision_log` cùng transaction. Sửa hồi tố chỉ admin đủ quyền, phải có lý do; quản lý chỉ rời vị trí sau khi có người thay thế. Chưa có action code phải đề xuất cập nhật hợp đồng trước, không bỏ audit.
 29. **ASM-007/Q11:** Warehouse Manager lập lịch ca chính thức từng người/ngày; `expected_staff` chỉ dùng so sánh, không tự chia/dồn nhân viên theo ca. `attendance_gen` chỉ tạo `planned` từ lịch xác nhận. `all_present` không tạo ca hoặc thay đổi phân công. Sửa lịch và điểm danh có audit; hồi tố cần lý do. Thiếu lịch không tính công suất như đã đủ người.
 
+30. **D1-01/02 — chuyển kho audit:** `TRANSFER_CANCELLED` dành cho hủy (reason bắt buộc, actor/ts/before/after; không dùng `TRANSFER_APPROVED`). `TRANSFER_CONFIRMED` **chỉ** kho nguồn xác nhận xuất; `TRANSFER_RECEIVED` **chỉ** kho đích nhận, không fake CONFIRMED với stage khác. Audit append-only trong **cùng transaction** với state change; RBAC/warehouse scope/idempotency. Chưa có hợp đồng hoàn nguyên WMS thì fail-closed.
+31. **D1-03 — scope SKU CFO:** quản trị viên **có thẩm quyền** theo market/pilot quản lý/phê duyệt, lưu version/hiệu lực/audit. Cấm tự suy scope từ mappings hoặc Source batch; SKU trong scope sai mapping => không ghi bất kỳ phần nào của batch.
+32. **D1-04 — evidence tồn kho độc lập:** Warehouse Manager cung cấp chứng cứ từ kho/WMS, quản trị viên có thẩm quyền duyệt; phải lưu evidence/provenance, approver, version, hiệu lực, audit trước khi cộng SKU cùng kho/global product. Thiếu/hết hiệu lực/không chắc => fail closed. Không tự invent DDL/field/route/evidence action chưa được Dev 1/2 review theo `05`/`06`.
+
 ## 5. Quy ước backend (Python)
 
 - **Phiên bản/công cụ:** Python 3.12; FastAPI; SQLAlchemy 2.0 async; Alembic; Pydantic v2; httpx; APScheduler; pytest, pytest-asyncio; ruff, black, mypy.
