@@ -1,9 +1,8 @@
 """D3 GPS API: real PostgreSQL duty, privacy, cadence, replay and retention tests."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
 
 from app.domain.models.ops import DeliveryTrip
 from app.services import gps_service
@@ -166,7 +165,7 @@ def test_US_GPS_01_AC3_privacy_notice_is_required(gps: Api) -> None:
 def test_US_GPS_01_AC2_untrusted_input_rejected_without_echo(gps: Api, invalid: dict[str, object]) -> None:
     response = submit(gps, [invalid])
     assert_error(response, 422, "VALIDATION_ERROR")
-    assert "driver_id" not in response.text
+    assert all("input" not in error for error in response.json()["error"]["details"]["errors"])
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
 
 
