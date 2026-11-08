@@ -1,8 +1,9 @@
 /** Reusable formatting, evidence labels and panel states; never calculates ETA/risk. */
 import type { ReactNode } from "react";
 import type { EvidenceQuality, PanelStateProps, Provenance, RiskStatus, TimeDatum } from "./types";
+import { timeText } from "./format";
 
-export const RISK_LABELS: Record<RiskStatus, string> = {
+const RISK_LABELS: Record<RiskStatus, string> = {
   ON_TRACK: "On track",
   AT_RISK: "At risk",
   PREDICTED_LATE: "Predicted late",
@@ -33,34 +34,6 @@ const QUALITY_LABEL: Record<EvidenceQuality, string> = {
 };
 
 /** Never accept naive timestamps: the source must explicitly identify its UTC offset. */
-export function formatInstant(value: string | null | undefined, timeZone: string): string {
-  if (!value) return "Not recorded";
-  if (!/(Z|[+-][0-9]{2}:[0-9]{2})$/i.test(value)) return "Unverified timestamp";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "Invalid timestamp";
-  try {
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone,
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(date);
-  } catch {
-    return "Unknown time zone";
-  }
-}
-
-export function timeText(datum: TimeDatum | null | undefined, timeZone: string): string {
-  if (!datum) return "Not supplied";
-  if (datum.quality === "missing") return "Not recorded";
-  if (datum.quality === "unknown") return "Unknown";
-  if (datum.quality === "unavailable") return "Unavailable";
-  if (!datum.at) return "Not recorded";
-  return formatInstant(datum.at, timeZone);
-}
-
 export function QualityBadge({ quality }: { quality: EvidenceQuality }) {
   return (
     <span
