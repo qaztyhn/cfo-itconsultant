@@ -711,7 +711,7 @@ Base `/api/v1`, xác thực `X-API-Key`. CFO **chỉ đọc**; POS UI và các e
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/orders?updated_since=&status=SUBMITTED_FOR_PLANNING&page=&page_size=` | Đơn kèm dòng, bản chụp địa chỉ + toạ độ, `version`, `updated_at` |
+| GET | `/orders?updated_since=&status=SUBMITTED_FOR_PLANNING&page=&page_size=` | Đơn kèm dòng, bản chụp địa chỉ + toạ độ, `version`, `updated_at`. Phong bì `{items,page,page_size,total}` + `X-Total-Count` (SRC-Q6): `page ≥ 1` (mặc định 1), `page_size` 1–500 (mặc định 50). `updated_since` là thời điểm có múi giờ, điều kiện **`updated_at >= updated_since`** (SRC-Q7), thứ tự `(updated_at, id)`. `status` ∈ `DRAFT`, `VALIDATED`, `SUBMITTED_FOR_PLANNING` (mặc định), `CANCELLED`. Tham số sai → `422 VALIDATION_ERROR` với `details.errors[{loc,type,msg}]`, không phản chiếu giá trị. Thiếu/sai `X-API-Key` được kiểm tra trước (400/401) |
 | GET | `/customers?updated_since=` | Khách |
 | GET | `/products?updated_since=` | Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích) |
 | GET | `/stock` | Ảnh chụp tồn kho toàn bộ: `{ "as_of": "…", "items": [{ "warehouse_code": "GBG", "sku": "…", "on_hand": 800, "reserved": 20 }] }` |
@@ -735,6 +735,8 @@ Base `/api/v1`, xác thực `X-API-Key`. CFO **chỉ đọc**; POS UI và các e
   "lines": [ { "line_no": 1, "sku": "SE-CEM-25", "qty": 20, "unit_price": "950.00" } ] }
 ```
 Quy tắc phân trang: `page_size ≤ 500`; thứ tự ổn định theo `(updated_at, id)`; trả `X-Total-Count`.
+
+**Biểu diễn đơn của `GET /orders` (đã triển khai; bản chụp theo SRC-Q1):** ngoài đơn mẫu trên có `address`, `lat`, `lon` (số) và `contact {name, phone, email}`; các trường bản chụp/`receiving_restrictions`/`special_requirements`/`date_*`/`window_*`/`sales_code`/`store_code` có thể `null`. `date_*` dạng `YYYY-MM-DD`, `window_*` dạng `HH:MM`, `updated_at` có múi giờ, `qty` là số, `unit_price` là chuỗi đúng như đã lưu, `lines` sắp theo `line_no`. Địa chỉ/liên hệ lấy từ bản chụp của đơn, không từ hồ sơ khách hiện tại. **Chưa quy định** (chờ hợp đồng, xem `docs/proposals/M1_SOURCE_CONTRACT.md`): hiển thị đơn `CANCELLED` cho CFO, phân trang các endpoint danh sách khác, schema ghi đơn.
 
 ---
 
