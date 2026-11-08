@@ -63,3 +63,18 @@ def test_US_RSK_02_AC4_invalid_or_naive_time_evidence_fails_closed() -> None:
         assess_risk(now, now, now, now, 0, 80, 66, 30, 2)
     with pytest.raises(ValueError, match="positive"):
         ceil_to_step(now, 0)
+
+
+def test_US_RSK_01_AC1_partial_gps_observation_cannot_be_used_as_a_route() -> None:
+    planned = datetime(2026, 11, 10, 8, tzinfo=UTC)
+    state = MilestoneState(
+        planned_goods_ready=planned,
+        planned_start_prep=None,
+        planned_depart=planned + timedelta(hours=1),
+        drive_min=60,
+        loading_min=20,
+        gps_recorded_at=planned,
+        gps_remaining_min=None,
+    )
+    with pytest.raises(ValueError, match="trusted timestamp"):
+        forecast_eta(state, planned, 15, 10)
