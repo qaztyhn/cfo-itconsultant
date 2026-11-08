@@ -639,7 +639,7 @@ async def suggest_replan(
     # Excluding reservations from this very order mirrors 04 §7.10.
     inputs = await inputs_loader(session, order, market, now=now, params={})
     cfg = cast(EngineConfig, inputs.config)
-    result = plan_order(inputs.order, list(inputs.warehouses), cfg)
+    result = plan_order(inputs.order, list(inputs.warehouses), cfg, None)
     run = PlanningRun(
         order_id=order.id,
         order_version=order.version,
