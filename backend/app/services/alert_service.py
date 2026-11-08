@@ -9,7 +9,7 @@ Owner: Dev 1 (A) — M7.
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
