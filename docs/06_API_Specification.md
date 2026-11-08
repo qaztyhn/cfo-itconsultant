@@ -241,7 +241,7 @@ Không có điểm số, GPS, `snapshot`/`before`/`after` của decision log tro
 | POST | `/orders/{id}/plan` | Chạy engine. Body tùy chọn (mục 6.1). Tạo `planning_run`, giữ chỗ 3 phương án, hạn 15 phút |
 | GET | `/orders/{id}/planning-runs` | Lịch sử các lần chạy |
 | GET | `/planning-runs/{id}` | Kết quả một lần chạy (mục 6.2) |
-| POST | `/planning-runs/{id}/extend` | Gia hạn giữ chỗ +15 phút, tối đa 2 lần → `409 HOLD_EXTENSION_LIMIT` |
+| POST | `/planning-runs/{id}/extend` | Gia hạn giữ chỗ +15 phút khi còn hiệu lực, tối đa 2 lần → `409 HOLD_EXTENSION_LIMIT`; quá hạn → `409 HOLD_EXPIRED` |
 | GET | `/plans/{id}` | Chi tiết một phương án |
 | POST | `/plans/{id}/approve` | Duyệt. `Idempotency-Key` bắt buộc (mục 6.3) |
 | POST | `/orders/{id}/manual-plan` | Kế hoạch tay (mục 6.4) |
@@ -306,6 +306,8 @@ Khi `result = "infeasible"`: `plans = []`, có `failed_check`, `earliest_feasibl
   "note": "Called customer, ok" }
 ```
 Phản hồi `200`: `{ "order": { "status": "APPROVED", "committed": { "date": "2026-11-13", "promise_start": "…", "promise_end": "…" } }, "plan": { … "status": "approved" }, "trip_ids": [930, 931], "notifications": [ { "id": 77, "template": "CONFIRMED", "status": "queued" } ] }`.
+**Hold đã hết hạn (DEC-HOLD-001):** không được Approve phương án cũ, dù là Dispatcher và dù tài nguyên vẫn còn; trả `409 HOLD_EXPIRED` và đề nghị **Plan Again**. Sau expiry, nếu order vẫn `PLANNED` do run này và không có run/plan mới hơn hoặc approval, job đưa order về `SUBMITTED` an toàn kèm audit. Plan Again dùng `POST /orders/{id}/plan` theo contract hiện có khi order đủ điều kiện; **tạo `planning_run` mới trên cùng order**, kiểm lại toàn bộ nguồn lực/ca kho/tài xế/5 gate và tạo hold mới. Không tạo `customer_order` mới và không hồi sinh hold cũ. Đóng kế hoạch cũ, version/idempotency và trình tự chuyển trạng thái phải được T14/T15/T16 kiểm thử đồng thời; tài liệu này không mở endpoint mới.
+
 Khóa: chỉ khi duyệt, theo `04` mục 7 quy tắc 8 (advisory lock theo kho → sản phẩm → ngày công suất, rồi mọi xe → mọi tài xế của phương án), kiểm tra lại sau khi có khóa. Lúc lập kế hoạch giữ chỗ không khóa và có thể vượt; đơn duyệt trước thắng.
 Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `409 RESOURCE_CONFLICT` (xe/tài xế/hàng/công suất đã bị đơn khác chiếm, kèm `details.conflict` và gợi ý chạy lại), `422 REASON_REQUIRED`, `409 DATE_AGREEMENT_REQUIRED`, `409 ILLEGAL_TRANSITION`.
 
