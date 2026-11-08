@@ -721,36 +721,75 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 
 ## 16. Hợp đồng hệ thống nguồn giả lập (`source-<cc>`, mọi nước giống nhau)
 
-Base `/api/v1`, xác thực `X-API-Key`. CFO **chỉ đọc**; POS UI và các endpoint ghi dùng để nhập dữ liệu demo.
+**DEC-SRC-D1-001 — D1-A/B/C/D đã được chủ dự án duyệt ngày 08/11/2026.** Base `/api/v1`; source API xác thực `X-API-Key`; CFO **chỉ đọc từ Source**, POS UI/nhân viên nguồn sử dụng API ghi cho demo. Các mô tả dưới đây là **contract mục tiêu**, không khẳng định toàn bộ endpoint/DDL/OpenAPI đã có trong code; Dev 2 phải cập nhật source OpenAPI/migration/tests và Dev 1/3 review. Chi tiết [D1 owner-approved](decisions/DEC_SRC_D1_APPROVED_20261108.md).
 
-| Phương thức | Đường dẫn | Mô tả |
+### 16.1 D1-A — Inventory GET và đồng bộ gia tăng
+
+| GET | Nội dung / filter | Natural key bảo đảm thứ tự sau `updated_at` |
 |---|---|---|
-| GET | `/orders?updated_since=&status=SUBMITTED_FOR_PLANNING&page=&page_size=` | Đơn kèm dòng, bản chụp địa chỉ + toạ độ, `version`, `updated_at`. Phong bì `{items,page,page_size,total}` + `X-Total-Count` (SRC-Q6): `page ≥ 1` (mặc định 1), `page_size` 1–500 (mặc định 50). `updated_since` là thời điểm có múi giờ, điều kiện **`updated_at >= updated_since`** (SRC-Q7), thứ tự `(updated_at, id)`. `status` ∈ `DRAFT`, `VALIDATED`, `SUBMITTED_FOR_PLANNING` (mặc định), `CANCELLED`. Tham số sai → `422 VALIDATION_ERROR` với `details.errors[{loc,type,msg}]`, không phản chiếu giá trị. Thiếu/sai `X-API-Key` được kiểm tra trước (400/401) |
-| GET | `/customers?updated_since=` | Khách |
-| GET | `/products?updated_since=` | Sản phẩm nội bộ (mã, tên, loại, GTIN, đơn vị, quy đổi, giá, cân nặng, thể tích) |
-| GET | `/stock` | Ảnh chụp tồn kho toàn bộ: `{ "as_of": "…", "items": [{ "warehouse_code": "GBG", "sku": "…", "on_hand": 800, "reserved": 20 }] }` |
-| GET | `/inbound` | Hàng nhập chưa về: `inbound_ref, warehouse_code, sku, qty, eta_date, confirmed` |
-| GET | `/fleet/calendar?from=&to=` | Khoảng bận của xe: `vehicle_code, from, to, kind` |
-| POST | `/orders` | (POS giả lập) tạo đơn nháp |
-| PUT | `/orders/{id}` | Sửa đơn, tăng `version` |
-| POST | `/orders/{id}/validate` | **Sales Validation**: kiểm khách, địa chỉ/toạ độ, dòng hàng, dạng ngày, yêu cầu đặc biệt |
-| POST | `/orders/{id}/submit` | Chuyển `SUBMITTED_FOR_PLANNING` (chỉ sau `validate` thành công) |
-| POST | `/orders/{id}/cancel` | Hủy |
-| GET | `/addresses?q=` | Địa chỉ seed sẵn kèm toạ độ (thay geocoding thật) |
-| GET | `/health` | |
+| `/orders?updated_since=&status=&page=&page_size=` | Mặc định `status=SUBMITTED_FOR_PLANNING`; **phải cho `status=CANCELLED`** để CFO đồng bộ hủy; có thể query trạng thái nháp phục vụ POS; order+lines+snapshot+version | `id` |
+| `/customers?updated_since=&page=&page_size=` | Khách nguồn | `id` |
+| `/products?updated_since=&page=&page_size=` | SKU nguồn, `units_to_base`, GTIN, giá, khối lượng | `sku` |
+| `/inbound?updated_since=&page=&page_size=` | Hàng nhập, kho, SKU, ngày ETA, trạng thái nhận | `(inbound_ref,warehouse_code,sku)` |
+| `/fleet/calendar?from=&to=&updated_since=&page=&page_size=` | Khoảng thời gian xe bận, filter giao nửa mở `[from,to)` | `(vehicle_code,from_ts,to_ts)` |
+| `/addresses?customer_id=&q=&updated_since=&page=&page_size=` | Địa chỉ khách hàng; filter theo khách / tên, có tọa độ | `id` |
+| `/stock` | **KHÔNG** phân trang; snapshot nguyên batch `{as_of,items}`; xem 16.4 | Batch có một `as_of` duy nhất |
+| `/health` | Health source, không phân trang | — |
 
-Đơn mẫu:
+Mọi danh sách trừ `/stock`/`/health` trả `200 ` với **`{items,page,page_size,total}`**, header **`X-Total-Count`**, `page=1` và `page_size=50` mặc định, `1 ≤ page_size ≤ 500`. Sắp xếp `updated_at ASC` rồi natural key ASC; `updated_since` yêu cầu aware timestamp, lọc **`updated_at >= updated_since`**. Tham số sai → 422 `VALIDATION_ERROR` có field path, không phản chiếu PII. Kết nối nhiều trang dùng durable checkpoint sau khi nạp hết, so trùng bằng version/natural key và overlap thời gian; offset pagination đơn thuần **không phải** snapshot transaction khi source thay đổi đồng thời.
+
+### 16.2 D1-B — POS ghi đơn và validate
+
+| Phương thức | Path | Thành công | Bất biến |
+|---|---|---|---|
+| `POST` | `/orders` | **201**, order DTO | Sinh ID nguồn, `status=DRAFT`, `version=1`; draft persist cần customer_id, address_id, store_code, date_mode |
+| `PUT` | `/orders/{id}` | **200**, order DTO | Full replacement, `expected_version` bắt buộc, atomic; 409 khi stale |
+| `POST` | `/orders/{id}/validate` | **200**, order DTO | Validate toàn bộ, vào VALIDATED từ DRAFT; 422 khi lỗi không thay status/version |
+| `POST` | `/orders/{id}/submit` | **200**, order DTO | Chỉ từ VALIDATED, revalidate dưới row lock, vào SUBMITTED_FOR_PLANNING |
+| `POST` | `/orders/{id}/cancel` | **200**, order DTO | Có `expected_version` và lý do, chuyển terminal CANCELLED; retry idempotent |
+
+Request fields nguồn có thể chứa `customer_id, address_id, store_code, sales_code, contact:{name,phone,email}, date_mode, date_from,date_to,window_start,window_end,receiving_restrictions,special_requirements,lines:[{line_no,sku,qty,unit_price}]`. `id/status/version/updated_at/address/lat/lon` là **server-owned**; từ chối field lạ. Server xác minh address thuộc customer rồi snapshot `address,lat,lon` và contact vào đơn. Thay đổi hồ sơ địa chỉ về sau không âm thầm sửa snapshot đơn; chỉ ghi snapshot mới khi chính người dùng đổi địa chỉ hoặc yêu cầu refresh tường minh.
+
+**Valid DRAFT:** cần `customer_id,address_id,store_code,date_mode`, có thể thiếu contact/date details/lines để người dùng bổ sung trước validate. **VALIDATED/SUBMITTED** cần khách đang hoạt động, địa chỉ thuộc khách và có tọa độ hợp lệ, sales/store reference, tên liên hệ và ít nhất phone hoặc email, ít nhất một line SKU **tồn tại trong nguồn**, `line_no` dương không trùng, `qty > 0` tối đa 3 chữ số thập phân, `unit_price` là **chuỗi decimal chính xác hai chữ số thập phân và không âm (cho phép `"0.00"`)**. SKU có trong POS nhưng chưa CFO mapping confirmed **không** bị POS từ chối, mà điều phối toàn đơn theo ASM-005 / DEC-ROUTING-002.
+
+**Date modes:** `exact` → `date_from` bắt buộc, `date_to=null`; `range` → cần cả hai, `from<=to`; `latest` → `date_to` bắt buộc, `date_from=null`. Date là `YYYY-MM-DD` theo IANA timezone của source instance/market. `window_start` và `window_end` cùng có hoặc cùng null, dạng 24h `HH:MM`, start < end, phải phù hợp lịch nhận từng địa chỉ (xem 16.4); thiếu receiving calendar phải trả lỗi, không đoán mở 24/7. `special_requirements` và `receiving_restrictions` là optional text snapshot, **không** được Planning Engine tự suy luận thành khả năng/safety của xe; thiếu trường có cấu trúc phải chuyển Dispatcher kiểm tra.
+
+**Lỗi 422 có cấu trúc cố định:**
+
 ```json
-{ "id": "POS-SE-88120", "version": 1, "updated_at": "2026-11-05T07:10:00Z", "status": "SUBMITTED_FOR_PLANNING",
-  "customer_id": "C-311", "address_id": "A-5521", "contact": { "name": "Erik Berg", "phone": "+46…", "email": "…" },
-  "date_mode": "latest", "date_from": null, "date_to": "2026-11-18", "window_start": "08:00", "window_end": "12:00",
-  "receiving_restrictions": "Gate code 4411", "special_requirements": "Crane needed",
-  "sales_code": "S-090", "store_code": "ST-021",
-  "lines": [ { "line_no": 1, "sku": "SE-CEM-25", "qty": 20, "unit_price": "950.00" } ] }
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Order validation failed",
+    "details": {
+      "errors": [
+        { "loc": ["body", "lines", 0, "qty"], "type": "invalid_quantity", "msg": "Quantity must be positive" }
+      ]
+    },
+    "correlation_id": "<opaque>"
+  }
+}
 ```
-Quy tắc phân trang: `page_size ≤ 500`; thứ tự ổn định theo `(updated_at, id)`; trả `X-Total-Count`.
 
-**Biểu diễn đơn của `GET /orders` (đã triển khai; bản chụp theo SRC-Q1):** ngoài đơn mẫu trên có `address`, `lat`, `lon` (số) và `contact {name, phone, email}`; các trường bản chụp/`receiving_restrictions`/`special_requirements`/`date_*`/`window_*`/`sales_code`/`store_code` có thể `null`. `date_*` dạng `YYYY-MM-DD`, `window_*` dạng `HH:MM`, `updated_at` có múi giờ, `qty` là số, `unit_price` là chuỗi đúng như đã lưu, `lines` sắp theo `line_no`. Địa chỉ/liên hệ lấy từ bản chụp của đơn, không từ hồ sơ khách hiện tại. **Chưa quy định** (chờ hợp đồng, xem `docs/proposals/M1_SOURCE_CONTRACT.md`): hiển thị đơn `CANCELLED` cho CFO, phân trang các endpoint danh sách khác, schema ghi đơn.
+Các business reason ổn định: `customer_not_found`, `address_customer_mismatch`, `missing_coordinates`, `contact_required`, `invalid_date_mode`, `invalid_date_range`, `invalid_receiving_window`, `outside_receiving_hours`, `receiving_calendar_missing`, `lines_required`, `duplicate_line_no`, `unknown_sku`, `invalid_quantity`, `invalid_price`. Lỗi framework cũng dùng path/type/msg ổn định. Không echo input values/contact/address/PII trong thông báo lỗi/log.
+
+**Response:** một biểu diễn order nhất quán cho GET, POST 201 và các write 200; `date_*` là `YYYY-MM-DD`, `window_*` `HH:MM`, `updated_at` aware timestamp, `qty` numeric, `unit_price` string, `lines` sắp theo `line_no`, snapshot địa chỉ và contact theo thời điểm ghi. POS không tự gửi tọa độ thay server.
+
+### 16.3 D1-C — Version, sửa/hủy sau submit và CFO propagation
+
+- `PUT /orders/{id}`: bắt buộc `expected_version`, compare + row lock; đổi thực tế tăng version/updated_at, identical no-op có thể không tăng. Sai version → **409 `VERSION_CONFLICT`** (mã mới **chỉ áp dụng hợp đồng Source API**); trạng thái không hợp lệ → **409 `ILLEGAL_TRANSITION`**.
+- `DRAFT → VALIDATED → SUBMITTED_FOR_PLANNING`; chỉnh đơn VALIDATED → DRAFT, invalidates validation. Chỉnh đơn đã `SUBMITTED_FOR_PLANNING` được phép **nếu toàn bộ nội dung mới validate thành công trong cùng transaction**; giữ status `SUBMITTED_FOR_PLANNING`, tăng source version. PUT lỗi không làm mất đơn khỏi feed.
+- `POST /orders/{id}/cancel` từ DRAFT/VALIDATED/SUBMITTED_FOR_PLANNING có `expected_version`, `reason_code` và reason_text bảo đảm an toàn khi `other`; terminal CANCELLED không được sửa/reopen/resubmit; retry cancel không nhân phiên bản/hủy trùng.
+- CFO adapter phải đồng bộ các bản ghi `CANCELLED` độc lập với feed SUBMITTED, dùng `source_version` và checkpoint per status. **Chưa duyệt plan:** release/close holds và xử lý state theo transition/audit hợp lệ; Dev 1 phải review/sửa transition table trước vì không được bịa status mới. **Đã APPROVED, chưa DISPATCHED:** `ORDER_CHANGED_AFTER_APPROVAL`, tự chạy `planning_run(kind='replan_suggestion')` và kiểm 5 gate (tồn, công suất/ca kho, xe, tài xế/giờ lái-nghỉ, lịch nhận), **không hold hoặc auto-approve**, không tự giải phóng plan đã committed khi đang gợi ý. Dispatcher duyệt phương án mới với locks và transaction atomic thay thế plan cũ, giữ plan cũ có lý do, hoặc giải quyết ngoại lệ. Source CANCELLED đã approved không tự tạo chuyến mới.
+- **Đã DISPATCHED/đang giao:** alert Dispatcher xử lý thủ công, không tự thay chuyến/commit hoặc xóa lịch sử giao hàng. CFO không bao giờ POST/PUT/cancel ngược POS và không tự đảo routing legacy/cfo.
+
+### 16.4 D1-D — Calendar / stock batch / physical pool
+
+- **Q8 receiving:** lịch ngày làm việc/ngày nghỉ/holiday nguồn theo source market instance, giờ nhận cụ thể theo địa chỉ; thiếu lịch hoặc giờ nhận → validation fail closed. Lịch nhận người mua **khác** lịch Warehouse Manager/tài xế mà CFO kiểm ở safety/capacity.
+- **Q9 published batch:** `GET /stock` trả `{as_of,items}` từ **một batch đã hoàn tất và publish atomically**. Batch đủ có thể có **items=[]** và khi đó phải có completeness marker đáng tin để coi là 0 tồn; batch chưa publish/nguồn lỗi **không** tự thành tồn=0. `as_of` không được tính bằng `min/max(per-row as_of)` thay cho batch chung. Chính sách thời điểm stale stock vẫn theo MarketConfig; adapter không cộng bừa row không cùng batch.
+- **Q10 local/global SKU:** sau ánh xạ `units_to_base`, **cùng physical stock pool tại một kho chỉ count một lần** dù có nhiều local SKU alias; chỉ pool vật lý độc lập được cộng. Nếu pool identity/alias/conversion không rõ hoặc mâu thuẫn → quarantine/alert, không ghi đè last-row-wins và không double-count. Dev 1 và Dev 2 phải thống nhất migration/uniqueness/DTO trước ingest tồn.
+
+**Implementation handoff:** Dev 2 source endpoints/DDL/OpenAPI/seed/CSV integration, Dev 1 adapter/stock normalization/cancel-replan/locks, Dev 3 POS error UX. Phải có PostgreSQL multi-instance tests cho equal timestamp, cancellation after submitted/approved/dispatched, submitted edit race, snapshot zero-row, alias pool collision và new-version idempotency. **Hợp đồng đã được owner duyệt, code chưa được chứng minh hoàn chỉnh bởi tài liệu này.**
 
 ---
 
