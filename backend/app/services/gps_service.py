@@ -152,7 +152,7 @@ async def ingest_positions(
         ))
     times = sorted(known)
     cadence = timedelta(minutes=cfg.gps.interval_min)
-    if any(b - a < cadence for a, b in zip(times, times[1:])):
+    if any(b - a < cadence for a, b in zip(times, times[1:], strict=False)):
         raise DomainError("VALIDATION_ERROR", "GPS reporting exceeds approved cadence.")
     session.add_all(new_rows)
     await session.flush()
