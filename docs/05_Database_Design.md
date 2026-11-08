@@ -453,6 +453,10 @@ CREATE TABLE ops.stock_transfer (                -- gợi ý bằng quy tắc, d
   received_at timestamptz,
   CHECK (from_warehouse_id <> to_warehouse_id)
 );
+-- D1-01/02: ops.transfer_status đã gồm 'cancelled'/'received'; audit action là
+-- TRANSFER_CANCELLED khi hủy (actor, reason, ts, before, after), TRANSFER_RECEIVED
+-- khi kho đích nhận; TRANSFER_CONFIRMED chỉ dành cho kho nguồn xác nhận xuất.
+-- Ghi audit trong cùng transaction với trạng thái; không dùng TRANSFER_APPROVED cho hủy.
 CREATE TABLE ops.stock_transfer_line (
   transfer_id bigint NOT NULL REFERENCES ops.stock_transfer(id),
   global_product_id bigint NOT NULL REFERENCES ref.product_global(id),
@@ -588,7 +592,10 @@ CREATE TABLE ops.proof_of_delivery (           -- v1.1: MỘT bản ghi cho MỖ
   CHECK ((result = 'failed') = (failure_reason IS NOT NULL))
 );
 CREATE INDEX ix_pod_order ON ops.proof_of_delivery (order_id, completed_at);
-CREATE UNIQUE INDEX ux_pod_one_delivered ON ops.proof_of_delivery (order_id) WHERE result = 'delivered';
+-- SUPERSEDED TARGET CONTRACT (DEC-OWNER-20261109 M6-1): migration 0005 still creates
+-- ux_pod_one_delivered(order_id); a NEW forward migration must DROP that index safely.
+-- In the target schema, successful delivery is unique BY trip_stop, not by order:
+CREATE UNIQUE INDEX ux_pod_one_delivered_trip_stop ON ops.proof_of_delivery (trip_stop_id) WHERE result = 'delivered';
 CREATE TABLE ops.eta_forecast (                  -- mỗi lần tính lại một dòng (phiên bản ETA)
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint NOT NULL REFERENCES ops.customer_order(id),
@@ -692,6 +699,12 @@ Trigger `ops.trg_check_transition` (BEFORE UPDATE OF status ON `ops.customer_ord
 Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt kế hoạch mới. Lần duyệt mới tạo thông báo `CONFIRMED` mới (dedupe theo `plan_id`), nên khách nhận ngày mới qua luồng thông báo thường.
 
 **Gợi ý lập lại tự động (v1.2).** Khi một đơn đã duyệt gặp một trong bốn tín hiệu — (a) nguồn sửa đơn sau khi duyệt, (b) tồn kho đổi làm kế hoạch không còn hợp lệ, (c) `VEHICLE_ISSUE`, (d) giao `FAILED` — hệ thống tạo `planning_run(kind='replan_suggestion', trigger=…)`. Engine chạy **coi như kế hoạch hiện tại của chính đơn này không tồn tại** (giữ chỗ hàng, giờ công, xe, tài xế của nó được cộng lại vào phần khả dụng) để không tính sai nhân công, công suất, tồn kho. Lần chạy này **không tạo giữ chỗ** (tránh trùng chỉ mục với giữ chỗ `committed` của chính đơn). Hệ thống tạo alert `REPLAN_SUGGESTED` cho dispatcher. Dispatcher: **duyệt** (đóng kế hoạch cũ theo 5 bước trên rồi khóa, kiểm tra lại và commit kế hoạch mới trong cùng transaction; `409 RESOURCE_CONFLICT` nếu tài nguyên đã bị chiếm), **giữ kế hoạch cũ** (lý do), hoặc lập lại thủ công. Không bao giờ tự duyệt. Đơn đã `DISPATCHED` chỉ nhận alert.
+
+### 6.1 Contract versioned scope SKU và evidence (DEC-DEV1-D1-03/04)
+
+**Đã duyệt nghiệp vụ, chưa chốt DDL:** scope SKU CFO phải do quản trị viên có thẩm quyền theo **market/pilot** quản lý/phê duyệt, có **version, hiệu lực và audit**; không suy từ mapping hoặc Source batch. Chứng cứ tồn độc lập do **Warehouse Manager** cung cấp từ kho/WMS; quản trị viên có thẩm quyền phê duyệt; lưu **bằng chứng/provenance, approver, version, hiệu lực và audit**. Thiếu/hết hiệu lực/chồng lấn thì không cộng và không ghi một phần vào `ops.stock_snapshot`.
+
+**Handoff Dev 1/2:** thiết kế DDL/migration/chi tiết quyền server-side, lưu trữ version + audit, ràng buộc market/pilot/warehouse/SKU, effective version theo `batch_id/as_of`, thu hồi bằng chứng khi Source/mapping đổi, atomic persistence và PostgreSQL tests. Các tên bảng/cột/route mới **chưa được owner phê duyệt**; đoạn này không cho phép tự invent schema hay coi T07 stock writer đã xong. Xem `ASSUMPTIONS.md` và `decisions/DEV1_D1_01_04_APPROVED_20261108.md`.
 
 ## 7. Schema `plan` — kế hoạch và giữ chỗ
 
@@ -812,6 +825,9 @@ CREATE TABLE audit.decision_log (               -- nhật ký quyết định [C
   reason_code text, reason_text text,
   snapshot jsonb, before jsonb, after jsonb
 );
+-- DEC-DEV1-D1-01/02 (2026-11-08): action hiện là text; action names
+-- TRANSFER_CANCELLED, TRANSFER_RECEIVED cần triển khai trong Action catalogue.
+-- before/after, actor và ts lưu tại đây trong cùng business transaction.
 CREATE INDEX ix_decision_order ON audit.decision_log (order_id, ts);
 CREATE INDEX ix_decision_action ON audit.decision_log (action, ts);
 CREATE TABLE audit.improvement_log (            -- kế hoạch so với thực tế, dùng hiệu chỉnh buffer và định mức [S]
@@ -995,3 +1011,18 @@ Quy tắc và hạn chế đã biết [A]:
 - **Tính theo đơn vị nhỏ nhất (v1.2):** định mức ghi theo đơn vị chuẩn bị (pallet, bó…) nhưng hệ thống quy về **đơn vị cơ sở** để dễ scale: `giờ/đơn vị cơ sở = labour_hours_per_unit / base_units_per_prep_unit` (N3: 0,15 / 40 bao = 0,00375 giờ/bao; 20 bao = 0,075 giờ). Hàng **không chia nhỏ được** (không có `base_units_per_prep_unit`: một kiện cửa, một bó bán nguyên bó) thì số đơn vị **làm tròn lên** số nguyên; `line` luôn là 1. Ghi vào báo cáo như một quyết định của nhóm.
 - Định mức đã bao gồm thời gian dùng thiết bị (xe nâng, máy xúc…) vì MVP không quản lý thiết bị kho.
 - Paint & chemicals trong ảnh thiết kế không là nhóm riêng: sơn lon thuộc N1 kèm cờ `HAZARDOUS` hoặc `SPECIAL_STORAGE` khi cần; "Tiles & heavy" gộp vào N2.
+
+## 12. Approved target DB contracts — DEC-OWNER-20261109
+
+**Source:** [owner decision record](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). This section defines **future migration requirements**, not already applied DDL. Never edit applied migrations. Preserve old historic migration files and implement forward migration/tests.
+
+- **S1–5:** effective, versioned **market-wide** SKU scope (pilot SE), explicit revocable market-specific Admin grants; author cannot approve own scope and warehouse-evidence submitter cannot approve own evidence. Warehouse Manager submits verifiable WMS proof; immutable audit records actor/approver/version/before/after. Bind stock run to scope/evidence versions effective at its trusted batch `as_of` (not sync time). Persist expected warehouse × in-scope SKU coverage: missing row rejects complete CFO write; explicit reported zero is zero. Independent evidence expires within **30 days maximum** in pilot; mapping/unit/conversion/scope change auto-revokes and never silently reactivates it. No partial stock writes or implicit independence.
+- **T18-1–3:** track transfer-to-WMS snapshot content inclusion (batch/reference/warehouse/SKU/quantity), not merely snapshot `as_of`; if lacking proof, do not add pending inbound to available stock. Manager receipt closes operational transfer. Store source of approved market-default lead; reversal after `source_confirmed` blocked until a separately reviewed contract.
+- **D7-1–4:** versioned and verified 56-day *daily* driver coverage (including explicit off-duty vs missing), qualified reviewer and source hash/version, separate duty/driving/rest/break segments, immutable correction/revocation and rolling revalidation. Manager-approved future shifts remain independent of past evidence. A real driver with unknown licence/permissible vehicle mass/Regulation 561 context fails the safety gate. Synthetic demo proof cannot qualify as real-worker verification.
+- **M6-1:** One successful POD per **`trip_stop_id`**, not `order_id`. Existing deployed `ux_pod_one_delivered(order_id)` must be dropped by a **new forward migration**, with multi-vehicle regression tests; target partial per-stop unique index can be used alongside the current `UNIQUE(trip_stop_id)`. Do not claim multi-vehicle POD supported before the installed DB index is removed.
+- **G1–5:** a versioned, auditable **one active primary Dispatcher per trip** assignment with market-scoped authorizer and revocation/handover; separate per-driver, per-notice-version delivery+ack proof and privacy/legal pilot authorization. GPS point batch ≤100, event-coupled terminal/duty purge, simulator origin from authenticated separate producer. No raw 30-day GPS retention.
+- **N1–5:** approval/version of DELAY start/end window, immutable template version and typed allowlisted variable snapshot, and queued notification/outbox identity in the caller's event/risk DB transaction. External transport after commit only; preserve test-only recipients and approved retry cap.
+- **API/KPI:** stored `checks.<gate>.passed`; rejected candidate flat `warehouse_id/vehicle_code/failed_check/code/detail`; 10 published metrics, nullable unsupported diagnostics and approved market-local cohort dates.
+
+**Implementation handoff:** Dev 1 owns DDL/migrations/approval/transfer/POD and Dev 2 reviews Source/WMS evidence, GPS and outbox storage; each PR must include rollback, authorization, idempotency and PostgreSQL tests. No unreviewed schema insertion or legal sign-off claims.
+

@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-08)
+## Sổ quyết định đã chốt (cập nhật 2026-11-09)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -30,12 +30,17 @@
 | [DEC-CFO-STOCK-SCOPE-001](#dec-cfo-stock-scope-001--phạm-vi-sku-đồng-bộ-tồn-kho-cfo-được-chốt-trước) | Chọn B: chỉ đồng bộ SKU trong phạm vi CFO đã xác định trước; SKU chưa mapping trong phạm vi làm batch cập nhật CFO không hợp lệ | 08/11 | Chủ dự án chốt trong hội thoại 08/11/2026 | Đã duyệt nghiệp vụ; scope, ingestion, tests còn cần triển khai |
 | [DEC-CFO-STOCK-INDEPENDENCE-001](#dec-cfo-stock-independence-001--chỉ-cộng-nhiều-sku-cùng-global-product-khi-tồn-kho-độc-lập-đã-xác-minh) | Chọn A: chỉ cộng nhiều SKU cùng global product sau khi xác minh lượng tồn độc lập; chưa xác minh thì từ chối | 08/11 | Chủ dự án chốt trong hội thoại 08/11/2026 | Đã duyệt nghiệp vụ; bằng chứng xác minh, normalization, tests còn cần triển khai |
 | [DEC-SRC-Q9-ERROR-001](#dec-src-q9-error-001--duyệt-503-stock_unavailable-của-source-api) | Q9: `GET /stock` khi **không có batch nào đã publish hoàn chỉnh** trả `503 STOCK_UNAVAILABLE` theo phong bì lỗi chuẩn Source, không coi tồn=0 | 08/11 | Chủ dự án xác nhận “ĐƯỢC. CẬP NHẬT 101 PR ĐI” sau khi được đề xuất chọn A `503 STOCK_UNAVAILABLE` | **Owner-approved mã lỗi Source API**; OpenAPI/code/tests chờ triển khai trong PR kỹ thuật |
-
+| [DEC-DEV1-D1-01](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Hủy chuyển kho dùng TRANSFER_CANCELLED, actor/lý do/ts/before/after; không dùng TRANSFER_APPROVED | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #127, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Audit contract duyệt; code/tests pending |
+| [DEC-DEV1-D1-02](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | TRANSFER_CONFIRMED chỉ kho nguồn; TRANSFER_RECEIVED riêng cho kho đích | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #127, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Audit contract duyệt; code/tests pending |
+| [DEC-DEV1-D1-03](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Admin có thẩm quyền quản trị scope SKU theo market/pilot, version/hiệu lực/audit, không suy từ mapping | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #121, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Policy duyệt; DDL/API/tests chờ review |
+| [DEC-DEV1-D1-04](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Warehouse Manager cung cấp chứng cứ độc lập từ kho/WMS; admin có thẩm quyền duyệt, lưu evidence/approver/version/hiệu lực/audit; thiếu thì chặn | 08/11 | Chủ dự án “ĐỒNG Ý” ngày 08/11/2026; PR #120, [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) | Policy duyệt; DDL/API/tests chờ review |
 | [DEC-DEV2-D2-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d2--dec-dev2-d2-001-approved) | D2 CSV UTF-8/schema versioned, stable rows, idempotent hash, lỗi/retry có kiểm soát | 08/11 | Chủ dự án: “d2 ... tôi đồng ý với bạn” | Approved policy; adapter/schema/tests pending |
 | [DEC-DEV2-D3-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d3--dec-dev2-d3-001-approved-policy-dto-implementation-details-need-contract-tests) | D3 GPS 30 phút, offline có điều kiện, chỉ trong ca/chuyến, Dispatcher chỉ xem tài xế/chuyến được phân công; xoá GPS ngay sau trip/shift | 08/11 | Chủ dự án nêu 4 lựa chọn GPS cụ thể | Approved policy; GPS DTO/DB/cleanup/tests pending |
 | [DEC-DEV2-D4-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d4--dec-dev2-d4-001-approved) | D4 thông báo theo template + biến allowlist, không được free-text | 08/11 | Chủ dự án: “Chọn cơ chế template có biến thay thế, không cho phép free-text tùy ý” | Approved; templates/API/tests pending |
 | [DEC-GDPR-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 phải GDPR by design; policy giờ có số cụ thể, chưa chứng minh tuân thủ GDPR thực tế | 08/11 | Chủ dự án: “D5 tôi muốn tuân thủ gdpr” | Approved direction; legal assessment outstanding (PR #86 has overlapping draft) |
 | [DEC-DEV2-D5-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 mốc 90/365/30/90 ngày theo loại, ngoại lệ tài xế/kế toán; **GPS xoá khi trip kết thúc**, không giữ 30 ngày | 08/11 | Chủ dự án: “d2, d5 tôi đồng ý với bạn”; GPS điều chỉnh D3 | Owner-approved product policy, legal/implementation pending; no production GDPR claim |
+
+| [DEC-OWNER-20261109](#dec-owner-20261109--27-quyết-định-liên-workstream-đã-duyệt-ngày-09112026) | 27 quyết định chốt: S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2 | 09/11 | Owner xác nhận rõ ràng 09/11; [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) | **Approved contract; code/migration/E2E pending** |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -439,7 +444,7 @@
 - **Điều kiện fail closed:** chỉ cần **một SKU trong phạm vi** chưa mapping confirmed, mapping không nhất quán hoặc thiếu dữ liệu bắt buộc, phải từ chối **toàn bộ lần ghi snapshot tồn kho CFO thuộc phạm vi/batch đó**, không âm thầm bỏ dòng lỗi, không công bố snapshot thiếu hàng như hoàn chỉnh. Giữ lịch sử để audit; dữ liệu stale/unknown không dùng để cam kết giao.
 - **Ranh giới Source:** Source vẫn phải xuất bản toàn bộ batch hoàn chỉnh theo Q9/Q10 và đáp ứng các quy tắc published-empty/503 đã duyệt; phạm vi CFO là quy tắc **tiêu thụ phía CFO**, không phải quyền bỏ dòng trong batch Source, không sửa Source API hay HTTP 503 STOCK_UNAVAILABLE. Snapshot CFO rỗng trong phạm vi pilot không chứng minh toàn bộ Source không còn hàng.
 - **Phân luồng đơn giữ nguyên:** ASM-005 và DEC-ROUTING-002 tiếp tục áp dụng: đơn chỉ vào CFO khi tất cả SKU trong đơn đã mapping confirmed và Sales/Dispatcher ghi quyết định routing; SKU mới mapping về sau không tự đưa đơn legacy trở lại CFO.
-- **Phụ thuộc chưa chốt về kỹ thuật:** Dev 1/Dev 2 cần đề xuất nơi khai báo/phê duyệt phạm vi (theo market/pilot), version và hiệu lực; cách đối chiếu phạm vi với batch_id, item_count, as_of, kiểm tính đầy đủ, freshness, cảnh báo, migration và mở rộng phạm vi. Đây **không** phải phê duyệt field, schema, API, mã lỗi hay lịch chạy mới.
+- **Bổ sung đã duyệt DEC-DEV1-D1-03:** quản trị viên có thẩm quyền quản lý/phê duyệt scope theo market/pilot với version, hiệu lực và audit; không được suy scope từ mapping. **Chưa chốt kỹ thuật**: bảng/field/API, ủy quyền chi tiết, binding batch_id/as_of, tính đầy đủ, migration và tests; Dev 1/2 phải review trước code.
 - **Trạng thái:** owner-approved policy, **chưa triển khai/kiểm thử E2E**. T07 và Dev 1/2 phải cập nhật 05/06/09, chuẩn hóa/ghi tồn kho CFO và kiểm thử: SKU ngoài phạm vi không chặn; SKU trong phạm vi chưa mapping chặn trọn lần ghi; tuyệt đối không có partial write.
 
 ## DEC-CFO-STOCK-INDEPENDENCE-001 — Chỉ cộng nhiều SKU cùng global product khi tồn kho độc lập đã xác minh
@@ -448,8 +453,32 @@
 - **Quy tắc:** khi nhiều SKU nguồn **cùng kho** mapping vào cùng một global_product_id, chỉ được cộng on_hand và reserved sau khi **xác minh đáng tin cậy rằng số lượng từng SKU là tồn vật lý độc lập, không chồng lấn/đếm trùng**. Mapping từng SKU phải confirmed và lượng tồn phải được quy đổi **một lần** sang đơn vị cơ sở theo đơn vị tồn chuẩn cố định SKU (DEC-SRC-Q10-SKU-001). Không suy ra độc lập từ SKU khác mã, cùng sản phẩm hay tỷ lệ quy đổi.
 - **Khi thiếu/không chắc bằng chứng:** fail closed cho lần chuẩn hóa và ghi snapshot CFO liên quan; không cộng, không lấy giá trị max, không last-row-wins, không coi dữ liệu thiếu là tồn 0 và không publish snapshot partial như hoàn chỉnh. Nếu xác minh có chồng lấn thì **không cộng** và phải làm rõ mapping/nguồn trước khi sử dụng; không quay lại physical_stock_pool_id.
 - **Ranh giới:** batch Source theo SKU vẫn có thể hợp lệ; lỗi chỉ phát sinh tại gate mapping/aggregation của CFO. Không thay quyết định Q9 về published batch và HTTP 503; không cộng tồn giữa các kho.
-- **Phụ thuộc chưa chốt về kỹ thuật:** Dev 1/Dev 2 cần đề xuất **nguồn bằng chứng/tiêu chí xác minh tồn độc lập, người có thẩm quyền xác nhận, cách lưu audit/version, hiệu lực khi mapping hoặc tồn nguồn thay đổi**, và kiểm tra atomicity. Chủ dự án **chưa chốt** cơ chế/bảng/field/API cụ thể.
+- **Bổ sung đã duyệt DEC-DEV1-D1-04:** Warehouse Manager cung cấp chứng cứ từ kho/WMS; quản trị viên có thẩm quyền phê duyệt; lưu evidence, approver, version, hiệu lực, audit; thiếu xác minh thì fail closed. **Chưa chốt kỹ thuật**: tiêu chí/provenance, bảng/field/API, thu hồi khi mapping/Source thay đổi và transaction tests; Dev 1/2 phải review.
 - **Trạng thái:** owner-approved policy, **chưa triển khai/kiểm thử E2E**. Hàm chuẩn hóa hiện tại đang từ chối tất cả trường hợp nhiều SKU cùng kho cùng global product; cần cho phép **chỉ** trường hợp đã xác minh độc lập, có test dữ liệu độc lập được cộng sau quy đổi và mọi ca chưa xác minh/chồng lấn đều không ghi một phần.
+
+## DEC-DEV1-D1-01 — TRANSFER_CANCELLED khi hủy chuyển kho
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Có. Ghi người thực hiện, lý do, thời điểm, trạng thái trước/sau. Không dùng TRANSFER_APPROVED cho hành động hủy.”
+- **Ràng buộc:** `POST /transfers/{id}/cancel` ghi `TRANSFER_CANCELLED` trong `audit.decision_log` cùng transaction với chuyển trạng thái, actor, reason bắt buộc, ts, before/after; không được dùng `TRANSFER_APPROVED`. Ngoài trạng thái hợp lệ/không có contract hoàn nguyên WMS thì fail-closed.
+- **Nguồn:** [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) và [PR #127](https://github.com/qaztyhn/cfo-itconsultant/pull/127). Docs approved; code/migration/tests còn chờ.
+
+## DEC-DEV1-D1-02 — TRANSFER_RECEIVED cho kho đích
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Tạo TRANSFER_RECEIVED riêng. CONFIRMED dành cho kho nguồn xác nhận xuất; RECEIVED dành cho kho đích nhận.”
+- **Ràng buộc:** kho nguồn `confirm-source` ghi `TRANSFER_CONFIRMED`; kho đích `receive` ghi `TRANSFER_RECEIVED` với actor, ts, before/after, trong cùng transaction với receipt. Không tái dùng `TRANSFER_CONFIRMED`/snapshot stage để biểu diễn nhận hàng. Scope kho và idempotency bắt buộc.
+- **Nguồn:** [biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md) và [PR #127](https://github.com/qaztyhn/cfo-itconsultant/pull/127). Code/tests chưa hoàn tất.
+
+## DEC-DEV1-D1-03 — Scope SKU có admin thẩm quyền, version và audit
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Quản trị viên có thẩm quyền quản lý phạm vi theo market/pilot, có version, ngày hiệu lực và audit. Không tự suy phạm vi từ mapping.”
+- **Ràng buộc:** quản trị viên có thẩm quyền theo market/pilot được quản lý/phê duyệt scope CFO trước lần sync; lưu version, effective time, actor/approver, before/after audit và lịch sử; không suy từ mappings/Source batch. SKU ngoài scope không chặn, trong scope mapping sai thì chặn toàn batch. Giữ DEC-CFO-STOCK-SCOPE-001.
+- **Chờ kỹ thuật:** nơi lưu/field/endpoint/chi tiết quyền và binding effective version với batch chưa chốt; Dev 1/2 review. [Biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md); [PR #121](https://github.com/qaztyhn/cfo-itconsultant/pull/121).
+
+## DEC-DEV1-D1-04 — Bằng chứng tồn độc lập do Warehouse Manager cung cấp và admin duyệt
+
+- **Phê duyệt:** 2026-11-08, chủ dự án “ĐỒNG Ý — Warehouse Manager cung cấp bằng chứng từ kho/WMS; quản trị viên có thẩm quyền phê duyệt. Lưu bằng chứng, người duyệt, phiên bản và hiệu lực; thiếu xác minh thì chặn.”
+- **Ràng buộc:** chứng cứ warehouse/SKU/global-product từ kho/WMS do Warehouse Manager cung cấp, admin có thẩm quyền phê duyệt; lưu evidence/provenance, approver, version, hiệu lực và audit trước/sau. Thiếu/hết hiệu lực/chồng lấn => fail closed, không cộng/ghi snapshot CFO một phần; giữ DEC-CFO-STOCK-INDEPENDENCE-001.
+- **Chờ kỹ thuật:** schema/route, tiêu chí thu hồi khi mapping/stock thay đổi và E2E; Dev 1/2 review. [Biên bản](decisions/DEV1_D1_01_04_APPROVED_20261108.md); [PR #120](https://github.com/qaztyhn/cfo-itconsultant/pull/120).
 
 ## ASM-008 — Giả định giao diện M0 (Dev 3; đề xuất chưa duyệt)
 
@@ -465,3 +494,17 @@
 - **Demo accounts:** UI hiện 7 thẻ không bao gồm Project Lead như `03` mục 5.0. M0 seed chỉ có 5 account; `wm.got`, `driver1`, `cs` cần đúng seed M1 mới đăng nhập thật. Chỉ điền email, không hard-code mật khẩu.
 - **Q11:** tiếp tục tuân theo ASM-007/DEC-SHIFTS-001; không cấp ca chỉ dựa vào `expected_staff`.
 - **Phạm vi:** `frontend/src/app`, `frontend/src/api`, `Sidebar`, `ScopePicker`, `DemoBanner`, `SignIn`; Dev 1 cần chuẩn hóa `owned_location_ids`, Dev 2 cần xác nhận POS URL/seed, Dev 3 cần smoke test backend thật. Mục này chỉ ghi nhận hiện trạng và phụ thuộc kỹ thuật, **chưa chốt owner assumptions mới**.
+
+## DEC-OWNER-20261109 — 27 quyết định liên workstream đã duyệt ngày 09/11/2026
+
+- **Người phê duyệt/ngày:** Chủ dự án ITConsultant, 2026-11-09, xác nhận toàn bộ 27 mã S/T18/D7/G/N/M6/API/KPI trong cuộc trò chuyện. **Bản ghi chi tiết và biên giới triển khai:** [OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md).
+- **S1–S5 (stock):** S1 — Admin phải có grant rõ và đang hiệu lực theo market. S2 — người tạo scope khác người duyệt; Warehouse Manager nộp evidence WMS và admin có quyền, khác người nộp, phê duyệt. S3 — scope market-wide trong pilot SE, version có hiệu lực sau duyệt, batch dùng version theo `as_of`, có binding lưu lại. S4 — mỗi warehouse × in-scope SKU phải có dòng thật trong batch đầy đủ, thiếu ⇒ unknown và từ chối cả CFO stock write (0 phải được gửi tường minh). S5 — evidence độc lập tối đa **30 ngày pilot**, gia hạn bằng version được duyệt mới; mapping/unit/conversion/scope đổi ⇒ tự thu hồi, WMS anomaly cần review.
+- **T18-1–3:** T18-1 — không cộng thêm inbound vào stock available khi chưa có chứng cứ nội dung WMS đã phản ánh đúng lượng chuyển; chỉ `snapshot.as_of` là chưa đủ, Warehouse Manager xác nhận nhận hàng theo nghiệp vụ. T18-2 — lead-time default theo market chỉ dùng khi được cấu hình/phê duyệt và lưu provenance, thiếu thì fail closed. T18-3 — không cho hủy/reversal sau `source_confirmed` trước khi có contract riêng.
+- **D7-1–4:** D7-1 — dữ liệu HR/tachograph thực phải do người đủ thẩm quyền vận tải/compliance kiểm chứng; synthetic chỉ demo. D7-2 — bằng chứng cho **56 ngày lịch**, ngày nghỉ có chứng cứ khác ngày unknown, kiểm lại khi lập kế hoạch/duyệt/dispatch. D7-3 — nghỉ liên tục mặc định **11h**, tách duty/driving/rest và ca chính thức. D7-4 — thiếu bằng lái, permissible mass, phạm vi Regulation 561/bối cảnh xe/rơ-moóc ⇒ không cho tự duyệt/giao, không suy từ nhãn xe.
+- **G1–G5:** G1 — admin/supervisor có quyền theo market phân **một Dispatcher chính/trip**, bàn giao có audit. G2 — chỉ đúng Dispatcher được giao xem GPS khi assignment+trip+ca còn hợp lệ. G3 — thông báo/ack từng tài xế theo notice version và phải có privacy/legal/DPIA sign-off để dùng dữ liệu thật. G4 — device mỗi **30 phút**, upload **≤100 điểm/batch** trong ca/chuyến, xóa GPS sau trip hoặc hết ca (đến trước), không giữ 30 ngày. G5 — simulator có danh tính producer và synthetic provenance riêng.
+- **N1–N5:** N1 — Dispatcher có quyền duyệt DELAY window, đổi ngày phải có thỏa thuận khách hợp lệ. N2 — start/end/version/approver/effective time rõ, không suy từ ETA instant. N3 — pin template version + typed allowlist variables, không free-text. N4 — event/risk/queued notification/outbox cùng caller DB transaction; gửi bên ngoài sau commit. N5 — giữ retry cap hiện có, chỉ Mailpit/test recipients.
+- **M6-1:** Thành công POD unique **theo `trip_stop`** chứ không toàn `order`; phải migration bỏ unique index theo order đang có.
+- **API-1/2:** Gate dùng `checks.*.passed` (không phải `pass`); rejected candidates flat `warehouse_id, vehicle_code, failed_check, code, detail`. UI đã merge #136 sửa trong **PR mới**.
+- **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
+- **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
+

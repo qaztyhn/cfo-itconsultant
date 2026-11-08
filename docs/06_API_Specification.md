@@ -274,20 +274,19 @@ Không có điểm số, GPS, `snapshot`/`before`/`after` của decision log tro
     { "id": 2001, "rank": 1, "status": "proposed",
       "warehouse": { "id": 3, "name": "Malmö DC" },
       "vehicle_count": 1, "total_capacity_kg": 6000, "total_capacity_m3": 40,
-      "vehicles": [ { "seq": 1, "vehicle": { "id": 15, "code": "MLM-12-02", "name": "Truck 12 t", "capacity_kg": 6000, "capacity_m3": 40 },
-                      "driver": { "employee_id": 71, "name": "Johan Ek" }, "load_kg": 4120, "load_m3": 9.6,
+      "vehicles": [ { "seq": 1, "vehicle": { "id": 15, "code": "MLM-12-02", "name": "Truck 12 t", "capacity_kg": "6000", "capacity_m3": "40" },
+                      "vehicle_id": 15, "driver_employee_id": 71, "load_kg": "4120", "load_m3": "9.6",
                       "load_lines": [ { "line_no": 1, "qty_base": 800 } ],
                       "loading_start_at": "2026-11-12T11:20:00Z", "depart_at": "2026-11-13T05:10:00Z", "eta_at": "2026-11-13T07:00:00Z" } ],
       "target_date": "2026-11-13",
       "goods_ready_at": "2026-11-12T11:20:00Z", "loading_start_at": "2026-11-12T11:20:00Z",
       "depart_at": "2026-11-13T05:10:00Z", "eta_at": "2026-11-13T07:00:00Z", "trip_end_at": "2026-11-13T09:30:00Z",
-      "promise_window_preview": { "start": "2026-11-13T07:00:00Z", "end": "2026-11-13T09:00:00Z" },
       "distance_km": 12.0, "drive_min": 110, "prep_hours": 10.15, "capacity_fill": 0.60,
       "score": 0.26, "score_breakdown": { "n_km": 0.07, "n_fill": 0.44, "w_km": 0.5, "w_fill": 0.5 },
       "complexity_points": 0, "planning_reserve_min": 5220, "route_provenance": "ors",
-      "checks": { "stock": { "pass": true, "code": "STOCK_OK" }, "preparation": { "pass": true, "code": "PREP_OK" },
-                  "truck": { "pass": true, "code": "TRUCK_OK" }, "site_date": { "pass": true, "code": "DATE_OK" },
-                  "safety": { "pass": true, "code": "SAFETY_OK" } },
+      "checks": { "stock": { "passed": true, "code": "STOCK_OK" }, "preparation": { "passed": true, "code": "PREP_OK" },
+                  "truck": { "passed": true, "code": "TRUCK_OK" }, "site_date": { "passed": true, "code": "DATE_OK" },
+                  "safety": { "passed": true, "code": "SAFETY_OK" } },
       "reason_codes": ["LOWEST_SCORE_OF_3", "STOCK_OK", "TRUCK_OK", "RESERVE_SAFE"],
       "explanation": "Lowest score of 3 feasible plans. Malmö DC has stock, capacity fill 60%, truck 12t free, 12 km, reserve 3.6 days (safe)." },
     { "id": 2002, "rank": 2, … }, { "id": 2003, "rank": 3, … }
@@ -300,8 +299,7 @@ Khi `result = "infeasible"`: `plans = []`, có `failed_check`, `earliest_feasibl
 ### 6.3 `POST /plans/{id}/approve`
 
 ```json
-{ "drivers": [ { "seq": 1, "driver_employee_id": 71 } ],   // tùy chọn: đổi tài xế được gợi ý cho từng xe (phải hợp lệ)
-  "date_negotiation_id": 55,                      // bắt buộc nếu ngày giao khác ngày khách đã đồng ý
+{ "date_negotiation_id": 55,                      // bắt buộc nếu ngày giao khác ngày khách đã đồng ý
   "reason_code": "closest_to_customer", "reason_text": "…",   // bắt buộc nếu plan.rank > 1 (chọn phương án khác)
   "note": "Called customer, ok" }
 ```
@@ -392,7 +390,9 @@ Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn 
 | GET | `/transfers` | dispatcher, warehouse | Lọc `status`, `warehouse_id` |
 | POST | `/transfers/{id}/confirm-source` | warehouse (kho nguồn, `can_approve`) | Tạo `inbound_shipment(source=transfer, confirmed=true)`, đơn có thể chạy lại |
 | POST | `/transfers/{id}/receive` | warehouse (kho đích) | Đánh dấu `received` |
-| POST | `/transfers/{id}/cancel` | dispatcher | Cần lý do |
+| POST | `/transfers/{id}/cancel` | dispatcher | Lý do bắt buộc; audit `TRANSFER_CANCELLED` (actor/ts/before/after), không dùng `TRANSFER_APPROVED` |
+
+**D1-01/02 — owner-approved audit semantics (08/11/2026):** `POST /transfers/{id}/confirm-source` ghi `TRANSFER_CONFIRMED` **chỉ khi kho nguồn xác nhận xuất**; `POST /transfers/{id}/receive` ghi **`TRANSFER_RECEIVED`** khi kho đích nhận (không reuse CONFIRMED dưới `snapshot.stage` khác); `POST /transfers/{id}/cancel` bắt buộc lý do, ghi **`TRANSFER_CANCELLED`**, không dùng `TRANSFER_APPROVED`. Cả ba phải kiểm quyền/market/warehouse, state transition và idempotency; audit append-only gồm actor, ts, before/after trong **cùng transaction** với state change. Hủy sau `received` hoặc tác động hoàn nguyên WMS chưa có contract an toàn phải fail closed; không ghi ngược Source. Route/payload hiện tại chưa đổi; Dev 1/2 cần code/contract tests.
 
 ## 8. Thực thi
 
@@ -659,7 +659,7 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/kpi/summary?from=&to=&warehouse_id=&store_id=` | Tám chỉ số (xem `05`, mục 8) kèm baseline và thay đổi so với baseline |
+| GET | `/kpi/summary?from=&to=&warehouse_id=&store_id=` | 10 metric key KPI vận hành (xem `05`, mục 8) kèm baseline và thay đổi so với baseline |
 | GET | `/kpi/daily?metric=&from=&to=` | Chuỗi theo ngày (cho biểu đồ) |
 | GET/PUT | `/kpi/baseline`, `/kpi/baseline/{metric}` | admin: nhập baseline thủ công |
 
@@ -827,7 +827,7 @@ slot → `outside_receiving_hours`. Đây là lịch nhận nguồn, không thay
 - **Q9 Source 503 — DEC-SRC-Q9-ERROR-001 (owner-approved 08/11/2026):** khi **không có bất kỳ batch nào đã publish hoàn chỉnh**, kể cả nguồn chỉ có batch `loading`/`failed`, `GET /api/v1/stock` trả **HTTP 503** với phong bì lỗi chuẩn Source: `{ "error": { "code": "STOCK_UNAVAILABLE", "message": "Stock snapshot is unavailable.", "details": {}, "correlation_id": "<opaque>" } }`, header `X-Correlation-ID`, và xác thực `X-API-Key` như bình thường. **Không** trả `200 items=[]` khi unknown. Ngược lại, snapshot **published complete** có `items=[]` trả `200` (tồn=0 trong phạm vi snapshot). Batch mới lỗi khi vẫn có bản published cũ: chỉ serve latest **published** với `as_of` thật; CFO vẫn kiểm freshness, không tự gia hạn thời điểm. CFO gặp 503 phải báo sync failure/alert, giữ dữ liệu lịch sử để audit nhưng không dùng tồn kho stale/unknown để hứa giao. Mã này **chỉ cho Source API** (không áp dụng `GET /health`, vẫn theo health body riêng), chi tiết OpenAPI/runtime cần PR code và CI.
 - **Q10 local/global SKU — thay thế bằng DEC-SRC-Q10-SKU-001 (08/11):** mỗi SKU có đúng **một đơn vị tồn kho chuẩn, cố định**, `on_hand` và `reserved` trên `/stock` dùng đơn vị đó; SKU giữ nguyên đơn vị qua mọi warehouse/batch. Mỗi batch **chỉ có một dòng `(batch_id,warehouse_code,sku)`**; trùng thì reject batch, không cộng/last-row-wins. Đơn bán theo pallet/bao khác chuẩn phải được quy đổi về đơn vị tồn của **cùng SKU** trước khi trừ tồn, không sinh SKU tồn giả. CFO dùng `units_to_base` để đổi sang base unit; không dựng `physical_stock_pool_id`, không suy ra hai SKU cùng tồn chỉ vì số lượng quy đổi bằng nhau. Nếu nhiều local SKU ánh xạ một global product thì chỉ cộng tồn khi **đã xác minh lượng tồn độc lập**; chưa xác minh phải fail closed, giữ dữ liệu cũ ở trạng thái stale/unavailable, không phát hành snapshot partial như complete. API stock Q9 vẫn yêu cầu published complete batch; **mã lỗi `503 STOCK_UNAVAILABLE` đã được owner duyệt riêng theo DEC-SRC-Q9-ERROR-001**, còn các field provenance như `batch_id`/`item_count` và migration cần review kỹ thuật ở PR #101.
 
-- **DTO tồn kho thống nhất giữa Source và adapter CFO (đề xuất kỹ thuật theo DEC-SRC-Q9-ERROR-001 / DEC-SRC-Q10-SKU-001, chờ review Dev 1/Dev 2):** `200 {"as_of": <aware>, "batch_id": <int>0>, "item_count": <int≥0>, "items": [{"warehouse_code","sku","on_hand","reserved"}]}`. Không có `physical_stock_pool_id` hay bất kỳ trường định danh nhóm/alias nào; mỗi `(warehouse_code, sku)` tối đa một dòng, số lượng theo đơn vị tồn kho khai báo của SKU. Adapter CFO **từ chối** (không ghi gì) khi: thiếu `batch_id`/`item_count` (bản cũ `{as_of, items}` không chứng minh được tính đầy đủ), `item_count != len(items)`, `as_of` không có múi giờ, trùng khóa, số không hữu hạn, hoặc có trường lạ (kể cả `physical_stock_pool_id`). `503 STOCK_UNAVAILABLE` là `StockUnavailable`: giữ snapshot trước, không thay bằng rỗng; `200` với `items=[]` chỉ là batch rỗng đã publish đầy đủ. Chuẩn hóa (`backend/app/adapters/stock_batches.py`, hàm thuần; DEC-CFO-STOCK-SCOPE-001 và DEC-CFO-STOCK-INDEPENDENCE-001): chỉ SKU thuộc **phạm vi SKU CFO được định nghĩa trước** (tham số tường minh, không suy ra từ batch) được chuẩn hóa; dòng ngoài phạm vi bị bỏ qua và không bao giờ chặn. Một SKU trong phạm vi chưa ánh xạ/chưa xác nhận, mâu thuẫn đơn vị hoặc `units_to_base` so với ánh xạ đã xác nhận, hoặc lượng không biểu diễn chính xác được trong NUMERIC(12,3) → từ chối **cả** batch, không bao giờ trả kết quả một phần. Mỗi SKU quy đổi **một lần**; nhiều SKU cùng kho cùng một global product chỉ được cộng (sau quy đổi) khi **tất cả** nằm trong một nhóm `verified_independent` (tồn vật lý độc lập đã xác minh), mặc định rỗng = từ chối; các kho không bao giờ gộp. Nơi khai báo phạm vi và bằng chứng độc lập chưa được chốt nên cả hai là đầu vào tường minh.
+- **DTO tồn kho thống nhất giữa Source và adapter CFO (đề xuất kỹ thuật theo DEC-SRC-Q9-ERROR-001 / DEC-SRC-Q10-SKU-001, chờ review Dev 1/Dev 2):** `200 {"as_of": <aware>, "batch_id": <int>0>, "item_count": <int≥0>, "items": [{"warehouse_code","sku","on_hand","reserved"}]}`. Không có `physical_stock_pool_id` hay bất kỳ trường định danh nhóm/alias nào; mỗi `(warehouse_code, sku)` tối đa một dòng, số lượng theo đơn vị tồn kho khai báo của SKU. Adapter CFO **từ chối** (không ghi gì) khi: thiếu `batch_id`/`item_count` (bản cũ `{as_of, items}` không chứng minh được tính đầy đủ), `item_count != len(items)`, `as_of` không có múi giờ, trùng khóa, số không hữu hạn, hoặc có trường lạ (kể cả `physical_stock_pool_id`). `503 STOCK_UNAVAILABLE` là `StockUnavailable`: giữ snapshot trước, không thay bằng rỗng; `200` với `items=[]` chỉ là batch rỗng đã publish đầy đủ. Chuẩn hóa (`backend/app/adapters/stock_batches.py`, hàm thuần; DEC-CFO-STOCK-SCOPE-001 và DEC-CFO-STOCK-INDEPENDENCE-001): chỉ SKU thuộc **phạm vi SKU CFO được định nghĩa trước** (tham số tường minh, không suy ra từ batch) được chuẩn hóa; dòng ngoài phạm vi bị bỏ qua và không bao giờ chặn. Một SKU trong phạm vi chưa ánh xạ/chưa xác nhận, mâu thuẫn đơn vị hoặc `units_to_base` so với ánh xạ đã xác nhận, hoặc lượng không biểu diễn chính xác được trong NUMERIC(12,3) → từ chối **cả** batch, không bao giờ trả kết quả một phần. Mỗi SKU quy đổi **một lần**; nhiều SKU cùng kho cùng một global product chỉ được cộng (sau quy đổi) khi **tất cả** nằm trong một nhóm `verified_independent` (tồn vật lý độc lập đã xác minh), mặc định rỗng = từ chối; các kho không bao giờ gộp. **D1-03/04 owner-approved bổ sung (08/11/2026):** scope SKU CFO chỉ do quản trị viên có thẩm quyền theo **market/pilot** quản lý và phê duyệt, có version, hiệu lực, actor/approver và audit; **không suy scope từ mapping**. Bằng chứng tồn SKU độc lập do Warehouse Manager trong phạm vi kho cung cấp từ kho/WMS, quản trị viên có thẩm quyền duyệt, lưu evidence/provenance, approver, version, hiệu lực và audit. Thiếu/hết hiệu lực/mâu thuẫn thì reject toàn batch CFO liên quan, không publish partial. `scope` và `verified_independent` vẫn là đầu vào tường minh của normalizer; **schema, DTO, endpoint quản trị và cách binding effective version với stock batch chưa chốt**. Dev 1/2 phải đề xuất và review `05/06` + migration/auth/contract tests trước khi bật writer T07.
 
 **Implementation handoff:** Dev 2 source endpoints/DDL/OpenAPI/seed/CSV integration, Dev 1 adapter/stock normalization/cancel-replan/locks, Dev 3 POS error UX. Phải có PostgreSQL multi-instance tests cho equal timestamp, cancellation after submitted/approved/dispatched, submitted edit race, snapshot zero-row, duplicate `(batch,warehouse,sku)`, đơn vị SKU cố định, chuyển quy cách bán, nhiều SKU ánh xạ một global chưa rõ độc lập, và new-version idempotency. **Hợp đồng đã được owner duyệt, code chưa được chứng minh hoàn chỉnh bởi tài liệu này.**
 
@@ -874,3 +874,18 @@ Mọi `checks.<name>` của một phương án có thêm `detail` (đối tượ
 **Cấu hình thêm vào `MarketConfig` (`04` mục 8):** `"routing": { "allow_fallback": true, "fallback_retry_min": 60 }`. `fallback_retry_min` (> 0, phút): route fallback đã lưu trong `route_matrix` chỉ được dùng lại trong khoảng này; quá hạn thì job chuẩn bị route gọi lại ORS — thành công thì thay bằng route `ors`, thất bại thì lưu fallback mới với `computed_at` mới (giới hạn tần suất gọi lại). Route `ors` được dùng lại như cũ. Khi `false`, cặp (kho, điểm giao) thiếu trong `route_matrix` làm ứng viên bị loại với mã `ROUTE_DATA_UNAVAILABLE` (check `site_date`).
 
 **Tên hành động nhật ký hiển thị ở UI** dùng đúng mã trong `04` mục 10 (`ALT_SELECTED`, `CRITERIA_CHANGED_RERUN`, `MANUAL_PLAN_CREATED`, `MAPPING_CONFIRMED`, `NOTIFICATION_SENT`, …); các mã khác trong ảnh thiết kế chỉ là ví dụ.
+
+## 17. Owner-approved API contract alignment — 2026-11-09
+
+Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md); `DEC-OWNER-20261109` in `ASSUMPTIONS.md`. **This is a target contract; routes/migrations not shown as implemented must have their own reviewed PR.**
+
+- **API-1/2:** `checks.stock|preparation|truck|site_date|safety` use `{passed: boolean, code: string, detail?: object}`; missing/unknown is not true. `rejected_candidates[]` is flat `{warehouse_id, vehicle_code, failed_check, code, detail}`; no nested warehouse/vehicle name is guaranteed. The live `vehicles[]` DTO has `vehicle_id`, `driver_employee_id`, and nested **public** `vehicle: {id,code,name,capacity_kg,capacity_m3}` (capacity Decimal strings), but **not** nested driver name. Backend does not return `promise_window_preview`; UI cannot fabricate it. Current approval rejects `drivers` override (changing a driver requires Plan Again), never approves `replan_suggestion` or an expired/missing hold, and requires agreed matching `date_negotiation_id` if proposed date differs. Approval still depends on verified D7 safety evidence.
+- **S1–5:** future stock-scope/evidence admin routes must require active market-specific grant and separation of creator/approver; warehouse manager supplies WMS proof but cannot approve it. Version after approval by batch `as_of`, expected warehouse × SKU coverage (missing row = reject CFO stock write, zero only if explicit), independence evidence ≤30 pilot days with automatic invalidation on mapping/unit/scope changes. No unreviewed API names/DDL paths are authorized by the policy alone; T07 stock writer stays gated until completion.
+- **T18-1–3:** never count transfer inbound as available unless destination WMS proof shows inclusion; `as_of` alone is insufficient. Fallback lead must be configured/approved with provenance; cancellation/reversal after source confirmation stays `409 ILLEGAL_TRANSITION`.
+- **D7/M6:** trusted 56 market-local daily coverage facts (off-duty vs absent), qualified verifier, independent official shift, 11h rest, licence/Regulation 561/mass checks; one delivered POD per `trip_stop` (forward DB migration pending).
+- **G1–5:** only active assigned primary Dispatcher can read current trip GPS, within actual duty; individual driver notice+ack and privacy/legal proof before real-worker collection. Device upload ≤100 valid positions every 30 min in authorized trip/shift; purge raw points at earliest terminal/duty boundary. Authenticated simulator separate; no 30-day raw retention.
+- **N1–5:** Dispatcher-approved DELAY `start/end/version`; agreed date negotiation for changed promised date; fixed template version and typed allowlist variables, atomic event/risk/queued notification outbox in caller transaction, external send only after commit, same retry cap and Mailpit/test recipients.
+- **KPI-1/2:** retain all 10 existing published keys: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`. Unsupported diagnostic keys `hard_constraint_violations`, `event_to_alert_latency_s_median` remain `null` (no guessed 0). Planning cohort date = approved date; delivery cohort = delivery/completion date; capacity cohort = warehouse `work_date`, all in market local timezone. Do not invent other metric cohort formulas.
+
+**Implementation status:** PR #136 was merged and needs a new Dev 3 fix PR for UI/backend mismatches. #121/#127/#129/#137 and M8 need separate implementation reviews, database/API tests and CI. This contract is not evidence those features operate end-to-end.
+
