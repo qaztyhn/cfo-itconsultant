@@ -1,0 +1,26 @@
+name: T25 temporary formatter
+on:
+  push:
+    branches: [feat/task-t25-revenue]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Black and remove temporary workflow
+        run: |
+          python -m pip install "black==26.10.1"
+          black --line-length 110 backend/app/services/revenue_service.py backend/app/api/v1/revenue.py backend/tests/integration/test_revenue_api.py backend/tests/unit/test_revenue_service.py
+          git rm .github/workflows/t25-temporary-format.yml
+          git add backend/app/services/revenue_service.py backend/app/api/v1/revenue.py backend/tests/integration/test_revenue_api.py backend/tests/unit/test_revenue_service.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(revenue): format T25 changes"
+          git push origin HEAD:feat/task-t25-revenue
