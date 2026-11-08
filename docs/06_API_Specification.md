@@ -566,6 +566,7 @@ Quy tắc kiểm tra khi ghi (trả `422`): mỗi nhân viên `active` chỉ m�
   - `ref.vehicle` thêm `regulation_561_scope` (`in_scope|out_of_scope|unknown`) và `max_permissible_mass_kg`.
   - Mã safety mới (Phụ lục A): `DRIVER_REST_INSUFFICIENT`, `DRIVING_TIME_EXCEEDED`, `DRIVING_BREAK_REQUIRED`, `DRIVER_HISTORY_MISSING`, `VEHICLE_SCOPE_UNKNOWN`.
   - UI phân biệt thiếu dữ liệu với không có tài xế khả thi.
+  - **D7 được duyệt (`DEC-DEV2-D7-001`, 08/11/2026):** fixture synthetic 56 ngày lịch sử duty/driving/rest của tài xế và thông số xe (payload riêng max permissible mass, scope theo loại vận tải/xe/rơ-moóc); Dev 2 seed, Dev 1 test chung PlanningService/ApprovalService. Thời gian nghỉ mặc định 11h; không bật giảm 9h; kiểm thời gian làm việc khác giờ lái. Ca/historical evidence hoặc xe scope thiếu => trả safety reason thích hợp và không cho tự duyệt. Không có quyền tự cấp ca hoặc bỏ qua `DEC-SHIFTS-001`; không có API mới trong PR tài liệu này.
 - Mã audit mới (Q13): `LOCATION_MANAGER_CHANGED`, `LOCATION_OWNER_CHANGED`, `EMPLOYEE_TERMINATED`; chỉnh hồi tố phân công `EMPLOYEE_ASSIGNMENT_CHANGED` + `reason_code=retroactive` + lý do; `ROUTING_LEGACY_ACKNOWLEDGED` (Q14).
 
 ### 13.1 API đọc nhân sự, địa điểm, xe (v1.3)
