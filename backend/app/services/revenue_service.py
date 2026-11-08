@@ -433,7 +433,7 @@ async def orders(
         item: dict[str, object] = {
             "order_no": row["order_no"],
             "delivered_at": row["delivered_at"],
-            "amount": row["amount"],
+            "amount": format(row["amount"], ".2f"),
             "currency": row["currency"],
             "status": row["status"],
         }
