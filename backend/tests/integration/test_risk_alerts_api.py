@@ -145,6 +145,7 @@ def test_US_RSK_03_AC2_AC3_concurrent_raise_keeps_single_open_record(alerts: Api
 def test_US_RSK_03_AC3_resolved_key_can_recur(alerts: Api) -> None:
     execute(alerts.dsn, "UPDATE ops.alert SET resolved_at='2026-11-10T09:00Z' WHERE id=1")
     assert alerts.get("/alerts", DISPATCHER, resolved=True).json()["total"] == 1
+
     async def reopen() -> int | None:
         engine = create_async_engine(async_url(alerts.dsn), poolclass=NullPool)
         try:
