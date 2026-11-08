@@ -4,6 +4,10 @@
 
 - `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã lưu** (kho, xe + tài xế, ngày giao) vẫn qua đủ 5 gate; lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
 - Không đổi route/payload/mã lỗi (thất bại vẫn `409 RESOURCE_CONFLICT`, `conflict=five_gates`). Gate `safety` của thị trường thật vẫn fail closed vì marker lịch sử 56 ngày (D7) chưa được lưu; adapter không bỏ qua điều đó.
+## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
+
+- `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.
+- Adapter `SourceRisk` **chưa có**: `risk_service.recalculate` còn là stub trên `main` (M7 #131 đang mở) và watermark tín hiệu nguồn chưa có contract. Không đổi route/DDL/mã lỗi.
 
 
 ## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review

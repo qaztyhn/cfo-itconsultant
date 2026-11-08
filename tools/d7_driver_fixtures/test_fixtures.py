@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import tempfile
 import unittest
 from datetime import UTC, datetime
+from pathlib import Path
+from unittest.mock import patch
 
+import generate as fixture_generator
 from generate import FIXTURES, build, encoded, generate
 from validate import FixtureError, instant, read_payloads, validate
 
@@ -28,6 +32,16 @@ class D7FixtureTests(unittest.TestCase):
         b = {name: hashlib.sha256(encoded(value)).hexdigest() for name, value in build().items()}
         self.assertEqual(a, b)
         self.assertEqual(set(a), {x.name for x in FIXTURES.glob("*.json")})
+
+    def test_D7_checkout_line_endings_do_not_change_fixture_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            for name, payload in build().items():
+                (path / name).write_bytes(encoded(payload).replace(b"\n", b"\r\n"))
+            with patch.object(fixture_generator, "FIXTURES", path):
+                self.assertEqual(generate(check=True), [])
+                (path / "vehicles.json").write_bytes(b"{}\r\n")
+                self.assertEqual(generate(check=True), ["Missing or nondeterministic fixture: vehicles.json"])
 
     def test_D7_payload_mass_is_not_max_permissible_mass(self) -> None:
         vs = self.payloads["vehicles.json"]["records"]
