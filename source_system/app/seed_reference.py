@@ -1,7 +1,7 @@
 """Additive synthetic catalogue/customers/addresses from 08 sections 5.2/5.5.
 
 Owner: Dev 2 (M1). Requires explicit source-init first; never resets source data.
-Receiving calendars and order snapshots remain pending SRC-Q1/SRC-Q8.
+Receiving calendars are additive; POS order writes/lifecycle remain separate work.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ from dataclasses import asdict
 from datetime import datetime
 from decimal import Decimal
 from random import Random
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
@@ -17,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Customer, Product
+from app.models import Address, Customer, Product, ReceivingCalendar
 from seed.se.catalog import catalog_products
+from seed.se.receiving import calendar_values, demo_receiving_hours
 
 BUSINESSES = (
     "Nordbygg Entreprenad AB",
@@ -68,6 +70,7 @@ async def seed_customers(connection: AsyncConnection, *, now: datetime) -> None:
                     address=f"Synthetic site {index:03d}-{address_no}",
                     lat=lat,
                     lon=lon,
+                    receiving_hours=demo_receiving_hours(),
                     created_at=now,
                     updated_at=now,
                 )
@@ -94,6 +97,7 @@ async def run() -> None:
         async with engine.begin() as connection:
             await seed_customers(connection, now=now)
             await seed_catalog(connection, now=now)
+            await seed_receiving_calendar(connection, now=now)
     finally:
         await engine.dispose()
 
@@ -106,6 +110,20 @@ def main() -> int:
         return 1
     print("Source catalogue/customers/addresses seeded; full orders/scenario seed remains pending.")
     return 0
+
+
+async def seed_receiving_calendar(connection: AsyncConnection, *, now: datetime) -> None:
+    if now.tzinfo is None:
+        raise ValueError("Seed time must be aware")
+    await connection.execute(
+        insert(ReceivingCalendar)
+        .values(
+            **calendar_values(now.astimezone(ZoneInfo("Europe/Stockholm")).year),
+            created_at=now,
+            updated_at=now,
+        )
+        .on_conflict_do_nothing(index_elements=[ReceivingCalendar.id])
+    )
 
 
 if __name__ == "__main__":

@@ -787,6 +787,12 @@ Các business reason ổn định: `customer_not_found`, `address_customer_misma
 
 ### 16.4 D1-D — Calendar / stock batch / physical pool
 
+Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
+weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,
+working_days và không phải holiday; khung người dùng (nếu có) phải nằm trọn trong một slot nhận hàng.
+Thiếu toàn bộ lịch/giờ hoặc ngày ngoài coverage → `receiving_calendar_missing`; ngày đóng/khung ngoài
+slot → `outside_receiving_hours`. Đây là lịch nhận nguồn, không thay ca/lịch nhân viên kho hoặc tài xế CFO.
+
 - **Q8 receiving:** lịch ngày làm việc/ngày nghỉ/holiday nguồn theo source market instance, giờ nhận cụ thể theo địa chỉ; thiếu lịch hoặc giờ nhận → validation fail closed. Lịch nhận người mua **khác** lịch Warehouse Manager/tài xế mà CFO kiểm ở safety/capacity.
 - **Q9 published batch:** `GET /stock` trả `{as_of,items}` từ **một batch đã hoàn tất và publish atomically**. Batch đủ có thể có **items=[]** và khi đó phải có completeness marker đáng tin để coi là 0 tồn; batch chưa publish/nguồn lỗi **không** tự thành tồn=0. `as_of` không được tính bằng `min/max(per-row as_of)` thay cho batch chung. Chính sách thời điểm stale stock vẫn theo MarketConfig; adapter không cộng bừa row không cùng batch.
 - **Q10 local/global SKU:** sau ánh xạ `units_to_base`, **cùng physical stock pool tại một kho chỉ count một lần** dù có nhiều local SKU alias; chỉ pool vật lý độc lập được cộng. Nếu pool identity/alias/conversion không rõ hoặc mâu thuẫn → quarantine/alert, không ghi đè last-row-wins và không double-count. Dev 1 và Dev 2 phải thống nhất migration/uniqueness/DTO trước ingest tồn.

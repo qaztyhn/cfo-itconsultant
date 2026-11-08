@@ -35,6 +35,15 @@ async def initialize(engine: AsyncEngine, schema: str) -> None:
             await connection.execute(
                 text(f"ALTER TABLE {quoted_schema}.src_order ADD COLUMN IF NOT EXISTS {column} {kind}")
             )
+        await connection.execute(
+            text(
+                f"ALTER TABLE {quoted_schema}.src_customer ADD COLUMN IF NOT EXISTS "
+                "is_active boolean NOT NULL DEFAULT true"
+            )
+        )
+        await connection.execute(
+            text(f"ALTER TABLE {quoted_schema}.src_address ADD COLUMN IF NOT EXISTS receiving_hours jsonb")
+        )
         await connection.execute(text(f"""
             CREATE OR REPLACE FUNCTION {quoted_schema}.set_updated_at()
             RETURNS trigger LANGUAGE plpgsql AS $$
