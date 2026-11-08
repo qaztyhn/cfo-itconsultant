@@ -32,7 +32,10 @@ def read_route(path: Path) -> list[tuple[float, float]]:
             raise ValueError("Invalid route point")
         lat, lon = point.get("lat"), point.get("lon")
         if any(
-            isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lat, lon)
+            isinstance(v, bool)
+            or not isinstance(v, (int, float))
+            or not math.isfinite(v)
+            for v in (lat, lon)
         ):
             raise ValueError("Invalid coordinates")
         if not -90 <= lat <= 90 or not -180 <= lon <= 180:
@@ -48,20 +51,33 @@ async def simulate(
     points: Sequence[tuple[float, float]],
     *,
     started_at: datetime,
-    interval_seconds: int = 60,
+    interval_seconds: int = 1800,
     transport: httpx.AsyncBaseTransport | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> int:
     url = httpx.URL(base_url)
-    if url.scheme not in ("http", "https") or not url.host or url.userinfo or url.query or url.fragment:
+    if (
+        url.scheme not in ("http", "https")
+        or not url.host
+        or url.userinfo
+        or url.query
+        or url.fragment
+    ):
         raise ValueError("Invalid API base URL")
-    if not token.strip() or trip_id <= 0 or not 60 <= interval_seconds <= 120 or started_at.tzinfo is None:
+    if (
+        not token.strip()
+        or trip_id <= 0
+        or interval_seconds != 1800
+        or started_at.tzinfo is None
+    ):
         raise ValueError("Invalid simulator configuration")
     if not points or any(not math.isfinite(v) for point in points for v in point):
         raise ValueError("Invalid route")
     if any(not -90 <= lat <= 90 or not -180 <= lon <= 180 for lat, lon in points):
         raise ValueError("Coordinates out of bounds")
-    async with httpx.AsyncClient(timeout=10, transport=transport, follow_redirects=False) as client:
+    async with httpx.AsyncClient(
+        timeout=10, transport=transport, follow_redirects=False
+    ) as client:
         for index, (lat, lon) in enumerate(points):
             if index:
                 await sleep(interval_seconds)
@@ -86,11 +102,13 @@ async def simulate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Send synthetic GPS points using a driver token")
+    parser = argparse.ArgumentParser(
+        description="Send synthetic GPS points using a driver token"
+    )
     parser.add_argument("--base-url", default="http://localhost:8000/api/v1")
     parser.add_argument("--trip-id", required=True, type=int)
     parser.add_argument("--route", required=True, type=Path)
-    parser.add_argument("--interval-seconds", type=int, choices=range(60, 121), default=60)
+    parser.add_argument("--interval-seconds", type=int, choices=(1800,), default=1800)
     args = parser.parse_args()
     try:
         clock.init_from_settings(os.environ.get("APP_NOW"))
@@ -105,7 +123,9 @@ def main() -> int:
             )
         )
     except (ValueError, OSError, httpx.HTTPError, httpx.InvalidURL):
-        print("GPS simulation failed; check route, credentials, API availability and trip/GPS state.")
+        print(
+            "GPS simulation failed; check route, credentials, API availability and trip/GPS state."
+        )
         return 1
     except KeyboardInterrupt:
         print("GPS simulation stopped.")
