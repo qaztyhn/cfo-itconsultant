@@ -193,7 +193,11 @@ def _candidate_row(
 
 
 async def _save_candidates(
-    session: AsyncSession, run: PlanningRun, result: PlanningResult, actor_id: int | None, weights: RankWeights
+    session: AsyncSession,
+    run: PlanningRun,
+    result: PlanningResult,
+    actor_id: int | None,
+    weights: RankWeights,
 ) -> None:
     for candidate in result.candidates:
         row = _candidate_row(run, candidate, actor_id, weights)
