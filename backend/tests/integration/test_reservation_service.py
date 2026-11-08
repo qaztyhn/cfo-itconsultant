@@ -318,3 +318,31 @@ def test_DEC_HOLD_001_approved_committed_plan_immune_to_sweeper(db: str) -> None
     assert fetch(db, "SELECT status FROM plan.fulfilment_plan WHERE id=1")[0][0] == "approved"
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "committed"
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='HOLD_EXPIRED'")[0][0] == 0
+
+
+def test_DEC_HOLD_001_released_hold_cannot_be_reused_or_extended(db: str) -> None:
+    _run(db, lambda s: reservation.hold(1, session=s))
+    execute(
+        db,
+        "UPDATE plan.stock_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.prep_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.vehicle_reservation SET status='released' WHERE run_id=1",
+        "UPDATE plan.fulfilment_plan SET status='superseded' WHERE run_id=1",
+    )
+    with pytest.raises(DomainError) as reused:
+        _run(db, lambda s: reservation.hold(1, session=s))
+    assert reused.value.code == "PLAN_NOT_APPROVABLE"
+    with pytest.raises(DomainError) as extended:
+        _run(db, lambda s: reservation.extend(1, _actor(), session=s))
+    assert extended.value.code == "PLAN_NOT_APPROVABLE"
+
+
+def test_DEC_HOLD_001_old_run_cannot_extend_after_new_run_created(db: str) -> None:
+    _run(db, lambda s: reservation.hold(1, session=s))
+    execute(db, rows.run_sql(1, 2, kind="rerun"))
+    with pytest.raises(DomainError) as extended:
+        _run(db, lambda s: reservation.extend(1, _actor(), session=s))
+    assert extended.value.code == "PLAN_NOT_APPROVABLE"
+    with pytest.raises(DomainError) as reused:
+        _run(db, lambda s: reservation.hold(1, session=s))
+    assert reused.value.code == "PLAN_NOT_APPROVABLE"
