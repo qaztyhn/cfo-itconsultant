@@ -25,7 +25,7 @@ NOW = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
 
 
 def _user(
-    user_id: int, role: str, employee: int, *, market: str = "ZZ", wh: tuple[int, ...] = ()
+    user_id: int, role: str, employee: int, *, market: str = "SE", wh: tuple[int, ...] = ()
 ) -> CurrentUser:
     return CurrentUser(id=user_id, employee_id=employee, roles=(role,), market=market, location_ids=wh)
 
@@ -46,8 +46,8 @@ def db(empty_db: str) -> Iterator[str]:
     execute(
         empty_db,
         *rows.REF_HR,
-        "INSERT INTO ref.location (market_id, type, code, name, lat, lon) "
-        "VALUES (1,'warehouse','WH-2','W2',59,18)",
+        "INSERT INTO ref.location (market_id, type, code, name, lat, lon, loading_cutoff_time) "
+        "VALUES (1,'warehouse','WH-2','W2',59,18,'15:00')",
         *(emp + f"VALUES (1,'E{n}','T','T{n}','TEST_POS','2026-01-01')" for n in (3, 4, 5, 6)),
         *(
             f"INSERT INTO ref.app_user (employee_id, email, password_hash, roles) VALUES "
@@ -82,6 +82,11 @@ def run[T](dsn: str, fn: Callable[[AsyncSession], Coroutine[Any, Any, T]]) -> T:
             await engine.dispose()
 
     return asyncio.run(go())
+
+
+async def _id(awaitable: Coroutine[Any, Any, Any]) -> int:
+    """Read the primary key inside the transaction (instances are detached after commit)."""
+    return int((await awaitable).id)
 
 
 def fails(dsn: str, fn: Callable[[AsyncSession], Coroutine[Any, Any, Any]], code: str) -> StockScopeError:
@@ -130,12 +135,14 @@ def test_S1_grant_is_market_specific_expiring_and_revocable(db: str) -> None:
     # revocation: B revokes nothing of its own; A (expired) cannot grant, B grants C, then revokes
     grant = run(
         db,
-        lambda s: svc.grant_admin(s, ADMIN_B, user_id=4, capability="scope", reason_text="Backup approver"),
+        lambda s: _id(
+            svc.grant_admin(s, ADMIN_B, user_id=4, capability="scope", reason_text="Backup approver")
+        ),
     )
     run(db, lambda s: _create(s, ADMIN_C))
-    run(db, lambda s: svc.revoke_grant(s, ADMIN_B, grant.id, "Left the project"))
+    run(db, lambda s: svc.revoke_grant(s, ADMIN_B, grant, "Left the project"))
     fails(db, lambda s: _create(s, ADMIN_C), "FORBIDDEN")
-    fails(db, lambda s: svc.revoke_grant(s, ADMIN_B, grant.id, "again"), "ILLEGAL_TRANSITION")
+    fails(db, lambda s: svc.revoke_grant(s, ADMIN_B, grant, "again"), "ILLEGAL_TRANSITION")
     assert audit(db, "STOCK_GRANT_CREATED") == 1 and audit(db, "STOCK_GRANT_REVOKED") == 1
 
 
@@ -243,25 +250,28 @@ def test_scope_approval_rolls_back_with_its_transaction(db: str) -> None:
 
 
 def _evidence(db: str, submitter: CurrentUser = MANAGER, skus: tuple[str, ...] = ("A", "B")) -> int:
-    row = run(
+    return run(
         db,
-        lambda s: svc.submit_evidence(
-            s, submitter, warehouse_id=1, local_skus=skus, evidence_ref="WMS-PROOF-2026-11-09"
+        lambda s: _id(
+            svc.submit_evidence(
+                s, submitter, warehouse_id=1, local_skus=skus, evidence_ref="WMS-PROOF-2026-11-09"
+            )
         ),
     )
-    return row.id
 
 
 def _approve(
     db: str, evidence_id: int, actor: CurrentUser = ADMIN_A, days: int = 30, start: datetime | None = None
 ):
     begin = start or NOW
-    return run(
-        db,
-        lambda s: svc.approve_evidence(
+
+    async def go(s: AsyncSession) -> str:
+        row = await svc.approve_evidence(
             s, actor, evidence_id, valid_from=begin, valid_to=begin + timedelta(days=days)
-        ),
-    )
+        )
+        return row.status
+
+    return run(db, go)
 
 
 def test_S2_only_the_warehouses_manager_can_submit_and_only_for_scoped_skus(db: str) -> None:
@@ -343,7 +353,7 @@ def test_S5_validity_is_at_most_30_days_and_never_retroactive_or_overlapping(db:
         f"UPDATE ops.stock_independence_evidence SET status='approved', approved_by=2, approved_at=now(), "
         f"valid_from=now(), valid_to=now()+interval '31 days' WHERE id={evidence_id}",
     )
-    assert _approve(db, evidence_id).status == "approved"
+    assert _approve(db, evidence_id) == "approved"
     second = _evidence(db, skus=("B", "C"))
     fails(
         db,
