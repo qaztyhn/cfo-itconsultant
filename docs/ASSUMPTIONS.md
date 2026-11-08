@@ -52,6 +52,10 @@
 - **Catalog nguồn:** đóng gói độc lập 100 SKU trong `source_system/seed/se`; test đối chiếu mọi trường
   sản phẩm với seed CFO để phát hiện lệch fixture. Không import ứng dụng CFO lúc chạy nguồn, không đọc
   dữ liệu vận hành CFO để ghi ngược; không đổi trạng thái mapping, không seed tồn kho/đơn kịch bản.
+- **Roster kho tổng hợp (sau migration 0009/0010):** danh sách đích danh W02/W04–W09 vào ca sớm,
+  W03/W10–W14 vào ca muộn của từng kho; không lấy số người từ `expected_staff`. Đây là fixture demo
+  được gán cho manager demo đang có quyền, có lý do và audit `SHIFT_CHANGED`, không phải job tự xếp lịch.
+  Giữ nguyên mọi lịch/điểm danh/lịch hủy đã có; không tự tạo attendance, lịch tài xế hay driving history.
 - **Tính lặp lại:** chỉ thêm dữ liệu thiếu; bảo toàn mật khẩu, trạng thái khóa, cấu hình, phân công,
   ánh xạ sản phẩm và các bản ghi đã tồn tại. Mâu thuẫn định danh tài khoản/nhân viên/xe làm rollback.
   Không bật GPS hoặc sửa DPIA khi chạy seed tham chiếu; bật GPS demo vẫn là bước cấu hình có kiểm soát.
