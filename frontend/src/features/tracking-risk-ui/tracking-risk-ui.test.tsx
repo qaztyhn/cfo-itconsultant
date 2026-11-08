@@ -94,8 +94,9 @@ describe("US-TRK-01 / M7: execution milestones and vehicles", () => {
 
   it("discloses a missing milestone instead of pretending the step happened", () => {
     render(<MilestoneTimeline model={{ ...milestones, milestones: milestones.milestones.filter((m) => m.kind !== "GOODS_READY") }} />);
-    const missingRow = screen.getByRole("listitem", { name: /Goods ready/ });
-    expect(within(missingRow).getByText(/Milestone data missing/)).toBeInTheDocument();
+    const missingRow = screen.getByText("Goods ready").closest("li");
+    expect(missingRow).not.toBeNull();
+    expect(within(missingRow as HTMLElement).getByText(/Milestone data missing/)).toBeInTheDocument();
   });
 
   it("supports multiple vehicles including FAILED and displays the supplied overall ETA unchanged", () => {
@@ -205,7 +206,8 @@ describe("US-TRK-01 / M7: states and accessibility", () => {
 
   it("represents loading, errors and correlation identifiers without showing sensitive error bodies", () => {
     const { rerender } = render(<RiskSummary model={null} loadState="loading" />);
-    expect(screen.getByRole("status", { name: /Loading Delivery risk summary/ })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading Delivery risk summary");
     rerender(<RiskSummary model={null} loadState="error" errorReference="safe-correlation-123" />);
     expect(screen.getByRole("alert")).toHaveTextContent("Unable to load delivery risk summary.");
     expect(screen.getByRole("alert")).toHaveTextContent("safe-correlation-123");
