@@ -204,7 +204,7 @@ def scenarios() -> dict[str, object]:
                                                      "trailer_attached": True,
                                                      "trailer_max_permissible_mass_kg": None,
                                                      "exception_claim": None}}}),
-        ("licence_data_missing", "D01", "GBG-03-02", "2026-11-09T09:00+01:00", "2026-11-09T12:00+01:00", 100,
+        ("licence_data_missing", "D04", "GBG-12-03", "2026-11-09T09:00+01:00", "2026-11-09T12:00+01:00", 100,
          "unknown_fail_closed", ["DRIVER_LICENCE_MISSING"],
          {"driver_override": {"licence_class": None}}),
         ("dst_overnight_history", "D09", "MLM-18-01", "2026-10-25T00:30+02:00", "2026-10-25T04:30+01:00", 120,

@@ -181,7 +181,7 @@
       "vehicle_code": "GBG-12-03"
     },
     {
-      "driver_code": "D01",
+      "driver_code": "D04",
       "expected_outcome": "unknown_fail_closed",
       "expected_reason_codes": [
         "DRIVER_LICENCE_MISSING"
@@ -196,7 +196,7 @@
       "proposed_duty_end": "2026-11-09T12:00+01:00",
       "proposed_duty_start": "2026-11-09T09:00+01:00",
       "scenario_id": "licence_data_missing",
-      "vehicle_code": "GBG-03-02"
+      "vehicle_code": "GBG-12-03"
     },
     {
       "driver_code": "D09",
