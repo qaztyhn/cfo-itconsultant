@@ -105,7 +105,7 @@ export function normalizeRuns(input: unknown): RunView[] {
       dataAsOf: timestamp(item.data_as_of),
       checkpointFrom: timestamp(item.checkpoint_from),
       checkpointTo: timestamp(item.checkpoint_to),
-      kind: item.kind === "api" || item.kind === "csv" ? item.kind : null,
+      kind: item.kind === "api" ? "api" as const : item.kind === "csv" ? "csv" as const : null,
       rowsIn: safeCount(item.rows_in),
       rowsOk: safeCount(item.rows_ok),
       rowsRejected: safeCount(item.rows_rejected),
