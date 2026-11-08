@@ -109,11 +109,7 @@ def warehouse(
         efficiency=D("1"),
         stock_available={1: stock if stock is not None else D("100")},
         inbound=(),
-        capacity={
-            DAY: DayCapacity(
-                DAY, (ShiftCapacity("early", time(7), time(15), 2, D("7")),), D("0")
-            )
-        },
+        capacity={DAY: DayCapacity(DAY, (ShiftCapacity("early", time(7), time(15), 2, D("7")),), D("0"))},
         vehicles=(vehicle,),
         drivers=(driver,),
         route=RouteInfo(distance if distance is not None else D("10"), 30, "ors"),
@@ -135,7 +131,11 @@ def test_US_PLN_06_AC5_five_gates_explanation_and_deterministic_rank() -> None:
         "LOWEST_SCORE_OF_3",
     )
     assert tuple(check.name for check in winner.checks) == (
-        "stock", "preparation", "truck", "site_date", "safety"
+        "stock",
+        "preparation",
+        "truck",
+        "site_date",
+        "safety",
     )
     assert all(check.passed for check in winner.checks)
     assert winner.explanation
