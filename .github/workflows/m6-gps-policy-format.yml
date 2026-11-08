@@ -1,0 +1,30 @@
+name: GPS M6 D3 policy formatter
+on:
+  push:
+    branches: [feat/m6-gps-backend]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Format D3 policy implementation and remove this workflow
+        shell: bash
+        run: |
+          python -m pip install 'black==26.10.1' 'ruff==0.17.4'
+          cd backend
+          ruff check --select I --fix app/services/gps_service.py app/api/v1/gps.py tests/integration/test_m6_gps_api.py tests/unit/test_m6_gps_guards.py
+          black --line-length 110 app/services/gps_service.py app/api/v1/gps.py tests/integration/test_m6_gps_api.py tests/unit/test_m6_gps_guards.py
+          cd ..
+          git rm .github/workflows/m6-gps-policy-format.yml
+          git add backend/app/services/gps_service.py backend/app/api/v1/gps.py backend/tests/integration/test_m6_gps_api.py backend/tests/unit/test_m6_gps_guards.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(gps): format approved cadence validation and tests'
+          git push origin HEAD:feat/m6-gps-backend
