@@ -103,7 +103,16 @@ async def _loader(
         lines=(LineCtx(product, D(20)),),
         now=now,
     )
-    return PlanningInputs(ctx, (), _config(), {"order_version": ctx.version, "source_version": order.source_version, "as_of": now.isoformat()})
+    return PlanningInputs(
+        ctx,
+        (),
+        _config(),
+        {
+            "order_version": ctx.version,
+            "source_version": order.source_version,
+            "as_of": now.isoformat(),
+        },
+    )
 
 
 def _feasible(
