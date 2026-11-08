@@ -42,3 +42,13 @@ def test_US_GPS_03_AC1_signal_check_requires_explicit_transaction() -> None:
     with pytest.raises(DomainError) as caught:
         asyncio.run(gps_service.lost_check())
     assert caught.value.code == "PLAN_NOT_APPROVABLE"
+
+
+def test_US_GPS_01_AC1_market_cannot_silently_increase_collection_frequency() -> None:
+    for policy in (
+        {"interval_min": 1, "lost_min": 60},
+        {"interval_min": 30, "lost_min": 1},
+    ):
+        with pytest.raises(DomainError) as caught:
+            gps_service._market_config(SimpleNamespace(config={"gps": policy}))
+        assert caught.value.code == "VALIDATION_ERROR"
