@@ -803,13 +803,18 @@ version; intent khác không ghi đè provenance. Common order DTO thêm nullabl
 
 ### 16.4 D1-D — Calendar / stock batch / fixed-unit SKU (Q10 owner override)
 
-`GET /stock` trả `{batch_id,as_of,complete,row_count,items}`; item có
-`warehouse_code,sku,physical_stock_pool_id,on_hand,reserved` (quantity JSON numbers).
-Batch published hoàn chỉnh có complete=true, batch_id dương, as_of aware và row_count bằng số items;
-batch rỗng hợp lệ vẫn có các marker này. Không có published batch hoặc phát hiện count/hash/as_of/pool
-không nhất quán ⇒ complete=false, as_of=null, items=[]; tuyệt đối không thay bằng tồn=0 trong CFO.
-Đọc marker/rows cùng MVCC snapshot, không lấy min timestamp của các dòng legacy. Physical pool identity
-có phạm vi warehouse; alias không tự cộng, cần normalization được review ở adapter trước persistence.
+`GET /stock` (**không phân trang**) trả `200 {as_of, batch_id, item_count, items}`; item chỉ có
+`warehouse_code, sku, on_hand, reserved` (số lượng là số JSON, theo **đơn vị tồn kho khai báo của SKU**).
+Đó là **batch published hoàn chỉnh mới nhất** (`as_of` cao nhất, rồi `batch_id`), `as_of` là thời điểm chụp
+của batch, `item_count` bằng số dòng; batch published rỗng hợp lệ trả `200` với `items=[]` (tồn 0 trong
+phạm vi batch). **Không có `physical_stock_pool_id`** hay trường nhóm/alias nào (DEC-SRC-Q10-SKU-001); mỗi batch
+tối đa một dòng `(batch_id, warehouse_code, sku)`, trùng khóa làm batch bị từ chối khi publish (không cộng,
+không last-row-wins). Không có batch published hoàn chỉnh, hoặc batch mới nhất không qua kiểm tra toàn vẹn
+(số dòng/hash/`as_of`) ⇒ **`503 STOCK_UNAVAILABLE`** (DEC-SRC-Q9-ERROR-001), thân lỗi chuẩn kèm
+`X-Correlation-ID`, sau bước xác thực `X-API-Key`; không bao giờ trả 200 rỗng thay cho "không biết". Batch
+mới lỗi khi đã có batch published cũ: batch lỗi bị rollback hoàn toàn và Source tiếp tục trả batch cũ với
+`as_of` thật của nó (CFO phải tự kiểm độ mới). Đọc marker và dòng trong cùng một MVCC snapshot. Dòng tồn
+cũ không có `batch_id` (legacy) không bao giờ được phục vụ cho đến khi có batch được publish.
 
 Receiving representation: `/addresses` bổ sung optional nullable `receiving_hours` theo 05 §10.1,
 weekday ISO → list `[start,end]` HH:MM. Validation một ngày yêu cầu ngày trong calendar coverage,

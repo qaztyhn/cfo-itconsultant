@@ -65,3 +65,26 @@ async def validation_error(request: Request, exc: Exception) -> JSONResponse:
             }
         },
     )
+
+
+class StockUnavailable(Exception):
+    """No complete published stock batch (DEC-SRC-Q9-ERROR-001): unknown, never zero stock."""
+
+
+async def stock_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    try:
+        correlation_id = str(UUID(request.headers.get("X-Correlation-ID", "")))
+    except ValueError:
+        correlation_id = str(uuid4())
+    return JSONResponse(
+        status_code=503,
+        headers={"X-Correlation-ID": correlation_id},
+        content={
+            "error": {
+                "code": "STOCK_UNAVAILABLE",
+                "message": "Stock snapshot is unavailable.",
+                "details": {},
+                "correlation_id": correlation_id,
+            }
+        },
+    )

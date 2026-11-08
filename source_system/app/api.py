@@ -55,9 +55,13 @@ async def list_products(paging: lists.PagingDep) -> lists.ProductPage:
     return await lists.products(paging)
 
 
-@router.get("/stock", response_model=StockSnapshot)
+@router.get(
+    "/stock",
+    response_model=StockSnapshot,
+    responses={503: {"description": "STOCK_UNAVAILABLE: no complete published batch (never zero stock)."}},
+)
 async def stock_snapshot(request: Request) -> StockSnapshot:
-    """Coherent published full batch; unknown/unpublished is distinct from authoritative zero inventory."""
+    """Latest complete published batch; 503 STOCK_UNAVAILABLE when none (DEC-SRC-Q9-ERROR-001)."""
     return await read_snapshot(request.app.state.engine)
 
 

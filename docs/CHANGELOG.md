@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [05 §10 / 06 §16.4 — PR #105 căn chỉnh theo DEC-SRC-Q9-ERROR-001 và DEC-SRC-Q10-SKU-001] — 2026-11-08 — chờ review
+
+- `GET /stock` nguồn: `200 {as_of, batch_id, item_count, items[{warehouse_code, sku, on_hand, reserved}]}` từ batch published hoàn chỉnh mới nhất; **`503 STOCK_UNAVAILABLE`** khi không có batch published hoặc batch mới nhất không qua kiểm tra toàn vẹn; `200` với `items=[]` chỉ cho batch published rỗng. Thay thế phản hồi `200 {complete:false, as_of:null}`.
+- **Bỏ `physical_stock_pool_id`** khỏi DDL, DTO, CLI và test; `src_stock` có `UNIQUE(batch_id, warehouse_code, sku)`, mỗi batch giữ dòng của mình. Nâng cấp từng bước giữ dữ liệu; dòng legacy không batch không bao giờ được phục vụ.
+- Phần mô tả pool của mục "Dev 2 source authoritative stock batches" bên dưới đã bị thay thế bởi mục này.
+- Không đổi route; OpenAPI baseline nguồn chưa có trên `main` (đang chờ PR #99) nên chưa tái tạo ở PR này.
+
+
 ## [DEC-SRC-Q9-ERROR-001 — Source 503 STOCK_UNAVAILABLE approved] — 2026-11-08 — docs-only PR #101
 
 - Chủ dự án đã duyệt phương án A: `GET /api/v1/stock` khi **chưa có batch tồn kho hoàn chỉnh nào đã publish** trả **HTTP 503**, `error.code = STOCK_UNAVAILABLE`, body/header lỗi chuẩn Source có `correlation_id`. Nếu published empty batch thì vẫn trả `200 items=[]` (tồn=0), không nhầm với unknown.
