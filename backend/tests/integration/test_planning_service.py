@@ -14,6 +14,7 @@ from alembic import command
 from app.core import clock
 from app.core.errors import DomainError
 from app.deps import CurrentUser
+from app.domain.models.ops import CustomerOrder
 from app.engine.types import (
     CheckResult,
     EngineConfig,
@@ -80,7 +81,7 @@ def _config() -> EngineConfig:
 
 
 async def _loader(
-    session: AsyncSession, order: object, market: object, *, now: datetime, params: dict[str, object]
+    session: AsyncSession, order: CustomerOrder, market: object, *, now: datetime, params: dict[str, object]
 ) -> PlanningInputs:
     product = ProductCtx(
         1,
@@ -102,7 +103,7 @@ async def _loader(
         lines=(LineCtx(product, D(20)),),
         now=now,
     )
-    return PlanningInputs(ctx, (), _config(), {"order_version": ctx.version, "as_of": now.isoformat()})
+    return PlanningInputs(ctx, (), _config(), {"order_version": ctx.version, "source_version": order.source_version, "as_of": now.isoformat()})
 
 
 def _feasible(
