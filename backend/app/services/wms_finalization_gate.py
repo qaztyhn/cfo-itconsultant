@@ -4,6 +4,7 @@ CFO's existing stock_snapshot lacks reservation-specific WMS batch inclusion and
 verified native SKU mapping provenance. An ACK or ledger 'refreshed' alone is not
 authority to complete approval, even in an isolated synthetic demo.
 """
+
 import hashlib
 import json
 from dataclasses import dataclass
@@ -25,14 +26,10 @@ class WmsGateState:
     reason: str
 
 
-async def inspect_wms_gate(
-    session: AsyncSession, order: CustomerOrder, plan: FulfilmentPlan
-) -> WmsGateState:
+async def inspect_wms_gate(session: AsyncSession, order: CustomerOrder, plan: FulfilmentPlan) -> WmsGateState:
     """Check persisted evidence inside caller's locked approval transaction."""
     intent = await session.scalar(
-        select(WmsReservationIntent)
-        .where(WmsReservationIntent.order_id == order.id)
-        .with_for_update()
+        select(WmsReservationIntent).where(WmsReservationIntent.order_id == order.id).with_for_update()
     )
     if intent is None:
         return WmsGateState("awaiting_wms", "WMS_INTENT_MISSING")
@@ -54,16 +51,12 @@ async def inspect_wms_gate(
     if intent.status not in ("acked", "refreshed") or not intent.ack_payload:
         return WmsGateState("rejected", "WMS_ACK_MISSING")
     payload = intent.request_payload
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if digest != intent.request_digest:
         return WmsGateState("rejected", "WMS_INTENT_MUTATED")
     try:
         request = _request(intent)
-        originals = (
-            await session.scalars(select(OrderLine).where(OrderLine.order_id == order.id))
-        ).all()
+        originals = (await session.scalars(select(OrderLine).where(OrderLine.order_id == order.id))).all()
         if (
             len(originals) != len(request.lines)
             or {(row.id, row.local_sku) for row in originals}
