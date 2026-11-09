@@ -1,0 +1,25 @@
+# Focused P0 stock ingestion and planning checks on real PostgreSQL.
+name: planning-stock-postgres
+on:
+  pull_request:
+    paths:
+      - "backend/app/services/planning_stock_preflight.py"
+      - "backend/app/demo_stock_preflight.py"
+      - "backend/tests/integration/test_planning_stock*.py"
+      - ".github/workflows/planning-stock-postgres.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  planning-stock-pg:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: ./.github/actions/postgres
+      - run: pip install -e ".[dev]"
+      - run: ruff check app/services/planning_stock_preflight.py app/demo_stock_preflight.py tests/integration/test_planning_stock_ingest_pg.py tests/integration/test_planning_stock_preflight.py tests/integration/test_planning_after_stock_ingest_pg.py
+      - run: black --check app/services/planning_stock_preflight.py app/demo_stock_preflight.py tests/integration/test_planning_stock_ingest_pg.py tests/integration/test_planning_stock_preflight.py tests/integration/test_planning_after_stock_ingest_pg.py
+      - run: pytest tests/integration/test_planning_stock_ingest_pg.py tests/integration/test_planning_stock_preflight.py tests/integration/test_planning_after_stock_ingest_pg.py -v
