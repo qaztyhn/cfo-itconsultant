@@ -281,6 +281,43 @@ class RestMarketAdapter:
             )
         ]
 
+    async def fetch_order_for_sync(self, external_ref: str) -> SourceOrder | None:
+        """Read one submitted Source order by exact reference without inventing a Source GET-by-ID route.
+
+        The D1 Source contract exposes paginated GET /orders?status=..., not a
+        single-order GET. Validate BOTH complete pagesets before accepting any
+        result. This is a demo/adapter bridge, not a transactional POS snapshot:
+        the caller still validates market/store/route, source_version and its
+        own DB transaction, and must not treat a later cancellation as approved.
+        """
+        if not external_ref or external_ref.strip() != external_ref or len(external_ref) > 120:
+            raise ValueError("Invalid external reference")
+        submitted: SourceOrder | None = None
+        async for row in self._pages(
+            "orders",
+            None,
+            SourceOrder,
+            key_fields=("id",),
+            page_size=200,
+            filters={"status": "SUBMITTED_FOR_PLANNING"},
+        ):
+            if row.id == external_ref:
+                submitted = row
+        cancelled = False
+        async for row in self._pages(
+            "orders",
+            None,
+            SourceCancellation,
+            key_fields=("id",),
+            page_size=200,
+            filters={"status": "CANCELLED"},
+        ):
+            if row.id == external_ref:
+                cancelled = True
+        if submitted is not None and cancelled:
+            raise SourceReadError("Source changed while verifying the routing candidate")
+        return None if cancelled else submitted
+
     async def fetch_orders(self, updated_since: datetime, page_size: int = 200) -> AsyncIterator[OrderDTO]:
         async for item in self._pages(
             "orders",
