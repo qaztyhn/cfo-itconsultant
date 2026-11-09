@@ -12,7 +12,7 @@ from app.deps import CurrentUser
 from app.services.source_handoff import accept_source_order
 from tests.integration.conftest import execute, fetch
 from tests.integration.dev2_helpers import transact
-from tests.integration.test_ingest_orders import db as db  # noqa: F401 (PostgreSQL fixture)
+from tests.integration.test_ingest_orders import db as db  # noqa: F401
 from tests.integration.test_ingest_orders import source
 from tests.integration.test_ingest_references import mapped
 
@@ -94,7 +94,10 @@ def test_DEC_ROUTING_002_legacy_is_immutable_even_after_mapping_confirmed(
     again = accept(db, source(**{**raw, "version": 3}), "legacy-2", SALES)
     assert (again["routing_status"], again["already_decided"]) == ("legacy", True)
     assert not fetch(db, "SELECT id FROM ops.customer_order")
-    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
+    assert (
+        fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0]
+        == 1
+    )
 
 
 def test_DEC_ROUTING_002_unknown_catalog_is_unresolved_not_legacy(db: str) -> None:
@@ -143,7 +146,10 @@ def test_US_INT_01_AC2_newer_source_updates_only_existing_cfo_record(db: str) ->
     """)[0]) == (3, 2, "Revised synthetic site")
     assert fetch(db, "SELECT count(*) FROM ops.order_line")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 1
-    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
+    assert (
+        fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0]
+        == 1
+    )
     with pytest.raises(DomainError) as exc:
         accept(db, source(version=1), "src-old")
     assert exc.value.code == "RESOURCE_CONFLICT"
