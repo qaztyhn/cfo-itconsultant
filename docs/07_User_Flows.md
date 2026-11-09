@@ -174,7 +174,7 @@ sequenceDiagram
 
 **Chi tiết bổ sung**
 1. Nếu `reserve_class = tight`: bắt buộc tick "I accept the tight schedule" trước khi Approve.
-2. Hold hết hạn: chip đỏ nhạt; Approve vẫn thử (kiểm tra lại); nút **Extend** tối đa 2 lần mỗi lần 15 phút.
+2. Hold hết hạn: chip đỏ nhạt, khóa Approve của hold cũ, backend từ chối `HOLD_EXPIRED`/409 kể cả nếu UI cũ vẫn gửi request; phải **Plan Again** và kiểm đủ gate trước khi tiếp tục. **Extend** chỉ khi hold còn hợp lệ, tối đa 2 lần mỗi lần 15 phút.
 3. Duyệt phương án rank > 1: modal lý do bắt buộc (`ALT_SELECTED`).
 4. Ngày cam kết khác ngày khách đã đồng ý: cần chọn bản ghi `date_negotiation.agreed`.
 5. **Kết quả mục tiêu:** chỉ sau authoritative WMS ACK khớp SKU gốc/kho/số lượng, persist được và đọc tồn ngay sau ACK, đơn mới được coi stock-guaranteed/APPROVED, tạo trip, commit holds, audit và enqueue CONFIRMED trong transaction. **Code trên `main` còn thiếu WMS ACK và transactional notification enqueue; flow này chưa phải E2E hoàn tất.** Adapter simulated chỉ staging/demo, không xác nhận tồn thật.
