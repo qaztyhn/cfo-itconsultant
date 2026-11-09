@@ -39,7 +39,7 @@ function Workspace({ order }: { order: ManualOrder }) {
       apiPost<ManualResult>("/orders/" + order.id + "/manual-plan", body, key),
   });
   const result = mutation.data;
-  const serverApproved = result?.plan?.status === "manual" && result?.order?.status === "APPROVED";
+  const cfoApproved = result?.plan?.status === "manual" && result?.order?.status === "APPROVED";
 
   function change(patch: Partial<ManualDraft>) {
     setDraft(prev => ({ ...prev, ...patch }));
@@ -219,8 +219,8 @@ function Workspace({ order }: { order: ManualOrder }) {
             disabled={!acknowledged || errors.length > 0}>Retry the same request</button>
         </div>
       )}
-      {result && (serverApproved ? (
-        <p role="status">Server confirmed manual plan #{result.plan?.id} and order APPROVED.</p>
+      {result && (cfoApproved ? (
+        <p role="alert">CFO reports manual plan #{result.plan?.id} and order APPROVED. WMS reservation remains unverified; do not treat this as stock held or dispatch-ready.</p>
       ) : (
         <p role="alert">Server response did not confirm approval. Do not dispatch or treat this plan as approved.</p>
       ))}

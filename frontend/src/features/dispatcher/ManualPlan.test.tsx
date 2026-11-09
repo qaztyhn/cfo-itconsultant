@@ -15,11 +15,15 @@ const order: ManualOrder = {
 };
 let received: { body: unknown; key: string | null }[] = [];
 let postStatus = 409;
+let postTimeout = false;
+let approvedResponse = false;
 let orderStatus = 200;
 const oldFetch = globalThis.fetch;
 beforeEach(() => {
   received = [];
   postStatus = 409;
+  postTimeout = false;
+  approvedResponse = false;
   orderStatus = 200;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -31,9 +35,12 @@ beforeEach(() => {
     }
     if (url.endsWith("/orders/42/manual-plan") && init?.method === "POST") {
       received.push({ body: JSON.parse(String(init.body)), key: new Headers(init.headers).get("Idempotency-Key") });
+      if (postTimeout) throw new TypeError("Network request timed out");
       return new Response(
         JSON.stringify(postStatus === 200
-          ? { plan: { id: 100, status: "proposed" }, order: { status: "PLANNED" } }
+          ? approvedResponse
+            ? { plan: { id: 100, status: "manual" }, order: { status: "APPROVED" } }
+            : { plan: { id: 100, status: "proposed" }, order: { status: "PLANNED" } }
           : { error: { code: "RESOURCE_CONFLICT", message: "Truck busy", correlation_id: "cid-42", details: { conflict: "vehicle" } } }),
         { status: postStatus, headers: { "Content-Type": "application/json" } },
       );
@@ -145,6 +152,31 @@ describe("US-APR-02 — manual planning UI", () => {
     fireEvent.click(screen.getByRole("button", { name: /Submit manual plan/ }));
     expect(await screen.findByText(/did not confirm approval/)).toBeInTheDocument();
     expect(screen.queryByText(/Server confirmed manual plan/)).not.toBeInTheDocument();
+  });
+  it("does not treat CFO APPROVED without a WMS ACK as reserved stock", async () => {
+    postStatus = 200;
+    approvedResponse = true;
+    signIn("dispatcher"); mount();
+    await fillReady();
+    fireEvent.click(screen.getByRole("button", { name: "Preview proposal" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Submit manual plan/ }));
+    expect(await screen.findByText(/WMS reservation remains unverified/)).toBeInTheDocument();
+    expect(screen.queryByText(/Server confirmed manual plan/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Submit manual plan/ })).toBeDisabled();
+  });
+  it("keeps the same idempotency key after a request timeout", async () => {
+    postTimeout = true;
+    signIn("dispatcher"); mount();
+    await fillReady();
+    fireEvent.click(screen.getByRole("button", { name: "Preview proposal" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Submit manual plan/ }));
+    await waitFor(() => expect(received).toHaveLength(1));
+    expect(await screen.findByRole("button", { name: "Retry the same request" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry the same request" }));
+    await waitFor(() => expect(received).toHaveLength(2));
+    expect(received[1].key).toBe(received[0].key);
   });
   it("keeps a single-column mobile-safe layout and exposes meaningful labels", async () => {
     signIn("dispatcher"); mount();
