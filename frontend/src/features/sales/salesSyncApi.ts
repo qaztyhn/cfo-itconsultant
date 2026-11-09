@@ -16,9 +16,9 @@ export type SyncResult = {
   missing_confirmed_skus?: { local_sku: string; status?: string }[];
   unmapped_skus?: { local_sku: string; status?: string }[];
 };
-export type SalesRun = PlanningRun & {
+export type SalesRun = Omit<PlanningRun, "plans"> & {
   /** Owner-approved API-1: passed; missing gates MUST be UNKNOWN. */
-  plans: (PlanningRun["plans"][number] & {
+  plans: (Omit<PlanningRun["plans"][number], "checks"> & {
     checks?: Partial<Record<"stock" | "preparation" | "truck" | "site_date" | "safety", {
       passed?: boolean; code?: string;
     }>>;
