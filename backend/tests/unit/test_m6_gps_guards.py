@@ -52,3 +52,14 @@ def test_US_GPS_01_AC1_market_cannot_silently_increase_collection_frequency() ->
         with pytest.raises(DomainError) as caught:
             gps_service._market_config(SimpleNamespace(config={"gps": policy}))
         assert caught.value.code == "VALIDATION_ERROR"
+
+
+def test_US_GPS_01_AC1_service_denies_oversized_batch_before_database_access() -> None:
+    # Internal callers must not bypass the HTTP/Pydantic boundary.
+    actor = SimpleNamespace(employee_id=5, roles=("driver",), market="SE")
+    with pytest.raises(DomainError) as caught:
+        asyncio.run(
+            gps_service.ingest_positions(1, actor, [{}] * 101, session=object())  # type: ignore[arg-type]
+        )
+    assert caught.value.code == "VALIDATION_ERROR"
+
