@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-03 — Persistent Customer Service contact history] — 2026-11-09 — Dev 1
+
+- Replaced the pre-existing `POST/GET /orders/{id}/contact-logs` 501 stubs with an allowlisted CS write and CS/Dispatcher market-scoped paginated read. The existing `ops.customer_contact_log` schema is used without a migration: server timestamp, customer/order FK and verified CS employee actor are persisted.
+- Added `CUSTOMER_CONTACT_RECORDED` audit action: append-only `audit.decision_log` in the same transaction, actor user+employee+time+order+channel+reason, **never note, phone or email**. A failed audit rolls back the contact log; no customer message is sent and no POS/WMS effect occurs.
+- Typed FastAPI/Pydantic requests/responses update dynamic OpenAPI and docs/06 §11, rejecting unknown fields and controlling channel/reason identifiers and maximum note size. Real PostgreSQL integration regression checks RBAC (negative CS-only writer, Dispatcher read-only, market scope), pagination, invalid payload and transaction rollback.
+- This backend API does not imply the Dev 3 demo-only contact form is already connected; frontend integration remains separate. No changes to Dev 2 branches or owner-approved workflows.
+
+
 ## [D7 — xác minh lịch sử 56 ngày dùng chung cho planning/approval/dispatch] — 2026-11-09 — Dev 1
 
 - Thêm `services/driver_history.py`: kiểm chứng thuần túy 56 ngày lịch địa phương (kết thúc ngày hôm trước), phân biệt `off_duty` có cửa sổ nghỉ xác minh với `unknown`/thiếu/trùng; từ chối bằng chứng thiếu, bị thu hồi, hết hạn, chưa có người xác minh, mâu thuẫn (chồng duty, lái ngoài duty, duty trong ngày nghỉ, thời gian không múi giờ). `synthetic_demo` chỉ được chấp nhận ngoài `production` và không bao giờ là xác minh pháp lý.
