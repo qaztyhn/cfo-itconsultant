@@ -249,7 +249,10 @@ async def order_counts(user: AuthUser, db: DbSession) -> OrderCounts:
 
 
 @router.get(
-    "/orders/{order_id}", response_model=OrderOut | CsOrderOut, response_model_exclude_unset=True, responses=_ERRORS
+    "/orders/{order_id}",
+    response_model=OrderOut | CsOrderOut,
+    response_model_exclude_unset=True,
+    responses=_ERRORS,
 )
 async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut | CsOrderOut:
     """GET /orders/{id} — trường theo vai trò (06 mục 5.3); ngoài phạm vi → 404."""
