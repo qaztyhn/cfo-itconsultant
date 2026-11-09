@@ -1,5 +1,36 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
+
+- Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
+- Đồng bộ đặc tả `04/05/06/09` cho: market grant/versioned stock scope/evidence 30 ngày; đối soát WMS transfer không double count; D7 56 ngày/11h nghỉ và legal vehicle scope; GPS một Dispatcher chính/trip, chứng cứ thông báo theo tài xế, 100 điểm/batch và xóa theo trip/ca; D4 transactional outbox/ETA window; POD theo `trip_stop`; `checks.*.passed` và rejected candidates flat; 10 KPI, diagnostics `null`.
+- Sửa ví dụ JSON trong `06` để không hiện `driver.name`, `promise_window_preview`, `drivers` override mà backend chưa hỗ trợ. Ghi rõ index unique POD theo `order_id` là lịch sử/superseded; **migration mới vẫn cần** để bỏ chỉ mục thực.
+- Đồng bộ thêm `02_User_Stories_and_Acceptance_Criteria.md` và `03_UI_UX_Specification.md`: GPS đọc theo assignment, xoá theo trip/ca, simulator xác thực riêng; DELAY draft cần ETA được duyệt; UI không duyệt replan suggestion hoặc hold hết hạn. Giữ nguyên ngoại lệ quiet-hours cho DELAY hiện có, nếu thay đổi cần phê duyệt khác.
+- **Không có thay đổi code, schema migration, router hay API runtime**. PR #136 đã merge, Dev 3 tạo hotfix mới; các PR #121/#127/#129/#137/#143 cần tiếp tục triển khai/kiểm thử, **không auto-merge code**.
+
+
+## [06 §6 — T16 trusted five-gate recheck nối vào `POST /plans/{id}/approve`] — 2026-11-08 — Dev 1, chờ review
+
+- `app/services/approval_recheck.py::five_gate_recheck` nạp lại đơn/market/đầu vào từ DB, chạy lại engine dưới khóa duyệt và chỉ xác nhận khi **đúng kế hoạch đã giữ** vẫn qua đủ 5 gate — so khớp từng `seq` (xe, tài xế, `load_kg`/`load_m3`/`load_lines`, 4 mốc giờ), các mốc giờ và giờ chuẩn bị cấp kế hoạch, khoảng cách/lái xe/dự phòng/route; Decimal so ở scale cột NUMERIC, thời điểm so như instant có múi giờ (naive không khớp); lỗi nạp đầu vào hoặc nguồn đổi sau khi đề xuất → từ chối. Route `approve` không còn truyền `recheck=None`.
+- Không đổi route/payload/mã lỗi (thất bại vẫn `409 RESOURCE_CONFLICT`, `conflict=five_gates`). Gate `safety` của thị trường thật vẫn fail closed vì marker lịch sử 56 ngày (D7) chưa được lưu; adapter không bỏ qua điều đó.
+
+## [M7 — đóng alert rủi ro khi đơn DELIVERED] — 2026-11-08 — PR #131, chờ review
+
+- `risk_service.recalculate` với đơn `DELIVERED` đóng (`resolved_at`) các alert **mở** `RISK_ORANGE`/`PREDICTED_LATE`/`OVERDUE` của **đúng đơn và market đó** trong transaction của bên gọi, rồi trả `None`: không tính ETA, không tạo/mở lại alert. Alert không bị xóa; loại alert khác của cùng đơn (STALE_DATA, EXCEPTION, REPLAN_SUGGESTED, ORDER_CHANGED_AFTER_APPROVAL…) không bị đụng.
+- Chính sách này đến từ yêu cầu review của Dev 1/owner; **chưa có điều khoản tài liệu riêng**. `FAILED`/`CANCELLED` giữ nguyên alert (chưa có chính sách duyệt). Bên thực thi (M6) phải gọi `recalculate(order_id, ..., session=...)` sau khi chuyển `DELIVERED` trong cùng transaction.
+
+## [Plan vehicle DTO — object `vehicle` lồng] — 2026-11-08 — Dev 1 (chủ dự án chọn Option B)
+
+- `GET /planning-runs/{id}` và `GET /plans/{id}` (view Dispatcher): mỗi phần tử `vehicles[]` giữ nguyên field cũ (`vehicle_id`, `driver_employee_id`, `load_*`, mốc giờ) và **thêm** `vehicle: {id, code, name, capacity_kg, capacity_m3}` từ `ref.vehicle` thật; capacity là chuỗi thập phân không số 0 thừa (`"12000"`, `"40"`). Không có biển số, bằng lái, lịch xe, GPS hay dữ liệu tài xế.
+- Một truy vấn `plan.plan_vehicle` + một truy vấn `ref.vehicle` cho cả run (không N+1). View Sales giữ nguyên dạng gọn (`seq`, `eta_at`). Bản ghi xe thiếu -> `500 INTERNAL_ERROR` an toàn, không trả DTO thiếu. Không đổi quyết định lập kế hoạch/duyệt, route, DDL hay mã lỗi.
+- Mẫu docs/06 §6.2: capacity chuyển từ số sang chuỗi cho khớp với các trường Decimal khác.
+
+## [T14 — adapter `ReplanSource` cho T07] — 2026-11-08 — Dev 1, chờ Dev 2 nối
+
+- `app/services/source_change_adapters.py::replan_source()` thỏa `ReplanSource` của T07: tham gia transaction của bên gọi, dùng `planning_service.suggest_replan` (trigger `source_change`): chỉ tạo run gợi ý **không giữ chỗ**, không tự duyệt, không đụng kế hoạch/tài nguyên đã cam kết, một run mỗi source version, sau `DISPATCHED` chỉ alert.
+- Adapter `SourceRisk` **chưa có**: `risk_service.recalculate` còn là stub trên `main` (M7 #131 đang mở) và watermark tín hiệu nguồn chưa có contract. Không đổi route/DDL/mã lỗi.
+
+
 ## [DEC-DEV1-D1-01…04 — Audit chuyển kho và quản trị scope/evidence stock] — 2026-11-08 — docs-only, chờ Dev 1/2 review
 
 - Chủ dự án phê duyệt **D1-01**: `TRANSFER_CANCELLED` với người thao tác, lý do, thời điểm, trước/sau; không dùng `TRANSFER_APPROVED` cho cancel. **D1-02**: `TRANSFER_CONFIRMED` chỉ kho nguồn xác nhận xuất, `TRANSFER_RECEIVED` mới cho kho đích nhận.
