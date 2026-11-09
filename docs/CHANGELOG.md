@@ -12,6 +12,68 @@
 - `execution_service` gọi `risk_service.recalculate(..., session=session)` trong cùng transaction (sự kiện, forecast, alert cùng commit/rollback); đơn `DELIVERED` không có forecast mới (M7 đóng alert rủi ro).
 - Chưa đổi: notification outbox (chờ Dev 2, N4), bằng chứng D7 56 ngày, GPS assignment.
 
+## [DEC-INT Q2–Q10 + Owner-controlled merge — 2026-11-09] — nine owner approvals, docs only
+
+- Owner chọn **tự bấm Merge (Q1)**. Agent Integration Lead phải sửa conflicts, CI, PR dependencies và chuyển từng PR phù hợp **Draft → Ready for review** sau khi thực sự reviewable; không auto-merge hoặc bypass branch protection. `Draft=false` không đồng nghĩa GitHub cho phép merge.
+- **Q2** WMS reserve/status/release **fake adapter chỉ staging/demo**, nhãn simulated, không bật real WMS write. **Q3** CFO chỉ đề xuất/yêu cầu chuyển kho; WMS là chủ thể thực hiện/ghi nhận vật lý; PR #127 phải review trước merge.
+- **Q4** Dispatcher **Apply agreed date** bằng hành động có chủ ý sau khi kiểm contact agreement/version/audit rồi replan; không tự approve/đổi ngày chỉ vì lưu liên hệ. **Q5** GPS lịch sử tối đa 7 ngày chỉ privacy/compliance reviewer được ủy quyền theo case/reason/audit và sau legal/privacy gate, không tự mở cho Dispatcher.
+- **Q6** KPI mặc định 30 ngày/tối đa 366, System Admin chọn market rõ, 10 KPI và 2 diagnostics `null`. **Q7** `prep_window.start` = timestamp START_PREP thực hoặc `null`, không biến planned thành actual.
+- **Q8** Golden outcomes là baseline, sửa synthetic fixtures mà không nới safety; bất khả thi phải báo BLOCKED bằng chứng. **Q9** GET phone q giữ nguyên, nhưng bắt buộc HTTPS, backend abuse guard, access/APM/proxy log redaction, no-referrer; còn residual URL/history risk. **Q10** D8 dùng staging hiện có/manual trigger, không production cron hay paid hosting.
+- [Decision record](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md), `docs/ASSUMPTIONS.md`, API/development/privacy/warehouse contracts được đồng bộ dưới dạng tài liệu. **Không phải code, migration, merge, prod worker hoặc WMS rollout.** Các mục không được Owner duyệt vẫn pending.
+
+
+## [WMS Reservation Adapter (đề xuất/mock, KHÔNG bật ghi WMS) + D8 slot] — 2026-11-09 — Dev 2
+
+- Thêm `adapters/wms_reservation.py` (port reserve/status/release **đề xuất, chưa xác minh**, `DisabledWmsPort` mặc định, khóa idempotency ổn định, kiểm ACK khớp tuyệt đối, timeout→status lookup, partial/mismatch→release bù, unknown→fail closed), `wms_sku.py` (ánh xạ ngược SKU gốc WMS, fail closed), `stock_accounting.py` (không trừ đôi `reserved`), `stock_refresh.py` (đọc lại ngay sau ACK, không đổi checkpoint) và `jobs/ops_review_slots.py` (07:00/13:00 giờ market, chưa bật cron). Test với WMS giả trong bộ nhớ.
+- Chưa có API/credential WMS thật, nguồn quan hệ POS↔WMS SKU, trường `reflected_in_batch_id`, ledger/outbox (Dev 1). Xem `docs/proposals/WMS_RESERVATION_ADAPTER_CONTRACT.md`.
+
+
+
+## [DEC-CS-SEARCH / DEC-CS-PRIVACY / DEC-M6-PREP-QUEUE / DEC-STOCK-GRANT-CONTROL / DEC-D8-STAGING-SCHEDULE — 20261109] — 2026-11-09 — five owner approvals, docs-only
+
+- **CS-01:** `GET /orders?q=` được duyệt mở rộng tìm `contact_phone` (chuẩn hóa/giới hạn ở backend), ngoài mã đơn, external ref và tên; không thêm param mới. Scope và chống dò số/PII cần Dev 1 code/test.
+- **CS-02:** CS có response projection do backend lọc, phone/email chỉ masked; loại tọa độ, mã cổng/receiving restrictions và dữ liệu lập kế hoạch nội bộ; không cấp quyền approve/dispatch/replan/DELAY-send. Contact-log/ETA/notifications stub chưa E2E, CS UI chỉ mock-only trong phạm vi riêng.
+- **M6:** Owner phê duyệt nội dung `PROPOSAL-M6-PREP-QUEUE-001`: canonical `/warehouses/{id}/prep-queue`, `schedule_verified`, market IANA timezone. #129/#159/#154/#160 vẫn cần đối chiếu API, tests, không auto-merge.
+- **STOCK:** chỉ System Admin được **Owner ủy quyền** mới cấp/thu hồi **tất cả** Stock Admin grant (ban đầu và tiếp theo) theo market; cấm self-grant. Phạm vi không bao gồm WMS on-hand writes; schema/RBAC/audit cần review.
+- **D8:** phê duyệt lịch/cadence job trong D8 proposal **để triển khai/test staging/demo**, giữ review 07:00/13:00 Europe/Stockholm; không bật production, trả phí hosting, gửi khách thật hay theo dõi tài xế thật. `attendance_gen` vẫn disabled; tick DTO/code còn review riêng.
+- [Biên bản quyết định](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md); cập nhật `ASSUMPTIONS`, `02`, `03`, `05`, `06`, `09` và D8 proposal. **Chỉ docs, không code, migration, runtime activation hoặc merge PR**. Các mục ASM-004/ASM-008 và những đề xuất không được chọn tiếp tục chưa duyệt.
+
+## [DEC-WMS-RESERVE-SYNC-20261109] — 2026-11-09 — owner-approved business workflow, docs-only
+
+- Owner chốt quy trình **CFO so tồn WMS khi nhận đơn → Sales/Dispatcher xác nhận phương án → CFO yêu cầu WMS reserve bằng SKU gốc → WMS atomic ACK và giảm available (không giảm on_hand vật lý) → CFO đọc/cập nhật WMS ngay**, không chờ polling 5 phút. Không double-subtract reservation đã nằm trong WMS stock.
+- Đây là **ngoại lệ reserve nghiệp vụ hẹp** với WMS chỉ đọc trước đó, không cho ghi on_hand/chuyển kho hay sửa POS. API/auth/release/timeout/compensation/production WMS writes vẫn phải qua Dev 1/2 xác minh, PR migration/contract tests và deployment sign-off. [Decision record](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
+
+## [DEC-WMS-REVERSE-SKU-20261109] — 2026-11-09 — owner conditional mapping rule, docs-only
+
+- Owner yêu cầu **nếu** CFO gửi reserve/release sang WMS, phải ánh xạ ngược global CFO thành **SKU gốc WMS đúng market/kho/dòng đơn và đơn vị tồn**. Local SKU nguồn POS phải được giữ; không mặc định POS SKU trùng WMS SKU. Global→local có thể 1:n, không tự chọn SKU hoặc pool; thiếu mapping confirmed/provenance ⇒ chặn lệnh.
+- Vẫn **chưa có phê duyệt CFO ghi WMS** hay xác minh API WMS. [Decision record](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
+## [ASM-WMS-RESERVATION-20261109] — 2026-11-09 — owner assumption, docs-only
+
+- Owner cho phép **giả định WMS có chức năng reservation**. Reserve làm giảm **available** nhưng không trừ `on_hand` vật lý trước khi thực sự xuất kho. CFO không được double-subtract WMS-reserved quantity.
+- Việc CFO chủ động gửi lệnh reserve/release tới WMS là **ngoại lệ write** với quyết định WMS read-only hiện hành; Owner mới hỏi cách hoạt động, **chưa phê duyệt write API**. Dev 1/2 phải đề xuất và kiểm chứng interface WMS, ACK, idempotency và failure recovery trước khi code. [Biên bản](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md).
+
+
+
+## [DEC-WMS-READONLY-20261109] — 2026-11-09 — owner scope clarification, docs only
+
+- Owner nhắc lại CFO **chỉ lấy dữ liệu tồn kho từ WMS**, không quản lý nghiệp vụ xuất/nhập/chuyển hoặc đối soát vật lý. WMS chịu trách nhiệm sổ tồn và chứng từ; CFO đọc batch hợp lệ, kiểm freshness/coverage và giữ riêng lượng held/committed cho đơn để tránh hứa hàng trùng.
+- **Thay thế đề xuất** luồng đối soát WMS/chứng cứ Warehouse Manager + independent reviewer trong CFO tại DEC-T18-WMS-RECON-20261109. Không triển khai trạng thái hàng đợi đối soát hoặc alarm Q3 24 giờ; không tự cộng inbound hoặc trừ lại physical outbound. #127 cần review lại phạm vi `confirm-source/receive` trước khi merge.
+- [Decision record](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). Chỉ docs; không đổi API/DDL/runtime và không merge code PR.
+
+## [DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109] — 2026-11-09 — owner-approved, docs-only
+
+- Owner đồng ý **System Admin được ủy quyền cấp grant Stock Admin đầu tiên theo market**, bắt buộc audit và cấm tự cấp quyền cho mình; giữ S1/S2. Không có bootstrap/role mặc định được tạo bởi PR docs.
+- Owner cho phép **giả định WMS cũ có ghi nhận xuất kho nguồn và nhập kho đích** cho luồng chuyển kho; **chưa xác minh** WMS API/CSV trả movement ID, transfer mapping hay acknowledgment. Đối soát ưu tiên chứng cứ WMS, thiếu thì Warehouse Manager nộp bằng chứng và reviewer độc lập có quyền duyệt; không suy theo batch time hoặc lượng tồn, không double-subtract/double-add; CFO read-only WMS.
+- Biên bản [DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md); cập nhật ASSUMPTIONS, owner prior record, 02/04/05/06/09. **Q3 24h escalation chưa được duyệt; chưa có code/migration/Source E2E; không auto-merge code.**
+
+## [DEC-GPS-RET-20261109 / DEC-D8-OPS-20261109] — 2026-11-09 — owner-approved amendment, docs-only
+
+- Owner chốt **lưu lịch sử GPS đã thu hợp lệ tối đa 7 ngày** sau khi trip/ca kết thúc thay cho yêu cầu G4 trước đó xóa toàn bộ raw GPS ngay. **Ngừng thu và thu hồi quyền xem live ngay** lúc trip/ca kết thúc, không thu ngoài ca; chỉ cho phép tra soát lịch sử trong phạm vi/chứng cứ hợp lệ, có lý do và audit, yêu cầu privacy/legal/DPIA trước dữ liệu nhân viên thật, xóa khi hết hạn. Không tự mở endpoint historical/read mới hoặc kéo dài retention nếu chưa có quyết định riêng.
+- Owner chốt **hai lượt rà soát vận hành tổng thể 07:00 và 13:00 giờ Thụy Điển** (Europe/Stockholm). Đây không phải lịch đồng bộ đơn 2 lần/ngày; **chưa duyệt toàn bộ D8**, tick API, chi phí hạ tầng hoặc lịch các Job còn lại.
+- Thêm [decision record](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md), cập nhật sổ `ASSUMPTIONS.md`, G4 amendment trong quyết định 27 mã, 02/03/04/05/06/09 và D8 proposal. Thay đổi **chỉ tài liệu**, code migration/runtime GPS cleanup hiện vẫn theo mô hình cũ cho đến khi được sửa, test và nghiệm thu trên PR khác. Không tự merge PR code.
+
+
 ## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
 
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
