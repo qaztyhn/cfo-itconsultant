@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M6-1 — POD thành công duy nhất theo `trip_stop` + M7 session-aware] — 2026-11-09 — Dev 1 (#129)
+
+- Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
+- `execution_service` gọi `risk_service.recalculate(..., session=session)` trong cùng transaction (sự kiện, forecast, alert cùng commit/rollback); đơn `DELIVERED` không có forecast mới (M7 đóng alert rủi ro).
+- Chưa đổi: notification outbox (chờ Dev 2, N4), bằng chứng D7 56 ngày, GPS assignment.
+
 ## [Plan Review frontend alignment with merged #134/#139] — 2026-11-09 — Dev 3, review pending
 
 - Align Plan Review with persisted planning DTO: five gates use `passed`, vehicle allocations use nested `vehicle` plus IDs, rejected candidates use flat fields, and Sales vehicle data remains compact. No driver name or invented promise window is displayed.
