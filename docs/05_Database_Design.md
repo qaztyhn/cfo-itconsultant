@@ -1053,3 +1053,14 @@ Owner approved **max seven days of valid GPS history** after trip/approved-duty 
 - CFO temporary held reservations (prior to approval) and confirmed WMS reservations require distinct identity and inclusion/version semantics. A proposed migration should link CFO order/line, target warehouse, WMS SKU/units and mapping version, external idempotency key, WMS reservation ID/state/version, acknowledgement, source snapshot inclusion and pending refresh protection; actual DDL and migration remain Dev 1/2 review items.
 - On authoritative WMS ACK, refresh relevant WMS stock immediately, update CFO read model with provenance and prevent duplicate assignment during publication delay. Avoid treating a newer batch timestamp as proof that the specific WMS reservation is included. Handle partial ACK, WMS timeout/status lookup, failed CFO commit, cancellation, replan and WMS issue with idempotency/compensation, no cross-DB atomicity fiction.
 - Scope is a **limited prospective WMS reservation write**, not physical on_hand issue/receipt, transfer reconciliation or POS mutation. Actual interface/security/integration tests required before enabling. [Decision](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
+
+
+## Owner-approved integration boundaries — Q2–Q10, 2026-11-09 (contract review required)
+
+[Decision record](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) is a **policy clarification, not a completed migration**. The existing CFO transfer workflow must not be interpreted as authoritative WMS physical outbound/inbound or as permission for a CFO `confirm-source/receive` click to create stock-authoritative inbound; WMS remains owner of physical movement. Dev 1/2 must review #127 data model and API to remove or disable conflicting effects, preserving allowed transfer requests and audit.
+
+Historical GPS (validly collected, maximum seven days) requires separately scoped privacy/compliance reviewer + case reference, reason, assignment and immutable read audit; live Dispatcher RBAC is insufficient. An individual notice/DPIA/legal basis and reviewed schema are prerequisites for real-worker data, not created by this paragraph.
+
+Agreed customer date requires persisted agreement evidence, version and explicit Dispatcher `Apply agreed date` transaction plus replan, without mutating source POS or auto-approving; actual implementation/DDL still need a reviewed change. `prep_window.start` is a nullable `START_PREP` actual event (no extra planned timestamp stored by inference). KPI admin reads require an explicit market selection and use a 30-day default/366-day maximum reporting window.
+
+Synthetic WMS reservation and fixtures are permitted in staging **only**; no physical WMS write, fake legal driver eligibility or golden assertion changes. No new DB columns/tables are approved by this note alone.

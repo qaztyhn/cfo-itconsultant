@@ -1,5 +1,15 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-INT Q2–Q10 + Owner-controlled merge — 2026-11-09] — nine owner approvals, docs only
+
+- Owner chọn **tự bấm Merge (Q1)**. Agent Integration Lead phải sửa conflicts, CI, PR dependencies và chuyển từng PR phù hợp **Draft → Ready for review** sau khi thực sự reviewable; không auto-merge hoặc bypass branch protection. `Draft=false` không đồng nghĩa GitHub cho phép merge.
+- **Q2** WMS reserve/status/release **fake adapter chỉ staging/demo**, nhãn simulated, không bật real WMS write. **Q3** CFO chỉ đề xuất/yêu cầu chuyển kho; WMS là chủ thể thực hiện/ghi nhận vật lý; PR #127 phải review trước merge.
+- **Q4** Dispatcher **Apply agreed date** bằng hành động có chủ ý sau khi kiểm contact agreement/version/audit rồi replan; không tự approve/đổi ngày chỉ vì lưu liên hệ. **Q5** GPS lịch sử tối đa 7 ngày chỉ privacy/compliance reviewer được ủy quyền theo case/reason/audit và sau legal/privacy gate, không tự mở cho Dispatcher.
+- **Q6** KPI mặc định 30 ngày/tối đa 366, System Admin chọn market rõ, 10 KPI và 2 diagnostics `null`. **Q7** `prep_window.start` = timestamp START_PREP thực hoặc `null`, không biến planned thành actual.
+- **Q8** Golden outcomes là baseline, sửa synthetic fixtures mà không nới safety; bất khả thi phải báo BLOCKED bằng chứng. **Q9** GET phone q giữ nguyên, nhưng bắt buộc HTTPS, backend abuse guard, access/APM/proxy log redaction, no-referrer; còn residual URL/history risk. **Q10** D8 dùng staging hiện có/manual trigger, không production cron hay paid hosting.
+- [Decision record](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md), `docs/ASSUMPTIONS.md`, API/development/privacy/warehouse contracts được đồng bộ dưới dạng tài liệu. **Không phải code, migration, merge, prod worker hoặc WMS rollout.** Các mục không được Owner duyệt vẫn pending.
+
+
 ## [WMS Reservation Adapter (đề xuất/mock, KHÔNG bật ghi WMS) + D8 slot] — 2026-11-09 — Dev 2
 
 - Thêm `adapters/wms_reservation.py` (port reserve/status/release **đề xuất, chưa xác minh**, `DisabledWmsPort` mặc định, khóa idempotency ổn định, kiểm ACK khớp tuyệt đối, timeout→status lookup, partial/mismatch→release bù, unknown→fail closed), `wms_sku.py` (ánh xạ ngược SKU gốc WMS, fail closed), `stock_accounting.py` (không trừ đôi `reserved`), `stock_refresh.py` (đọc lại ngay sau ACK, không đổi checkpoint) và `jobs/ops_review_slots.py` (07:00/13:00 giờ market, chưa bật cron). Test với WMS giả trong bộ nhớ.

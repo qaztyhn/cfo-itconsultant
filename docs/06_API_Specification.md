@@ -929,3 +929,18 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 - **Prep Queue:** Appendix A.1 is now an **approved target contract**; backend #129/#159 and UI #154/#160 still require harmonization/real-DB tests before merge.
 - **Stock Admin:** only **Owner-delegated System Admin** may issue and revoke market-specific Stock Admin grants (first and future), no self-grant; Dev 1/2 must review delegation record, audit and migration. Does not grant physical WMS access.
 - **D8:** stage/test approved proposal job cadence on synthetic data only. `attendance_gen` disabled; no prod cron/worker/hosting, no real notifications or GPS. Internal tick security/DTO, new codes and job runtime remain subject to review.
+
+
+## 18. Owner-approved integration decisions Q2–Q10 — 09/11/2026
+
+[DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) and `ASSUMPTIONS.md` establish the **target behavior** below; changing existing routes, DTOs or migrations still requires Dev 1/2/3 contract review, implementation and tests. **The Owner alone merges code PRs after they are Ready, reviewed, mergeable and checks pass.**
+
+- **Q2 WMS demo:** simulated reserve/status/release permitted in staging only, explicit `simulated` provenance/indicator; real port remains disabled. No WMS physical stock write.
+- **Q3 T18:** CFO may request or suggest transfer; existing `/transfers/{id}/confirm-source` and `/receive` descriptions are **superseded for physical confirmation/stock authority**. Dev 1/2 must reconcile or disable such effects in #127; real WMS alone records outbound/inbound/receipt.
+- **Q4 Date negotiation:** contact `agreed` is **not** date mutation. An authorized Dispatcher explicitly applies a verified agreement with version/concurrency/audit, then starts a new plan (all five gates). Exact endpoint/DTO and POS read-only boundary need reviewed update, **not an invented endpoint implemented from this note**.
+- **Q5 GPS history:** only explicitly case-authorized privacy/compliance reviewer may see retained points (max 7 days), with case ID/reason/trip/market access audit and legal/privacy clearance. Regular Dispatcher live role is not historical authorization.
+- **Q6 KPI:** default reporting window **30 days**, maximum **366 days**; multi-market System Admin selects a concrete market; use local market timezone/cohort rules. Preserve 10 KPI keys and unknown diagnostics `null`. Review request parameter/date boundary specification before coding.
+- **Q7 M6:** `prep_window.start` is actual persisted `START_PREP` aware ISO instant, or **`null`** before START_PREP. Not a planned start. Implement in backend/frontend DTO with nullable schema/tests.
+- **Q8 Demo seeds:** expected golden scenario outputs stay; synthetic input corrections need independent tests, never override fail-closed.
+- **Q9 CS phone search:** existing GET `q` requires TLS, scoped/rate-limited backend, raw query/phone suppression in server/proxy/APM/access/analytics/error logs and `Referrer-Policy: no-referrer`. **A GET URL may still remain in browser history/network/proxy traces**; stronger URL privacy would require an independently approved POST search contract.
+- **Q10 D8:** staging/manual triggers only using existing resources; no real customer notifications, actual worker GPS, production cron/hosting or paid worker. D8 cadence proposals approved only for staging.
