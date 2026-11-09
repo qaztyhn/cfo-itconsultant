@@ -1,5 +1,16 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Dev 2 — Sales Sync & Check HTTP boundary] — 2026-11-09
+
+- Adds approved `POST /api/v1/integration/orders/sync-now` with JWT Sales/Dispatcher scope,
+  UUID Idempotency-Key, exact Source submitted/cancelled list checks and safe 503
+  failure without routing. Uses Dev 1's transactional acceptance service from
+  PR #202. No polling routing, POS write, WMS write, auto-planning or approval.
+- Adds HTTP boundary negative/role/key tests; Dev 1's real PostgreSQL service
+  tests remain independent. Full Source/CFO E2E and production Source
+  version fencing are not verified; the route PR is stacked on #202 and
+  must be rebased against the Dev 2 exact adapter PR #203 before main merge.
+
 ## [BE-02 — CS production phone-search gate and CFO log privacy] — 2026-11-09 — Dev 1
 
 - Non-synthetic production `GET /orders?q=` phone-shaped lookup returns
