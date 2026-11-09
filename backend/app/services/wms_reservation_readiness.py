@@ -93,18 +93,18 @@ def prepare_intent(
     if not originals or not idempotency_key.strip() or len(idempotency_key) > 200:
         _reject("Verified order lines and a stable idempotency key are required.")
     first = originals[0]
-    if (
-        min(
-            first.order_id, first.market_id, first.warehouse_id, first.source_version
-        )
-        <= 0
-        or any(
-            line.order_id != first.order_id
-            or line.market_id != first.market_id
-            or line.warehouse_id != first.warehouse_id
-            or line.source_version != first.source_version
-            for line in originals
-        )
+    ids = (
+        first.order_id,
+        first.market_id,
+        first.warehouse_id,
+        first.source_version,
+    )
+    if any(value <= 0 for value in ids) or any(
+        line.order_id != first.order_id
+        or line.market_id != first.market_id
+        or line.warehouse_id != first.warehouse_id
+        or line.source_version != first.source_version
+        for line in originals
     ):
         _reject(
             "All WMS reservation lines must belong to one order, warehouse and source version."
