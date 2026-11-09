@@ -7,6 +7,7 @@
  * Owner: Dev 3 (stream C) — M6.
  */
 import { StatusChip } from "../../../components/StatusChip";
+import { ACTION_NAMES, canPerform, type PrepEventType } from "./executionActions";
 import { formatLinesWeight, formatLoadingTime, formatMinutes, formatWindow } from "./format";
 import type { LoadingEntry, PrepQueueOrder } from "./types";
 
@@ -17,6 +18,9 @@ export interface OrdersTableProps {
   /** Queue date `YYYY-MM-DD`; a loading time on another day shows its weekday. */
   queueDate: string;
   className?: string;
+  onAction?: (order: PrepQueueOrder, type: PrepEventType, tripId?: number, vehicleCode?: string) => void;
+  actionPending?: boolean;
+  canWrite?: boolean;
 }
 
 const COLUMNS = ["Order", "Handling mix", "Work", "Prep window", "Loading", "Status"] as const;
@@ -29,7 +33,7 @@ function loadingLabel(entry: LoadingEntry, timeZone: string, queueDate: string):
   return entry.after_cutoff ? `${time} after cut-off · ${entry.vehicle_code}` : `${time} · ${entry.vehicle_code}`;
 }
 
-export function OrdersTable({ orders, timeZone, queueDate, className }: OrdersTableProps) {
+export function OrdersTable({ orders, timeZone, queueDate, className, onAction, actionPending, canWrite = false }: OrdersTableProps) {
   return (
     <div aria-live="polite" className={["rounded-card border bg-surface shadow-card", className].filter(Boolean).join(" ")}>
       <table className="block w-full text-body text-ink lg:table">
@@ -41,6 +45,7 @@ export function OrdersTable({ orders, timeZone, queueDate, className }: OrdersTa
                 {name}
               </th>
             ))}
+            {onAction && <th scope="col" className="px-3 py-2 text-left font-mono text-overline uppercase text-inkMuted">Actions</th>}
           </tr>
         </thead>
         <tbody className="block lg:table-row-group">
@@ -86,6 +91,29 @@ export function OrdersTable({ orders, timeZone, queueDate, className }: OrdersTa
                   {order.prep_state === "paused" && <span className="rounded-full bg-risk-atRisk-bg px-2 py-0.5 font-mono text-overline uppercase text-risk-atRisk-fg">Paused</span>}
                 </span>
               </td>
+              {onAction && (
+                <td data-label="Actions" className={CELL}>
+                  <div className="flex flex-col gap-2">
+                    {(["START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY"] as PrepEventType[])
+                      .filter((type) => canPerform(order, type)).map((type) => (
+                        <button type="button" key={type}
+                          disabled={!canWrite || actionPending}
+                          onClick={() => onAction(order, type)}
+                          className="min-h-[48px] rounded-control bg-pine px-3 py-2 font-semibold text-white disabled:opacity-50">
+                          {ACTION_NAMES[type]}
+                        </button>
+                      ))}
+                    {order.loading.filter((entry) => canPerform(order, "LOADED", entry.trip_id)).map((entry) => (
+                      <button type="button" key={entry.trip_id}
+                        disabled={!canWrite || actionPending}
+                        onClick={() => onAction(order, "LOADED", entry.trip_id, entry.vehicle_code)}
+                        className="min-h-[48px] rounded-control border border-border bg-surface px-3 py-2 font-semibold text-ink disabled:opacity-50">
+                        Mark loaded · {entry.vehicle_code}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
