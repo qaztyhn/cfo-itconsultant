@@ -594,7 +594,9 @@ async def record_event(
         # Notify only when the *order* changes, after a verified risk update.
         # Second-vehicle dispatch must not duplicate the DISPATCHED notification.
         if changed_to is not None:
-            await notify_service.enqueue(order.id, changed_to, plan_id=order.approved_plan_id)
+            await notify_service.enqueue(
+                order.id, changed_to, plan_id=order.approved_plan_id, session=session
+            )
     except NotImplementedError as exc:
         raise DomainError(
             "PLAN_NOT_APPROVABLE", "Mandatory ETA or notification integration is not available."
