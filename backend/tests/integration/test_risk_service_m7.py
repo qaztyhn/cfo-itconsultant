@@ -200,6 +200,7 @@ def test_US_RSK_01_AC1_recalculate_without_request_transaction_is_fail_closed() 
         asyncio.run(risk_service.recalculate(1, "approval"))
     assert caught.value.code == "PLAN_NOT_APPROVABLE"
 
+
 @pytest.mark.parametrize("has_dispatcher", [False, True])
 def test_US_NOT_02_AC1_risk_requires_reviewed_actor_and_caller_transaction(
     risk_db: tuple[str, dict[str, datetime]], monkeypatch: pytest.MonkeyPatch, has_dispatcher: bool
