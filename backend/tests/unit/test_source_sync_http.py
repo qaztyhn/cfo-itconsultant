@@ -3,6 +3,7 @@
 The real routing/atomic PostgreSQL tests live in Dev 1 PR #202. Here, only the
 source HTTP boundary and thin API integration are mocked; no false E2E claim.
 """
+
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -67,12 +68,14 @@ def setup(
         if model is SourceOrder and source_status in {"submitted", "conflict"}:
             yield SourceOrder.model_validate(order("POS-SE-123"))
         if model is SourceCancellation and source_status in {"cancelled", "conflict"}:
-            yield SourceCancellation.model_validate({
-                "id": "POS-SE-123",
-                "version": 2,
-                "status": "CANCELLED",
-                "updated_at": "2026-11-04T09:06:00Z",
-            })
+            yield SourceCancellation.model_validate(
+                {
+                    "id": "POS-SE-123",
+                    "version": 2,
+                    "status": "CANCELLED",
+                    "updated_at": "2026-11-04T09:06:00Z",
+                }
+            )
 
     monkeypatch.setattr(RestMarketAdapter, "_pages", pages)
     calls: list[tuple[object, ...]] = []
@@ -118,9 +121,7 @@ def test_US_INT_01_AC2_exact_trusted_source_passed_to_DB_transaction(
 
 
 @pytest.mark.parametrize("role", ["warehouse", "driver", "customer_service", "viewer"])
-def test_US_INT_01_AC3_wrong_role_never_reads_source(
-    monkeypatch: pytest.MonkeyPatch, role: str
-) -> None:
+def test_US_INT_01_AC3_wrong_role_never_reads_source(monkeypatch: pytest.MonkeyPatch, role: str) -> None:
     client, calls, reads = setup(monkeypatch, role=role)
     with client:
         response = post(client)
