@@ -441,3 +441,22 @@ def test_T28_failed_fresh_safety_gate_rolls_back_all_approval_writes(db: str) ->
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "held"
     assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
     assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
+
+
+def test_DEC_WMS_RESERVE_SYNC_disposable_demo_fails_closed_without_ack(db: str, monkeypatch) -> None:
+    """No real demo APPROVED/trip/audit when only local gates and holds are proven."""
+    _hold(db)
+    monkeypatch.setenv("DEMO_DISPOSABLE", "1")
+    with pytest.raises(DomainError) as got:
+        _run(
+            db,
+            lambda s: approval_service.approve(
+                1, _actor(), {}, "no-authoritative-ack", session=s, recheck=_recheck
+            ),
+        )
+    assert got.value.code == "PLAN_NOT_APPROVABLE"
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 0
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "held"
+    assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
