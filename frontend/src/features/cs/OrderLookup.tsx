@@ -1,6 +1,7 @@
 /**
  * A14 CS · Order lookup — tra cứu đơn, trạng thái, ETA; KHÔNG GPS/điểm số (docs/03 A14).
  * Tìm kiếm gọi GET /orders?q= khi bấm submit (không theo từng phím). Chưa claim tìm theo phone: DEC-CS-SEARCH-20261109 chờ backend.
+ * Phân trang Previous/Next theo page/page_size của GET /orders; đổi từ khoá thì về trang 1.
  * Owner: Dev 3 (luồng C) — M8.
  */
 import { useQuery } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { RiskChip } from "../../components/RiskChip";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { StatusChip } from "../../components/StatusChip";
-import { csKeys, searchOrders } from "./api";
+import { csKeys, SEARCH_PAGE_SIZE, searchOrders } from "./api";
 import { SEARCH_PLACEHOLDER } from "./constants";
 import { toOrderStatus, toRiskColor } from "./format";
 import { OrderDetail } from "./OrderDetail";
@@ -18,27 +19,36 @@ import { NotificationHistory } from "./NotificationHistory";
 import { OrderTimeline } from "./OrderTimeline";
 import { ContactLogDemo } from "./ContactLogDemo";
 
+const PAGER_BUTTON =
+  "rounded-control border bg-surface px-3 py-2 text-body text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine";
+
 export function OrderLookup() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const inputId = useId();
 
   const search = useQuery({
-    queryKey: csKeys.search(query),
-    queryFn: ({ signal }) => searchOrders(query, signal),
+    queryKey: csKeys.search(query, page),
+    queryFn: ({ signal }) => searchOrders(query, signal, page),
     enabled: query !== "",
     retry: false,
     refetchInterval: false,
+    // Chuyển trang của cùng một từ khoá: giữ danh sách cũ trong lúc tải (không nháy, không mất focus).
+    // Đổi từ khoá thì không giữ, tránh hiện kết quả của từ khoá cũ.
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[3] === query ? previous : undefined),
   });
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const next = input.trim();
     if (!next) return;
+    const sameSearch = next === query && page === 1;
     setSelectedId(null);
     setQuery(next);
-    if (next === query) void search.refetch();
+    setPage(1);
+    if (sameSearch) void search.refetch();
   }
 
   function renderResults() {
@@ -52,14 +62,21 @@ export function OrderLookup() {
       return <ErrorState error={search.error} title="Search failed" onRetry={() => void search.refetch()} />;
     }
     const { items, total } = search.data;
-    if (items.length === 0) {
+    // Số trang lấy từ dữ liệu đang hiển thị (có thể là trang cũ trong lúc tải trang mới).
+    const shownPage = search.data.page;
+    if (items.length === 0 && shownPage === 1) {
       return <EmptyState message="No orders match this search." />;
     }
+    const pageSize = search.data.pageSize > 0 ? search.data.pageSize : SEARCH_PAGE_SIZE;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const first = (shownPage - 1) * pageSize + 1;
+    const range = shownPage === 1 && items.length === total ? `${items.length}` : `${first}–${first + items.length - 1}`;
+    const atFirst = shownPage <= 1;
+    const atLast = shownPage >= totalPages;
     return (
       <div className="flex flex-col gap-3">
         <p className="text-caption text-inkMuted">
-          Showing {items.length} of {total} {total === 1 ? "order" : "orders"}
-          {total > items.length ? " — refine your search to narrow the list." : ""}
+          {items.length === 0 ? "No orders on this page." : `Showing ${range} of ${total} ${total === 1 ? "order" : "orders"}`}
         </p>
         <ul className="flex flex-col gap-2">
           {items.map((item) => (
@@ -86,6 +103,29 @@ export function OrderLookup() {
             </li>
           ))}
         </ul>
+        {totalPages > 1 && (
+          <nav aria-label="Search results pages" className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-disabled={atFirst}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              className={`${PAGER_BUTTON}${atFirst ? " opacity-50" : ""}`}
+            >
+              Previous
+            </button>
+            <span className="text-caption text-inkMuted">
+              Page {shownPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              aria-disabled={atLast}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              className={`${PAGER_BUTTON}${atLast ? " opacity-50" : ""}`}
+            >
+              Next
+            </button>
+          </nav>
+        )}
       </div>
     );
   }
@@ -117,7 +157,9 @@ export function OrderLookup() {
       </form>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div aria-live="polite">{renderResults()}</div>
+        <div aria-live="polite" aria-busy={search.isPlaceholderData}>
+          {renderResults()}
+        </div>
         <section aria-label="Order details">
           {selectedId !== null ? (
             <div key={selectedId} className="flex flex-col gap-8">
