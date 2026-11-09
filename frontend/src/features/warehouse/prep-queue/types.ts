@@ -1,5 +1,5 @@
 /**
- * Local types for the Warehouse Prep Queue (docs/06 Appendix A, `GET /prep-queue?warehouse_id=&date=`).
+ * Local types for the Warehouse Prep Queue (docs/06 Appendix A / A.1, `GET /warehouses/{id}/prep-queue?date=`).
  * DEPENDENCY: hand-written because `schema.d.ts` is not generated yet (docs/09 §9). Replace with generated
  * types once Dev 1/2 export OpenAPI, then delete this file.
  * Owner: Dev 3 (stream C) — M6.
@@ -35,7 +35,7 @@ export interface HandlingMixItem {
  */
 export interface CapacityShift {
   name: string;
-  /** `hh:mm` local time of the warehouse. */
+  /** ISO 8601 with offset (overnight shifts and DST aware); `hh:mm` is also tolerated. */
   start: string;
   end: string;
   present: number;
@@ -53,16 +53,16 @@ export interface Capacity {
   /** Loading cut-off, `hh:mm` local time or ISO 8601 with offset. */
   cutoff: string | null;
   /**
-   * DEPENDENCY: NOT in docs/06 Appendix A. Optional local field based on ASSUMPTIONS Q12d (ASM-007).
-   * Capacity counts as verified ONLY when this is exactly `true`; missing or `false` means "not verified".
-   * `present`, `expected_staff` and `shifts` must never be used to infer verification.
+   * Required boolean (A.1, ASM-007/Q12d). Capacity counts as verified ONLY when exactly `true`; `false` means the
+   * official schedule is missing/unverified: totals are 0 and the UI must say "Capacity not verified".
    */
-  schedule_verified?: boolean;
+  schedule_verified: boolean;
 }
 
 export interface PrepWindow {
-  /** `hh:mm` or ISO 8601 with offset. */
-  start: string;
+  /** ISO 8601 with offset; `null` until preparation actually starts (planned start is not persisted). */
+  start: string | null;
+  /** ISO 8601 with offset (actual GOODS_READY, else planned). */
   end: string;
 }
 

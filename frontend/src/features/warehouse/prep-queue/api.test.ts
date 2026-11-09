@@ -12,7 +12,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe("fetchPrepQueue", () => {
-  it("sends warehouse_id and date and returns the payload", async () => {
+  it("calls the canonical /warehouses/{id}/prep-queue with the date and returns the payload", async () => {
     const seen = vi.fn();
     server.use(prepQueueSuccess(undefined, seen));
 
@@ -50,10 +50,15 @@ describe("parsePrepQueueResponse", () => {
   it("rejects non-objects and missing arrays", () => {
     expect(() => parsePrepQueueResponse(null)).toThrow();
     expect(() => parsePrepQueueResponse({ capacity: {}, orders: [] })).toThrow();
-    expect(() => parsePrepQueueResponse({ capacity: { shifts: [] }, orders: "x" })).toThrow();
+    expect(() => parsePrepQueueResponse({ capacity: { shifts: [], schedule_verified: true }, orders: "x" })).toThrow();
+  });
+
+  it("requires schedule_verified to be a boolean (a missing flag is never treated as verified)", () => {
+    expect(() => parsePrepQueueResponse({ capacity: { shifts: [] }, orders: [] })).toThrow();
+    expect(() => parsePrepQueueResponse({ capacity: { shifts: [], schedule_verified: "true" }, orders: [] })).toThrow();
   });
 
   it("accepts an empty queue", () => {
-    expect(parsePrepQueueResponse({ capacity: { shifts: [] }, orders: [] }).orders).toEqual([]);
+    expect(parsePrepQueueResponse({ capacity: { shifts: [], schedule_verified: false }, orders: [] }).orders).toEqual([]);
   });
 });

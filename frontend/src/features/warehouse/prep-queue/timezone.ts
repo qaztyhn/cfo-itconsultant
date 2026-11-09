@@ -1,8 +1,8 @@
 /**
  * Warehouse time zone and "today" for the Prep Queue.
- * DEPENDENCY: GET /locations on the real backend does not return `timezone` yet (only the shared mock does).
- * Until Dev 1 adds it, resolveTimeZone returns null and the screen stops with a clear message.
- * We never guess a time zone (docs/09 invariant 17: no implicit "now" / local clock assumptions).
+ * GET /locations and /locations/{id} return a non-null IANA `timezone` (from ref.market.timezone). It is the only
+ * source: never the browser, never hard-coded. An invalid value still stops the screen with a clear message
+ * (docs/09 invariant 17: no implicit "now" / local clock assumptions).
  * Owner: Dev 3 (stream C) — M6.
  */
 import type { WorkLocation } from "../../../api/locations";

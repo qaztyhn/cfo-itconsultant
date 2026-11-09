@@ -10,6 +10,8 @@ export interface WorkLocation {
   code: string;
   name: string;
   type: string;
+  /** IANA from ref.market.timezone (docs/06 §13.1, always sent by the backend). Optional here only so older fixtures compile; a missing value stops the Prep Queue. */
+  timezone?: string;
 }
 
 /** Backend phân trang (mặc định 50, tối đa 200 dòng/trang); lấy tối đa mỗi trang để ít lần gọi nhất. */

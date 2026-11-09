@@ -118,11 +118,9 @@ export function capacityVerified(): Capacity {
   };
 }
 
-/** Same people present, but the API does NOT say the schedule is verified (`schedule_verified` absent). */
+/** Same people shown, but the server did NOT verify the official schedule (`schedule_verified: false`). */
 export function capacityUnverified(): Capacity {
-  const { schedule_verified: _omitted, ...rest } = capacityVerified();
-  void _omitted;
-  return rest;
+  return { ...capacityVerified(), schedule_verified: false };
 }
 
 /** No official schedule: nothing counts as capacity. */

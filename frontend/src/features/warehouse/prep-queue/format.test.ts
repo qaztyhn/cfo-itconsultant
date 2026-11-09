@@ -101,8 +101,23 @@ describe("US-WH-02 capacity display (values come from the API, never computed he
   it("ASM-007: capacity is verified only when schedule_verified === true", () => {
     expect(isCapacityVerified({ schedule_verified: true })).toBe(true);
     expect(isCapacityVerified({ schedule_verified: false })).toBe(false);
-    expect(isCapacityVerified({})).toBe(false);
+    expect(isCapacityVerified({} as { schedule_verified: boolean })).toBe(false);
     // Cast: a malformed payload (string) must not count as verified either.
     expect(isCapacityVerified({ schedule_verified: "true" as unknown as boolean })).toBe(false);
+  });
+});
+describe("A.1 timestamps with offsets (market-local display)", () => {
+  it("shows an overnight shift across the autumn DST change in the market zone", () => {
+    expect(formatClock("2026-10-24T22:00:00+02:00", "Europe/Stockholm")).toBe("22:00");
+    expect(formatClock("2026-10-25T06:00:00+01:00", "Europe/Stockholm")).toBe("06:00");
+  });
+
+  it("converts instants to the selected location's zone, not the browser's", () => {
+    expect(formatClock("2026-11-10T07:30:00+01:00", "Europe/Oslo")).toBe("07:30");
+    expect(formatClock("2026-11-10T06:30:00Z", "Europe/Copenhagen")).toBe("07:30");
+  });
+
+  it("a prep window that has not started shows 'Not recorded' for the start", () => {
+    expect(formatWindow(null, "2026-11-10T09:00:00+01:00", "Europe/Stockholm")).toBe("Not recorded → 09:00");
   });
 });

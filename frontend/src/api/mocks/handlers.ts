@@ -4,6 +4,7 @@
  */
 import { http, HttpResponse } from "msw";
 import { API_BASE_URL } from "../config";
+import { buildPrepQueueFixture } from "../../features/warehouse/prep-queue/fixtures";
 import { computeOrderCounts } from "./orderCounts";
 import { listOrders, type OrderRecord, type RefCode } from "./orderList";
 
@@ -333,69 +334,6 @@ const INTEGRATION_OVERVIEW = {
   stale: false,
 };
 
-const PREP_QUEUE = [
-  {
-    id: 146,
-    order_no: "SE-2026-000146",
-    total_lines: 5,
-    total_kg: 3340,
-    handling_mix: [{ code: "N2", name: "Boards, sheets & tiles" }, { code: "N3", name: "Bagged cement & mortar" }],
-    work_min: 126,
-    prep_window_start: "06:00",
-    prep_window_end: "08:06",
-    loading_at: "2026-11-04T08:30:00+01:00",
-    loading_vehicle: "GBG-12-03",
-    loading_after_cutoff: false,
-    status: "APPROVED",
-    vehicles: [{ vehicle_code: "GBG-12-03", vehicle_type: "Truck 12 t" }],
-  },
-  {
-    id: 149,
-    order_no: "SE-2026-000149",
-    total_lines: 7,
-    total_kg: 5200,
-    handling_mix: [{ code: "N5", name: "Long goods" }],
-    work_min: 210,
-    prep_window_start: "06:00",
-    prep_window_end: "09:30",
-    loading_at: "2026-11-04T10:00:00+01:00",
-    loading_vehicle: "GBG-18-01",
-    loading_after_cutoff: false,
-    status: "PREPARING",
-    crew_size: 4,
-    vehicles: [{ vehicle_code: "GBG-18-01", vehicle_type: "Truck 18 t" }],
-  },
-  {
-    id: 150,
-    order_no: "SE-2026-000150",
-    total_lines: 2,
-    total_kg: 980,
-    handling_mix: [{ code: "N1", name: "Small items & accessories" }],
-    work_min: 45,
-    prep_window_start: "09:30",
-    prep_window_end: "10:15",
-    loading_at: "2026-11-04T10:30:00+01:00",
-    loading_vehicle: "GBG-03-02",
-    loading_after_cutoff: false,
-    status: "GOODS_READY",
-    vehicles: [{ vehicle_code: "GBG-03-02", vehicle_type: "Van 3.5 t" }],
-  },
-  {
-    id: 155,
-    order_no: "SE-2026-000155",
-    total_lines: 4,
-    total_kg: 2800,
-    handling_mix: [{ code: "N3", name: "Bagged cement & mortar" }],
-    work_min: 70,
-    prep_window_start: "13:00",
-    prep_window_end: "14:10",
-    loading_at: "2026-11-05T06:00:00+01:00",
-    loading_vehicle: "GBG-26-01",
-    loading_after_cutoff: true,
-    status: "APPROVED",
-    vehicles: [{ vehicle_code: "GBG-26-01", vehicle_type: "Truck 26 t" }],
-  },
-];
 
 const CAPACITY_TODAY = {
   warehouse_id: 1,
@@ -649,7 +587,7 @@ export const handlers = [
 
   // Prep queue
   http.get(`${BASE}/warehouses/:id/prep-queue`, () => {
-    return HttpResponse.json({ items: PREP_QUEUE, capacity: CAPACITY_TODAY });
+    return HttpResponse.json(buildPrepQueueFixture("verified"));
   }),
 
   http.get(`${BASE}/warehouses/:id/capacity`, () => {

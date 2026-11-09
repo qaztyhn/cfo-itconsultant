@@ -11,7 +11,7 @@ describe("resolveTimeZone", () => {
   it("returns null when the field is missing, empty, not a string or not a valid zone", () => {
     expect(resolveTimeZone(base)).toBeNull();
     expect(resolveTimeZone({ ...base, timezone: "" })).toBeNull();
-    expect(resolveTimeZone({ ...base, timezone: 42 })).toBeNull();
+    expect(resolveTimeZone({ ...base, timezone: 42 as unknown as string })).toBeNull();
     expect(resolveTimeZone({ ...base, timezone: "Mars/Olympus" })).toBeNull();
     expect(resolveTimeZone(null)).toBeNull();
     expect(resolveTimeZone(undefined)).toBeNull();
