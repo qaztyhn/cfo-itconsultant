@@ -13,7 +13,7 @@ from app.services.source_handoff import accept_source_order
 from tests.integration.conftest import execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.test_ingest_orders import db as db  # noqa: F401
-from tests.integration.test_ingest_orders import source
+from tests.integration.test_ingest_orders import prepare, source
 from tests.integration.test_ingest_references import mapped
 
 pytestmark = pytest.mark.integration
@@ -179,3 +179,23 @@ def test_DEC_ROUTING_002_duplicate_sku_is_rejected_before_route_write(db: str) -
     assert exc.value.http_status == 422
     assert not fetch(db, "SELECT * FROM ops.order_routing")
     assert not fetch(db, "SELECT * FROM ops.customer_order")
+
+
+def test_US_INT_02_AC1_protected_source_change_keeps_warning_and_commitment(
+    db: str,
+) -> None:
+    prepare(db, approved=True)
+    response = accept(db, source(version=2), "protected-review")
+    assert response["routing_status"] == "cfo"
+    assert response["sync_status"] == "unresolved"
+    assert response["source_version"] == 1
+    assert tuple(
+        fetch(
+            db,
+            "SELECT source_version,status,approved_plan_id FROM ops.customer_order",
+        )[0]
+    ) == (1, "APPROVED", 1)
+    assert (
+        fetch(db, "SELECT count(*) FROM ops.alert WHERE type='ORDER_CHANGED_AFTER_APPROVAL'")[0][0]
+        == 1
+    )
