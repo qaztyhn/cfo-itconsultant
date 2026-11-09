@@ -40,8 +40,8 @@ export function TodaysTrips() {
   const trips = list.data ?? [];
   const chosen = selectedId === null ? null : detail.data;
 
-  return <main data-screen="TodaysTrips" className="min-h-screen bg-[#F5F3EE] text-[#0B2E2B]">
-    <header className="rounded-b-3xl bg-[#0B2E2B] px-5 pb-7 pt-8 text-white">
+  return <main data-screen="TodaysTrips" className="min-h-screen bg-stone text-deepPine">
+    <header className="rounded-b-3xl bg-deepPine px-5 pb-7 pt-8 text-white">
       <div className="mx-auto flex max-w-2xl items-start justify-between gap-3">
         <div><p className="text-sm uppercase tracking-[0.2em]">CFO Driver</p><h1 className="mt-2 text-3xl font-bold">Today&apos;s trips</h1></div>
         <span className="rounded-full border border-white/40 px-3 py-2 font-mono text-sm">{chosen?.vehicle_code ?? `${trips.length} trips`}</span>
@@ -67,7 +67,7 @@ export function TodaysTrips() {
             <p className="mt-1">{trip.warehouse_code} · {trip.stops.length} stop(s)</p>
             <p className="mt-2 text-sm text-slate-600">{trip.stops.map(stop => stop.order_no).join(" · ")}</p>
             <p className="mt-2 text-sm">Planned departure {new Date(trip.depart_planned_at).toLocaleString()}</p>
-            <button className="mt-4 min-h-12 w-full rounded-xl bg-[#E07B39] px-4 py-3 font-semibold text-white" onClick={() => setSelectedId(trip.trip_id)}>View trip details</button>
+            <button className="mt-4 min-h-12 w-full rounded-xl bg-apricot px-4 py-3 font-semibold text-deepPine" onClick={() => setSelectedId(trip.trip_id)}>View trip details</button>
           </article>)}
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-label="Duty and location privacy">
           <h2 className="text-lg font-semibold">Duty and location</h2>

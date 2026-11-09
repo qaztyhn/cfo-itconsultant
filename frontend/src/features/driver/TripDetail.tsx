@@ -8,7 +8,7 @@ const FAILURE_REASONS = [
   ["refused", "Delivery refused"], ["wrong_address", "Wrong address"],
   ["vehicle_breakdown", "Vehicle breakdown"], ["goods_damaged", "Goods damaged"], ["other", "Other"],
 ] as const;
-const button = "min-h-12 w-full rounded-xl bg-[#E07B39] px-5 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50";
+const button = "min-h-12 w-full rounded-xl bg-apricot px-5 py-3 text-base font-semibold text-deepPine disabled:cursor-not-allowed disabled:opacity-50";
 
 interface Props { trip: DriverTrip; driverUserId: number; online: boolean; mock: boolean; onBack: () => void; onUpdated: () => void; onSaved: () => void }
 export function TripDetail({ trip, driverUserId, online, mock, onBack, onUpdated, onSaved }: Props) {
@@ -60,8 +60,8 @@ export function TripDetail({ trip, driverUserId, online, mock, onBack, onUpdated
   }
 
   return <section aria-label="Trip detail" className="mx-auto max-w-2xl space-y-5 px-4 pb-12 pt-5 text-base">
-    <button className="min-h-12 text-[#0B2E2B] underline" onClick={onBack}>← Today&apos;s trips</button>
-    <div className="rounded-2xl bg-[#0B2E2B] p-5 text-white">
+    <button className="min-h-12 text-deepPine underline" onClick={onBack}>← Today&apos;s trips</button>
+    <div className="rounded-2xl bg-deepPine p-5 text-white">
       <p className="text-sm uppercase tracking-widest">Trip #{trip.trip_id} · {trip.status}</p>
       <h1 className="mt-2 text-2xl font-semibold">{trip.vehicle_code}</h1>
       <p>From {trip.warehouse_code} · planned {new Date(trip.depart_planned_at).toLocaleString()}</p>
