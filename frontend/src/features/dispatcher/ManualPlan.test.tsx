@@ -178,6 +178,19 @@ describe("US-APR-02 — manual planning UI", () => {
     await waitFor(() => expect(received).toHaveLength(2));
     expect(received[1].key).toBe(received[0].key);
   });
+  it("does not submit twice when the approval button is clicked twice", async () => {
+    postStatus = 200;
+    approvedResponse = true;
+    signIn("dispatcher"); mount();
+    await fillReady();
+    fireEvent.click(screen.getByRole("button", { name: "Preview proposal" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    const submit = screen.getByRole("button", { name: /Submit manual plan/ });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    await screen.findByText(/WMS reservation remains unverified/);
+    expect(received).toHaveLength(1);
+  });
   it("keeps a single-column mobile-safe layout and exposes meaningful labels", async () => {
     signIn("dispatcher"); mount();
     await screen.findByRole("heading", { name: /Manual plan/ });
