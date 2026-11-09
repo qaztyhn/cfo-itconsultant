@@ -207,8 +207,8 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         "GOODS_READY": frozenset({"crew_size"}),
         "LOADED": frozenset({"trip_id"}),
         "DISPATCHED": frozenset({"trip_id"}),
-        "DELIVERED": frozenset({"trip_id", "recipient_name", "note"}),
-        "FAILED": frozenset({"trip_id", "failure_reason", "note"}),
+        "DELIVERED": frozenset({"trip_id", "trip_stop_id", "recipient_name", "note"}),
+        "FAILED": frozenset({"trip_id", "trip_stop_id", "failure_reason", "note"}),
         "VEHICLE_ISSUE": frozenset({"vehicle_id", "note"}),
         "SHORTAGE": frozenset({"sku", "qty_missing", "note"}),
         "BREAKAGE": frozenset({"sku", "qty", "note"}),
@@ -220,7 +220,7 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         k not in data for k in required.get(event_type, ())
     ):
         raise DomainError("VALIDATION_ERROR", "Event payload is incomplete or contains unknown fields.")
-    for field in ("crew_size", "trip_id", "vehicle_id", "qty_missing", "qty"):
+    for field in ("crew_size", "trip_id", "trip_stop_id", "vehicle_id", "qty_missing", "qty"):
         if field in data:
             _require_positive(data[field], field)
     if "staff_present" in data and (type(data["staff_present"]) is not int or data["staff_present"] < 0):
@@ -430,10 +430,17 @@ async def record_event(
     trip: DeliveryTrip | None = None
     stop: TripStop | None = None
     if event_type in DRIVER_EVENTS | {"LOADED"}:
-        pair = next(((t, s) for t, s in trips if t.id == payload["trip_id"]), None)
-        if pair is None:
-            raise DomainError("NOT_FOUND", "Trip not found.")
-        trip, stop = pair
+        candidates = [(t, s) for t, s in trips if t.id == payload["trip_id"]]
+        if event_type in {"DELIVERED", "FAILED"} and "trip_stop_id" in payload:
+            candidates = [(t, s) for t, s in candidates if s.id == payload["trip_stop_id"]]
+        if not candidates:
+            # Never disclose a stop belonging to another trip/order/market/driver.
+            raise DomainError("NOT_FOUND", "Trip stop not found.")
+        if event_type in {"DELIVERED", "FAILED"} and len(candidates) != 1:
+            # Existing single-stop clients remain compatible; multi-stop POD always
+            # requires explicit trip_stop_id to avoid applying proof to the wrong stop.
+            raise DomainError("VALIDATION_ERROR", "trip_stop_id is required for a multi-stop trip.")
+        trip, stop = candidates[0]
         if event_type in DRIVER_EVENTS:
             await _driver_gate(session, actor, trip, market, occurred_at)
     previous = (
@@ -489,11 +496,18 @@ async def record_event(
             raise DomainError("ILLEGAL_TRANSITION", "Trip stop cannot be completed.")
         outcome = "delivered" if event_type == "DELIVERED" else "failed"
         stop.status, stop.completed_at = outcome, occurred_at
-        trip.status, trip.ended_at = "completed", occurred_at
-        # DEC-GPS-RET-20261109: collection and live access stop with the trip. Valid points are kept for
-        # the restricted 7-day retention; only INVALID points are removed here, in THIS transaction
-        # (no commit of its own). Other vehicles' trips are untouched (one trip row lock per call).
-        await gps_service.close_trip_collection(session, trip.id)
+        # A vehicle/trip can contain more than one stop (including stops of other
+        # orders). Keep live trip/duty scope until the last stop is terminal.
+        trip_stops = (
+            await session.scalars(
+                select(TripStop.status).where(TripStop.trip_id == trip.id).with_for_update()
+            )
+        ).all()
+        if all(status in ("delivered", "failed") for status in trip_stops):
+            trip.status, trip.ended_at = "completed", occurred_at
+            # DEC-GPS-RET: close collection only for a terminal trip; cleanup is
+            # transaction-coupled with the final POD and must roll back with it.
+            await gps_service.close_trip_collection(session, trip.id)
         session.add(
             ProofOfDelivery(
                 trip_stop_id=stop.id,
