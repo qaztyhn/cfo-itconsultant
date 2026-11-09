@@ -179,7 +179,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 |---|---|---|
 | 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched (GPS giả lập) → Delivered | Mọi trạng thái, giữ chỗ → committed, 4 thông báo, KPI cập nhật, decision_log đủ |
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
-| 3 | Thiếu hàng mọi kho (đơn 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11, gợi ý chuyển kho; thương lượng `agreed` → chạy lại → khả thi |
+| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11 và gợi ý chuyển kho **chỉ nếu source stock/ETA xác minh**; ghi `date_negotiation.agreed` **chưa** đổi ngày; Dispatcher explicit **Apply agreed date** có audit/version, sau đó chạy planning mới và toàn bộ gate, không tự approve |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
 | 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
 | 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
