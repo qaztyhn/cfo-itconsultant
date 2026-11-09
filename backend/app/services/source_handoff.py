@@ -175,13 +175,8 @@ async def accept_source_order(
                 try:
                     outcome = await ingest_orders.apply(session, market, source)
                 except RowRejected as exc:
-                    raise DomainError(
-                        "RESOURCE_CONFLICT", "Newer Source data failed validation."
-                    ) from exc
-                if (
-                    outcome.reject_code is not None
-                    and existing.status not in ingest_orders.PROTECTED
-                ):
+                    raise DomainError("RESOURCE_CONFLICT", "Newer Source data failed validation.") from exc
+                if outcome.reject_code is not None and existing.status not in ingest_orders.PROTECTED:
                     raise DomainError("RESOURCE_CONFLICT", "Newer Source version needs review.")
             if existing.source_version < source.version:
                 # Protected orders are alert-only; never claim that changed Source data was applied.
