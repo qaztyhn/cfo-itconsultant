@@ -56,7 +56,7 @@ export function dailyPoints(raw:unknown):Point[] {
 }
 export type SafeDecision={id:number;at:string;action:string;subject:string;actor:string;correlationId:string|null};
 const CODE=/^[A-Z][A-Z0-9_]{0,63}$/;
-const TIMESTAMP=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const TIMESTAMP=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 export function decisions(raw:unknown):{items:SafeDecision[];total:number|null} {
   const data=object(raw),list=Array.isArray(data.items)?data.items:[];
   return {total:int(data.total),items:list.slice(0,100).flatMap(entry=>{
@@ -64,8 +64,8 @@ export function decisions(raw:unknown):{items:SafeDecision[];total:number|null} 
     if(id===null)return [];
     // Do NOT render actor names, free-text reasons, before/after, snapshot, PII or raw JSON.
     const action=typeof x.action==="string"&&CODE.test(x.action)?x.action:"UNVERIFIED";
-    const at=typeof x.created_at==="string"&&TIMESTAMP.test(x.created_at)?x.created_at:
-      typeof x.at==="string"&&TIMESTAMP.test(x.at)?x.at:"Unavailable";
+    const at=typeof x.created_at==="string"&&TIMESTAMP.test(x.created_at)&&Number.isFinite(Date.parse(x.created_at))?x.created_at:
+      typeof x.at==="string"&&TIMESTAMP.test(x.at)&&Number.isFinite(Date.parse(x.at))?x.at:"Unavailable";
     const subject=typeof x.order_id==="number"&&int(x.order_id)!==null?`Order #${x.order_id}`:
       "Not reported";
     const correlationId=typeof x.correlation_id==="string"&&/^[a-fA-F0-9-]{36}$/.test(x.correlation_id)?x.correlation_id:null;
