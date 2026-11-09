@@ -6,15 +6,17 @@ from datetime import datetime
 
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
 
+from app.adapters.base import StockSnapshotDTO
 from app.adapters.order_wire import SourceCancellation, SourceOrder
 from app.adapters.reference_wire import SourceCustomer, SourceFleet, SourceInbound, SourceProduct
-from app.adapters.rest_adapter import RestMarketAdapter
+from app.adapters.rest_adapter import RestMarketAdapter, SourceReadError
+from app.adapters.stock_batches import DeclaredUnit
 
-type SourceValue = (
+type WireValue = (
     SourceOrder | SourceCancellation | SourceCustomer | SourceProduct | SourceInbound | SourceFleet
 )
 
-FEEDS: dict[str, tuple[str, type[SourceValue], tuple[str, ...], dict[str, str]]] = {
+FEEDS: dict[str, tuple[str, type[WireValue], tuple[str, ...], dict[str, str]]] = {
     "orders": ("orders", SourceOrder, ("id",), {"status": "SUBMITTED_FOR_PLANNING"}),
     "orders:cancelled": ("orders", SourceCancellation, ("id",), {"status": "CANCELLED"}),
     "customers": ("customers", SourceCustomer, ("id",), {}),
@@ -25,16 +27,46 @@ FEEDS: dict[str, tuple[str, type[SourceValue], tuple[str, ...], dict[str, str]]]
 
 
 @dataclass(frozen=True)
+class StockFeedValue:
+    snapshot: StockSnapshotDTO
+    declared: dict[str, DeclaredUnit]
+    latest_catalog_time: datetime | None
+
+
+type SourceValue = WireValue | StockFeedValue
+
+
+@dataclass(frozen=True)
 class FeedRecord:
     value: SourceValue | None
     updated_at: datetime | None
     external_key: str | None
     reject_code: str | None = None
+    weight: int = 1
 
 
 async def read_feed(
     adapter: RestMarketAdapter, entity: str, since: datetime | None
 ) -> AsyncIterator[FeedRecord]:
+    if entity == "stock":
+        snapshot = await adapter.fetch_stock()
+        declared: dict[str, DeclaredUnit] = {}
+        latest: datetime | None = None
+        async for record in read_feed(adapter, "products", None):
+            if not isinstance(record.value, SourceProduct) or record.updated_at is None:
+                raise SourceReadError("Source stock unit catalogue is incomplete")
+            product = record.value
+            declared[product.sku] = DeclaredUnit(product.sale_unit, product.units_to_base)
+            latest = max(latest, record.updated_at) if latest else record.updated_at
+        if await adapter.fetch_stock() != snapshot:
+            raise SourceReadError("Source stock batch changed during unit verification")
+        yield FeedRecord(
+            StockFeedValue(snapshot, declared, latest),
+            snapshot.as_of,
+            str(snapshot.batch_id),
+            weight=len(snapshot.items),
+        )
+        return
     endpoint, model, keys, filters = FEEDS[entity]
     async for row in adapter.raw_pages(endpoint, since, key_fields=keys, filters=filters):
         try:
