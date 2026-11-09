@@ -1,18 +1,23 @@
 /**
- * 5.6 Preparation queue (docs/03 §5.6) — PR 1: READ-ONLY (capacity card + orders table). No action buttons yet.
+ * 5.6 Preparation queue (docs/03 §5.6) — approved, server-validated milestones and exception reports.
  * Role access: the route guard (app/access.ts) lets only the warehouse role in; 403/404 from the API shows a denied state.
  * Warehouse and date come from useWarehouseSelection (sidebar scope + warehouse time zone). Polling every 20 s keeps
  * the current data on screen, so nothing is reset while the queue refreshes.
  * Owner: Dev 3 (stream C) — M6.
  */
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { isApiError } from "../../api/client";
 import { PATHS } from "../../app/access";
+import { useAuthStore } from "../../app/store";
 import { PageHeader } from "../../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState, Skeleton } from "../../components/StateViews";
 import { CapacityCard } from "./prep-queue/CapacityCard";
 import { formatClock } from "./prep-queue/format";
 import { OrdersTable } from "./prep-queue/OrdersTable";
+import { PrepActionDialog, type ActionChoice } from "./prep-queue/PrepActionDialog";
+import { ACTION_NAMES, EXCEPTION_ACTIONS, type PrepEventType } from "./prep-queue/executionActions";
+import type { PrepQueueOrder } from "./prep-queue/types";
 import { formatQueueDate } from "./prep-queue/queueDate";
 import { usePrepQueue, PREP_QUEUE_POLL_MS } from "./prep-queue/usePrepQueue";
 import { useWarehouseSelection, type PrepQueueScope } from "./prep-queue/useWarehouseSelection";
@@ -76,6 +81,16 @@ function ScopeNotice({ scope }: { scope: Exclude<PrepQueueScope, { status: "read
 function PrepQueueBody({ scope }: { scope: ReadyScope }) {
   const query = usePrepQueue(scope.warehouseId, scope.date);
   const { data, error } = query;
+  const [choice, setChoice] = useState<ActionChoice | null>(null);
+  const [reportOrderId, setReportOrderId] = useState("");
+  const [acknowledged, setAcknowledged] = useState<string | null>(null);
+  const user = useAuthStore((state) => state.user);
+  const canWrite = user?.roles.includes("warehouse") === true && user.location_ids.includes(scope.warehouseId);
+  function chooseAction(order: PrepQueueOrder, type: PrepEventType, tripId?: number, vehicleCode?: string) {
+    if (!canWrite) return;
+    setAcknowledged(null);
+    setChoice({ order, type, tripId, vehicleCode });
+  }
 
   if (isAccessDenied(error)) {
     return <AccessDenied error={error} />;
@@ -115,6 +130,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
       )}
 
       <CapacityCard capacity={data.capacity} timeZone={scope.timeZone} />
+      {acknowledged && <p role="status" className="rounded-control bg-risk-onTrack-bg px-3 py-2 text-body text-risk-onTrack-fg">{acknowledged}</p>}
 
       <section aria-labelledby="orders-heading" className="flex flex-col gap-3">
         <div>
@@ -126,9 +142,44 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
         {data.orders.length === 0 ? (
           <EmptyState message={`No approved orders to prepare for ${formatQueueDate(scope.date)}.`} />
         ) : (
-          <OrdersTable orders={data.orders} timeZone={scope.timeZone} queueDate={scope.date} />
+          <OrdersTable orders={data.orders} timeZone={scope.timeZone} queueDate={scope.date}
+            onAction={chooseAction} canWrite={canWrite} actionPending={choice !== null} />
         )}
       </section>
+      <section aria-labelledby="warehouse-reports" className="space-y-3 rounded-card border bg-surface p-5 shadow-card">
+        <h2 id="warehouse-reports" className="text-h3 text-ink">Report an exception</h2>
+        <p className="text-caption text-inkMuted">
+          Report observed problems for Dispatcher review. These reports never edit official shifts,
+          expected staff, physical stock or vehicle availability.
+        </p>
+        <label className="block max-w-md text-body font-semibold">
+          Affected approved order
+          <select className="mt-2 min-h-[48px] w-full rounded-control border border-border bg-surface px-3"
+            value={reportOrderId} onChange={(event) => setReportOrderId(event.target.value)} aria-label="Affected approved order">
+            <option value="">Choose an order</option>
+            {data.orders.map((order) => <option key={order.order_id} value={order.order_id}>{order.order_no}</option>)}
+          </select>
+        </label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {EXCEPTION_ACTIONS.map((type) => {
+            const order = data.orders.find((item) => String(item.order_id) === reportOrderId);
+            return (
+              <button key={type} type="button"
+                disabled={!canWrite || !order || choice !== null}
+                className="min-h-[48px] rounded-control border border-border bg-surface px-4 py-3 text-left font-semibold text-ink disabled:opacity-50"
+                onClick={() => { if (order) chooseAction(order, type); }}>
+                {ACTION_NAMES[type]}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      {choice && <PrepActionDialog key={scope.warehouseId + ":" + scope.date + ":" + choice.order.order_id + ":" + choice.type + ":" + (choice.tripId ?? 0)}
+        choice={choice} warehouseId={scope.warehouseId} onClose={() => setChoice(null)}
+        onAcknowledged={async () => {
+          setAcknowledged(ACTION_NAMES[choice.type] + " acknowledged by CFO for " + choice.order.order_no + ".");
+          await query.refetch();
+        }} />}
     </div>
   );
 }
