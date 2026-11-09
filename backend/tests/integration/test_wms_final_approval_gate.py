@@ -30,9 +30,7 @@ def _scope(monkeypatch) -> None:
 def _approve(db: str, key: str) -> None:
     _run(
         db,
-        lambda s: approval_service.approve(
-            1, _actor(), {}, key, session=s, recheck=_recheck
-        ),
+        lambda s: approval_service.approve(1, _actor(), {}, key, session=s, recheck=_recheck),
     )
 
 
@@ -81,9 +79,7 @@ def test_ack_and_refreshed_marker_cannot_forge_approval(db: str, monkeypatch) ->
     _run(db, lambda s: wms_intent.record_ack(s, req.idempotency_key, ack))
     _run(
         db,
-        lambda s: wms_intent.mark_refreshed(
-            s, req.idempotency_key, batch_id=2, inclusion_proven=True
-        ),
+        lambda s: wms_intent.mark_refreshed(s, req.idempotency_key, batch_id=2, inclusion_proven=True),
     )
     with pytest.raises(DomainError) as caught:
         _approve(db, "wms-apparent-refresh")
