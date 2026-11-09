@@ -155,6 +155,7 @@ class CsRiskOut(BaseModel):
 
 class CsOrderOut(BaseModel):
     """CS-only allowlist. Never inherit full OrderOut fields or auto-serialize ORM."""
+
     id: int
     order_no: str
     status: str
