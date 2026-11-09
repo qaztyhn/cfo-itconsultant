@@ -5,12 +5,12 @@ import { fetchLocations } from "../api/locations";
 import { fetchOrderCounts } from "../api/orders";
 import { demoContextFor } from "../app/demoContext";
 import { currentPath, renderAt, signInAs, userByEmail } from "../test/utils";
-import { useOrderQueueMsw } from "../features/dispatcher/orderQueue/testServer";
+import { setupOrderQueueMsw } from "../features/dispatcher/orderQueue/testServer";
 
 vi.mock("../api/orders", () => ({ fetchOrderCounts: vi.fn() }));
 vi.mock("../api/locations", () => ({ fetchLocations: vi.fn() }));
 
-useOrderQueueMsw();
+setupOrderQueueMsw();
 
 const screenName = (container: HTMLElement) => container.querySelector("[data-screen]")?.getAttribute("data-screen");
 
