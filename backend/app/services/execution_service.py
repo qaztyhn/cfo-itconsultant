@@ -43,7 +43,14 @@ from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
 from app.engine.delivery import LICENCE_RANK, driver_problem
 from app.engine.types import DriverCtx, VehicleCtx
-from app.services import alert_service, driver_history, gps_service, notify_service, planning_service, risk_service
+from app.services import (
+    alert_service,
+    driver_history,
+    gps_service,
+    notify_service,
+    planning_service,
+    risk_service,
+)
 
 WAREHOUSE_EVENTS = frozenset(
     {
