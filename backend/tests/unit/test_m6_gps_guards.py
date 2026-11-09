@@ -3,6 +3,7 @@
 import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -58,8 +59,6 @@ def test_US_GPS_01_AC1_service_denies_oversized_batch_before_database_access() -
     # Internal callers must not bypass the HTTP/Pydantic boundary.
     actor = SimpleNamespace(employee_id=5, roles=("driver",), market="SE")
     with pytest.raises(DomainError) as caught:
-        asyncio.run(
-            gps_service.ingest_positions(1, actor, [{}] * 101, session=object())  # type: ignore[arg-type]
-        )
+        asyncio.run(gps_service.ingest_positions(1, actor, [{}] * 101, session=MagicMock()))
     assert caught.value.code == "VALIDATION_ERROR"
 
