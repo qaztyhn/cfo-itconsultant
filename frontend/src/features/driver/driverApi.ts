@@ -35,6 +35,22 @@ export interface DriverEvent {
 }
 export interface EventAck { event_id: number; order_status: string; risk: unknown }
 
+export function isDriverTrip(value: unknown): value is DriverTrip {
+  if (typeof value !== "object" || value === null) return false;
+  const trip = value as Record<string, unknown>;
+  return Number.isInteger(trip.trip_id) && typeof trip.status === "string" &&
+    typeof trip.vehicle_code === "string" && typeof trip.warehouse_code === "string" &&
+    typeof trip.depart_planned_at === "string" && Array.isArray(trip.stops) &&
+    trip.stops.every((stop: unknown) => {
+      if (typeof stop !== "object" || stop === null) return false;
+      const row = stop as Record<string, unknown>;
+      return Number.isInteger(row.trip_stop_id) && Number.isInteger(row.order_id) &&
+        typeof row.order_no === "string" && typeof row.status === "string" &&
+        typeof row.eta_planned_at === "string" &&
+        typeof row.receiving_window === "object" && row.receiving_window !== null;
+    });
+}
+
 const PREVIEW: DriverTrip = {
   trip_id: 930, warehouse_id: 3, warehouse_code: "MLM-DC", vehicle_code: "MLM-12-02",
   status: "loading", depart_planned_at: "2026-11-13T08:00:00+01:00", depart_actual_at: null,
@@ -47,7 +63,7 @@ const PREVIEW: DriverTrip = {
 export async function listDriverTrips(day?: string, signal?: AbortSignal, mock = USE_MOCKS): Promise<DriverTrip[]> {
   if (mock) return [PREVIEW];
   const data = await apiFetch<{ items: DriverTrip[] }>(`/driver/trips${buildQuery({ date: day })}`, { signal });
-  if (!Array.isArray(data.items)) throw new Error("Trip list response is incomplete.");
+  if (!Array.isArray(data.items) || !data.items.every(isDriverTrip)) throw new Error("Trip list response is incomplete.");
   return data.items;
 }
 
@@ -57,7 +73,7 @@ export async function getDriverTrip(id: number, signal?: AbortSignal, mock = USE
     return PREVIEW;
   }
   const trip = await apiFetch<DriverTrip>(`/driver/trips/${id}`, { signal });
-  if (trip.trip_id !== id || !Array.isArray(trip.stops)) throw new Error("Trip detail response is incomplete.");
+  if (!isDriverTrip(trip) || trip.trip_id !== id) throw new Error("Trip detail response is incomplete.");
   return trip;
 }
 
