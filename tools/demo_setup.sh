@@ -53,6 +53,9 @@ else
 fi
 docker compose cp "$ROOT/demo-fixtures.json" source-se:/tmp/cfo-demo-fixtures.json >/dev/null
 docker compose exec -T source-se python -m app.seed_demo --manifest /tmp/cfo-demo-fixtures.json
+# The M0 market seed deliberately leaves Source URL unset; bind only this
+# approved local adapter, refusing any preexisting incompatible configuration.
+docker compose exec -T -e DEMO_DISPOSABLE=1 cfo-api python -m app.demo_configure
 
 # Reference reads only. No automatic order routing; missing stock scope
 # cannot be sidestepped by injecting a CFO stock balance.
