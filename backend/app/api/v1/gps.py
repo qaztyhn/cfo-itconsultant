@@ -31,7 +31,9 @@ class DevicePosition(BaseModel):
 
 class DevicePositionBatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    positions: list[DevicePosition] = Field(min_length=1)
+    positions: list[DevicePosition] = Field(
+        min_length=1, max_length=gps_service.MAX_GPS_BATCH_POSITIONS
+    )
 
 
 @router.post("/trips/{trip_id}/positions", status_code=202)
