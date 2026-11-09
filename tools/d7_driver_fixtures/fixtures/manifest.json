@@ -12,7 +12,8 @@
     "history_week_07.json",
     "history_week_08.json",
     "scenarios.json",
-    "vehicles.json"
+    "vehicles.json",
+    "verification.json"
   ],
   "future_start": "2026-11-09",
   "history_days_per_driver": 56,

@@ -236,16 +236,24 @@ def build() -> dict[str, dict[str, object]]:
                               "future_start": FUTURE_START.isoformat(),
                               "vehicle_count": len(files["vehicles.json"]["records"]),
                               "driver_count": len(files["drivers.json"]["records"]),
-                              "files": sorted(files), "offline_only": True}
-    files["verification.json"] = {"schema_version": SCHEMA, "source": SOURCE,
-                              "source_kind": SOURCE,
-                              "verified_by": "Deterministic Dev 2 synthetic demo fixture verifier (not legal evidence)",
-                              "verified_at": "2026-11-04T10:05:00+01:00",
-                              "expires_at": "2026-11-11T10:05:00+01:00",
-                              "revoked": False,
-                              "sha256": {name: hashlib.sha256(encoded(files[name])).hexdigest()
-                                         for name in ("manifest.json", "drivers.json",
-                                                      *(f"history_week_{n:02d}.json" for n in range(1, 9)))}}
+                              "files": sorted([*files, "verification.json"]), "offline_only": True}
+    # Explicit, revocable DEMO-ONLY attestation of immutable synthetic bytes;
+    # not a human/regulatory certification and never a production verifier.
+    signed = ("manifest.json", "drivers.json") + tuple(
+        f"history_week_{n:02d}.json" for n in range(1, 9)
+    )
+    files["verification.json"] = {
+        "schema_version": SCHEMA,
+        "source": SOURCE,
+        "kind": "synthetic_attestation",
+        "source_kind": SOURCE,
+        "verified_by": "Synthetic Demo Reviewer (fixture-only)",
+        "verified_at": "2026-11-04T08:00:00+01:00",
+        "expires_at": "2026-11-05T08:00:00+01:00",
+        "revoked": False,
+        "legal_verified": False,
+        "sha256": {name: hashlib.sha256(encoded(files[name])).hexdigest() for name in signed},
+    }
     return files
 
 

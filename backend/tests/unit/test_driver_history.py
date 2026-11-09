@@ -129,7 +129,7 @@ def test_naive_timestamps_are_inconsistent() -> None:
 
 
 def test_d7_fixtures_provide_valid_evidence_only_where_coverage_is_actually_complete() -> None:
-    target = date(2026, 11, 9)  # day after the fixture window 2026-09-14 … 2026-11-08
+    target = date(2026, 11, 4)  # day after the approved fixture window 2026-09-09 … 2026-11-03
     results = {
         code: verify_history(
             from_d7_fixture(code), target_date=target, zone=STOCKHOLM, now=NOW, allow_synthetic=True

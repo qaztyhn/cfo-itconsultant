@@ -1,5 +1,7 @@
 {
-  "expires_at": "2026-11-11T10:05:00+01:00",
+  "expires_at": "2026-11-05T08:00:00+01:00",
+  "kind": "synthetic_attestation",
+  "legal_verified": false,
   "revoked": false,
   "schema_version": "d7.synthetic.v1",
   "sha256": {
@@ -12,10 +14,10 @@
     "history_week_06.json": "1a097eaa1fdf9b8dec06aa343403a3df894b6837201936618b7e57b0e2c828cc",
     "history_week_07.json": "b7dc60ea079d2d94161172646d56952970990e84640b4a62ca3479fac67cb358",
     "history_week_08.json": "fd1b7dfdd7ecb333b8f6c8ea5e4da914bf82c223bf13318601fcaa50105f5647",
-    "manifest.json": "96bc7109ab3668b7757d5ecdec0d998d4a4c122bc0ac8a64e2130b2180fc4520"
+    "manifest.json": "9c46924da11139d562386cf22250fc3ad91eed5ce6605b39d31bbbc728d87068"
   },
   "source": "synthetic_demo",
   "source_kind": "synthetic_demo",
-  "verified_at": "2026-11-04T10:05:00+01:00",
-  "verified_by": "Deterministic Dev 2 synthetic demo fixture verifier (not legal evidence)"
+  "verified_at": "2026-11-04T08:00:00+01:00",
+  "verified_by": "Synthetic Demo Reviewer (fixture-only)"
 }

@@ -15,11 +15,19 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: black --check --diff .
+      - run: black --check .
       - run: mypy app/engine
       - run: lint-imports
       - run: pytest
       - run: python -m unittest discover -s tools/tests
+        working-directory: .
+      - name: Check deterministic D7 demo files
+        run: python tools/d7_driver_fixtures/generate.py --check
+        working-directory: .
+      - name: Validate synthetic D7 evidence and negative cases
+        run: |
+          python tools/d7_driver_fixtures/validate.py
+          python -m unittest discover -s tools/d7_driver_fixtures -p 'test_*.py' -v
         working-directory: .
       - name: Check CFO contract artifact availability
         id: contract
@@ -37,7 +45,7 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: black --check --diff .
+      - run: black --check .
       - run: mypy app
       - run: pytest tests/unit tests/integration
       - name: Check source contract artifact availability
