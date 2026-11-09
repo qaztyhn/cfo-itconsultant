@@ -4,7 +4,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { isApiError } from "../../api/client";
+import { ApiError, isApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { ErrorState, LoadingState } from "../../components/StateViews";
 import {
