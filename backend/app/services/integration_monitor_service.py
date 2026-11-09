@@ -199,13 +199,12 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
             .where(Location.market_id == market.id)
         )
     ).one()
-    sources: list[dict[str, Any]] = []
+    sources: dict[str, dict[str, Any]] = {}
     for entity in FEEDS:
         current = by_entity.get(entity)
         complete = successful.get(entity)
         supported = entity in SUPPORTED
-        sources.append(
-            {
+        sources[entity] = {
                 "entity": entity,
                 "availability": "supported" if supported else "unconfigured",
                 "status": ((current.status if current else "never_run") if supported else "unconfigured"),
@@ -222,7 +221,6 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
                 "interval_min": config.sync.interval_min if supported else None,
                 "stock_scope": "unconfigured" if entity == "stock" else None,
             }
-        )
     return {
         "market": market.code,
         "market_id": market.id,
