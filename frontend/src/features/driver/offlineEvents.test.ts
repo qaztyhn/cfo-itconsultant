@@ -15,7 +15,7 @@ const event: PendingEvent = {
   event: {
     event_type: "DELIVERED",
     occurred_at: "2026-11-09T10:01:00Z",
-    payload: { trip_id: 21, recipient_name: "Signed by recipient" },
+    payload: { trip_id: 21, trip_stop_id: 41, recipient_name: "Signed by recipient" },
   },
   state: "pending",
 };
