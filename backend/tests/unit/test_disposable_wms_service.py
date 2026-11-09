@@ -31,6 +31,7 @@ REQUEST = {
     "plan_id": 80,
     "source_version": 2,
     "idempotency_key": "cfo-res-test-immutable",
+    "source_ref": "SYN-POS-50",
     "lines": [
         {
             "order_line_id": 99,
@@ -123,9 +124,14 @@ def test_stock_capacity_idempotency_collision_partial_and_tamper_denied(database
         assert client.post("/v1/reserve", json=REQUEST, headers=HEADERS).status_code == 200
         tampered = copy.deepcopy(REQUEST)
         tampered["source_version"] = 3
+        # Version is checked against pinned Source evidence, not the caller claim.
         assert client.post("/v1/reserve", json=tampered, headers=HEADERS).status_code == 409
         excessive = copy.deepcopy(REQUEST)
         excessive["idempotency_key"] = "new-distinct-request"
+        excessive["order_id"] = 51
+        excessive["plan_id"] = 81
+        excessive["source_ref"] = "SYN-POS-51"
+        excessive["lines"][0]["order_line_id"] = 100
         excessive["lines"][0]["quantity"] = "50.000"
         assert client.post("/v1/reserve", json=excessive, headers=HEADERS).status_code == 409
         partial = copy.deepcopy(REQUEST)
