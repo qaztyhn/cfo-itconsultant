@@ -485,7 +485,7 @@ async def put_baseline(
     if "admin" not in user.roles:
         raise DomainError("FORBIDDEN", "Only admin may update KPI baselines.")
     market, zone = await _context(session, user)
-    if metric not in METRICS or not value.is_finite():
+    if metric not in METRICS or not value.is_finite() or value < 0:
         raise DomainError("VALIDATION_ERROR", "Invalid baseline metric or value.")
     previous = await session.get(KpiBaseline, (market.id, metric))
     today = clock.now().astimezone(zone).date()

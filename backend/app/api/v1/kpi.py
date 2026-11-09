@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.v1.common import PageNo, PageSize
 from app.deps import AuthUser, DbSession
@@ -25,7 +25,7 @@ OrderId = Annotated[int | None, Query(gt=0)]
 
 
 class BaselineInput(BaseModel):
-    value: Decimal
+    value: Decimal = Field(ge=0)
 
 
 @router.get("/kpi/summary")
