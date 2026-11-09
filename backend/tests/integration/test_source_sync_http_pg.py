@@ -28,9 +28,7 @@ from tests.integration.test_ingest_references import mapped
 
 pytestmark = pytest.mark.integration
 URL = "/integration/orders/sync-now"
-ACTOR = CurrentUser(
-    id=1, employee_id=1, roles=("sales",), market="SE", location_ids=(2,)
-)
+ACTOR = CurrentUser(id=1, employee_id=1, roles=("sales",), market="SE", location_ids=(2,))
 
 
 @pytest.fixture
@@ -76,9 +74,7 @@ def client(db: str, monkeypatch: pytest.MonkeyPatch):
 
 
 def post(client: TestClient, key: str, ref: str = "EXT-1"):
-    return client.post(
-        URL, headers={"Idempotency-Key": key}, json={"external_ref": ref}
-    )
+    return client.post(URL, headers={"Idempotency-Key": key}, json={"external_ref": ref})
 
 
 def test_route_real_postgres_exactly_once_retries_and_audit(client, db: str) -> None:
@@ -97,18 +93,11 @@ def test_route_real_postgres_exactly_once_retries_and_audit(client, db: str) -> 
     assert second.json()["already_decided"] is True
     assert fetch(db, "SELECT count(*) FROM ops.customer_order")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 1
-    assert (
-        fetch(
-            db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'"
-        )[0][0]
-        == 1
-    )
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 2
 
 
-def test_route_real_postgres_concurrent_distinct_keys_one_decision(
-    client, db: str
-) -> None:
+def test_route_real_postgres_concurrent_distinct_keys_one_decision(client, db: str) -> None:
     http, _, _ = client
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(post, http, str(uuid4())) for _ in range(2)]
@@ -117,19 +106,12 @@ def test_route_real_postgres_concurrent_distinct_keys_one_decision(
     assert len({r.json()["order_id"] for r in results}) == 1
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.customer_order")[0][0] == 1
-    assert (
-        fetch(
-            db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'"
-        )[0][0]
-        == 1
-    )
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
 
 
 def test_route_market_store_scope_cannot_write(client, db: str) -> None:
     http, _, api = client
-    out_of_scope = CurrentUser(
-        id=1, employee_id=1, roles=("sales",), market="SE", location_ids=(1,)
-    )
+    out_of_scope = CurrentUser(id=1, employee_id=1, roles=("sales",), market="SE", location_ids=(1,))
     api.dependency_overrides[get_current_user] = lambda: out_of_scope
     response = post(http, str(uuid4()))
     assert response.status_code == 404
@@ -148,9 +130,7 @@ def test_route_cancelled_and_transport_failed_do_not_write(client, db: str) -> N
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 0
 
 
-def test_route_stale_source_version_rejected_without_mutating_routing(
-    client, db: str
-) -> None:
+def test_route_stale_source_version_rejected_without_mutating_routing(client, db: str) -> None:
     http, state, _ = client
     assert post(http, str(uuid4())).status_code == 200
     state.raw = source(version=3, address="New synthetic delivery location")
@@ -160,9 +140,4 @@ def test_route_stale_source_version_rejected_without_mutating_routing(
     assert stale.status_code == 409
     assert fetch(db, "SELECT count(*) FROM ops.customer_order")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 1
-    assert (
-        fetch(
-            db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'"
-        )[0][0]
-        == 1
-    )
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
