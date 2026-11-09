@@ -10,12 +10,12 @@ import { NoFeasibleDate } from "./NoFeasibleDate";
 
 const mock = vi.hoisted(() => ({
   run: vi.fn(), transfers: vi.fn(), history: vi.fn(), record: vi.fn(),
-  replan: vi.fn(), overview: vi.fn(),
+  overview: vi.fn(),
 }));
 vi.mock("./noFeasibleDateApi", async importOriginal => {
   const actual = await importOriginal<typeof import("./noFeasibleDateApi")>();
   return { ...actual, fetchInfeasibleRun: mock.run, fetchVerifiedTransfers: mock.transfers,
-    fetchNegotiations: mock.history, recordNegotiation: mock.record, replanAgreedDate: mock.replan };
+    fetchNegotiations: mock.history, recordNegotiation: mock.record };
 });
 vi.mock("../../api/integration", async importOriginal => {
   const actual = await importOriginal<typeof import("../../api/integration")>();
@@ -37,7 +37,6 @@ beforeEach(() => {
   mock.transfers.mockResolvedValue({ items: [] });
   mock.history.mockResolvedValue({ items: [] });
   mock.record.mockResolvedValue({ id: 84 });
-  mock.replan.mockResolvedValue({ ...run, id: 702, result: "feasible" });
   mock.overview.mockResolvedValue({ sources: [{ name: "WMS", data_as_of: new Date().toISOString() }], stale: false });
 });
 afterEach(() => {
@@ -134,12 +133,8 @@ describe("US-PLN-07 AC2–AC5 — explicit customer agreement", () => {
       proposed_date: "2026-11-12", outcome: "agreed", channel: "phone", note: "Customer explicitly agreed",
     })));
     expect(await screen.findByText(/Customer outcome recorded by server: agreed/)).toBeInTheDocument();
-    expect(mock.replan).not.toHaveBeenCalled();
-    const replanButton = screen.getByRole("button", { name: "Run new plan for agreed date" });
-    expect(replanButton).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Reason for replanning"), { target: { value: "Customer date agreed" } });
-    fireEvent.click(replanButton);
-    await waitFor(() => expect(mock.replan).toHaveBeenCalledWith(42, "2026-11-12", "Customer date agreed"));
+    expect(screen.getByText(/original order date remains unchanged/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run new plan for agreed date" })).not.toBeInTheDocument();
   });
   it("records declined or unreachable without replanning or cancellation", async () => {
     mount();
