@@ -22,10 +22,10 @@ for key in POSTGRES_PASSWORD JWT_SECRET SOURCE_SE_API_KEY SOURCE_SE_DATABASE_URL
 done
 command -v docker >/dev/null || { echo "BLOCKED: Docker Compose is required." >&2; exit 2; }
 docker compose config --quiet
-docker compose up -d --build postgres
+docker compose up -d --build --wait --wait-timeout 120 postgres
 # Existing named volumes might not have the Source database; idempotent.
 docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-source-db.sh
-docker compose up -d --build source-se mailpit cfo-api cfo-web
+docker compose up -d --build --wait --wait-timeout 120 source-se mailpit cfo-api cfo-web
 docker compose exec -T source-se python -m app.init_db
 docker compose exec -T cfo-api alembic upgrade head
 
