@@ -46,7 +46,8 @@ export function eligibleStandardPlan(run: SalesRun | null, now: number): boolean
 }
 export function safeExternalRef(value: string): string | null {
   const ref = value.trim();
-  return ref.length > 0 && ref.length <= 100 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) &&\n    !ref.split("/").includes("..") ? ref : null;
+  return ref.length > 0 && ref.length <= 100 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) &&
+    !ref.split("/").includes("..") ? ref : null;
 }
 export function newRetryKey(): string { return newIdempotencyKey(); }
 
