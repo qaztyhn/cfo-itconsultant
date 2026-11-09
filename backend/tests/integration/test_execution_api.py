@@ -597,12 +597,12 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
 
     original_enqueue = notify_service.enqueue
 
-    async def abort_after_enqueue(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
+    async def abort(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
         assert kw.get("session") is not None
         await original_enqueue(order_id, template, plan_id, session=kw["session"])
         raise DomainError("PLAN_NOT_APPROVABLE", "Synthetic transaction rollback test.")
 
-    monkeypatch.setattr(notify_service, "enqueue", abort_after_enqueue)
+    monkeypatch.setattr(notify_service, "enqueue", abort)
     failed = send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1})
     assert_error(failed, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.notification")[0][0] == 0
