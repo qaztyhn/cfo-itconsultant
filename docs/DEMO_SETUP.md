@@ -94,7 +94,12 @@ This performs in order:
 5. Copies that manifest to Source and calls `app.seed_demo` using the
    already implemented idempotent order/stock publisher. The source
    publisher is the only writer of its physical-stock batch.
-6. Executes existing `ingest_service.sync_entity` for customers, products,
+6. Binds the existing Swedish market row to the local
+   `http://source-se:8100/api/v1` adapter using `app.demo_configure`.
+   The reference migration leaves `source_base_url` unset: this guarded
+   step is idempotent, accepts only the existing `SOURCE_SE_API_KEY`
+   reference, and rejects any conflicting URL without overwriting it.
+7. Executes existing `ingest_service.sync_entity` for customers, products,
    inbound and fleet using `backend/app/demo_ingest.py`. Any partial/error
    exits **2**, never advances a synthetic SUCCESS claim.
 
