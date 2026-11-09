@@ -70,17 +70,12 @@ def fixture(root: Path) -> None:
                         ],
                     }
                 )
-        put(
-            root, f"history_week_{n + 1:02d}.json", {"source": "synthetic_demo", "records": records}
-        )
+        put(root, f"history_week_{n + 1:02d}.json", {"source": "synthetic_demo", "records": records})
     attest(root)
 
 
 def attest(root: Path, **overrides) -> None:
-    hashes = {
-        name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-        for name in demo_d7_reader.FILES
-    }
+    hashes = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in demo_d7_reader.FILES}
     data = {
         "source_kind": "synthetic_demo",
         "verified_by": "Synthetic Test Reviewer",
@@ -100,7 +95,8 @@ class Session:
 
 def read(root, monkeypatch, *, app_env="test"):
     monkeypatch.setattr(
-        demo_d7_reader, "get_settings",
+        demo_d7_reader,
+        "get_settings",
         lambda: SimpleNamespace(app_env=app_env, app_now=demo_d7_reader.DEMO_NOW),
     )
     monkeypatch.setenv("DEMO_DISPOSABLE", "1")
