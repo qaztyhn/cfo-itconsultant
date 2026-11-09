@@ -171,6 +171,34 @@ Likewise check the routing record/audit is immutable on repeated requests.
 The HTTP probe **does not** claim that a matching ID alone proves DB
 uniqueness.
 
+**Automated, read-only PostgreSQL evidence** is now part of
+`tools/demo_ci.py` and may also be executed after the mutating HTTP probe:
+
+```sh
+python3 tools/demo_db_verify.py \
+  --sync-report demo-sync-results.json \
+  --report demo-db-results.json
+```
+
+This tool only runs with `APP_ENV=test`, `DEMO_DISPOSABLE=1`, the exact
+approved `APP_NOW`, and a `cfo-demo-*` project. It independently re-reads
+the authenticated Source order versions, then uses PostgreSQL `psql` in
+the **named disposable** Compose project to prove that order
+`SE-2026-000149` has exactly one CFO row and one CFO routing decision
+at the matching source version, and that pending-mapped
+`SE-2026-000156` has zero CFO rows and one immutable legacy route.
+No order, routing, stock or planning state is written by the verifier.
+It never prints raw Source payloads, database errors or credentials.
+Exit 0 = both real checks PASS; 2 = Sync & Check BLOCKED (no proof
+fabricated); 1 = evidence FAIL or unsafe environment. A green *preflight*
+with Sync BLOCKED is not an end-to-end success.
+
+The real-Compose CI artifact `demo-preflight-status` now includes
+`demo-ci-db-results.json`, separate from the HTTP smoke report.
+The prior manual SQL remains a second inspection option. The verifier
+does not on its own prove route audit immutability under concurrent
+writes or any WMS/D7 approval; those need distinct PostgreSQL/E2E tests.
+
 ## 5. Safe reset — explicit destructive operation only
 
 Only after confirming the named project is truly disposable and has
