@@ -1,10 +1,9 @@
 /** Warehouse execution confirmation. No local transition is displayed as complete until event_id ACK. */
 import { useRef, useState } from "react";
-import { isApiError } from "../../../api/client";
 import type { PrepQueueOrder } from "./types";
 import {
   ACTION_NAMES, canPerform, eventDraft, localOccurredAt, nowLocal, prepareEvent,
-  submitPrepEvent, type EventPayload, type PreparedEvent, type PrepEventType,
+  submitPrepEvent, safeActionError, type EventPayload, type PreparedEvent, type PrepEventType,
 } from "./executionActions";
 
 export interface ActionChoice {
@@ -17,17 +16,6 @@ export interface ActionChoice {
 const inputClass = "min-h-[48px] w-full rounded-control border border-border bg-surface p-3 text-body";
 const secondary = "min-h-[48px] rounded-control border border-border bg-surface px-4 py-2 font-semibold text-ink";
 const primary = "min-h-[48px] rounded-control bg-pine px-4 py-2 font-semibold text-white disabled:opacity-50";
-
-export function safeActionError(cause: unknown): string {
-  if (!isApiError(cause)) return "Confirmation could not be verified. The server may already have recorded it; retry the exact same event.";
-  if (cause.status === 401) return "Session expired. Sign in again; the event is not confirmed.";
-  if (cause.status === 403) return "Not authorized for this warehouse or event. No completion was confirmed.";
-  if (cause.status === 404) return "Order, trip or warehouse not available in your scope. Refresh the queue.";
-  if (cause.status === 409) return "Conflict or stale transition. Refresh the queue; retry with the same key only after checking.";
-  if (cause.status === 422) return "The server rejected the event. Review the crew, time and report fields.";
-  if (cause.status === 503 || cause.status === 0) return "Connection or mandatory service unavailable. Completion is unconfirmed; retry the same operation.";
-  return "Event not confirmed. Check the queue and retry the same operation if needed.";
-}
 
 /** Confirmed warehouse action only; shift-change is a report, never an edit to the approved official roster. */
 export function PrepActionDialog({
@@ -48,6 +36,7 @@ export function PrepActionDialog({
   const [staffPresent, setStaffPresent] = useState("0");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasAttempt, setHasAttempt] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const attempt = useRef<PreparedEvent | null>(null);
@@ -83,6 +72,7 @@ export function PrepActionDialog({
       const draft = eventDraft(order.order_id, type, localOccurredAt(clockValue), fields());
       prepared = prepareEvent(draft, attempt.current);
       attempt.current = prepared;
+      setHasAttempt(true);
     } catch (cause) {
       setWarning(cause instanceof Error ? cause.message : "Check the event fields.");
       return;
@@ -92,6 +82,7 @@ export function PrepActionDialog({
       const ack = await submitPrepEvent(prepared);
       setResult(`CFO recorded event #${ack.event_id} for order ${order.order_no}.`);
       attempt.current = null;
+      setHasAttempt(false);
       // A refresh failure never reverses an already acknowledged server write.
       try {
         await onAcknowledged();
@@ -166,7 +157,7 @@ export function PrepActionDialog({
         <div className="flex flex-wrap gap-3">
           <button type="button" className={secondary} onClick={onClose} disabled={busy}>Cancel</button>
           <button type="button" className={primary} onClick={() => void send()} disabled={busy}>
-            {busy ? "Sending · awaiting CFO…" : attempt.current ? "Retry / confirm same event" : `Confirm ${ACTION_NAMES[type]}`}
+            {busy ? "Sending · awaiting CFO…" : hasAttempt ? "Retry / confirm same event" : `Confirm ${ACTION_NAMES[type]}`}
           </button>
         </div>
       </section>
