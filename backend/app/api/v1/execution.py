@@ -21,7 +21,15 @@ class ExecutionEventIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_type: EventType
     occurred_at: AwareDatetime
-    payload: dict[str, object] = Field(default_factory=dict)
+    payload: dict[str, object] = Field(
+        default_factory=dict,
+        description=(
+            "For DELIVERED/FAILED, trip_id identifies the assigned trip and trip_stop_id "
+            "identifies the specific stop. trip_stop_id is required if this order has "
+            "multiple stops on that trip; legacy single-stop payloads remain accepted. "
+            "POD/terminal status is committed only after server-side validation."
+        ),
+    )
 
 
 @router.post("/orders/{order_id}/events")
