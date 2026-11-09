@@ -213,6 +213,18 @@ describe("Approval", () => {
     expect(approveButton(1)).toBeEnabled();
   });
 
+  it("resets tight reserve acceptance when the selected plan changes", async () => {
+    const run = await backendRun();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, reserve_class: "tight" })));
+    await openPlan(MOCK_RUN_IDS.normal);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("I accept the tight schedule"));
+    expect(approveButton(1)).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Select plan #2" }));
+    expect(screen.getByLabelText("I accept the tight schedule")).not.toBeChecked();
+    expect(approveButton(2)).toBeDisabled();
+  });
+
   it("test_US_PLN_07_AC3_sends_only_matching_agreed_date", async () => {
     const run = await backendRun();
     run.plans[0].target_date = "2026-11-11";
