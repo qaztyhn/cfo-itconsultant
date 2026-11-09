@@ -142,7 +142,7 @@ class D7FixtureTests(unittest.TestCase):
 
     def test_D7_validator_rejects_missing_as_verified_off_duty(self) -> None:
         corrupted = copy.deepcopy(self.payloads)
-        row = next(x for x in corrupted["history_week_07.json"]["records"]
+        row = next(x for x in corrupted["history_week_08.json"]["records"]
                    if x["driver_code"] == "D07" and x["work_date"] == "2026-10-30")
         row["verified_off_duty"] = True
         with self.assertRaises(FixtureError):
