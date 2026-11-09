@@ -20,7 +20,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from demo_smoke import APP_NOW, GOOD_REF, allow_mutation
+from demo_smoke import APP_NOW, allow_mutation
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "demo-browser-evidence"
@@ -119,13 +119,23 @@ def main() -> int:
         wait.until(lambda d: d.find_element(By.CSS_SELECTOR, '[data-screen="OrderQueue"]'))
         add("dispatcher_login", "PASS", "Real browser login redirected to Dispatcher Order Queue.")
 
-        search = wait.until(lambda d: d.find_element(By.CSS_SELECTOR, 'input[aria-label="Search"]'))
-        search.send_keys(GOOD_REF)
-        row = wait.until(lambda d: d.find_element(
-            By.XPATH, '//tr[.//*[contains(text(), "SE-2026-000149")]]',
+        # The Source reference is not the CFO-generated order number shown
+        # in the Queue. The preceding real PostgreSQL verifier established
+        # Source-to-CFO routing; select only its current SUBMITTED queue row.
+        buttons = wait.until(lambda d: d.find_elements(
+            By.CSS_SELECTOR, 'table button[aria-label^="Run planning for order"]',
         ))
-        button = row.find_element(By.CSS_SELECTOR, 'button[aria-label^="Run planning for order"]')
-        add("synced_order_visible", "PASS", "Real CFO-synced order appears as SUBMITTED in browser queue.")
+        if len(buttons) != 1:
+            add("queue_order", "NOT VERIFIED", "Expected one SUBMITTED CFO queue action in this disposable slice.")
+            report(checks, observed, "NOT_VERIFIED")
+            return 2
+        button = buttons[0]
+        row = button.find_element(By.XPATH, "./ancestor::tr")
+        if "SUBMITTED" not in row.text:
+            add("queue_order", "NOT VERIFIED", "Visible CFO order is not SUBMITTED.")
+            report(checks, observed, "NOT_VERIFIED")
+            return 2
+        add("synced_order_visible", "PASS", "One current SUBMITTED CFO order displayed; Source routing separately verified in PostgreSQL.")
         browser.save_screenshot(str(OUT / "02-dispatcher-order-queue.png"))
 
         button.click()
