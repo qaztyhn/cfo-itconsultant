@@ -134,6 +134,37 @@ class OrderOut(BaseModel):
     submitted_at: datetime
 
 
+class CsContactOut(BaseModel):
+    name: str
+    phone: str | None = None  # always server-masked
+    email: str | None = None  # always server-masked
+
+
+class CsDeliveryOut(BaseModel):
+    address: str  # no coordinates, receiving restrictions or access codes
+
+
+class CsRiskOut(BaseModel):
+    status: str
+    forecast_eta: datetime
+
+
+class CsOrderOut(BaseModel):
+    """CS-only allowlist. Never inherit full OrderOut fields or auto-serialize ORM."""
+    id: int
+    order_no: str
+    status: str
+    market: str
+    customer: NamedRef
+    contact: CsContactOut
+    delivery: CsDeliveryOut
+    date_request: DateRequestOut
+    committed: CommittedOut
+    risk: CsRiskOut | None = None
+    version: int
+    submitted_at: datetime
+
+
 class NavCounts(BaseModel):
     order_queue: int
     exceptions: int
@@ -209,12 +240,15 @@ async def order_counts(user: AuthUser, db: DbSession) -> OrderCounts:
 
 
 @router.get(
-    "/orders/{order_id}", response_model=OrderOut, response_model_exclude_unset=True, responses=_ERRORS
+    "/orders/{order_id}", response_model=OrderOut | CsOrderOut, response_model_exclude_unset=True, responses=_ERRORS
 )
-async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut:
+async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut | CsOrderOut:
     """GET /orders/{id} — trường theo vai trò (06 mục 5.3); ngoài phạm vi → 404."""
     scope = await order_read_service.resolve_order_scope(db, user)
-    return OrderOut.model_validate(await order_read_service.get_order(db, scope, order_id))
+    data = await order_read_service.get_order(db, scope, order_id)
+    if scope.role == "customer_service":
+        return CsOrderOut.model_validate(data)
+    return OrderOut.model_validate(data)
 
 
 class TimelineActor(BaseModel):
