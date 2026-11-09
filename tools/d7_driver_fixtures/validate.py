@@ -5,12 +5,13 @@ This is STRUCTURAL VALIDATION only. It is NOT a regulatory eligibility engine.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from generate import FIRST_DAY, FIXTURES, HISTORY_DAYS, SCHEMA, SOURCE, build, elapsed_minutes
+from generate import FIRST_DAY, FIXTURES, HISTORY_DAYS, SCHEMA, SOURCE, build, encoded, elapsed_minutes
 
 
 class FixtureError(ValueError):
@@ -47,6 +48,35 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
     manifest = payloads["manifest.json"]
     require(manifest.get("offline_only") is True, "Manifest must prohibit DB insertion")
     require(manifest["files"] == sorted(set(payloads) - {"manifest.json"}), "Manifest filenames mismatch")
+    require(manifest.get("history_start") == "2026-09-09" and
+            manifest.get("history_end") == "2026-11-03",
+            "D7 fixture window must match the approved frozen demo clock")
+    verification = payloads["verification.json"]
+    names = {"manifest.json", "drivers.json"} | {
+        f"history_week_{week:02d}.json" for week in range(1, 9)
+    }
+    require(
+        verification.get("source_kind") == "synthetic_demo"
+        and verification.get("legal_verified") is False
+        and verification.get("revoked") is False
+        and verification.get("kind") == "synthetic_attestation"
+        and isinstance(verification.get("verified_by"), str)
+        and bool(verification["verified_by"].strip()),
+        "D7 evidence requires a named, non-legal synthetic-only attestation",
+    )
+    require(
+        instant(verification["verified_at"]) <= instant("2026-11-04T10:05:00+01:00")
+        < instant(verification["expires_at"]),
+        "Synthetic D7 attestation expired or postdated approved demo clock",
+    )
+    hashes = verification.get("sha256")
+    require(isinstance(hashes, dict) and set(hashes) == names,
+            "D7 attestation must name every required immutable input file")
+    for name in sorted(names):
+        require(
+            hashes[name] == hashlib.sha256(encoded(payloads[name])).hexdigest(),
+            f"Synthetic D7 evidence integrity mismatch: {name}",
+        )
     vehicles = payloads["vehicles.json"]["records"]
     drivers = payloads["drivers.json"]["records"]
     require(len(vehicles) in (8, 9, 10) and len(drivers) == 10, "Incorrect pilot population")

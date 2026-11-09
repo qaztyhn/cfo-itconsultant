@@ -10,15 +10,16 @@
 |---|---|
 | `generate.py` | Purely offline, stdlib deterministic generator; `--write` or `--check` |
 | `validate.py` | Structural, interval and reference validation; **not** driving-law evaluation |
-| `test_fixtures.py` | 17 local tests including deliberate corruption tests |
+| `test_fixtures.py` | 20+ local tests including deliberate corruption tests |
 | `fixtures/manifest.json` | Version, market, coverage window, counts and files |
 | `fixtures/vehicles.json` | 9 synthetic vehicles, separately provided payload / permitted mass / scope |
 | `fixtures/drivers.json` | 10 synthetic driver identities and licence validities |
 | `fixtures/history_week_01.json` … `history_week_08.json` | 56 calendar days × 10 drivers = **560 coverage records**, including a missing-data marker |
 | `fixtures/future_shifts.json` | 51 synthetic official-format future shift **examples**, not DB-approved shifts |
 | `fixtures/scenarios.json` | 13 golden scenarios and expected *gate-level* dispositions |
+| `fixtures/verification.json` | Explicit revocable, hash-matched synthetic-only attestation with reviewer identifier, expiry and legal_verified=false; never a regulatory certification |
 
-**Fixed window:** history `2026-09-14` through `2026-11-08` inclusive, future shifts `2026-11-09`–`2026-11-14`; all timestamps are ISO 8601 with an explicit offset in `Europe/Stockholm`. One recorded night crosses the DST fall-back on **2026-10-25**: `00:30+02:00` through `04:30+01:00` is **five elapsed hours**, not four. One scheduled future shift crosses midnight `2026-11-14T20:00+01:00` → `2026-11-15T04:00+01:00`.
+**Fixed window:** history `2026-09-09` through `2026-11-03` inclusive (56 days before the approved demo clock `2026-11-04T10:05:00+01:00`), future shifts `2026-11-09`–`2026-11-14`; all timestamps are ISO 8601 with an explicit offset in `Europe/Stockholm`. One recorded night crosses the DST fall-back on **2026-10-25**: `00:30+02:00` through `04:30+01:00` is **five elapsed hours**, not four. One scheduled future shift crosses midnight `2026-11-14T20:00+01:00` → `2026-11-15T04:00+01:00`.
 
 ## Regenerate and validate
 
@@ -34,7 +35,7 @@ python -m unittest discover -s tools/d7_driver_fixtures -p 'test_*.py' -v
 
 ## Local JSON schemas (not CFO DB/API contracts)
 
-Every JSON document has `schema_version: "d7.synthetic.v1"`, `source: "synthetic_demo"`; all except `manifest.json` use `kind`, `records: []`. `manifest.json` has `market`, `timezone`, `history_start`, `history_end`, `history_days_per_driver`, `future_start`, `vehicle_count`, `driver_count`, `files`, and `offline_only: true`.
+Every JSON document has `schema_version: "d7.synthetic.v1"`, `source: "synthetic_demo"`; driver/history/scenario documents use `kind`, `records: []`; `verification.json` is a signed-inputs metadata record, not a duty or entitlement record. `manifest.json` has `market`, `timezone`, `history_start`, `history_end`, `history_days_per_driver`, `future_start`, `vehicle_count`, `driver_count`, `files`, and `offline_only: true`.
 
 - `vehicles.records[]`: `vehicle_code` (stable demo fleet code), `market`, `warehouse_code`, `vehicle_type` (descriptive ONLY), `capacity_kg` (**payload**, positive integer), `max_permissible_mass_kg` (**gross/permissible mass**, independently provided positive integer, strictly greater than payload), `required_licence` (`B|C|CE`), `regulation_561_scope` (`in_scope|out_of_scope|unknown`), nullable `scope_evidence` (synthetic assertion, **not legal proof**), `transport_context` (`country`, `operation`, `trailer_attached`, nullable `trailer_max_permissible_mass_kg`, nullable `exception_claim`), and `scope_note`. Do not convert `unknown` to `out_of_scope`, and do not infer legal scope from van/truck type.
 - `drivers.records[]`: `driver_code` (`D01`–`D10`), `employee_no` (matches existing demo naming pattern, not a real identity), `market`, `warehouse_code`, `licence_class`, `licence_expires_on`, `adr`. D10's licence is intentionally expired.
@@ -70,3 +71,9 @@ These types and reason signals are **fixture-local mappings**, not additions to 
 4. **No coupling:** This tool neither imports nor calls engine, existing seeds, API, jobs or database. Dev 1/2 should implement adapter and integration regression tests in their authorized workstream after review; this PR does not modify them.
 
 **Assumptions:** reviewed `DEC-DEV2-D7-001`, `DEC-DRIVER-001`, `DEC-SHIFTS-001`; no new business assumption or decision.
+
+## Demo-only verification boundary (PR #206 handoff)
+
+The attestation records the canonical UTF-8 SHA-256 digest for `manifest.json`, `drivers.json`, and all eight history weeks. `verified_by` identifies a **synthetic fixture reviewer**, not an employer or official legal verifier. It is valid only for the approved frozen demo clock and expires on 2026-11-05. Missing/mismatched files, revoked or expired attestation and unknown duty remain fail-closed. The existing authorized warehouse-manager shift scheduling workflow remains the only source of official DB shift assignments: these JSON files **must not** be imported as authorized shifts, nor should `legal_verified=false` be treated as a passed production compliance gate.
+
+The D7 fixture is designed for an evidence target of **2026-11-04**. Applying the same history snapshot to a different target date (such as 2026-11-10) is not valid; the reader must return unknown rather than silently slide the 56-day window.
