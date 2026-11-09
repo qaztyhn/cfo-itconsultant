@@ -23,6 +23,9 @@ from app.services import alert_service
 from app.services.gps_duty import active_duty, trip_collection_windows
 
 
+MAX_GPS_BATCH_POSITIONS = 100  # Owner-approved G4 upload limit (DEC-OWNER-20261109)
+
+
 def _aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise DomainError("VALIDATION_ERROR", "GPS timestamps must include a timezone.")
@@ -80,6 +83,8 @@ async def ingest_positions(
     """
     if session is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "GPS requires the caller's transaction.")
+    if not 1 <= len(positions) <= MAX_GPS_BATCH_POSITIONS:
+        raise DomainError("VALIDATION_ERROR", "GPS batch must contain 1 to 100 positions.")
     timestamp = _aware(now if now is not None else clock.now())
     trip, market = await _assigned_trip(session, trip_id, actor)
     if not market.gps_enabled:
@@ -101,8 +106,6 @@ async def ingest_positions(
     if duty is None:
         raise DomainError("NOT_ON_TRIP", "Official driver shift is not active.")
     begins, ends = duty
-    if not positions:
-        raise DomainError("VALIDATION_ERROR", "GPS batch cannot be empty.")
     cfg = _market_config(market)
     cadence = timedelta(minutes=cfg.gps.interval_min)
     requested: list[datetime] = []
