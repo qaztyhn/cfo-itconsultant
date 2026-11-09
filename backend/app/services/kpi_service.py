@@ -110,7 +110,11 @@ def _day(instant: object, zone: ZoneInfo) -> date | None:
 
 
 async def _context(
-    session: AsyncSession, user: CurrentUser, *, audit: bool = False
+    session: AsyncSession,
+    user: CurrentUser,
+    *,
+    requested_market: str | None = None,
+    audit: bool = False,
 ) -> tuple[Market, ZoneInfo]:
     roles = set(user.roles)
     if not (
@@ -120,12 +124,19 @@ async def _context(
         raise DomainError("FORBIDDEN", "Operational KPI access denied.")
     if audit and not roles.intersection({"admin", "dispatcher", "viewer"}):
         raise DomainError("FORBIDDEN", "Decision-log access denied.")
-    # No market selector exists in docs/06; never silently combine markets or currencies.
-    if not user.market:
+    # Q6: only an unassigned System Admin may explicitly select another market.
+    # Assigned employees never widen their own market via a client parameter.
+    system_admin = "admin" in roles and user.employee_id is None
+    if system_admin and not requested_market:
+        raise DomainError("FORBIDDEN", "Select a market explicitly before accessing KPI data.")
+    market_code = requested_market or user.market
+    if not isinstance(market_code, str) or not market_code:
         raise DomainError("FORBIDDEN", "An authorized market context is required.")
-    market = await session.scalar(select(Market).where(Market.code == user.market))
+    if not system_admin and market_code != user.market:
+        raise DomainError("NOT_FOUND", "Market not found.")
+    market = await session.scalar(select(Market).where(Market.code == market_code))
     if market is None:
-        raise DomainError("FORBIDDEN", "An authorized market context is required.")
+        raise DomainError("NOT_FOUND", "Market not found.")
     try:
         zone = ZoneInfo(market.timezone)
     except (ValueError, KeyError) as exc:
@@ -421,8 +432,9 @@ async def summary(
     date_to: date | None = None,
     warehouse_id: int | None = None,
     store_id: int | None = None,
+    requested_market: str | None = None,
 ) -> dict[str, object]:
-    market, zone = await _context(session, user)
+    market, zone = await _context(session, user, requested_market=requested_market)
     scope = await _scope(session, user, market.id, warehouse_id, store_id)
     period = Period.resolve(date_from, date_to, clock.now().astimezone(zone).date())
     rows = await _collect(session, market, period, zone, scope, warehouse_id, store_id)
@@ -454,10 +466,11 @@ async def daily(
     metric: str,
     date_from: date | None = None,
     date_to: date | None = None,
+    requested_market: str | None = None,
 ) -> dict[str, object]:
     if metric not in METRICS:
         raise DomainError("VALIDATION_ERROR", "Unknown operational KPI metric.")
-    market, zone = await _context(session, user)
+    market, zone = await _context(session, user, requested_market=requested_market)
     scope = await _scope(session, user, market.id, None, None)
     period = Period.resolve(date_from, date_to, clock.now().astimezone(zone).date())
     data = await _collect(session, market, period, zone, scope, None, None)
@@ -467,8 +480,10 @@ async def daily(
     }
 
 
-async def diagnostics(session: AsyncSession, user: CurrentUser) -> dict[str, object]:
-    await _context(session, user)
+async def diagnostics(
+    session: AsyncSession, user: CurrentUser, *, requested_market: str | None = None
+) -> dict[str, object]:
+    await _context(session, user, requested_market=requested_market)
     # Neither metric has an approved DDL/formula: failed planning checks are NOT
     # violations of approved constraints, and Alert has no source-event FK.
     # Return explicit unavailable values; never invent a violation count or latency.
@@ -481,10 +496,11 @@ async def put_baseline(
     *,
     metric: str,
     value: Decimal,
+    requested_market: str | None = None,
 ) -> dict[str, object]:
     if "admin" not in user.roles:
         raise DomainError("FORBIDDEN", "Only admin may update KPI baselines.")
-    market, zone = await _context(session, user)
+    market, zone = await _context(session, user, requested_market=requested_market)
     if metric not in METRICS or not value.is_finite() or value < 0:
         raise DomainError("VALIDATION_ERROR", "Invalid baseline metric or value.")
     previous = await session.get(KpiBaseline, (market.id, metric))
@@ -530,8 +546,9 @@ async def decision_log(
     date_to: date | None = None,
     page: int = 1,
     page_size: int = 50,
+    requested_market: str | None = None,
 ) -> dict[str, object]:
-    market, zone = await _context(session, user, audit=True)
+    market, zone = await _context(session, user, audit=True, requested_market=requested_market)
     period = Period.resolve(date_from, date_to, clock.now().astimezone(zone).date())
     local_day = cast(func.timezone(market.timezone, DecisionLog.ts), Date)
     same_market_order = (
