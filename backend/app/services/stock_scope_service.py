@@ -734,4 +734,3 @@ async def record_write_run(
     session.add(run)
     await session.flush()
     return run
-

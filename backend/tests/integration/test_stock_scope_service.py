@@ -512,4 +512,3 @@ def test_S3_write_run_binds_versions_is_unique_per_batch_and_append_only(db: str
         ),
         "STOCK_UNAVAILABLE",
     )
-

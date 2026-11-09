@@ -22,4 +22,3 @@ Decision: `DEC-STOCK-GRANT-BOOTSTRAP-20261109`, as extended by `DEC-STOCK-GRANT-
 Focused verification from `backend/` with Python 3.12, dependencies, and an isolated PostgreSQL test URL: `python -m pytest tests/integration/test_stock_scope_service.py -q`. Run `python tools/harness.py backend` from the repository root before review. In the demo container use the reviewed `python -m app.demo_ingest stock` and `python -m app.demo_stock_preflight --external-ref SE-2026-000149` commands from PR #215 after Dev 2 publishes the new batch.
 
 Stop on any missing authorization, mismatch, failed audit, incomplete/stale batch, or planning gate. Revoke demo grants with the reviewed operator before retiring the environment; archive audit evidence, then discard the disposable database.
-
