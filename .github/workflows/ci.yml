@@ -18,7 +18,7 @@ jobs:
       - run: black --check .
       - run: mypy app/engine
       - run: lint-imports
-      - run: pytest -q tests/integration/test_source_handoff.py
+      - run: pytest
       - run: python -m unittest discover -s tools/tests
         working-directory: .
       - name: Check CFO contract artifact availability
