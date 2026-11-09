@@ -44,7 +44,9 @@ def _run(run: SyncRun) -> dict[str, Any]:
         "rows_rejected": run.rows_rejected,
         "complete_success": run.status == "ok",
         "error_code": (
-            run.error if run.error in {"INTERRUPTED_RUN", "SOURCE_SYNC_FAILED"} else None
+            run.error
+            if run.error in {"INTERRUPTED_RUN", "SOURCE_SYNC_FAILED"}
+            else None
         ),
     }
 
@@ -104,7 +106,9 @@ async def list_runs(
         predicate.append(SyncRun.entity == entity)
     if status:
         predicate.append(SyncRun.status == status)
-    total = await session.scalar(select(func.count()).select_from(SyncRun).where(*predicate))
+    total = await session.scalar(
+        select(func.count()).select_from(SyncRun).where(*predicate)
+    )
     runs = (
         await session.scalars(
             select(SyncRun)
@@ -136,7 +140,9 @@ async def list_rejects(
     if run is None or run.market_id not in {item.id for item in markets}:
         raise DomainError("NOT_FOUND", "Sync run not found.")
     predicate = SyncReject.run_id == run.id
-    total = await session.scalar(select(func.count()).select_from(SyncReject).where(predicate))
+    total = await session.scalar(
+        select(func.count()).select_from(SyncReject).where(predicate)
+    )
     rejects = (
         await session.scalars(
             select(SyncReject)
