@@ -10,12 +10,13 @@ import {KpiDashboard} from "./KpiDashboard";
 const OPS:AuthUser={id:10,employee_id:null,name:"Demo ops",roles:["viewer"],market:"SE",
   location_ids:[],locale:"en",kpi_scopes:["ops"]};
 function signIn(user:AuthUser) {useAuthStore.getState().setAuth({access_token:"synthetic",token_type:"bearer",expires_in:3600,user},"unit@synthetic.invalid");}
-type MockOptions={failure?:string;empty?:boolean;pending?:boolean;nullDiagnostics?:boolean};
+type MockOptions={failure?:string;empty?:boolean;pending?:boolean;nullDiagnostics?:boolean;failBaseline?:boolean};
 function api(options:MockOptions={}) {
-  const calls:{path:string;search:URLSearchParams;method:string}[]=[];
+  const calls:{path:string;search:URLSearchParams;method:string;body?:BodyInit|null}[]=[];
   vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
     const url=new URL(String(input)),path=url.pathname;
-    calls.push({path,search:url.searchParams,method:init?.method??"GET"});
+    calls.push({path,search:url.searchParams,method:init?.method??"GET",body:init?.body});
+    if(path.includes("/kpi/baseline/")) return options.failBaseline ? new Response(JSON.stringify({error:{code:"FORBIDDEN",message:"PRIVATE"}}),{status:403}) : Response.json({metric:path.split("/").pop(),value:15});
     if(options.pending)return new Promise<Response>(()=>{});
     if(path.endsWith(options.failure??"__no_failure__"))return new Response(JSON.stringify({error:{code:"FORBIDDEN",message:"SECRET PRIVATE REASON"}}),{status:403});
     if(path.endsWith("/kpi/summary"))return Response.json(options.empty?{metrics:{}}:{metrics:{
@@ -88,6 +89,30 @@ describe("US-KPI-01 AC4 admin/ops permissions and API errors",()=>{
     const calls=api();mount();
     await screen.findByText("4.2 min");
     await waitFor(()=>expect(calls.some(c=>c.path.endsWith("/audit/decisions"))).toBe(true));
+  });
+  it("saves approved baseline through admin-only PUT and refreshes server KPI",async()=>{
+    signIn({...OPS,roles:["admin"],kpi_scopes:[]});
+    const calls=api();mount();
+    await screen.findByText("4.2 min");
+    await userEvent.type(screen.getByRole("spinbutton",{name:"Baseline value"}),"15");
+    await userEvent.click(screen.getByRole("button",{name:"Save baseline"}));
+    expect(await screen.findByText(/Baseline saved by server/)).toBeInTheDocument();
+    expect(calls.some(c=>c.path.endsWith("/kpi/baseline/planning_time_min")&&c.method==="PUT"&&c.body===JSON.stringify({value:15}))).toBe(true);
+  });
+  it("never claims admin baseline save when server denies action",async()=>{
+    signIn({...OPS,roles:["admin"],kpi_scopes:[]});
+    api({failBaseline:true});mount();
+    await screen.findByText("4.2 min");
+    expect(screen.getByRole("button",{name:"Save baseline"})).toBeDisabled();
+    await userEvent.type(screen.getByRole("spinbutton",{name:"Baseline value"}),"15");
+    await userEvent.click(screen.getByRole("button",{name:"Save baseline"}));
+    expect(await screen.findByText(/Baseline was not saved/)).toBeInTheDocument();
+    expect(screen.queryByText(/Baseline saved by server/)).not.toBeInTheDocument();
+  });
+  it("hides baseline mutation controls from non-admin ops viewers",async()=>{
+    api();mount();
+    await screen.findByText("4.2 min");
+    expect(screen.queryByRole("button",{name:"Save baseline"})).not.toBeInTheDocument();
   });
   it("does not fetch audit log for warehouse ops even though KPI cards are accessible",async()=>{
     signIn({...OPS,roles:["warehouse"],kpi_scopes:["ops"]});
