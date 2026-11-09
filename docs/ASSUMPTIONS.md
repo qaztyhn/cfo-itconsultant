@@ -52,6 +52,8 @@
 
 | [ASM-WMS-RESERVATION-20261109](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md) | Owner cho phép **giả định WMS cũ hỗ trợ giữ hàng (reservation)**; giữ hàng làm giảm available, không giảm on-hand cho đến khi WMS xuất thực | 09/11 | Owner: “assume là có đi” khi được hỏi WMS có reservation không | **Giả định đã chốt; API thực tế chưa xác minh; CFO→WMS ghi reservation CHƯA được duyệt** |
 
+| [DEC-WMS-REVERSE-SKU-20261109](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md) | Nếu CFO gửi reserve/release sang WMS, phải **ánh xạ ngược mã global về SKU WMS gốc đúng market/kho, đơn vị tồn**; global có nhiều SKU gốc thì không tự chọn | 09/11 | Owner: “cái này nếu mà từ cfo về thì phải ánh xạ ngược lại mã sản phẩm cũ” | Yêu cầu có điều kiện đã chốt; quyền ghi WMS chưa duyệt |
+
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
 ### Cách ghi nhận quyết định mới — bắt buộc
@@ -563,3 +565,10 @@
 - CFO **không được trừ hai lần** reservation đã phản ánh trong WMS available. Khi WMS đã giữ 60 từ 100, số khả dụng WMS là 40, không phải 40 trừ tiếp 60. Tạm giữ nội bộ CFO cần có ranh giới/đối chiếu với WMS để tránh cam kết trùng.
 - Owner mới đặt câu hỏi về phương án CFO **gửi yêu cầu reservation sang WMS**; đây sẽ là **ngoại lệ ghi dữ liệu** so với [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). **Chưa được coi là phê duyệt write API.** Dev 1/2 phải kiểm chứng WMS có API và đề xuất hợp đồng reserve/confirm/release, ACK tức thời, idempotency, timeout và rollback/compensation; không cho phép CFO xuất hàng hoặc sửa tồn vật lý.
 - [Biên bản](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md). Không triển khai code/lấy credential/migration trước review và xác nhận quyền ghi cụ thể.
+
+## DEC-WMS-REVERSE-SKU-20261109 — Ánh xạ ngược SKU khi gửi dữ liệu sang WMS
+
+- **Đã chốt có điều kiện:** nếu CFO được phê duyệt gửi reserve/release sang WMS, phải chuyển mã global CFO sang **SKU gốc đúng chuẩn WMS chấp nhận**, gắn đúng market, kho, dòng đơn, đơn vị số lượng và phiên bản mapping được xác nhận. Giữ `local_sku` gốc của đơn POS; **không mặc định POS SKU trùng WMS SKU** nếu chưa kiểm tra contract nguồn.
+- Một global product có thể tương ứng nhiều local SKU, nên không được tự lấy SKU đầu tiên, không gộp pool không chứng cứ. Không tìm được SKU duy nhất theo dòng đơn/kho, SKU chưa confirmed, mapping hết hiệu lực, sai đơn vị hoặc số lượng WMS ⇒ **không gửi lệnh**.
+- Nếu WMS xác nhận reservation thì phải khớp warehouse/SKU/quantity/idempotency; không trừ hai lần WMS available. **Quy tắc này chưa cho phép CFO ghi WMS**; Owner vẫn cần duyệt ngoại lệ reserve/release sau khi Dev xác minh API thực tế.
+- [Biên bản](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
