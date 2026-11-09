@@ -116,3 +116,24 @@ def test_US_NOT_02_AC3_discard_request_requires_reason(
     response = client.post(f"/api/v1/notifications/{draft}/discard", json={"reason_text": "Do not notify"})
     assert response.status_code == 200
     assert response.json() == {"id": draft, "status": "suppressed"}
+
+def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(
+    notifications_api: tuple[TestClient, dict[str, SimpleNamespace], str],
+) -> None:
+    client, roles, _dsn = notifications_api
+    # The orders router previously shadowed both paths with NotImplementedError.
+    listing = client.get("/api/v1/orders/1/notifications")
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["total"] == 0
+    draft = client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 1})
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["status"] == "draft"
+    assert client.get("/api/v1/orders/1/notifications").json()["total"] == 1
+
+    roles["actor"] = actor("customer_service")
+    assert client.get("/api/v1/orders/1/notifications").status_code == 200
+    assert client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 2}).status_code == 403
+    roles["actor"] = actor("dispatcher", market="NO")
+    assert client.get("/api/v1/orders/1/notifications").status_code == 404
+    assert client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 2}).status_code == 404
+
