@@ -260,12 +260,6 @@ async def cancel_order(order_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/orders/{order_id}/notifications")
-async def order_notifications(order_id: int) -> dict[str, object]:
-    """GET /orders/{order_id}/notifications — dispatcher, CS."""
-    raise NotImplementedError
-
-
 @router.post("/orders/{order_id}/contact-logs")
 async def create_contact_log(order_id: int) -> dict[str, object]:
     """POST /orders/{order_id}/contact-logs — customer_service (06 mục 11)."""
@@ -278,7 +272,3 @@ async def list_contact_logs(order_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.post("/orders/{order_id}/delay-notice")
-async def manual_delay_notice(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/delay-notice — dispatcher tự soạn thông báo trễ."""
-    raise NotImplementedError
