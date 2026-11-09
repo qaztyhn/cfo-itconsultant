@@ -516,3 +516,11 @@
 
 Các AC trên được làm rõ bởi [27 owner decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). Bổ sung bắt buộc cho việc nghiệm thu: T07 scope/evidence 30 ngày & snapshot coverage đầy đủ; T18 chứng cứ WMS thể hiện inbound (không chỉ timestamp); D7 history 56 ngày từng ngày có verifier, nghỉ 11h; M6 POD delivered theo mỗi `trip_stop`; GPS notice/ack riêng từng driver, upload ≤100 điểm/batch và xoá ngay khi hết trip/ca; D4 outbox cùng transaction và DELAY start/end được duyệt; API sử dụng `passed`/flat rejected candidates; M8 có 10 KPI keys, diagnostics thiếu nguồn = `null`, cohort theo market-local approval/delivery/work_date. Nếu thiếu chứng cứ thì test phải chứng minh fail-closed. Chưa có migration/API/E2E thật không được đánh dấu Done.
 
+### Conditional acceptance — reverse product mapping for future WMS reservation (DEC-WMS-REVERSE-SKU-20261109)
+
+- AC-WMS-SKU-01. Given one confirmed SKU mapped to a global product, a future authorized WMS reserve/release uses original WMS-recognized SKU for that market/warehouse and quantity in its fixed WMS inventory unit, not CFO global code.
+- AC-WMS-SKU-02. Given two source SKUs mapping to one global product, preserve original order-line and verified warehouse allocation; do **not** choose an arbitrary inverse or combine stock aliases.
+- AC-WMS-SKU-03. Given POS SKU differs from WMS SKU, missing or changed mapping, missing warehouse/market, invalid conversion or stale context, **block** outbound request until identity and quantities are verified.
+- AC-WMS-SKU-04. Match authoritative WMS ACK with requested SKU/warehouse/qty and idempotency; avoid double deduction. **This acceptance does not grant WMS write permission.**
+
+[Decision](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
