@@ -1,5 +1,16 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-23 — explicit market-scoped KPI API] — 2026-11-09 — Dev 1
+
+- Operational KPI, decision-log and baseline routes accept optional `market`
+  code; System Admin without an employee market must explicitly choose one
+  rather than implicitly aggregating all markets. Employee-bound roles cannot
+  change their market with the URL. No cross-market or currency aggregation.
+- Existing 30-day inclusive default and maximum 366-day period remain unchanged;
+  added PostgreSQL tests for selector, RBAC, baseline isolation, period and
+  unavailable diagnostics. No database migration.
+
+
 ## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
 
 - `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) Owner đã chốt phương án A (`DEC-MANUAL-PLAN-20261109`); proposal còn mang tính tài liệu về bộ kiểm tra engine, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
