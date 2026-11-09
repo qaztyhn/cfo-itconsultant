@@ -20,6 +20,7 @@ from app.models import Inbound, Order, StockBatch
 from app.seed_demo import load
 from app.stock_batches import read_snapshot
 
+
 def _fixture() -> dict:
     path = Path(__file__).resolve().parents[3] / "backend" / "app" / "seed" / "scenarios.py"
     return runpy.run_path(str(path))["generate"]()
