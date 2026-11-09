@@ -28,8 +28,9 @@ function StatusError({ error, retry }: { error: unknown; retry?: () => void }) {
     status === 409 ? "Conflict — refresh before proceeding" :
     status === 422 ? "Invalid order or request" :
     status === 503 ? "Source or CFO unavailable" : "Request failed";
+  const safeError = api ? new ApiError(api.code, label, api.correlationId, undefined, api.status) : error;
   return <section aria-label="Sync error" className="space-y-2">
-    <ErrorState title={label} error={error} onRetry={status === 403 || status === 404 ? undefined : retry} />
+    <ErrorState title={label} error={safeError} onRetry={status === 403 || status === 404 ? undefined : retry} />
     {(status === 409 || status === 503) && <p className="text-caption">{status === 503 ?
       "Nothing has been routed by this failed response. Retry only after the source is available." :
       "The server may have recorded a decision. Retry the same operation; do not start manual fulfilment without resolving the routing status."}</p>}
