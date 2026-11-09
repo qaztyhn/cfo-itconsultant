@@ -25,9 +25,13 @@ docker compose config --quiet
 docker compose up -d --build --wait --wait-timeout 120 postgres
 # Existing named volumes might not have the Source database; idempotent.
 docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-source-db.sh
-docker compose up -d --build --wait --wait-timeout 120 source-se mailpit cfo-api cfo-web
+docker compose up -d --build --wait --wait-timeout 120 source-se
 docker compose exec -T source-se python -m app.init_db
-docker compose exec -T cfo-api alembic upgrade head
+# Apply migrations before requesting CFO API health: its health check must
+# validate a migrated DB, not race the initial empty database.
+docker compose build cfo-api
+docker compose run --rm --no-deps cfo-api alembic upgrade head
+docker compose up -d --build --wait --wait-timeout 120 mailpit cfo-api cfo-web
 
 # The approved generator returns 2 because it deliberately cannot declare
 # D7/golden/E2E success. That return code does not undo the seeded references.
