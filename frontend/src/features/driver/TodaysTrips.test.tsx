@@ -2,10 +2,10 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentPath, renderAt, signInAs, userByEmail } from "../../test/utils";
-import { assignedTrips, type DriverTrip } from "./driverApi";
+import { assignedTrips, stopScopedPodEnabled, type DriverTrip } from "./driverApi";
 import { enqueueEvent, pendingForUser, replayEvents } from "./offlineEvents";
 
-vi.mock("./driverApi", () => ({ assignedTrips: vi.fn(), assignedTrip: vi.fn(), submitDriverEvent: vi.fn() }));
+vi.mock("./driverApi", () => ({ assignedTrips: vi.fn(), assignedTrip: vi.fn(), submitDriverEvent: vi.fn(), stopScopedPodEnabled: vi.fn() }));
 vi.mock("./offlineEvents", () => ({
   pendingForUser: vi.fn(), enqueueEvent: vi.fn(), replayEvents: vi.fn(),
   discardEvent: vi.fn(),
@@ -35,6 +35,7 @@ const loaded: DriverTrip = {
 
 beforeEach(() => {
   vi.mocked(assignedTrips).mockReset().mockResolvedValue([loaded]);
+  vi.mocked(stopScopedPodEnabled).mockReset().mockReturnValue(false);
   vi.mocked(pendingForUser).mockReset().mockResolvedValue([]);
   vi.mocked(enqueueEvent).mockReset().mockResolvedValue(undefined);
   vi.mocked(replayEvents).mockReset().mockResolvedValue({ sent: 0, conflict: 0, waiting: 0 });
@@ -95,7 +96,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     expect(vi.mocked(enqueueEvent).mock.calls[0][0].event).toEqual({
       event_type: "DELIVERED",
       occurred_at: expect.any(String),
-      payload: { trip_id: 12, trip_stop_id: 30, recipient_name: "Demo recipient" },
+      payload: { trip_id: 12, recipient_name: "Demo recipient" },
     });
     expect(geolocation.getCurrentPosition).not.toHaveBeenCalled();
     expect(geolocation.watchPosition).not.toHaveBeenCalled();
@@ -116,7 +117,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     await userEvent.click(screen.getByRole("button", { name: "Confirm failed" }));
     await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(enqueueEvent).mock.calls[0][0].event.payload)
-      .toEqual({ trip_id: 12, trip_stop_id: 30, failure_reason: "customer_absent" });
+      .toEqual({ trip_id: 12, failure_reason: "customer_absent" });
   });
 
   it("disables terminal-trip actions and does not start GPS at trip expiry", async () => {
@@ -131,6 +132,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
   });
 
   it("records the selected stop ID on a multi-stop POD and never auto-confirms", async () => {
+    vi.mocked(stopScopedPodEnabled).mockReturnValue(true);
     vi.mocked(assignedTrips).mockResolvedValue([{
       ...loaded, status: "on_road", stops: [
         loaded.stops[0],
@@ -152,6 +154,19 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     expect(item.event.payload).toEqual({ trip_id: 12, trip_stop_id: 31, recipient_name: "Sample recipient" });
     expect(replayEvents).not.toHaveBeenCalled();
     expect(screen.getByText(/Not yet confirmed by CFO/)).toBeInTheDocument();
+  });
+
+  it("keeps multi-stop POD disabled before the stop-scoped backend is deployed", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{
+      ...loaded, status: "on_road", stops: [loaded.stops[0], { ...loaded.stops[0], trip_stop_id: 31 }],
+    }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findAllByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    expect(screen.getByText(/Multi-stop POD requires the verified stop-scoped execution API/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
+    expect(enqueueEvent).not.toHaveBeenCalled();
   });
 
   it("blocks ambiguous cross-order trips without guessing which order to dispatch", async () => {
