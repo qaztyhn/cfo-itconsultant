@@ -157,19 +157,23 @@ async def list_rejects(
 
 async def _market_overview(session: AsyncSession, market: Market) -> dict[str, Any]:
     config = MarketConfig.model_validate(market.config)
-    latest = (
-        await session.scalars(
-            select(SyncRun)
-            .where(SyncRun.market_id == market.id)
-            .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
-        )
-    ).all()
+    # Fetch at most two rows per feed, regardless of the lifetime run history.
     by_entity: dict[str, SyncRun] = {}
     successful: dict[str, SyncRun] = {}
-    for run in latest:
-        by_entity.setdefault(run.entity, run)
-        if run.status == "ok":
-            successful.setdefault(run.entity, run)
+    for entity in FEEDS:
+        base = select(SyncRun).where(
+            SyncRun.market_id == market.id,
+            SyncRun.entity == entity,
+        )
+        order = (SyncRun.started_at.desc(), SyncRun.id.desc())
+        current = await session.scalar(base.order_by(*order).limit(1))
+        complete = await session.scalar(
+            base.where(SyncRun.status == "ok").order_by(*order).limit(1)
+        )
+        if current is not None:
+            by_entity[entity] = current
+        if complete is not None:
+            successful[entity] = complete
     checkpoints = (
         await session.scalars(select(SyncCheckpoint).where(SyncCheckpoint.market_id == market.id))
     ).all()
