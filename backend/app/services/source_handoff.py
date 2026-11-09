@@ -169,6 +169,8 @@ async def accept_source_order(
                     "RESOURCE_CONFLICT",
                     "CFO routing exists but order is not initialised.",
                 )
+            if role == "sales" and existing.origin_store_id != store.id:
+                raise DomainError("NOT_FOUND", "Submitted source order is not available.")
             if source.version > existing.source_version:
                 outcome = await ingest_orders.apply(session, market, source)
                 if outcome.reject_code is not None:
