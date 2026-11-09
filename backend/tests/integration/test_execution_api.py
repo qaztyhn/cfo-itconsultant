@@ -620,7 +620,7 @@ def test_BE_05_multi_stop_fail_closed_for_wrong_driver_and_stop(
     body = {"trip_id": 1, "trip_stop_id": stop_id, "failure_reason": "customer_absent"}
     assert_error(
         send(execution_api, 14, "FAILED", "2026-11-10T09:20:00Z", body),
-        404, "NOT_FOUND",
+        403, "FORBIDDEN",
     )
     assert_error(
         send(execution_api, SALES, "FAILED", "2026-11-10T09:20:00Z", body),
