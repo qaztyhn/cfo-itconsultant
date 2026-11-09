@@ -82,6 +82,7 @@ class DemoFixture(TypedDict):
     vehicle_calendar: list[dict[str, object]]
     driver_shifts: list[dict[str, object]]
     driver_history: list[dict[str, object]]
+    driver_edge_cases: list[dict[str, object]]
     e2e_scenarios: list[dict[str, object]]
     golden_expected: dict[str, dict[str, object]]
     blockers: dict[str, str]
@@ -276,6 +277,31 @@ def _driver_shifts() -> list[dict[str, object]]:
     return shifts
 
 
+def driver_edge_cases() -> list[dict[str, object]]:
+    """Unverified negative probes, never synthetic legal proof or plan approval."""
+    cases = (
+        ("candidate_without_attestation", "UNVERIFIED_EVIDENCE", 1),
+        ("short_daily_rest_10h", "REST_SHORT", 2),
+        ("driving_duration_10h", "DRIVING_LIMIT", 3),
+        ("missing_rolling_56d_day", "MISSING_HISTORY", 4),
+        ("future_shift_missing", "NO_OFFICIAL_SHIFT", 5),
+        ("unknown_561_scope", "SCOPE_UNKNOWN", 6),
+        ("trailer_changes_561_scope", "SCOPE_REVIEW", 7),
+        ("overnight_shift", "REST_RECHECK", 8),
+        ("licence_expired", "LICENCE_EXPIRED", 10),
+    )
+    return [
+        {
+            "case": case,
+            "employee_no": f"DEMO-DRIVER-{number}",
+            "expected_gate": reason,
+            "legally_verified": False,
+            "source": "synthetic_negative_test_only",
+        }
+        for case, reason, number in cases
+    ]
+
+
 def generate(seed: int = RANDOM_SEED) -> DemoFixture:
     """Pure repeatable fixture. Does not touch production/source/CFO databases."""
     if seed != RANDOM_SEED:
@@ -310,6 +336,7 @@ def generate(seed: int = RANDOM_SEED) -> DemoFixture:
         ],
         "driver_shifts": _driver_shifts(),
         "driver_history": _driver_history(),
+        "driver_edge_cases": driver_edge_cases(),
         "e2e_scenarios": [
             {"number": number, "name": label, "order_ids": [f"SE-2026-{key}" for key in ids]}
             for number, label, ids in E2E
@@ -352,5 +379,9 @@ def validate(value: DemoFixture) -> None:
         row["verified"] is not False or row["reg_561_scope"] != "unknown" for row in value["driver_history"]
     ):
         raise ValueError("Synthetic D7 data must remain explicitly unverified")
+    if len(value["driver_edge_cases"]) != 9 or any(
+        item["legally_verified"] is not False for item in value["driver_edge_cases"]
+    ):
+        raise ValueError("D7 edge case probes cannot assert legal verification")
     if value["gps_enabled"]:
         raise ValueError("No implicit GPS opt-in")
