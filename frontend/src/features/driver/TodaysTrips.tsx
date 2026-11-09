@@ -64,6 +64,7 @@ export function TodaysTrips() {
   const userId = authenticatedDriver ? user?.id ?? null : null;
 
   const [trips, setTrips] = useState<DriverTrip[]>([]);
+  const [tripOwner, setTripOwner] = useState<number | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
   const [pending, setPending] = useState<PendingEvent[]>([]);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
@@ -80,7 +81,10 @@ export function TodaysTrips() {
 
   const refreshPending = useCallback(async () => {
     if (userId === null) { setPending([]); return; }
-    try { setPending(await pendingForUser(userId)); }
+    try {
+      const items = await pendingForUser(userId);
+      if (useAuthStore.getState().user?.id === userId) setPending(items);
+    }
     catch { setError("Secure offline storage is unavailable. Updates cannot be queued."); }
   }, [userId]);
 
@@ -89,9 +93,12 @@ export function TodaysTrips() {
     setLoading(true);
     try {
       const items = await assignedTrips();
+      if (useAuthStore.getState().user?.id !== userId) return;
+      setTripOwner(userId);
       setTrips(items);
       setError(null);
     } catch (cause) {
+      if (useAuthStore.getState().user?.id !== userId) return;
       setError(safeApiMessage(cause));
       // Never show previous user's trips after an authorization failure.
       if (isApiError(cause) && [401, 403, 404].includes(cause.status ?? 0)) setTrips([]);
@@ -124,7 +131,7 @@ export function TodaysTrips() {
     // Schedule state-changing refresh after effect setup (React compiler lint rule).
     void Promise.resolve().then(() => {
       if (!active) return;
-      if (userId === null) { setTrips([]); setPending([]); setSelectedTrip(null); return; }
+      if (userId === null) { setTrips([]); setTripOwner(null); setPending([]); setSelectedTrip(null); return; }
       void refreshTrips();
       void refreshPending();
     });
@@ -162,9 +169,11 @@ export function TodaysTrips() {
     return () => { active = false; if (status) status.onchange = null; };
   }, []);
 
-  const activeTrip = selectedTrip === null ? null : trips.find((trip) => trip.trip_id === selectedTrip) ?? null;
+  const safeTrips = tripOwner === userId ? trips : [];
+  const safePending = pending.filter((event) => event.userId === userId);
+  const activeTrip = selectedTrip === null ? null : safeTrips.find((trip) => trip.trip_id === selectedTrip) ?? null;
   const pendingForTrip = activeTrip
-    ? pending.some((event) => event.tripId === activeTrip.trip_id)
+    ? safePending.some((event) => event.tripId === activeTrip.trip_id)
     : false;
 
   async function record(
@@ -172,7 +181,7 @@ export function TodaysTrips() {
     stop: DriverStop,
     type: DriverEventType,
   ): Promise<void> {
-    if (userId === null || busy || pending.some((item) => item.tripId === trip.trip_id)) return;
+    if (userId === null || busy || safePending.some((item) => item.tripId === trip.trip_id)) return;
     if (!trip.stops.some((item) => item.trip_stop_id === stop.trip_stop_id && item.order_id === stop.order_id)) return;
     const action = detailAction(trip);
     if ((type === "DISPATCHED" && action !== "DISPATCHED") ||
@@ -225,7 +234,7 @@ export function TodaysTrips() {
             <p className="text-body text-white/80">Only trips assigned to your driver account</p>
           </div>
           <span className="rounded-control border border-white/40 px-3 py-2 font-mono text-caption">
-            {activeTrip?.vehicle_code ?? trips[0]?.vehicle_code ?? "No vehicle"}
+            {activeTrip?.vehicle_code ?? safeTrips[0]?.vehicle_code ?? "No vehicle"}
           </span>
         </div>
       </header>
@@ -234,7 +243,7 @@ export function TodaysTrips() {
         <div className={card} aria-live="polite">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-semibold">{online ? "Online" : "Offline · updates not sent"}</span>
-            <span className="text-caption">{pending.length} update{pending.length === 1 ? "" : "s"} pending / needing review</span>
+            <span className="text-caption">{safePending.length} update{safePending.length === 1 ? "" : "s"} pending / needing review</span>
           </div>
           <p className="mt-2 text-caption text-inkMuted">
             An update is confirmed only after CFO acknowledges it. The local outbox is not proof of delivery.
@@ -247,7 +256,7 @@ export function TodaysTrips() {
         {notice && <p role="status" className="rounded-control bg-surface p-3 text-body">{notice}</p>}
         {error && <div role="alert" className={card}><p>{error}</p><button type="button" className={secondary} onClick={() => { setError(null); void refreshTrips(); }}>Retry load</button></div>}
 
-        {pending.filter((item) => item.state === "conflict").map((item) => (
+        {safePending.filter((item) => item.state === "conflict").map((item) => (
           <div className={card} role="alert" key={item.key}>
             <p className="font-semibold">Update needs manual review</p>
             <p className="text-body">Order {item.orderId} · {item.errorCode ?? "CONFLICT"}. It has not been confirmed.</p>
@@ -258,8 +267,8 @@ export function TodaysTrips() {
           </div>
         ))}
 
-        {loading && trips.length === 0 ? <div className={card} role="status">Loading assigned trips…</div> : null}
-        {!loading && trips.length === 0 && !error ? <div className={card}>No assigned trips for today.</div> : null}
+        {loading && safeTrips.length === 0 ? <div className={card} role="status">Loading assigned trips…</div> : null}
+        {!loading && safeTrips.length === 0 && !error ? <div className={card}>No assigned trips for today.</div> : null}
         {activeTrip ? (
           <section className={card} aria-label="Trip details">
             <button type="button" className={secondary} onClick={() => { setSelectedTrip(null); setOutcome("DELIVERED"); }}>Back to trips</button>
@@ -322,7 +331,7 @@ export function TodaysTrips() {
           </section>
         ) : (
           <section aria-label="Assigned trips" className="flex flex-col gap-4">
-            {trips.map((trip, index) => (
+            {safeTrips.map((trip, index) => (
               <article className={card} key={trip.trip_id}>
                 <p className="text-caption font-semibold uppercase">{index === 0 ? "Now" : "Later"} · Trip {trip.trip_id}</p>
                 <h2 className="mt-1 text-h3 font-semibold">{trip.vehicle_code}</h2>
