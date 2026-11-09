@@ -62,11 +62,6 @@ export function fetchNegotiations(orderId: number, signal?: AbortSignal) {
 export function recordNegotiation(orderId: number, body: NegotiationInput) {
   return apiPost<{ id: number }>(`/orders/${orderId}/date-negotiations`, body);
 }
-export function replanAgreedDate(orderId: number, date: string, reason: string) {
-  return apiPost<PlanningRun>(`/orders/${orderId}/plan`, {
-    target_date: date, reason_code: "date_negotiation_agreed", reason_text: reason,
-  });
-}
 export function fetchVerifiedTransfers(orderId: number, signal?: AbortSignal) {
   return apiGet<{ items: TransferSuggestion[] }>(`/orders/${orderId}/transfer-suggestions`, undefined, signal);
 }
