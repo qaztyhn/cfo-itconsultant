@@ -48,9 +48,7 @@ def _payload(req: ReservationRequest) -> dict[str, object]:
 
 
 def _digest(payload: dict[str, object]) -> str:
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _request(intent: WmsReservationIntent) -> ReservationRequest:
@@ -115,9 +113,7 @@ async def begin_intent(
     payload = _payload(request)
     digest = _digest(payload)
     found = await session.scalar(
-        select(WmsReservationIntent)
-        .where(WmsReservationIntent.order_id == order.id)
-        .with_for_update()
+        select(WmsReservationIntent).where(WmsReservationIntent.order_id == order.id).with_for_update()
     )
     if found is not None:
         if found.request_digest != digest or found.is_synthetic != synthetic:
@@ -142,14 +138,10 @@ async def begin_intent(
     return intent
 
 
-async def record_ack(
-    session: AsyncSession, request_key: str, ack: ReservationAck
-) -> WmsReservationIntent:
+async def record_ack(session: AsyncSession, request_key: str, ack: ReservationAck) -> WmsReservationIntent:
     """Verify exact ACK against persisted request, then commit in a separate transaction."""
     intent = await session.scalar(
-        select(WmsReservationIntent)
-        .where(WmsReservationIntent.request_key == request_key)
-        .with_for_update()
+        select(WmsReservationIntent).where(WmsReservationIntent.request_key == request_key).with_for_update()
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
@@ -182,9 +174,7 @@ async def record_ack(
 async def record_unknown(session: AsyncSession, request_key: str) -> None:
     """On no status evidence, keep a durable unresolved intent for same-key recovery."""
     intent = await session.scalar(
-        select(WmsReservationIntent)
-        .where(WmsReservationIntent.request_key == request_key)
-        .with_for_update()
+        select(WmsReservationIntent).where(WmsReservationIntent.request_key == request_key).with_for_update()
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
@@ -197,9 +187,7 @@ async def mark_refreshed(
 ) -> WmsReservationIntent:
     """Advance only with explicit matching inclusion proof, never later timestamp alone."""
     intent = await session.scalar(
-        select(WmsReservationIntent)
-        .where(WmsReservationIntent.request_key == request_key)
-        .with_for_update()
+        select(WmsReservationIntent).where(WmsReservationIntent.request_key == request_key).with_for_update()
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
