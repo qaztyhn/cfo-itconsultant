@@ -25,6 +25,10 @@ from app.core.logging import configure_logging
 def create_app() -> FastAPI:
     """Tạo ứng dụng FastAPI với middleware, lỗi chuẩn và router v1."""
     settings = get_settings()
+    # Explicit opt-in. No production driver-history reader is configured by default.
+    from app.adapters.demo_d7_reader import configure_disposable_reader
+
+    configure_disposable_reader()
     if settings.app_now:  # chỉ cố định đồng hồ khi APP_NOW được đặt (08 mục 1.6)
         clock.init_from_settings(settings.app_now)
     configure_logging(Path("logs") if settings.app_env == "local" else None)

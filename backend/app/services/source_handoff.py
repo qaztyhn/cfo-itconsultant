@@ -171,6 +171,11 @@ async def accept_source_order(
                 )
             if role == "sales" and existing.origin_store_id != store.id:
                 raise DomainError("NOT_FOUND", "Submitted source order is not available.")
+            # The immutable route's first source version is not a freshness floor:
+            # CFO may have already ingested a newer Source version. An older
+            # adapter snapshot must not be reported as current or replayed.
+            if source.version < existing.source_version:
+                raise DomainError("RESOURCE_CONFLICT", "Source version predates the CFO order.")
             if source.version > existing.source_version:
                 try:
                     outcome = await ingest_orders.apply(session, market, source)

@@ -125,7 +125,7 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
 ### 5.0.1 Sales sync-now — endpoint mới
 
-`POST /api/v1/integration/orders/sync-now`, role `sales`, header `Idempotency-Key` bắt buộc, body `{ "external_ref": "POS-SE-88120" }`. CFO dùng MarketAdapter GET nguồn, kiểm market/store, upsert theo source version, trả `200 { "order_id": 4021, "external_ref": "POS-SE-88120", "sync_status": "synced", "source_version": 1 }`, `already_current` nếu đã có. Sai quyền 403, khác cửa hàng/không tồn tại 404, xung đột 409, nguồn lỗi 503, dữ liệu không hợp lệ 422. Không ghi POS. Implementation requires the Dev 1 transactional Source handoff and verified Dev 2 Source adapter. This endpoint must only be considered operational after both dependency PRs merge and real Source/CFO PostgreSQL HTTP E2E verifies the workflow; a green isolated router/unit test is not enough.
+`POST /api/v1/integration/orders/sync-now`, role `sales`, header `Idempotency-Key` bắt buộc, body `{ "external_ref": "POS-SE-88120" }`. CFO dùng MarketAdapter GET nguồn, kiểm market/store, upsert theo source version, trả `200 { "order_id": 4021, "external_ref": "POS-SE-88120", "sync_status": "synced", "source_version": 1 }`, `already_current` nếu đã có. Sai quyền 403, khác cửa hàng/không tồn tại 404, xung đột 409, nguồn lỗi 503, dữ liệu không hợp lệ 422. Không ghi POS. Trạng thái endpoint chỉ là **hợp đồng mục tiêu**, chưa có code.
 
 
 | Phương thức | Đường dẫn | Vai trò | Ghi chú |
