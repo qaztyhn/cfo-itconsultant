@@ -22,7 +22,6 @@ from app.domain.models.ref import ComplianceRecord, Location, Market
 from app.services import alert_service
 from app.services.gps_duty import active_duty, trip_collection_windows
 
-
 MAX_GPS_BATCH_POSITIONS = 100  # Owner-approved G4 upload limit (DEC-OWNER-20261109)
 
 
