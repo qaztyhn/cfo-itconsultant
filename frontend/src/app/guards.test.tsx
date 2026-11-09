@@ -5,11 +5,14 @@ import { currentPath, currentState, renderAt, signInAs, userByEmail } from "../t
 import { fireEvent } from "@testing-library/react";
 import { fetchMe } from "../api/auth";
 import { ApiError } from "../api/client";
+import { setupOrderQueueMsw } from "../features/dispatcher/orderQueue/testServer";
 
 vi.mock("../api/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/auth")>()),
   fetchMe: vi.fn(),
 }));
+
+setupOrderQueueMsw();
 
 const screenOf = (name: string) => document.querySelector(`[data-screen="${name}"]`);
 

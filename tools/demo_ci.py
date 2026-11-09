@@ -163,6 +163,14 @@ def cli() -> int:
         if db_rc not in (0, 2) or not check_db_report(sync_report, db_report):
             print("FAIL: Source->CFO PostgreSQL exact-once/legacy evidence failed or was bypassed.")
             return 1
+        if env.get("DEMO_BROWSER") == "1":
+            # Explicit opt-in: execute Chromium while the real disposable stack
+            # and accepted CFO order still exist. No fixture/gate mutation.
+            browser_rc = call([sys.executable, "tools/demo_browser_smoke.py"])
+            if browser_rc != 0:
+                print("NOT VERIFIED: browser E2E did not complete; see safe screenshot/status artifact.")
+                return browser_rc
+            print("BROWSER RESULT: inspect demo-browser-evidence/status.json; 409 is BLOCKED, not approval.")
         print("PASS: disposable Source/CFO/frontend preflight and negative authentication checks.")
         print("DATABASE RESULT: see demo-ci-db-results.json; blocked routing is NOT verified uniqueness.")
         print("INTEGRATION RESULT: see safe demo-ci-sync-results.json; BLOCKED != E2E PASS.")

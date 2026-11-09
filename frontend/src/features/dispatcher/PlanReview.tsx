@@ -5,7 +5,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type { PlanningRun } from "../../api/contracts/planning";
 import { fetchPlanningRun, planningKeys } from "../../api/planning";
 import { PATHS } from "../../app/access";
@@ -77,11 +77,32 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
   if (run.result === "infeasible" || plans.length === 0) {
     const gate = run.failed_check ? `Failed gate: ${gateLabel(run.failed_check)}.` : "";
     const earliest = run.earliest_feasible_date ? ` Earliest feasible date ${run.earliest_feasible_date}.` : "";
-    return <><EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />{(run.rejected_candidates?.length ?? 0) > 0 && <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />}{run.kind !== "replan_suggestion" && <HoldActions run={run} expired />}</>;
+    return (
+      <>
+        <EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />
+        {(run.rejected_candidates?.length ?? 0) > 0 && <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />}
+        <p className="text-sm text-inkMuted">
+          This run cannot be approved. The previous planning run is not a replacement.
+        </p>
+        <Link to={`${PATHS.dispatcherExceptions}?tab=${run.kind === "replan_suggestion" ? "replan" : "no-feasible"}`}
+          className="w-fit rounded-control border border-border px-3 py-2 text-sm font-semibold text-pine">
+          Review Exceptions
+        </Link>
+        {run.kind !== "replan_suggestion" && <HoldActions run={run} expired />}
+      </>
+    );
   }
 
   return (
     <>
+      {run.kind === "replan_suggestion" && (
+        <div role="status" className="rounded-card border border-border bg-stone p-4 text-sm text-ink">
+          Replan suggestion only. This run has no committed replacement or approval hold.
+          The existing approved plan remains authoritative.
+          <Link to={`${PATHS.dispatcherExceptions}?tab=replan`}
+            className="ml-2 font-semibold text-pine underline">Review replan in Exceptions</Link>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <DataFreshness stale />
         {run.hold_expires_at && (

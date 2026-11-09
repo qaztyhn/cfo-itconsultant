@@ -1,0 +1,39 @@
+# Isolated synthetic browser walkthrough; no deployment, approval or fixture bypass.
+name: demo-browser-p0
+on:
+  push:
+    branches:
+      - feat/dev3-demo-order-queue-integration
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dispatcher-real-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare Chromium automation
+        run: |
+          python -m pip install "selenium>=4.24,<5"
+          google-chrome --version
+          chromedriver --version
+      - name: Disposable Source + CFO + PostgreSQL + real Chromium browser
+        env:
+          DEMO_BROWSER: "1"
+        run: python tools/demo_ci.py
+      - name: Upload synthetic browser screenshots and non-PII HTTP ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatcher-demo-browser-evidence
+          path: |
+            demo-browser-evidence/**
+            demo-ci-read-results.json
+            demo-ci-sync-results.json
+            demo-ci-db-results.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -517,6 +517,26 @@ describe("Infeasible run diagnostics (P0 regression)", () => {
     expect(screen.getByText("TEST-TRUCK-9")).toBeInTheDocument();
     expect(screen.getAllByText("NO_TRUCK_FIT").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Plan Again" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Review Exceptions" })).toHaveAttribute("href", "/dispatcher/exceptions?tab=no-feasible");
     expect(screen.queryByRole("button", { name: /Approve #/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("Latest advisory run recovery navigation (P0 regression)", () => {
+  it("opens genuine suggestion diagnostics, shows Exceptions route and never enables approval", async () => {
+    const response = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
+      headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}${userByEmail("dispatcher@cfo.demo").id}` },
+    });
+    const existing = await response.json();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({
+      ...existing, kind: "replan_suggestion", hold_expires_at: null,
+    })));
+    await openPlan(MOCK_RUN_IDS.normal);
+
+    expect(await screen.findByText(/Replan suggestion only/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review replan in Exceptions" }))
+      .toHaveAttribute("href", "/dispatcher/exceptions?tab=replan");
+    expect(approveButton(1)).toBeDisabled();
+    expect(screen.queryByText(/CFO reports APPROVED/)).not.toBeInTheDocument();
   });
 });
