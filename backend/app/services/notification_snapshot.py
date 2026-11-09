@@ -11,7 +11,6 @@ A database-level immutability constraint needs a separately reviewed migration.
 
 import hashlib
 import json
-from datetime import datetime
 from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
