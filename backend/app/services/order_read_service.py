@@ -10,11 +10,11 @@
 Owner: Dev 1 (A) — M2.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-import re
 from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
