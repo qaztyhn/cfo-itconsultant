@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T07 stock writer × S1–S5 (#121 + #148), vẫn tắt trong scheduler] — 2026-11-09 — Dev 2
+
+- `ingest_stock.apply` ghi tồn CFO chỉ khi: có scope đã duyệt hiệu lực tại `as_of` của batch Source (không hồi tố), đủ mọi hàng kho × SKU kỳ vọng (thiếu = unknown ⇒ từ chối cả batch; 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua), `normalize_stock` chấp nhận (ánh xạ đã xác nhận, đơn vị/quy đổi, độc lập có evidence còn hiệu lực). Ghi `ops.stock_write_run` (scope/evidence version); replay cùng batch id là no-op; lỗi không đổi checkpoint, giữ tồn cũ. `usable()` = lần ghi chấp nhận mới nhất còn trong `stale_stock_min` và scope còn hiệu lực.
+- Scheduler vẫn **không** chạy `stock`; chỉ CLI tường minh. Chưa nối: hook vô hiệu evidence khi mapping/đơn vị đổi (Dev 1), đọc lại sau WMS ACK (#163), WMS reserve thật.
+
 ## [S1–S5 — persistence scope/evidence tồn kho (đề xuất kỹ thuật, Draft)] — 2026-11-09 — Dev 1, cần Dev 2 review
 
 - Migration `0013` + docs/05 §6.1: `ref.stock_admin_grant`, `ops.stock_scope_version`, `ops.stock_independence_evidence`, `ops.stock_write_run` (64 bảng). Scope bất biến sau duyệt (trigger), tác giả ≠ người duyệt (CHECK), evidence tối đa 30 ngày (CHECK), lịch sử chỉ thêm, `stock_write_run` chỉ thêm và duy nhất theo `(market, source_batch_id)`.
