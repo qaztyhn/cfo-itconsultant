@@ -8,6 +8,7 @@ not configure the production DisabledWmsPort.
 
 import hashlib
 import json
+import os
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -19,11 +20,24 @@ from app.adapters.wms_reservation import (
     verify_ack,
 )
 from app.adapters.wms_sku import ReservationLine
+from app.core.config import get_settings
 from app.core.errors import DomainError
 from app.domain.models.ops import CustomerOrder
 from app.domain.models.plan import FulfilmentPlan
 from app.domain.models.ref import Market
 from app.domain.models.wms import WmsReservationIntent
+
+
+def _ensure_synthetic_scope(intent_is_synthetic: bool) -> None:
+    if not intent_is_synthetic:
+        return
+    settings = get_settings()
+    if (
+        settings.app_env != "test"
+        or settings.app_now != "2026-11-04T10:05:00+01:00"
+        or os.environ.get("DEMO_DISPOSABLE") != "1"
+    ):
+        raise DomainError("FORBIDDEN", "Synthetic WMS evidence is restricted to the disposable demo.")
 
 
 def _payload(req: ReservationRequest) -> dict[str, object]:
@@ -82,6 +96,7 @@ async def begin_intent(
     request must come from the trusted confirmed-mapping resolver, after RBAC and
     five gates. Never call with client-supplied native SKU relations.
     """
+    _ensure_synthetic_scope(synthetic)
     if not request.lines or any(
         not line.wms_sku.strip()
         or not line.wms_unit.strip()
@@ -145,6 +160,7 @@ async def record_ack(session: AsyncSession, request_key: str, ack: ReservationAc
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
+    _ensure_synthetic_scope(intent.is_synthetic)
     verify_ack(_request(intent), ack)
     if intent.status in ("rejected", "released"):
         raise DomainError("RESOURCE_CONFLICT", "Reservation has been closed.")
@@ -178,6 +194,7 @@ async def record_unknown(session: AsyncSession, request_key: str) -> None:
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
+    _ensure_synthetic_scope(intent.is_synthetic)
     if intent.status == "pending":
         intent.status = "unknown"
 
@@ -191,6 +208,7 @@ async def mark_refreshed(
     )
     if intent is None:
         raise DomainError("NOT_FOUND", "WMS intent not found.")
+    _ensure_synthetic_scope(intent.is_synthetic)
     if (
         intent.status not in ("acked", "refreshed")
         or not inclusion_proven
