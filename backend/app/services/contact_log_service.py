@@ -19,9 +19,7 @@ def _roles(actor: object) -> tuple[str, ...]:
     return tuple(getattr(actor, "roles", ()) or ())
 
 
-async def _scoped_order(
-    session: AsyncSession, actor: object, order_id: int, *, write: bool
-) -> CustomerOrder:
+async def _scoped_order(session: AsyncSession, actor: object, order_id: int, *, write: bool) -> CustomerOrder:
     roles = _roles(actor)
     if write:
         if "customer_service" not in roles:
@@ -91,7 +89,7 @@ async def create(
         actor_user_id=actor_id,
         actor_employee_id=employee_id,
         actor_role="customer_service",
-        snapshot={"channel":channel, "reason_code":reason_code},
+        snapshot={"channel": channel, "reason_code": reason_code},
     )
     return _view(log)
 
