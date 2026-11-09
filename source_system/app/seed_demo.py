@@ -80,7 +80,15 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
             "address_id": address.id,
             "date_mode": str(spec["date_mode"]),
             "date_from": date.fromisoformat(str(spec["date_from"])),
-            "date_to": date.fromisoformat(str(spec["date_to"])),
+            # The scenario manifest specifies a requested *calendar day* twice
+            # for downstream planning, but Source D1 exact-date schema requires
+            # a NULL upper bound. Do not weaken the approved Source validator.
+            "date_to": (
+                None
+                if spec["date_mode"] == "exact"
+                and spec["date_from"] == spec["date_to"]
+                else date.fromisoformat(str(spec["date_to"]))
+            ),
             "window_start": time.fromisoformat(str(spec["window_start"])),
             "window_end": time.fromisoformat(str(spec["window_end"])),
             "sales_code": str(spec["sales_code"]),
