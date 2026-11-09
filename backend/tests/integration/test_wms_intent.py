@@ -147,7 +147,9 @@ def test_wrong_ack_cannot_enter_ledger(db: str, monkeypatch) -> None:
     with pytest.raises(ReservationMismatch):
         _run(
             db,
-            lambda s: wms_intent.record_ack(s, request.idempotency_key, replace(ack, idempotency_key="wrong")),
+            lambda s: wms_intent.record_ack(
+                s, request.idempotency_key, replace(ack, idempotency_key="wrong")
+            ),
         )
     assert fetch(db, "SELECT status FROM ops.wms_reservation_intent")[0][0] == "pending"
 
