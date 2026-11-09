@@ -2,7 +2,6 @@
 
 import pytest
 
-from app.audit import recorder
 from app.core.errors import DomainError
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import execute, fetch
@@ -37,7 +36,13 @@ def test_BE_03_cs_creates_real_contact_log_with_actor_timestamp_and_safe_audit(c
     assert item["note"] == BODY["note"]
     assert item["contacted_at"].endswith("Z") or "+" in item["contacted_at"]
     assert set(item) == {
-        "id", "order_id", "channel", "reason_code", "note", "employee_id", "contacted_at"
+        "id",
+        "order_id",
+        "channel",
+        "reason_code",
+        "note",
+        "employee_id",
+        "contacted_at",
     }
     recorded = fetch(
         contact_api.dsn,
