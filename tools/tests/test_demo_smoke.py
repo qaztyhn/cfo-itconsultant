@@ -119,6 +119,7 @@ class DemoSmokeTests(unittest.TestCase):
         self.assertEqual(FIXTURE["app_now"], APP_NOW)
         self.assertEqual(len(FIXTURE["orders"]), 18)
         self.assertEqual(len(FIXTURE["stock_snapshot"]["items"]), 300)
+        self.assertEqual(FIXTURE["vehicle_calendar"][0]["kind"], "external_booking")
         self.assertTrue(all(row["verified"] is False for row in FIXTURE["driver_history"]))
         self.assertTrue(all(row["reg_561_scope"] == "unknown" for row in FIXTURE["driver_history"]))
         self.assertTrue(any(o["id"] == GOOD_REF and o["store_code"] == "ST-001" for o in FIXTURE["orders"]))
