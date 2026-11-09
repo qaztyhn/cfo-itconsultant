@@ -67,7 +67,7 @@ export function TodaysTrips() {
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
   const [pending, setPending] = useState<PendingEvent[]>([]);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
-  const [permission, setPermission] = useState("not requested");
+  const [permission, setPermission] = useState(() => navigator.permissions?.query ? "not requested" : "unavailable");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,9 +120,15 @@ export function TodaysTrips() {
   }, [online, refreshPending, refreshTrips, userId]);
 
   useEffect(() => {
-    if (userId === null) { setTrips([]); setPending([]); setSelectedTrip(null); return; }
-    void refreshTrips();
-    void refreshPending();
+    let active = true;
+    // Schedule state-changing refresh after effect setup (React compiler lint rule).
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      if (userId === null) { setTrips([]); setPending([]); setSelectedTrip(null); return; }
+      void refreshTrips();
+      void refreshPending();
+    });
+    return () => { active = false; };
   }, [userId, refreshTrips, refreshPending]);
 
   useEffect(() => {
@@ -136,13 +142,15 @@ export function TodaysTrips() {
   }, []);
 
   useEffect(() => {
-    if (online && userId !== null && pending.some((item) => item.state === "pending")) void retryPending();
+    if (online && userId !== null && pending.some((item) => item.state === "pending")) {
+      void Promise.resolve().then(() => retryPending());
+    }
     // Deliberately do not loop on changes in the pending list; only on re-connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, userId]);
 
   useEffect(() => {
-    if (!navigator.permissions?.query) { setPermission("unavailable"); return; }
+    if (!navigator.permissions?.query) return;
     let active = true;
     let status: PermissionStatus | null = null;
     void navigator.permissions.query({ name: "geolocation" }).then((result) => {
@@ -213,7 +221,7 @@ export function TodaysTrips() {
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
             <p className="text-caption uppercase tracking-wide text-white/80">Driver PWA</p>
-            <h1 className="text-h2 font-semibold">Today's trips</h1>
+            <h1 className="text-h2 font-semibold">Today&apos;s trips</h1>
             <p className="text-body text-white/80">Only trips assigned to your driver account</p>
           </div>
           <span className="rounded-control border border-white/40 px-3 py-2 font-mono text-caption">
