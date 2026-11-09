@@ -36,7 +36,8 @@ function clean(value: unknown, max = 100): string | null {
 }
 function date(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  return new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value ? value : null;
+  const parsed = Date.parse(value + "T00:00:00Z");
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value ? value : null;
 }
 function datetime(value: unknown): string | null {
   return typeof value === "string" && /(?:Z|[+-]\d\d:\d\d)$/.test(value) &&
