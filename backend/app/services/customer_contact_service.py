@@ -5,7 +5,6 @@ service in a separate review after in-flight CS DTO PR #189 merges, rather than
 changing a contested router file. Never log or audit customer-facing free text.
 """
 
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,9 +28,11 @@ async def _order(
     session: AsyncSession, actor: object, order_id: int, *, write: bool
 ) -> tuple[CustomerOrder, Market]:
     roles = _roles(actor)
-    if (write and "customer_service" not in roles) or (
-        not write and not roles.intersection({"customer_service", "dispatcher"})
-    ):
+    if write:
+        allowed = "customer_service" in roles
+    else:
+        allowed = bool(roles.intersection({"customer_service", "dispatcher"}))
+    if not allowed:
         raise DomainError("FORBIDDEN", "Customer contact log permission required.")
     code = getattr(actor, "market", None)
     if not isinstance(code, str) or not code:
