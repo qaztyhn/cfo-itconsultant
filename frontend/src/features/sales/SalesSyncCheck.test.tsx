@@ -84,6 +84,25 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
     expect(mock.plan).not.toHaveBeenCalled();
     expect(mock.confirm).not.toHaveBeenCalled();
   });
+  it("clears prior routing actions when switching the POS reference", async () => {
+    mount(); search();
+    await screen.findByText("Synced · CFO routing confirmed.");
+    fireEvent.change(screen.getByRole("textbox", { name: "External POS order reference" }), {
+      target: { value: "POS-456" },
+    });
+    expect(screen.queryByRole("button", { name: "Check feasibility" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Report manual fulfilment started" })).toBeDisabled();
+    expect(mock.plan).not.toHaveBeenCalled();
+  });
+  it("does not expose a plan for a mismatched returned order ID", async () => {
+    mock.plan.mockResolvedValue({ ...run, order_id: 9001 });
+    mount(); search();
+    await screen.findByText("Synced · CFO routing confirmed.");
+    fireEvent.click(screen.getByRole("button", { name: "Check feasibility" }));
+    await waitFor(() => expect(mock.plan).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "Feasible — not confirmed" })).not.toBeInTheDocument();
+    expect(mock.confirm).not.toHaveBeenCalled();
+  });
   it("shows syncing and disables duplicate submission", async () => {
     mock.sync.mockImplementation(() => new Promise(() => undefined));
     mount();
