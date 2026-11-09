@@ -49,32 +49,29 @@ def test_source_stock_ingestion_then_real_planning_service(standard_order: str) 
 
     outcome, usable = run_stock(
         standard_order,
-        snapshot(items=[{
-            "warehouse_code": "WH-1",
-            "sku": "P1",
-            "on_hand": "100.000",
-            "reserved": "0.000",
-        }]),
+        snapshot(
+            items=[
+                {
+                    "warehouse_code": "WH-1",
+                    "sku": "P1",
+                    "on_hand": "100.000",
+                    "reserved": "0.000",
+                }
+            ]
+        ),
     )
     assert outcome.status == "ok"
     assert usable is True
     rows = fetch(
         standard_order,
-        "SELECT on_hand,wms_reserved FROM ops.stock_snapshot "
-        "WHERE warehouse_id=1 AND global_product_id=1",
+        "SELECT on_hand,wms_reserved FROM ops.stock_snapshot " "WHERE warehouse_id=1 AND global_product_id=1",
     )
     assert len(rows) == 1 and tuple(rows[0]) == (100, 0)
-    assert fetch(
-        standard_order, "SELECT count(*) FROM ops.stock_write_run WHERE status='accepted'"
-    )[0][0] == 1
-
-    run_id = transact(
-        standard_order, lambda s: planning_service.plan(1, DISPATCHER, {}, session=s)
+    assert (
+        fetch(standard_order, "SELECT count(*) FROM ops.stock_write_run WHERE status='accepted'")[0][0] == 1
     )
-    result = fetch(
-        standard_order, "SELECT result FROM plan.planning_run WHERE id=$1", run_id
-    )[0][0]
+
+    run_id = transact(standard_order, lambda s: planning_service.plan(1, DISPATCHER, {}, session=s))
+    result = fetch(standard_order, "SELECT result FROM plan.planning_run WHERE id=$1", run_id)[0][0]
     assert result == "feasible"
-    assert fetch(
-        standard_order, "SELECT status FROM ops.customer_order WHERE id=1"
-    )[0][0] == "PLANNED"
+    assert fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
