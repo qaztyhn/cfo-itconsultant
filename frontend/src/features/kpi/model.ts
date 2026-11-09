@@ -68,7 +68,7 @@ export function decisions(raw:unknown):{items:SafeDecision[];total:number|null} 
     const at=typeof x.created_at==="string"&&TIMESTAMP.test(x.created_at)?x.created_at:
       typeof x.at==="string"&&TIMESTAMP.test(x.at)?x.at:"Unavailable";
     const subject=typeof x.order_id==="number"&&int(x.order_id)!==null?`Order #${x.order_id}`:
-      typeof x.subject_ref==="string"&&REF.test(x.subject_ref)?x.subject_ref:"Not reported";
+      "Not reported";
     const correlationId=typeof x.correlation_id==="string"&&/^[a-fA-F0-9-]{36}$/.test(x.correlation_id)?x.correlation_id:null;
     return [{id,at,action,subject,actor:"Withheld for privacy",correlationId}];
   })};
