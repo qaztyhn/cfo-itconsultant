@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { API_BASE_URL } from "../../../api/config";
 import { fetchLocations } from "../../../api/locations";
 import { currentPath, renderAt, signInAs, userByEmail } from "../../../test/utils";
-import { ORDERS_URL, useOrderQueueMsw } from "./testServer";
+import { ORDERS_URL, setupOrderQueueMsw } from "./testServer";
 
 vi.mock("../../../api/locations", () => ({ fetchLocations: vi.fn() }));
 
-const server = useOrderQueueMsw();
+const server = setupOrderQueueMsw();
 
 beforeEach(() => {
   vi.mocked(fetchLocations).mockReset();
