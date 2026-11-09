@@ -74,7 +74,9 @@ class FakeWms:
                     lines[0] = AckLine("OTHER", lines[0].warehouse_code, lines[0].quantity)
                 for ln in request.lines:
                     self.available[(ln.warehouse_code, ln.wms_sku)] -= ln.quantity
-                ack = ReservationAck(f"R-{len(self.by_key) + 1}", status, tuple(lines), "7", 12, request.idempotency_key)
+                ack = ReservationAck(
+                    f"R-{len(self.by_key) + 1}", status, tuple(lines), "7", 12, request.idempotency_key
+                )
                 self.by_key[request.idempotency_key] = ack
         if self.timeout_after_commit:
             self.timeout_after_commit -= 1
