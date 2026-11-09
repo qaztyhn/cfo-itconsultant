@@ -70,9 +70,7 @@ async def sync_rejects(
     page_size: int = Query(50, ge=1, le=200),
 ) -> dict[str, object]:
     """GET rejects: safe reason codes only, never raw source payloads."""
-    return await monitor.list_rejects(
-        db, user, run_id=run_id, market=market, page=page, page_size=page_size
-    )
+    return await monitor.list_rejects(db, user, run_id=run_id, market=market, page=page, page_size=page_size)
 
 
 @router.get("/integration/overview")
