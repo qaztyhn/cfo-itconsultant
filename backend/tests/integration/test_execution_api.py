@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.core import clock
+from app.core.errors import DomainError
 from app.core.security import issue_token
 from app.services import execution_service, notify_service, planning_service, risk_service
 from tests.integration import rows
@@ -573,3 +574,53 @@ def test_M6_1_failure_after_the_pod_insert_rolls_back_pod_stop_and_gps_purge(
     assert (
         fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
     )  # GPS purge undone
+
+def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Real PostgreSQL outbox in the SAME transaction as the delivery status change.
+    execute(
+        execution_api.dsn,
+        "UPDATE ref.customer SET email='demo@cfo.test',preferred_channel='email' WHERE id=1",
+        "UPDATE ops.customer_order SET promise_start='2026-11-10T08:00:00Z',"
+        "promise_end='2026-11-10T11:00:00Z' WHERE id=1",
+    )
+
+    async def verified_driver(*_args: object) -> None:
+        return None
+
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    monkeypatch.setattr(execution_service, "_driver_gate", verified_driver)
+    for who, event, at, payload in (
+        (WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        (WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+    ):
+        resp = send(execution_api, who, event, at, payload)
+        assert resp.status_code == 200, resp.text
+
+    original_enqueue = notify_service.enqueue
+
+    async def enqueue_then_abort(
+        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
+    ) -> int:
+        assert session is not None
+        await original_enqueue(order_id, template, plan_id, session=session)
+        raise DomainError("PLAN_NOT_APPROVABLE", "Synthetic transaction rollback test.")
+
+    monkeypatch.setattr(notify_service, "enqueue", enqueue_then_abort)
+    failed = send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1})
+    assert_error(failed, 409, "PLAN_NOT_APPROVABLE")
+    assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.notification")[0][0] == 0
+    assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.milestone_event")[0][0] == 4
+    assert fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0] == "LOADED"
+
+    monkeypatch.setattr(notify_service, "enqueue", original_enqueue)
+    first = send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1})
+    assert first.status_code == 200, first.text
+    second = send(execution_api, 14, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2})
+    assert second.status_code == 200, second.text
+    rows = fetch(execution_api.dsn, "SELECT template FROM ops.notification")
+    assert [row["template"] for row in rows] == ["DISPATCHED"]
+
