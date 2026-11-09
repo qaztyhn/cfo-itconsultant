@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import MarketConfig
 from app.domain.models.ops import CustomerOrder, OrderLine, StockScopeVersion, StockSnapshot, StockWriteRun
-from app.domain.models.ref import Location, Market, ProductSE
+from app.domain.models.ref import Location, Market
 from app.domain.models.stg import SyncRun
 
 
