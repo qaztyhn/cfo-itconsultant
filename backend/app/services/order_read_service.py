@@ -111,6 +111,15 @@ async def resolve_order_scope(session: AsyncSession, user: OrderReader) -> Order
     )
 
 
+def is_phone_query(value: str) -> bool:
+    """Recognize phone-shaped queries without logging or exposing their value."""
+    raw = value.strip()
+    digits = re.sub(r"[^0-9]", "", raw)
+    return bool(re.fullmatch(r"[+0-9 ()./-]+", raw)) and (
+        raw.startswith("+") or len(digits) >= 8
+    )
+
+
 def _not_found() -> DomainError:
     return DomainError("NOT_FOUND", "Order not found.")
 
@@ -294,9 +303,7 @@ async def list_orders(
         # Other text/number lookups retain the existing order-number/name behaviour.
         raw = q.strip()
         digits = re.sub(r"[^0-9]", "", raw)
-        phone_like = bool(re.fullmatch(r"[+0-9 ()./-]+", raw)) and (
-            raw.startswith("+") or len(digits) >= 8
-        )
+        phone_like = is_phone_query(raw)
         if phone_like and len(digits) < 9:
             raise DomainError("VALIDATION_ERROR", "Phone search is too broad.", {"field": "q"})
         escaped = raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
