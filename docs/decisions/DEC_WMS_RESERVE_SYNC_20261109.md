@@ -1,0 +1,28 @@
+# DEC-WMS-RESERVE-SYNC-20261109 — WMS reservation on approved CFO plan, followed by immediate CFO refresh
+
+**Status: OWNER-APPROVED TARGET BUSINESS FLOW, 2026-11-09.** The owner stated: “nếu cfo có đơn, thì so khớp với số lượng trong hiện tại lấy từ wms. sau khi đơn được xác nhận wms trừ thì cfo cũng phải cập nhật lại dữ liệu.” This establishes a narrow CFO-to-WMS reservation request on authorized order confirmation, followed by an immediate CFO read refresh. It modifies the earlier general read-only boundary only for the proposed stock reservation operation. **Actual WMS API and production write deployment remain unverified and disabled pending review.**
+
+## Business flow
+
+1. **CFO reads WMS stock:** use a complete, fresh published WMS batch for the specific market, warehouse and original SKU, with trustworthy on_hand and reserved fields. Check mapping, quantities, freshness and scope. CFO considers pending local 15-minute planning holds only to the extent they are NOT already included in the WMS reserved/available figures. Never treat missing, partial or stale data as zero.
+2. **CFO plans and holds temporarily:** estimate feasibility and place approved local planning holds without treating these as physical WMS stock movements. No automatic order approval; the existing Sales/Dispatcher rights and five safety gates remain mandatory.
+3. **On authorized plan confirmation:** CFO sends an idempotent reservation request for the approved lines to WMS using the correct verified **WMS-native SKU**, warehouse, quantity and WMS unit (reverse mapping from CFO global product; keep original POS order line provenance). WMS itself atomically checks availability, including demand from other systems. Until an authoritative positive WMS reservation acknowledgment, CFO must not claim stock is guaranteed or a plan is finally approved.
+4. **WMS accounting:** reservation reduces WMS **available-to-promise**, not physical **on_hand**. Example: on_hand 100, WMS reserved 60 => available 40. When WMS actually issues 60, on_hand becomes 40 and that reservation is consumed, so available remains 40 absent other transactions.
+5. **Immediate CFO update:** on successful WMS acknowledgment, persist matching WMS reservation ID/status, market, SKU/warehouse, qty/unit, source version and timestamp with safe CFO transaction state. **Immediately re-read or refresh relevant authoritative WMS stock** rather than waiting for five-minute scheduled ingestion; update CFO stock view/order state. Polling remains a secondary freshness check. If the published batch lags the ACK, preserve a conservative pending inclusion protection for new approvals or block further commitments; remove this protection only with WMS version/inclusion proof, avoiding double subtraction.
+6. **Warehouse physical issue:** WMS, not CFO, records actual pick/issue and physical on_hand changes. CFO reads updates and records its own execution milestones without applying additional WMS physical stock movements.
+
+## Consistency, reverse mapping, failure handling
+
+- Resolve CFO global product back to the **exact WMS SKU** by original POS line, market, warehouse, confirmed effective mapping and source SKU stock unit. Global→local may be one-to-many. Never pick the first match or assume POS SKU equals WMS SKU without verifying the adapter; unclear mapping or unit conversion => reject outbound request.
+- Correct availability must account for WMS reserves from **all channels** and only CFO temporary commitments not already represented in WMS. Deduplicate per unique order/reservation line so WMS reserved stock cannot be deducted twice when CFO refreshes.
+- WMS reject, insufficient quantity, partial acceptance, wrong SKU, invalid unit or warehouse => fail closed, no final approval. WMS timeout or lost ACK => status lookup with stable idempotency key, not blind duplicate reserve.
+- WMS reservation success plus failed CFO commit requires reviewed retry/outbox/saga and safe compensation; never assume cross-system database atomicity. Plan cancellation, manual replan, hold expiry and partial fulfillment require a reviewed release/adjust/consume lifecycle, but **do not invent WMS endpoints**.
+- A second vehicle of the same approved order, replan or retry must not reserve the same order lines a second time.
+
+## Scope of approved exception and implementation gate
+
+This approves the **business intent** of CFO sending a narrow reserve request **only at authorized order/plan confirmation** and then refreshing its WMS-derived stock state. It does not grant CFO permission to change WMS physical on_hand, receive/issue warehouse goods, reconcile transfers or modify the POS. The owner has not supplied or verified the WMS endpoint/API contract or actual service credentials. Before enabling any write, Dev 1 and Dev 2 must inspect the WMS interface, define API contract and authentication/RBAC, reverse SKU/unit mapping, idempotency/version/conflict, response lookup and failure recovery, and obtain reviewed code/contract tests and deployment approval.
+
+**Dev 1:** approval/hold sequencing, CFO reservation accounting, lock, lifecycle/migration, audit. **Dev 2:** WMS reserve acknowledgment, native SKU mapping and immediate stock refresh, sync/watermarks. **Dev 3:** distinguish tentative hold, awaiting WMS ACK, WMS rejected and final confirmation.
+
+This decision supersedes the general no-CFO-write-to-WMS clause of DEC-WMS-READONLY-20261109 **only for the controlled reserve business flow**. It does not resurrect the previously superseded physical WMS transfer reconciliation workflow. References: ASM_WMS_RESERVATION_ASSUMED_20261109.md, DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md. No production code/migrations or PR merge are claimed.
