@@ -222,6 +222,7 @@ def test_ack_must_echo_the_exact_reservation_idempotency_key() -> None:
     good = ReservationAck("R-1", "accepted", expected, "7", 12, req.idempotency_key)
     assert verify_ack(req, good) == good
 
+
 def test_accepted_reservation_is_verified_and_idempotent_key_is_stable() -> None:
     wms = FakeWms({("WH-1", "W-9"): D(100)})
     req = request()
