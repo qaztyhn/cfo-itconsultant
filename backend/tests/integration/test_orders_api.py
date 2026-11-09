@@ -278,6 +278,14 @@ def test_counts_follow_scope(od: Api) -> None:
 # --- CS-01 / CS-02: PostgreSQL-backed phone search and allowlisted detail -------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _reset_phone_search_limiter() -> None:
+    # Process-local limiter must not leak quota between PostgreSQL test cases.
+    from app.api.v1.orders import phone_search_rate_limiter
+
+    phone_search_rate_limiter.reset()
+
+
 def test_US_CS_01_AC1_phone_search_normalized_and_paginated(od: Api) -> None:
     execute(
         od.dsn,
@@ -337,3 +345,14 @@ def test_US_CS_02_AC1_cross_market_and_role_boundaries_preserved(od: Api) -> Non
     dispatcher = od.get("/orders/1", DISPATCHER)
     assert dispatcher.status_code == 200
     assert "lat" in dispatcher.json()["delivery"]
+
+
+def test_US_CS_01_AC1_phone_search_is_throttled_without_echoing_query(od: Api) -> None:
+    from app.api.v1.orders import phone_search_rate_limiter
+
+    phone_search_rate_limiter.reset()
+    for _ in range(5):
+        assert od.get("/orders", CS, q="+46701234567").status_code == 200
+    response = od.get("/orders", CS, q="+46701234567")
+    assert response.status_code == 429
+    assert "+46701234567" not in response.text
