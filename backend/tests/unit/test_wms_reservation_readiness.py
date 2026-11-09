@@ -70,7 +70,9 @@ def accepts():
         {"sale_quantity": Decimal("-1")},
     ],
 )
-def test_WMS_reverse_sku_unverified_provenance_never_creates_intent(change: dict[str, object]) -> None:
+def test_WMS_reverse_sku_unverified_provenance_never_creates_intent(
+    change: dict[str, object],
+) -> None:
     with pytest.raises(DomainError) as error:
         prepare_intent((source(**change),), idempotency_key="stable")
     assert error.value.code == "PLAN_NOT_APPROVABLE"
@@ -79,7 +81,13 @@ def test_WMS_reverse_sku_unverified_provenance_never_creates_intent(change: dict
 def test_WMS_original_source_sku_is_preserved_and_quantity_is_exact() -> None:
     request = intent()
     assert request.lines == (
-        WmsLine(line_no=1, warehouse_id=3, wms_sku="WMS-BAG25", wms_unit="bag", quantity=Decimal("100")),
+        WmsLine(
+            line_no=1,
+            warehouse_id=3,
+            wms_sku="WMS-BAG25",
+            wms_unit="bag",
+            quantity=Decimal("100"),
+        ),
     )
     assert request.market_id == 2 and request.source_version == 7
 
@@ -88,7 +96,9 @@ def test_WMS_multiple_local_skus_same_global_keep_distinct_original_lines() -> N
     request = prepare_intent(
         (
             source(),
-            source(line_no=2, pos_sku="POS-50", wms_sku="WMS-BAG50", sale_quantity=Decimal("2")),
+            source(
+                line_no=2, pos_sku="POS-50", wms_sku="WMS-BAG50", sale_quantity=Decimal("2")
+            ),
         ),
         idempotency_key="same-order-one-reservation",
     )
@@ -117,7 +127,11 @@ def test_WMS_fractional_or_unverified_precision_fails_without_rounding(
 ) -> None:
     with pytest.raises(DomainError) as error:
         prepare_intent(
-            (source(sale_quantity=quantity, units_to_base=Decimal("1"), wms_quantity_scale=scale),),
+            (
+                source(
+                    sale_quantity=quantity, units_to_base=Decimal("1"), wms_quantity_scale=scale
+                ),
+            ),
             idempotency_key="stable",
         )
     assert error.value.code == "PLAN_NOT_APPROVABLE"
@@ -173,7 +187,9 @@ def test_WMS_exact_ack_returns_external_identity_not_cfo_approval() -> None:
 def test_WMS_delayed_snapshot_or_timestamp_alone_cannot_clear_protection() -> None:
     for proof in (None, frozenset(), frozenset({"unrelated-reservation"})):
         with pytest.raises(DomainError) as error:
-            require_snapshot_inclusion("wms-resv-001", authoritative_included_reservation_ids=proof)
+            require_snapshot_inclusion(
+                "wms-resv-001", authoritative_included_reservation_ids=proof
+            )
         assert error.value.code == "PLAN_NOT_APPROVABLE"
 
 
