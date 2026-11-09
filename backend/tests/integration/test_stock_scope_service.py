@@ -15,6 +15,7 @@ from app.core import clock
 from app.deps import CurrentUser
 from app.services import stock_scope_service as svc
 from app.services.stock_scope_service import StockScopeError
+from scripts._stock_demo_clock import require_current_demo_clock
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, async_url, execute, fetch, rejects
 from tests.integration.order_rows import product_sql
@@ -201,6 +202,16 @@ def test_US_STK_01_AC1_first_grant_requires_owner_operator_and_audit(
     )
     monkeypatch.setenv("STOCK_GRANT_AUTHORIZED_MARKET", "YY")
     fails(db, lambda s: svc.revoke_grant(s, ADMIN_C, author_grant, "wrong market"), "FORBIDDEN")
+
+
+def test_US_STK_01_AC1_frozen_demo_clock_refuses_new_governance_writes(
+    db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("APP_NOW", "2026-11-04T10:05:00+01:00")
+    with pytest.raises(SystemExit, match="Frozen APP_NOW"):
+        run(db, require_current_demo_clock)
+    monkeypatch.delenv("APP_NOW")
+    run(db, require_current_demo_clock)
 
 
 # --- S2 / S3 -----------------------------------------------------------------------------------------
