@@ -102,6 +102,11 @@ def test_US_WH_06_AC1_named_driver_shifts_do_not_forge_legal_history() -> None:
     assert not fixture["gps_enabled"]
     assert all(r["verified"] is False and r["reviewer_id"] is None for r in fixture["driver_history"])
     assert all(r["reg_561_scope"] == "unknown" for r in fixture["driver_history"])
+    assert len(fixture["driver_edge_cases"]) == 9
+    assert all(not r["legally_verified"] for r in fixture["driver_edge_cases"])
+    assert {"REST_SHORT", "DRIVING_LIMIT", "MISSING_HISTORY", "NO_OFFICIAL_SHIFT", "LICENCE_EXPIRED", "SCOPE_UNKNOWN"} <= {
+        str(r["expected_gate"]) for r in fixture["driver_edge_cases"]
+    }
     assert all(r["authority"].endswith("-W00") for r in fixture["driver_shifts"])
 
 
