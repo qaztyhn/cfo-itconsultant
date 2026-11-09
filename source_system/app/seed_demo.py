@@ -75,6 +75,8 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
         address = await session.get(Address, spec["address_id"])
         if customer is None or address is None or address.customer_id != customer.id:
             raise ValueError("Unknown/mismatched demo customer and address")
+        if spec["date_mode"] == "exact" and spec["date_from"] != spec["date_to"]:
+            raise ValueError("Conflicting exact date in synthetic Source fixture")
         fields = {
             "customer_id": customer.id,
             "address_id": address.id,
