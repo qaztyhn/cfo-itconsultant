@@ -12,6 +12,9 @@ import secrets
 import socket
 import subprocess
 import sys
+import time
+from urllib.error import URLError
+from urllib.request import urlopen
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +94,23 @@ def cli() -> int:
     try:
         if call(["bash", "tools/demo_setup.sh"]) != 0:
             print("FAIL: synthetic demo setup did not complete.")
+            return 1
+        # Compose --wait checks health only where a healthcheck exists. The
+        # Vite dev container has none; require a REAL HTTP response before
+        # running the smoke rather than classifying a startup race as failure.
+        web_url = f"http://127.0.0.1:{env['CFO_WEB_PORT']}/"
+        ready = False
+        for _ in range(45):
+            try:
+                with urlopen(web_url, timeout=3) as response:
+                    ready = response.status == 200
+                if ready:
+                    break
+            except (URLError, OSError, TimeoutError):
+                pass
+            time.sleep(2)
+        if not ready:
+            print("FAIL: the real Vite frontend did not serve HTTP 200 in the disposable environment.")
             return 1
         base = [
             sys.executable, "tools/demo_smoke.py",
