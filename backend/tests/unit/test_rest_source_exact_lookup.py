@@ -3,6 +3,7 @@
 The approved Source API has only paginated GET /orders, not GET /orders/{id}.
 These are boundary tests using HTTPX, not evidence of CFO DB routing or approval.
 """
+
 from datetime import UTC, datetime
 
 import httpx
@@ -48,7 +49,9 @@ def client(
 
     return (
         RestMarketAdapter(
-            "SE", "https://source.example.test/api/v1", "synthetic-demo-key",
+            "SE",
+            "https://source.example.test/api/v1",
+            "synthetic-demo-key",
             transport=httpx.MockTransport(handle),
         ),
         calls,
