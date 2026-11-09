@@ -2,11 +2,12 @@
  * M8 Operational KPI dashboard — read-only views over server-authoritative metrics.
  * US-KPI-01/02, US-LOG-01; docs/03 §5.7, docs/06 §14–15 and §17.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../../app/store";
 import { canViewKpi } from "../../app/access";
-import { apiGet, isApiError } from "../../api/client";
+import { apiFetch, apiGet, isApiError } from "../../api/client";
 import { EmptyState, LoadingState } from "../../components/StateViews";
 import {
   CARDS, DIAGNOSTICS, METRICS, dailyPoints, decisions, diagnosticValue,
@@ -77,6 +78,54 @@ function Trend({data,metric}:{data:unknown;metric:MetricKey}) {
     </div>
   </div>;
 }
+function BaselineEditor({onSaved}:{onSaved:()=>void}) {
+  const [metric,setMetric]=useState<MetricKey>("planning_time_min");
+  const [value,setValue]=useState("");
+  const [saved,setSaved]=useState(false);
+  const numeric=value.trim()!==""?Number(value):NaN;
+  const valid=Number.isFinite(numeric)&&numeric>=0;
+  const mutation=useMutation({
+    mutationFn:(amount:number)=>apiFetch<unknown>(`/kpi/baseline/${metric}`,{
+      method:"PUT",body:JSON.stringify({value:amount}),
+    }),
+    onSuccess:()=>{setSaved(true);onSaved();},
+    onError:()=>setSaved(false),
+  });
+  function submit(e:FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if(!valid||mutation.isPending)return;
+    setSaved(false);
+    mutation.mutate(numeric);
+  }
+  return <section className="rounded-card border border-border bg-surface p-5">
+    <h2 className="text-lg font-bold">Admin · baseline editor</h2>
+    <p className="mt-1 text-sm text-inkMuted">
+      Enter an assumed baseline explicitly; it is not an observed KPI. The server must approve this update.
+    </p>
+    <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-3">
+      <label className="flex min-w-56 flex-col gap-1 text-sm">Metric
+        <select aria-label="Baseline metric" className="rounded-control border border-border p-2"
+          value={metric} onChange={e=>{setMetric(e.target.value as MetricKey);setSaved(false);mutation.reset();}}>
+          {METRICS.map(item=><option value={item.key} key={item.key}>{item.label}</option>)}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-sm">Baseline value (API metric unit)
+        <input aria-label="Baseline value" type="number" min="0" step="any" value={value}
+          onChange={e=>{setValue(e.target.value);setSaved(false);mutation.reset();}}
+          className="rounded-control border border-border p-2"/>
+      </label>
+      <button type="submit" disabled={!valid||mutation.isPending}
+        className="rounded-control bg-pine px-4 py-2 font-semibold text-white disabled:opacity-50">
+        {mutation.isPending?"Saving…":"Save baseline"}
+      </button>
+    </form>
+    {saved&&<p role="status" className="mt-3 text-sm text-pine">Baseline saved by server. KPI summary refreshed.</p>}
+    {mutation.isError&&<p role="alert" className="mt-3 text-sm text-ink">
+      Baseline was not saved. Check your permissions and the backend endpoint.
+    </p>}
+  </section>;
+}
+
 export function KpiDashboard() {
   const user=useAuthStore(s=>s.user);
   const allowed=Boolean(user&&canViewKpi(user));
@@ -115,7 +164,7 @@ export function KpiDashboard() {
     queryFn:({signal})=>apiGet<unknown>("/kpi/daily",{metric,...filters},signal)});
   const diagnostics=useQuery({queryKey:["ops-kpi","diagnostics",user?.id,user?.market,from,to],
     enabled:ready,retry:false,
-    queryFn:({signal})=>apiGet<unknown>("/kpi/diagnostics",filters,signal)});
+    queryFn:({signal})=>apiGet<unknown>("/kpi/diagnostics",undefined,signal)});
   const audit=useQuery({queryKey:["ops-kpi","audit",user?.id,user?.market,from,to,action,orderId,logPage],
     enabled:ready&&auditAllowed&&!invalidLogFilter,retry:false,
     queryFn:({signal})=>apiGet<unknown>("/audit/decisions",{
@@ -156,6 +205,7 @@ export function KpiDashboard() {
     {!ready&&<p role="alert" className="rounded-card border border-border p-5 text-sm">
       Invalid or unauthorised filters. No KPI data was requested; check dates and location scope.
     </p>}
+    {ready&&user?.roles.includes("admin")&&<BaselineEditor onSaved={()=>void summary.refetch()}/>}
     {ready&&<div className="space-y-3">
       <h2 className="text-xl font-bold text-ink">Operational performance</h2>
       {summary.isPending&&<LoadingState rows={3}/>}
