@@ -77,9 +77,7 @@ def _source_ingest(db: str, as_of: str):
                 now=NOW,
             )
             async with async_sessionmaker(engine)() as session:
-                preflight = await diagnose(
-                    session, market_code="SE", order_external_ref="EXT-1", now=NOW
-                )
+                preflight = await diagnose(session, market_code="SE", order_external_ref="EXT-1", now=NOW)
             return result, preflight
         finally:
             await engine.dispose()
@@ -109,6 +107,5 @@ def test_nonretroactive_scope_rejects_source_batch_captured_before_approval(db: 
     assert "STOCK_SNAPSHOT_MISSING" in preflight.blockers
     assert fetch(db, "SELECT count(*) FROM ops.stock_snapshot")[0][0] == 0
     assert (
-        fetch(db, "SELECT error FROM stg.sync_run WHERE entity='stock'")[0][0]
-        == "STOCK_SCOPE_NOT_CONFIGURED"
+        fetch(db, "SELECT error FROM stg.sync_run WHERE entity='stock'")[0][0] == "STOCK_SCOPE_NOT_CONFIGURED"
     )
