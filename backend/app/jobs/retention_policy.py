@@ -49,10 +49,10 @@ RULES = {
         24, "months", "event creation", "decision/milestone accountability", "immutable_review"
     ),
     "raw_gps": Rule(
-        0,
-        "workflow",
-        "trip terminal or verified duty end, whichever first",
-        "active trip location",
+        7,
+        "days",
+        "end of the verified collection window (trip terminal or duty end, whichever first)",
+        "restricted trip investigation/complaint only (DEC-GPS-RET-20261109)",
         "gps_cleanup",
     ),
 }
@@ -96,7 +96,12 @@ def assess(record: ReviewRecord, *, now: datetime) -> str:
         return "blocked_unknown_category"
     zone = ZoneInfo(record.timezone)
     if rule.action == "gps_cleanup":
-        return "gps_cleanup_required" if record.terminal is True else "active_gps_or_unknown_workflow"
+        if record.terminal is not True:
+            return "active_gps_or_unknown_workflow"
+        # DEC-GPS-RET-20261109: valid collected points are kept at most 7 absolute days after the window end.
+        if record.anchor is None or now >= record.anchor + timedelta(days=rule.amount):
+            return "gps_cleanup_required"  # unknown anchor: deleting is the privacy-safe direction
+        return "gps_retained_within_seven_days"
     if record.anchor is None:
         return "blocked_missing_anchor"
     if rule.action not in ("statutory_review", "immutable_review"):

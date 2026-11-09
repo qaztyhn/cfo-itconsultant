@@ -4,6 +4,19 @@
 
 - `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) cần Owner chọn phương án A/B, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
 
+## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
+
+- `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.
+- Đọc lịch sử (`read_history`) không trả điểm quá 7 ngày kể cả khi job retention chưa chạy; mặc định từ chối (chưa có cơ chế reviewer privacy/compliance được ủy quyền). Không mở quyền cho Dispatcher. Không bật GPS người thật hay cron production.
+
+## [GPS — lưu raw tối đa 7 ngày thay cho xóa ngay (DEC-GPS-RET-20261109)] — 2026-11-09 — Dev 2 (#137)
+
+- `gps_service.close_trip_collection()` thay `purge_trip_on_terminal`: hook cuối chuyến (Dev 1 gọi trong transaction hoàn tất) khóa chuyến, chặn upload muộn, **chỉ xóa điểm không hợp lệ** (ngoài ca chính thức/ngoài khoảng chuyến); điểm hợp lệ được giữ để tra soát tối đa 7 ngày. **Dev 1 cần bỏ lệnh `DELETE vehicle_position` trực tiếp ở `execution_service` (#129) và gọi hook này.**
+- `gps_service.purge_expired()` / job `gps_retention`: idempotent; xóa điểm cũ hơn 7×24 giờ tuyệt đối (không theo giờ treo tường/DST) và điểm không hợp lệ ngay lập tức, kể cả chuyến đã kết thúc. Không đụng POD, milestone, duty/rest, audit. Không bật cron production (D8 chưa duyệt).
+- `gps_service.read_history()`: đọc lịch sử chỉ để tra soát — bắt buộc `case_ref` + `reason`, người duyệt được ủy quyền, ghi `GPS_HISTORY_ACCESSED` (không có tọa độ) cùng transaction. **Nguồn quyền người duyệt chưa được duyệt nên mặc định TỪ CHỐI; chưa có route HTTP.** Đọc live vẫn fail closed (chờ gán Dispatcher–chuyến của Dev 1/G1). `raw_gps` trong retention policy: 7 ngày.
+- Điểm không hợp lệ gồm: ngoài ca/khoảng chuyến đã xác minh, ở tương lai, chuyến không có ca/xuất phát xác minh, hoặc market tắt GPS ⇒ xóa ngay (kể cả chuyến đã kết thúc). Kết thúc chuyến/ca, hủy chuyến, nhân viên nghỉ việc **không** làm điểm hợp lệ đã thu bị xóa sớm: chúng chờ tới 7 ngày. Các test cũ của `test_dev2_gps_jobs.py` (xóa ngay) đã được cập nhật theo chính sách mới.
+- Chưa làm: xóa hàng đợi offline phía thiết bị, backup/cache/export, privacy/DPIA/legal sign-off cho GPS người thật.
+
 ## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
 
 - Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
