@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Plan Review frontend alignment with merged #134/#139] — 2026-11-09 — Dev 3, review pending
+
+- Align Plan Review with persisted planning DTO: five gates use `passed`, vehicle allocations use nested `vehicle` plus IDs, rejected candidates use flat fields, and Sales vehicle data remains compact. No driver name or invented promise window is displayed.
+- Approval UI fails closed for suggestion/infeasible runs, missing or failed gates, absent/expired holds, and non-proposed plans. Changed delivery dates require selection of a matching `agreed` negotiation; tight reserve requires explicit acknowledgement. Backend approval remains authoritative.
+- Stop requesting the unimplemented integration overview from this screen; show unknown freshness until a trusted endpoint exists. No API, DDL, or owner decision changed.
+
 ## [DEC-INT Q2–Q10 + Owner-controlled merge — 2026-11-09] — nine owner approvals, docs only
 
 - Owner chọn **tự bấm Merge (Q1)**. Agent Integration Lead phải sửa conflicts, CI, PR dependencies và chuyển từng PR phù hợp **Draft → Ready for review** sau khi thực sự reviewable; không auto-merge hoặc bypass branch protection. `Draft=false` không đồng nghĩa GitHub cho phép merge.
