@@ -55,7 +55,9 @@ async def report() -> dict[str, object]:
                 "accepted_write_runs": int(accepted or 0),
                 "approved_scope_versions": int(approved or 0),
                 "status": (
-                    "PRESENT_NOT_APPROVAL_PROOF" if rows and accepted and approved else "BLOCKED_STOCK_NOT_GOVERNED"
+                    "PRESENT_NOT_APPROVAL_PROOF"
+                    if rows and accepted and approved
+                    else "BLOCKED_STOCK_NOT_GOVERNED"
                 ),
             }
     finally:
