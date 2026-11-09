@@ -33,18 +33,22 @@ async def report() -> dict[str, object]:
                 Location.market_id == market.id, Location.type == "warehouse"
             )
             rows = await session.scalar(
-                select(func.count()).select_from(StockSnapshot).where(
-                    StockSnapshot.warehouse_id.in_(warehouses)
-                )
+                select(func.count())
+                .select_from(StockSnapshot)
+                .where(StockSnapshot.warehouse_id.in_(warehouses))
             )
             accepted = await session.scalar(
-                select(func.count()).select_from(StockWriteRun).where(
+                select(func.count())
+                .select_from(StockWriteRun)
+                .where(
                     StockWriteRun.market_id == market.id,
                     StockWriteRun.status == "accepted",
                 )
             )
             approved = await session.scalar(
-                select(func.count()).select_from(StockScopeVersion).where(
+                select(func.count())
+                .select_from(StockScopeVersion)
+                .where(
                     StockScopeVersion.market_id == market.id,
                     StockScopeVersion.status == "approved",
                 )
