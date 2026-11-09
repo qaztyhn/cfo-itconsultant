@@ -61,4 +61,3 @@ def test_US_GPS_01_AC1_service_denies_oversized_batch_before_database_access() -
     with pytest.raises(DomainError) as caught:
         asyncio.run(gps_service.ingest_positions(1, actor, [{}] * 101, session=MagicMock()))
     assert caught.value.code == "VALIDATION_ERROR"
-
