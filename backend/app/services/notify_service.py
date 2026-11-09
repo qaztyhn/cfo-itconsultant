@@ -8,6 +8,7 @@ passes their transaction in a separate integration PR.
 
 import hashlib
 import json
+import re
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -143,7 +144,9 @@ def _recipient(customer: Customer, *, channel: str) -> tuple[str, str | None]:
         # No real phone numbers in the demo transport or outbox.
         return "sms-simulator", None
     address = customer.email or ""
-    if not recipient_allowed(address, TEST_DOMAINS):
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+", address) or not recipient_allowed(
+        address, TEST_DOMAINS
+    ):
         # Never persist an external real customer address in a new demo message.
         return "suppressed@cfo.test", "recipient_not_allowed"
     return address, None
@@ -245,13 +248,16 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
     order = await session.get(CustomerOrder, record.order_id)
     assert order is not None
     market = await _order_market(session, order)
-    rendered = read_snapshot(
-        record.eta_window,
-        channel=record.channel,
-        template=record.template,
-        subject=record.subject,
-        body=record.body,
-    )
+    try:
+        rendered = read_snapshot(
+            record.eta_window,
+            channel=record.channel,
+            template=record.template,
+            subject=record.subject,
+            body=record.body,
+        )
+    except ValueError as exc:
+        raise DomainError("PLAN_NOT_APPROVABLE", "Notification preview is unavailable.") from exc
     if rendered is None:
         # Legacy data is never returned directly: reconstruct from allowlisted fields.
         try:
@@ -541,12 +547,13 @@ async def send_draft(
         data = DelaySendInput.model_validate(payload)
     except ValueError as exc:
         raise DomainError("VALIDATION_ERROR", "Only reviewed ETA/version/reason inputs are allowed.") from exc
+    # Check current market authorization before replaying any cached response.
+    notification = await _scope_notification(session, notification_id, actor, lock=True)
     record_key, replay = await _claim_send(
         session, key=idempotency_key, user_id=user_id, notification_id=notification_id, payload=data
     )
     if replay is not None:
         return replay
-    notification = await _scope_notification(session, notification_id, actor, lock=True)
     if notification.template != "DELAY" or notification.status != "draft":
         raise DomainError("ILLEGAL_TRANSITION", "Only an unsent DELAY draft may be approved.")
     order = await _scope_order(session, notification.order_id, actor)
