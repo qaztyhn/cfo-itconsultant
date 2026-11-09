@@ -562,10 +562,7 @@ def test_BE_05_explicit_stop_pod_preserves_other_stops_and_trip_lifecycle(
     response = send(execution_api, DRIVER, "DELIVERED", at, mutated, key)
     assert_error(response, 409, "IDEMPOTENCY_CONFLICT")
     trip_status_sql = "SELECT status::text AS status FROM ops.delivery_trip WHERE id=1"
-    stop_status_sql = (
-        "SELECT status::text AS status FROM ops.trip_stop "
-        f"WHERE id={second_id}"
-    )
+    stop_status_sql = "SELECT status::text AS status FROM ops.trip_stop " f"WHERE id={second_id}"
     assert fetch(execution_api.dsn, trip_status_sql)[0]["status"] == "on_road"
     assert fetch(execution_api.dsn, stop_status_sql)[0]["status"] == "pending"
     assert closed == []
