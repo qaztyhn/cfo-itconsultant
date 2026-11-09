@@ -57,7 +57,7 @@ export function OrderAction({ order }: { order: QueueOrder }) {
             : run(() => findLatestRunId(order.id), "No planning run was found for this order. Refresh the queue or review Exceptions."))}>
           {pending ? "Working…" : label}
         </button>
-        {noFeasible && <Link to={`${PATHS.dispatcherExceptions}?tab=no-feasible`} aria-label={`Exceptions for order ${order.orderNo}`} className="text-xs font-semibold text-pine underline">Exceptions</Link>}
+        {noFeasible && <Link to={PATHS.dispatcherExceptions} aria-label={`Exceptions for order ${order.orderNo}`} className="text-xs font-semibold text-pine underline">Exceptions</Link>}
         {error && <span role="alert" className="max-w-[16rem] text-xs text-risk-predictedLate-fg">{error}</span>}
       </div>
     );
