@@ -39,9 +39,12 @@ DISPATCHER = _user(1, "dispatcher", 1)
 
 
 @pytest.fixture
-def db(empty_db: str) -> Iterator[str]:
+def db(empty_db: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     command.upgrade(alembic_config(empty_db), "head")
     clock.set_now(NOW)
+    monkeypatch.setenv("STOCK_GRANT_SYSTEM_ADMIN_USER_ID", "3")
+    monkeypatch.setenv("STOCK_GRANT_OWNER_AUTHORIZATION_REF", "test-owner-delegation")
+    monkeypatch.setenv("STOCK_GRANT_AUTHORIZED_MARKET", "SE")
     emp = "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, position_code, hire_date) "
     execute(
         empty_db,
@@ -162,6 +165,28 @@ def test_S1_self_grant_and_unprivileged_grants_are_refused(db: str) -> None:
         "INSERT INTO ref.stock_admin_grant (market_id,user_id,capability,valid_from,granted_by,reason_text) "
         "VALUES (1,4,'scope',now(),4,'self')",
     )
+
+
+def test_US_STK_01_AC1_first_grant_requires_owner_operator_and_audit(
+    db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    execute(db, "DELETE FROM ref.stock_admin_grant")
+    monkeypatch.delenv("STOCK_GRANT_OWNER_AUTHORIZATION_REF")
+    fails(db, lambda s: svc.grant_admin(s, ADMIN_B, user_id=2, capability="scope", reason_text="SE pilot"), "FORBIDDEN")
+    monkeypatch.setenv("STOCK_GRANT_OWNER_AUTHORIZATION_REF", "test-owner-delegation")
+    monkeypatch.setenv("STOCK_GRANT_SYSTEM_ADMIN_USER_ID", "4")
+    fails(db, lambda s: svc.grant_admin(s, ADMIN_A, user_id=3, capability="scope", reason_text="SE pilot"), "FORBIDDEN")
+    author_grant = run(db, lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="SE author")))
+    approver_grant = run(db, lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=3, capability="scope", reason_text="SE approver")))
+    assert author_grant != approver_grant
+    assert audit(db, "STOCK_GRANT_CREATED") == 2
+    _scope(db)
+    fails(
+        db, lambda s: svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="duplicate"),
+        "RESOURCE_CONFLICT",
+    )
+    monkeypatch.setenv("STOCK_GRANT_AUTHORIZED_MARKET", "YY")
+    fails(db, lambda s: svc.revoke_grant(s, ADMIN_C, author_grant, "wrong market"), "FORBIDDEN")
 
 
 # --- S2 / S3 -----------------------------------------------------------------------------------------
@@ -487,3 +512,4 @@ def test_S3_write_run_binds_versions_is_unique_per_batch_and_append_only(db: str
         ),
         "STOCK_UNAVAILABLE",
     )
+

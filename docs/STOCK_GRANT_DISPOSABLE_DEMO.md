@@ -1,0 +1,25 @@
+# Disposable SE stock grant bootstrap
+
+Decision: `DEC-STOCK-GRANT-BOOTSTRAP-20261109`, as extended by `DEC-STOCK-GRANT-CONTROL-20261109`. This procedure is for an isolated, resettable demo database. It does not authorize a production grant or imply that Source/WMS has published stock.
+
+1. Record the Owner's written authorization (this conversation and `DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md`), exact System Admin `ref.app_user.id`, market `SE`, recipient IDs, capabilities, and reason in the change ticket. Review the ticket and database identity mapping with Dev 1 and Dev 2. The operator must be an active Admin, distinct from each recipient; each recipient must be an active Admin. Do not use a shared account. Set `STOCK_GRANT_SYSTEM_ADMIN_USER_ID`, `STOCK_GRANT_AUTHORIZED_MARKET=SE`, and `STOCK_GRANT_OWNER_AUTHORIZATION_REF` in the controlled process environment from that reviewed record. Never place credentials or a fabricated authorization reference in the repository. The Owner explicitly required presenting exact identities for confirmation before bootstrap execution.
+2. Confirm this is the disposable database and that `SELECT count(*) FROM ref.stock_admin_grant WHERE market_id = (SELECT id FROM ref.market WHERE code='SE');` returns zero. Snapshot the database before any change. Do not reset a shared database to force this condition.
+3. From `backend/`, with `DATABASE_URL` set by the normal deployment mechanism, run the preflight and then the reviewed write (replace shell placeholders with the exact approved IDs):
+
+   ```sh
+   python -m scripts.bootstrap_stock_grant --market SE --operator-id OPERATOR_ID --recipient-id AUTHOR_ID --capability scope --reason "TICKET: SE scope author" --expected-grants 0
+   python -m scripts.bootstrap_stock_grant --market SE --operator-id OPERATOR_ID --recipient-id AUTHOR_ID --capability scope --reason "TICKET: SE scope author" --expected-grants 0 --execute
+   python -m scripts.bootstrap_stock_grant --market SE --operator-id OPERATOR_ID --recipient-id APPROVER_ID --capability scope --reason "TICKET: independent SE scope approver" --expected-grants 1
+   python -m scripts.bootstrap_stock_grant --market SE --operator-id OPERATOR_ID --recipient-id APPROVER_ID --capability scope --reason "TICKET: independent SE scope approver" --expected-grants 1 --execute
+   ```
+
+   The operator and the two recipients must be three distinct verified accounts. Never use direct SQL to bypass the checks. Verify each grant's `market_id`, `granted_by`, `valid_from`, `valid_to`, and `reason_text`, plus a matching append-only `audit.decision_log` `STOCK_GRANT_CREATED` row with before/after and Owner reference. `revoke_grant` requires that same delegated operator and a reason; verify its audit row and that the revoked grant no longer authorizes scope work.
+4. Have the author create the explicit SE SKU and warehouse scope using the stock scope service. Have the distinct approver approve it. Record `approved_at`, `effective_from`, author, approver, version, expected warehouse × SKU row count, and `STOCK_SCOPE_APPROVED` audit. Do not set an earlier effective time or alter the clock. A batch with `as_of <= effective_from` cannot establish post-approval stock.
+5. Dev 2 must publish a **complete authoritative Source/WMS batch** with trusted `as_of > effective_from`, every expected warehouse × in-scope SKU row including explicit zeroes, source batch identity, and normal freshness/coverage validation. Do not insert CFO stock rows manually. Run the normal stock sync and inspect `ops.stock_write_run`: accepted status, matching scope version and source batch, expected count equal to recorded count. A rejected or stale batch remains a block.
+   The direct Dev 2 handoff is recorded in the discussion on [PR #215](https://github.com/qaztyhn/cfo-itconsultant/pull/215). The earlier 300-row run #5 is rejected evidence, not a publishable post-approval batch.
+6. Against that same PostgreSQL database, locate `SE-2026-000149` and invoke the normal authenticated Planning endpoint `POST /orders/{order_id}/plan` as a permitted Dispatcher. Capture the planning run and its stock provenance. Report the actual result and gate failures. A generated plan is not APPROVED until an authorized user explicitly approves it and the approval transaction succeeds. Preserve the sync and Planning evidence in the PR or demo record.
+
+Focused verification from `backend/` with Python 3.12, dependencies, and an isolated PostgreSQL test URL: `python -m pytest tests/integration/test_stock_scope_service.py -q`. Run `python tools/harness.py backend` from the repository root before review. In the demo container use the reviewed `python -m app.demo_ingest stock` and `python -m app.demo_stock_preflight --external-ref SE-2026-000149` commands from PR #215 after Dev 2 publishes the new batch.
+
+Stop on any missing authorization, mismatch, failed audit, incomplete/stale batch, or planning gate. Revoke demo grants with the reviewed operator before retiring the environment; archive audit evidence, then discard the disposable database.
+
