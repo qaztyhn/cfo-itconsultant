@@ -8,7 +8,7 @@ import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import {
   GATES, GATE_LABELS, fetchInfeasibleRun, fetchNegotiations, fetchVerifiedTransfers,
-  gateStatus, readableNumber, recordNegotiation, replanAgreedDate, validIsoDate,
+  gateStatus, readableNumber, recordNegotiation, validIsoDate,
   type GateEvidence, type NegotiationInput, type NegotiationOutcome, type WarehouseChecks,
 } from "./noFeasibleDateApi";
 
@@ -67,6 +67,7 @@ function NegotiationForm({ orderId, suggestedDate, onRecorded }: {
   const [channel, setChannel] = useState<NegotiationInput["channel"]>("phone");
   const [contacted, setContacted] = useState("");
   const [note, setNote] = useState("");
+  const [contactError, setContactError] = useState("");
   const client = useQueryClient();
   const mutation = useMutation({
     mutationFn: (value: NegotiationInput) => recordNegotiation(orderId, value),
@@ -81,7 +82,12 @@ function NegotiationForm({ orderId, suggestedDate, onRecorded }: {
   const canSubmit = validIsoDate(date) && hasValidContact && note.trim().length > 0 && !mutation.isPending;
   function save(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || !contactTime || contactTime.getTime() > Date.now()) return;
+    if (!canSubmit || !contactTime) return;
+    if (contactTime.getTime() > Date.now()) {
+      setContactError("Contact time cannot be in the future.");
+      return;
+    }
+    setContactError("");
     mutation.mutate({
       proposed_date: date, outcome, channel,
       contacted_at: contactTime.toISOString(), note: note.trim(),
@@ -111,7 +117,7 @@ function NegotiationForm({ orderId, suggestedDate, onRecorded }: {
       </label>
       <label className="space-y-1 text-body">Actual contact time
         <input className={field} aria-label="Actual contact time" type="datetime-local" value={contacted}
-          onChange={e => setContacted(e.target.value)} required />
+          onChange={e => { setContacted(e.target.value); setContactError(""); }} required />
       </label>
     </div>
     <label className="block space-y-1 text-body">Negotiation reason / contact note
@@ -119,6 +125,7 @@ function NegotiationForm({ orderId, suggestedDate, onRecorded }: {
         maxLength={1000} value={note} onChange={e => setNote(e.target.value)}
         placeholder="Record the customer's response and reason…" required />
     </label>
+    {contactError && <p role="alert" className="text-risk-predictedLate-fg">{contactError}</p>}
     <button type="submit" disabled={!canSubmit} className={action}> {mutation.isPending ? "Recording…" : "Record customer outcome"} </button>
     {mutation.isError && <ErrorState title="Negotiation not recorded" error={mutation.error}
       onRetry={() => mutation.reset()} />}
@@ -131,8 +138,6 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
   const valid = Number.isSafeInteger(id) && id > 0;
   const authorized = useAuthStore(s => s.user?.roles.includes("dispatcher") ?? false);
   const [recorded, setRecorded] = useState<{ outcome: NegotiationOutcome; date: string } | null>(null);
-  const [replanReason, setReplanReason] = useState("");
-  const client = useQueryClient();
   const run = useQuery({
     queryKey: ["no-feasible", "run", id],
     queryFn: ({ signal }) => fetchInfeasibleRun(id, signal),
@@ -153,14 +158,6 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
     queryKey: ["no-feasible", "freshness"],
     queryFn: ({ signal }) => fetchIntegrationOverview(signal),
     enabled: authorized && valid, retry: false,
-  });
-  const replan = useMutation({
-    mutationFn: () => replanAgreedDate(orderId as number, recorded?.date ?? "", replanReason.trim()),
-    onSuccess: result => {
-      if (result.order_id === orderId && Number.isSafeInteger(result.id)) {
-        void client.invalidateQueries({ queryKey: ["no-feasible"] });
-      }
-    },
   });
   const stale = !freshness.data || summariseFreshness(freshness.data).stale;
   if (!authorized) return <section data-screen="NoFeasibleDate" role="alert">Dispatcher access required.</section>;
@@ -245,17 +242,11 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
           onRecorded={(outcome, date) => setRecorded({ outcome, date })} />}
         {recorded && <section role="status" className={panel + " space-y-3"}>
           <h2 className="font-semibold">Customer outcome recorded by server: {recorded.outcome}</h2>
-          {recorded.outcome === "agreed" ? <>
-            <p>The agreement is recorded. Replanning requires a separate explicit action and fresh server checks.</p>
-            <label className="block space-y-1">Reason for replanning
-              <textarea className={field} aria-label="Reason for replanning" value={replanReason}
-                onChange={e => setReplanReason(e.target.value)} rows={2} />
-            </label>
-            <button className={action} type="button" disabled={!replanReason.trim() || replan.isPending}
-              onClick={() => replan.mutate()}>Run new plan for agreed date</button>
-            {replan.isSuccess && <p>New planning run #{replan.data.id} returned by server. Review its feasibility before approval.</p>}
-            {replan.isError && <ErrorState title="Replanning failed" error={replan.error} />}
-          </> : <p>{recorded.outcome === "unreachable" ? "Follow-up reminder is server-managed; check the negotiation history." :
+          {recorded.outcome === "agreed" ? <p>
+            The customer agreement is recorded for date {recorded.date}. The original order
+            date remains unchanged. Backend support for applying the agreed date and then
+            explicitly planning again is pending contract review; no plan was created.
+          </p> : <p>{recorded.outcome === "unreachable" ? "Follow-up reminder is server-managed; check the negotiation history." :
             "Customer declined. Any cancellation requires its own authorized, reasoned action."}</p>}
         </section>}
         <section className={panel + " space-y-2"} aria-label="Negotiation history">
