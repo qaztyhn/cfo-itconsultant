@@ -284,8 +284,11 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     messages: list[str] = []
     triggers: list[str] = []
 
-    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+    async def test_enqueue(
+        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
+    ) -> int:
         assert order_id == 1 and plan_id == 1
+        assert session is not None  # Outbox shares milestone transaction.
         messages.append(template)
         return len(messages)
 
@@ -439,7 +442,10 @@ def test_M6_1_two_vehicles_deliver_same_order_one_pod_per_trip_stop(
     async def test_driver_gate(*_args: object) -> None:
         return None
 
-    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+    async def test_enqueue(
+        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
+    ) -> int:
+        assert session is not None
         return 1
 
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
@@ -471,7 +477,10 @@ def _dispatch_both_vehicles(client: Api, monkeypatch: pytest.MonkeyPatch, notice
     async def test_driver_gate(*_args: object) -> None:
         return None
 
-    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+    async def test_enqueue(
+        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
+    ) -> int:
+        assert session is not None
         notices.append(template)
         return len(notices)
 
