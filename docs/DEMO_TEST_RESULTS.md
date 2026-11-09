@@ -23,8 +23,8 @@ Every status below refers to a specific surface and evidence type:
 | Official manager-attributed warehouse + driver shift | PASS (seed-contract tests) | `test_demo_roster.py`, `test_demo_driver_shifts.py`; only official **synthetic** schedule, not proof of attendance, GPS permission or D7 driving/rest compliance. | Dev 2 |
 | Verified 56-day D7 regulatory evidence | BLOCKED | Existing 560 history rows explicitly `verified=false`, `reg_561_scope=unknown`; candidate never becomes legally qualified by changing test data. | Dev 1 / privacy |
 | Source product mappings + WMS published 300-row snapshot | PASS (source fixture/seed tests) | Existing `test_demo_seed.py`; `88412` pending mapping. CFO stock persistence needs reviewed scope/independence evidence and must never fake `on_hand`. | Dev 2 / Dev 1 |
-| Source submitted-orders GET, API-key negative, repeated versions | NOT VERIFIED on fresh Compose | `tools/demo_smoke.py` reads real Source only, no mock response accepted as E2E. Separate control tests do use a fake HTTP boundary. | Dev 2 |
-| CFO authenticated Sales/Dispatcher/Warehouse/Driver APIs | NOT VERIFIED on fresh Compose | Guarded live login and role assertions in smoke; JWT material kept in memory and not logged. | Dev 2 |
+| Source submitted-orders GET, API-key negative, repeated versions | **PASS (disposable Compose preflight)** | Real Source HTTP at [run #42605883212](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883212) reported `source_auth_negative`, `source_fixture`, `source_read_repeat` PASS. This is real Source HTTP, not CFO acceptance. | Dev 2 |
+| CFO authenticated Sales/Dispatcher/Warehouse/Driver APIs | **PASS (disposable Compose preflight)** | The real-HTTP preflight required all four role login/read probes, unauthorized denial, Source/CFO DB health and frontend HTTP to PASS before a green result. JWT kept in memory. This is not browser interaction or delivery approval evidence. | Dev 2 |
 | Sales `POST /integration/orders/sync-now`, scoped idempotent routing and CFO order creation | BLOCKED | Documented in `docs/06` §5.0.2, but no implementing route on `main`. T07 polling deliberately cannot accept a new undecided source order; do not insert a fake `order_routing`. | Dev 1 (contract) + Dev 2 (integration) + Dev 3 (UI) |
 | Repeated sync without duplicate CFO records | NOT VERIFIED | Real HTTP retry checks matching ID + key. Additional read-only PostgreSQL uniqueness query in `DEMO_SETUP.md` must be executed before PASS. | Dev 1 / Dev 2 |
 | Negative case: pending SKU `88412` stays legacy | NOT VERIFIED E2E | Fixture mapping pending confirmed by source/canonical catalogue; routing endpoint missing, so no valid routing decision yet. | Dev 1 / Dev 2 |
@@ -32,7 +32,36 @@ Every status below refers to a specific surface and evidence type:
 | Real server-generated planning run | BLOCKED | No accepted CFO route from Sync & Check yet; stock freshness/scope and D7 gates also remain mandatory. | Dev 1 |
 | Explicit rank-1 standard plan approval | BLOCKED | D7 attested evidence and real/simulated approved WMS reservation-ACK proof must pass server gates; never use a fabricated driver history/ACK. | Dev 1 |
 | Driver dispatch/POD, GPS, customer notification | NOT VERIFIED / DISABLED | Beyond this smoke's safe scope; no real GPS, live customer messaging or WMS production write. | Dev 1 / Dev 3 / privacy |
-| Disposable environment reset | NOT VERIFIED on live Docker | `tools/demo_reset.sh` requires explicit confirmation, `APP_ENV=test`, `DEMO_DISPOSABLE=1` and `cfo-demo-*` project. No automatic cleanup of user-owned volumes. | Dev 2 |
+| Disposable environment reset | **PASS (isolated CI Compose project only)** | [Run #42605883212](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883212) logs show all `cfo-demo-ci-*` containers removed, named `pgdata` volume removed, and no unrelated project targeted. Reproduction on a different developer workstation remains NOT VERIFIED. | Dev 2 |
+
+## Executed disposable CI evidence — 2026-11-09
+
+- Commit: `c2171fa6a1daafe4212ba243ae652294fd48a934`
+- [Real Compose demo-preflight run #42605883212](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883212): **SUCCESS**. The runner launched actual PostgreSQL 16, Source API, CFO API, Mailpit and frontend. Source manifest generator emitted SHA256
+  `02a3c0094b9a22935ac71b3bb52fe4569da3bf44c9c61c6433bf3966bdb6f508`.
+- Source seed: 66 orders inserted. The four existing reference feeds reported:
+  customers 40 rows, products 100, inbound 1, fleet 1; each finished without
+  automatic routing/approval. Demo roster generator reported 312 warehouse and
+  80 driver shifts (synthetic official assignments, **not** D7 legal proof).
+- Both read-only and mutating-mode preflight probes reported
+  `source_auth_negative=PASS`, `source_fixture=PASS` and
+  `source_read_repeat=PASS`. The harness required CFO/source DB health,
+  frontend HTTP, authenticated four-role checks and scoped Sales/Dispatcher
+  reads to PASS; the overall preflight passed those assertions.
+- The mutating probe identified **missing Sales sync-now** as BLOCKED; the
+  successful preflight job explicitly printed
+  `BLOCKED != E2E PASS`. No new accepted CFO order or approved plan was proven.
+- CI cleanup removed the one generated `cfo-demo-ci-*` project, its containers
+  and named PostgreSQL volume. A second independent clean workstation run has
+  not been observed.
+- [Regular repository CI run #42605883173](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883173): **SUCCESS**.
+- The published `demo-preflight-status` artifact contains the limited
+  machine-readable results. No real-customer or production-system data used.
+
+These outcomes supersede earlier `NOT VERIFIED` status **only for the named
+read-only Source/CFO HTTP checks and disposable CI reset**. Full Sales Sync,
+database uniqueness after acceptance, five-gate planning, D7 and WMS ACK remain
+BLOCKED/NOT VERIFIED exactly as recorded in the table.
 
 ## Commands and evidence to record
 
