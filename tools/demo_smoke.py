@@ -20,7 +20,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import NAMESPACE_URL, uuid5
 
 APP_NOW = "2026-11-04T10:05:00+01:00"
-GOOD_REF = "SE-2026-000123"
+GOOD_REF = "SE-2026-000149"
 DATE_REF = "SE-2026-000137"
 UNMAPPED_REF = "SE-2026-000156"
 ROLES = {
