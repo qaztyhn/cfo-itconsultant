@@ -90,8 +90,10 @@ def test_BE_03_contact_history_has_pagination_and_correct_market_scope(contact_a
 def test_BE_03_only_cs_may_write_and_only_dispatcher_cs_may_read(
     contact_api: Api, actor: int | None
 ) -> None:
-    assert_error(contact_api.send("POST", "/orders/3/contact-logs", actor, BODY), 401 if actor is None else 403,
-                 "AUTH_INVALID" if actor is None else "FORBIDDEN")
+    response = contact_api.send("POST", "/orders/3/contact-logs", actor, BODY)
+    expected_status = 401 if actor is None else 403
+    expected_code = "AUTH_INVALID" if actor is None else "FORBIDDEN"
+    assert_error(response, expected_status, expected_code)
     if actor is not None:
         assert_error(contact_api.get("/orders/3/contact-logs", actor), 403, "FORBIDDEN")
     assert fetch(contact_api.dsn, "SELECT count(*) AS n FROM ops.customer_contact_log")[0]["n"] == 0
