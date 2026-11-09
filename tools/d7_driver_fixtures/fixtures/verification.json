@@ -1,0 +1,21 @@
+{
+  "expires_at": "2026-11-11T10:05:00+01:00",
+  "revoked": false,
+  "schema_version": "d7.synthetic.v1",
+  "sha256": {
+    "drivers.json": "ef31dbea5204bd3aba52c538172f6c3188504b9f4b7e6fae6fcc0dc13146293f",
+    "history_week_01.json": "9829f168d4f5cc332be9fb32f88724ca5c8211ce78c0b21bf1937b82b7ae05b8",
+    "history_week_02.json": "a1635bd4a91d5762a5c46987fa01ea2c5d684ec17ee21982163cd7e4481ecfdd",
+    "history_week_03.json": "012cdea87adf250c322b69e7cc18345c5d8480fe8ecf32c88c7a35001aad6921",
+    "history_week_04.json": "d713b6c2c4aab3832f3982a69e35be7a53b0c49dcb8c7b54b3242ad911ea7042",
+    "history_week_05.json": "e65283e91e7dd52e41ac1308e42fc818ef21b343c4162e80bc5a6bf95aa798fe",
+    "history_week_06.json": "1a097eaa1fdf9b8dec06aa343403a3df894b6837201936618b7e57b0e2c828cc",
+    "history_week_07.json": "b7dc60ea079d2d94161172646d56952970990e84640b4a62ca3479fac67cb358",
+    "history_week_08.json": "fd1b7dfdd7ecb333b8f6c8ea5e4da914bf82c223bf13318601fcaa50105f5647",
+    "manifest.json": "96bc7109ab3668b7757d5ecdec0d998d4a4c122bc0ac8a64e2130b2180fc4520"
+  },
+  "source": "synthetic_demo",
+  "source_kind": "synthetic_demo",
+  "verified_at": "2026-11-04T10:05:00+01:00",
+  "verified_by": "Deterministic Dev 2 synthetic demo fixture verifier (not legal evidence)"
+}

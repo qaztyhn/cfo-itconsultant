@@ -203,7 +203,7 @@
       "expected_outcome": "historical_evidence_only",
       "expected_reason_codes": [],
       "input_overrides": {
-        "history_reference": "history_week_06.json"
+        "history_reference": "history_week_07.json"
       },
       "legal_compliance_certified": false,
       "proposed_driving_min": 120,

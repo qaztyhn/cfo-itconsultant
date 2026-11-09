@@ -105,7 +105,7 @@ class D7FixtureTests(unittest.TestCase):
                          "candidate_for_planner_review")
 
     def test_D7_stockholm_dst_fall_is_5_elapsed_hours(self) -> None:
-        rows = self.payloads["history_week_06.json"]["records"]
+        rows = self.payloads["history_week_07.json"]["records"]
         night = next(x for x in rows if x["driver_code"] == "D09"
                      and x["work_date"] == "2026-10-25")
         self.assertEqual((instant(night["duty_end"]) - instant(night["duty_start"])).total_seconds(),

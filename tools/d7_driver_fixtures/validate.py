@@ -46,7 +46,7 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
         require(payload.get("source") == SOURCE, f"{name}: provenance missing")
     manifest = payloads["manifest.json"]
     require(manifest.get("offline_only") is True, "Manifest must prohibit DB insertion")
-    require(manifest["files"] == sorted(set(payloads) - {"manifest.json"}), "Manifest filenames mismatch")
+    require(manifest["files"] == sorted(set(payloads) - {"manifest.json", "verification.json"}), "Manifest filenames mismatch")
     vehicles = payloads["vehicles.json"]["records"]
     drivers = payloads["drivers.json"]["records"]
     require(len(vehicles) in (8, 9, 10) and len(drivers) == 10, "Incorrect pilot population")

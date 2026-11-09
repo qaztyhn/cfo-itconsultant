@@ -18,7 +18,7 @@
 | `fixtures/future_shifts.json` | 51 synthetic official-format future shift **examples**, not DB-approved shifts |
 | `fixtures/scenarios.json` | 13 golden scenarios and expected *gate-level* dispositions |
 
-**Fixed window:** history `2026-09-14` through `2026-11-08` inclusive, future shifts `2026-11-09`–`2026-11-14`; all timestamps are ISO 8601 with an explicit offset in `Europe/Stockholm`. One recorded night crosses the DST fall-back on **2026-10-25**: `00:30+02:00` through `04:30+01:00` is **five elapsed hours**, not four. One scheduled future shift crosses midnight `2026-11-14T20:00+01:00` → `2026-11-15T04:00+01:00`.
+**Fixed window:** history `2026-09-09` through `2026-11-03` inclusive, future shifts `2026-11-09`–`2026-11-14`; all timestamps are ISO 8601 with an explicit offset in `Europe/Stockholm`. One recorded night crosses the DST fall-back on **2026-10-25**: `00:30+02:00` through `04:30+01:00` is **five elapsed hours**, not four. One scheduled future shift crosses midnight `2026-11-14T20:00+01:00` → `2026-11-15T04:00+01:00`.
 
 ## Regenerate and validate
 

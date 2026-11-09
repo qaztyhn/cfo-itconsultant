@@ -7,6 +7,7 @@ fixture schemas, not SQLAlchemy rows and not a source of legally certified scope
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
 TZ = ZoneInfo("Europe/Stockholm")
-FIRST_DAY = date(2026, 9, 14)
+FIRST_DAY = date(2026, 9, 9)
 HISTORY_DAYS = 56
 FUTURE_START = date(2026, 11, 9)
 SCHEMA = "d7.synthetic.v1"
@@ -208,7 +209,7 @@ def scenarios() -> dict[str, object]:
          "unknown_fail_closed", ["DRIVER_LICENCE_MISSING"],
          {"driver_override": {"licence_class": None}}),
         ("dst_overnight_history", "D09", "MLM-18-01", "2026-10-25T00:30+02:00", "2026-10-25T04:30+01:00", 120,
-         "historical_evidence_only", [], {"history_reference": "history_week_06.json"}),
+         "historical_evidence_only", [], {"history_reference": "history_week_07.json"}),
     )
     records = []
     for key, driver, vehicle, start, end, drive_min, outcome, reasons, overrides in data:
@@ -236,6 +237,15 @@ def build() -> dict[str, dict[str, object]]:
                               "vehicle_count": len(files["vehicles.json"]["records"]),
                               "driver_count": len(files["drivers.json"]["records"]),
                               "files": sorted(files), "offline_only": True}
+    files["verification.json"] = {"schema_version": SCHEMA, "source": SOURCE,
+                              "source_kind": SOURCE,
+                              "verified_by": "Deterministic Dev 2 synthetic demo fixture verifier (not legal evidence)",
+                              "verified_at": "2026-11-04T10:05:00+01:00",
+                              "expires_at": "2026-11-11T10:05:00+01:00",
+                              "revoked": False,
+                              "sha256": {name: hashlib.sha256(encoded(files[name])).hexdigest()
+                                         for name in ("manifest.json", "drivers.json",
+                                                      *(f"history_week_{n:02d}.json" for n in range(1, 9)))}}
     return files
 
 
