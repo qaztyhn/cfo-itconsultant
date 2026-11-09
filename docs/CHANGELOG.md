@@ -1,6 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
 
+## [PROPOSAL-CS-ORDER-LOOKUP-20261109] — 2026-11-09 — dev proposal, docs-only
+
+- Dev 3 đề xuất năm assumption cho CS Order Lookup (tìm theo điện thoại qua `q`, projection riêng cho CS, contact log mock-only, phụ thuộc ETA/thông báo, allowlist timeline). **Chưa duyệt**; hợp đồng `06` §5.3, §5.4, §11 chỉ có ghi chú đề xuất, chưa đổi. Chi tiết: `docs/proposals/CS_ORDER_LOOKUP_ASSUMPTIONS_20261109.md`.
 
 ## [DEC-WMS-RESERVE-SYNC-20261109] — 2026-11-09 — owner-approved business workflow, docs-only
 

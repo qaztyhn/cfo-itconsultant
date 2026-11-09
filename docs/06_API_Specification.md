@@ -182,6 +182,8 @@ Trường/khối không được phép bị **bỏ hẳn** khỏi phản hồi (
 | `approved_plan_id`, `latest_run_id` | ✓ | — | — |
 | `risk` | đầy đủ | `{status, color, forecast_eta}` | — |
 
+   > **Đề xuất chờ duyệt (`ASM-CS-PROJECTION-20261109`):** với `customer_service`, server chỉ trả `contact` đã che hoặc bỏ, và bỏ hẳn `delivery.lat/lon`, `receiving_restrictions`, mã cổng. Bảng trên chưa đổi cho đến khi owner duyệt.
+
 `risk` = bản `ops.eta_forecast` mới nhất: `{status, color, forecast_eta, planned_eta, commitment_deadline, slack_min, consumption_pct}`; `null` nếu chưa có.
 
 ### 5.4 `GET /orders` và `GET /orders/counts` (v1.4, Q7)
@@ -198,6 +200,7 @@ Phần tử danh sách (trường bị cấm theo mục 5.3 thì bỏ):
 - `warehouse` = kho của kế hoạch đã duyệt; nếu chưa có thì kho của kế hoạch `proposed` rank 1; nếu không có thì `null`.
 - `blocked=true` ⇔ `status = BLOCKED_UNMAPPED_SKU` (bản ghi legacy, chỉ để tra cứu; ASM-005). Các đơn này **không** nằm trong hàng đợi Dispatcher.
 - `q` khớp `order_no`, `external_ref` hoặc tên khách, không phân biệt hoa thường.
+   > **Đề xuất chờ duyệt (`ASM-CS-PHONE-SEARCH-20261109`):** `q` mở rộng khớp số điện thoại liên hệ đã chuẩn hóa (khớp đủ số, không khớp vài số cuối), trong phạm vi market, chống tra cứu hàng loạt, không ghi số thô vào log. Hành vi hiện tại vẫn là ba trường nêu trên.
 - **Sắp xếp mặc định: thứ tự đặt hàng** `submitted_at ASC, id ASC` (đơn đặt trước hiện trước; BR-ORD-05, `09` bất biến 27). Có thể chọn `?sort=` theo `submitted_at`, `date_to` (ngày yêu cầu), `promise_end` (`NULL` xếp cuối), `committed_date`, `order_no`, `status`. Thứ tự hiển thị **không** ép thứ tự thực thi: đơn đặt sau cần giao sớm vẫn có thể được chuẩn bị/giao trước nếu không lấn nguồn lực `committed` của đơn trước (mục 6.3a).
 
 Bucket của `/orders/counts` (Phụ lục A), theo phạm vi mục 5.2; "hôm nay" theo múi giờ market:
@@ -485,6 +488,8 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 { "channel": "phone", "reason_code": "where_is_my_order", "note": "Told ETA window 07–09" }
 ```
 `GET /orders/{id}/contact-logs`: dispatcher và CS.
+
+   > **Trạng thái triển khai:** `POST/GET /orders/{id}/contact-logs` hiện là stub. Giao diện CS chạy mock-only, ghi nhãn demo, cho tới khi Dev 1 triển khai (`ASM-CS-CONTACT-MOCK-20261109`).
 
 ## 12. Sản phẩm, ánh xạ, nhóm xử lý (IT)
 

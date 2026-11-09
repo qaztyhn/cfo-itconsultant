@@ -56,7 +56,7 @@
 
 | [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) | CFO đọc batch tồn WMS để kiểm tra đơn; khi người có quyền xác nhận phương án, CFO **yêu cầu WMS reserve theo SKU gốc**, WMS trừ **available** (không trừ on_hand ngay), CFO **đọc lại/cập nhật ngay** từ WMS; không tính trùng reservation | 09/11 | Owner: “nếu cfo có đơn, thì so khớp với số lượng trong hiện tại lấy từ wms. sau khi đơn được xác nhận wms trừ thì cfo cũng phải cập nhật lại dữ liệu” | Chốt luồng nghiệp vụ; actual WMS write API & go-live chờ review |
 
-**Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
+**Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt. Năm đề xuất CS Order Lookup của Dev 3 (`ASM-CS-PHONE-SEARCH-20261109`, `ASM-CS-PROJECTION-20261109`, `ASM-CS-CONTACT-MOCK-20261109`, `ASM-CS-READ-DEPS-20261109`, `ASM-CS-TIMELINE-20261109`) cũng là **đề xuất chưa duyệt**; xem [CS_ORDER_LOOKUP_ASSUMPTIONS_20261109.md](proposals/CS_ORDER_LOOKUP_ASSUMPTIONS_20261109.md).
 
 ### Cách ghi nhận quyết định mới — bắt buộc
 
@@ -591,3 +591,10 @@
 - **Fail-closed:** thiếu roster chính thức hoặc xác minh công suất → `schedule_verified=false`, `total_min=free_min=0`, UI hiện `Capacity not verified`; vẫn đọc được đơn đã duyệt nếu có nguồn tin cậy, tuyệt đối không bịa công suất. Không biến lỗi thiếu adapter/thực thi thành `200` giả hoặc cho phép approve/dispatch vượt safety checks.
 - **Múi giờ:** thêm `timezone` IANA non-null cho mọi location ở `GET /locations` và `GET /locations/{id}`, lấy từ `ref.market.timezone`. UI dùng `resolveTimeZone(location.timezone)`, không dùng browser timezone hay hardcode SE. Không thêm nguồn dữ liệu trùng lặp vào `/auth/me`.
 - **Nguồn chi tiết:** [06 §8.2, §13.1, Phụ lục A](06_API_Specification.md); phải review cùng [PR #129](https://github.com/qaztyhn/cfo-itconsultant/pull/129), bổ sung contract/E2E tests trước triển khai production. Không tuyên bố các route/schema này đã hoàn thiện.
+
+## PROPOSAL-CS-ORDER-LOOKUP-20261109 — CS Order Lookup (US-CS-01/02), đề xuất chưa duyệt
+
+- **Trạng thái:** đề xuất của Dev 3 sau review `main`; **chưa có phê duyệt tường minh của owner**. Không gán nhãn owner-approved, không tự merge.
+- **Nội dung:** mở rộng `q` tìm theo số điện thoại đã chuẩn hóa; response projection riêng cho `customer_service`; form contact log mock-only tới khi có backend; ETA và lịch sử thông báo phụ thuộc endpoint chưa triển khai; allowlist timeline cho CS.
+- **Chặn (BLOCKED):** `q` hiện chỉ tìm `order_no`, `external_ref`, tên khách; `eta-forecasts`, `notifications`, `contact-logs` (POST/GET) đang `NotImplementedError`; `GET /orders/{id}` còn trả phone/email cho CS.
+- **Chi tiết và điều kiện hoàn thành:** [CS_ORDER_LOOKUP_ASSUMPTIONS_20261109.md](proposals/CS_ORDER_LOOKUP_ASSUMPTIONS_20261109.md). US-CS-01/02 chưa được coi là xong end-to-end.
