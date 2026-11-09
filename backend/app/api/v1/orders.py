@@ -140,8 +140,8 @@ class OrderOut(BaseModel):
 
 class CsContactOut(BaseModel):
     name: str
-    phone: str | None = None  # always server-masked
-    email: str | None = None  # always server-masked
+    phone_masked: str | None = None  # server-masked; never raw contact value
+    email_masked: str | None = None  # server-masked; never raw contact value
 
 
 class CsDeliveryOut(BaseModel):
@@ -150,6 +150,7 @@ class CsDeliveryOut(BaseModel):
 
 class CsRiskOut(BaseModel):
     status: str
+    color: str
     forecast_eta: datetime
 
 
@@ -158,6 +159,7 @@ class CsOrderOut(BaseModel):
 
     id: int
     order_no: str
+    external_ref: str | None = None
     status: str
     market: str
     customer: NamedRef
