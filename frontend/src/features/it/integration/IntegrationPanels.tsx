@@ -69,7 +69,8 @@ export function SourceCards({ sources, loading }: { sources: SourceView[]; loadi
               <div><StatusTag status={source.status} /></div>
               {source.entity === "stock" ? (
                 <div className="mt-4 text-sm text-rose-900">
-                  Ingestion disabled pending approved scope and SKU independence evidence.
+                  {source.availability === "unconfigured" ? "Stock ingestion is not configured. Historical runs cannot establish availability."
+                    : "Stock availability has not been verified from a complete fresh batch."}
                   <p className="mt-2 font-semibold">Stock availability: unknown, never zero.</p>
                 </div>
               ) : (
@@ -88,8 +89,10 @@ export function SourceCards({ sources, loading }: { sources: SourceView[]; loadi
               )}
               <div className="mt-auto border-t border-border pt-3 text-xs text-inkMuted">
                 <p>Last run: {source.lastRunAt ?? "Not reported"}</p>
+                {source.entity === "stock" && <p className="mt-1">Last run result: {source.latestStatus === "unknown" ? "Unverified" : source.latestStatus}</p>}
                 <p className="mt-1">Last known success: {source.lastSuccessfulAt ?? "Not verified"}</p>
-                {source.entity !== "stock" && <p className="mt-1">Data as of: {source.dataAsOf ?? "Unknown"}</p>}
+                <p className="mt-1">Data as of: {source.dataAsOf ?? "Unknown"}</p>
+                <p className="mt-1">Freshness: {source.status === "failed" || source.status === "partial" ? "Latest sync incomplete; prior data may be stale" : "Not verified by this monitor"}</p>
               </div>
             </article>
           ))}

@@ -16,7 +16,10 @@ export const FEEDS = [
 export type FeedEntity = (typeof FEEDS)[number]["entity"];
 export type RunStatus = "ok" | "partial" | "failed" | "running";
 export interface OverviewSource {
+  availability?: unknown;
   status?: unknown;
+  last_run_status?: unknown;
+  last_successful_at?: unknown;
   rows?: unknown;
   rejected?: unknown;
   unmapped?: unknown;
@@ -25,6 +28,8 @@ export interface OverviewSource {
   interval_min?: unknown;
 }
 export interface OverviewResponse {
+  market?: unknown;
+  markets?: OverviewResponse[];
   sources?: Record<string, OverviewSource>;
   entities?: Record<string, OverviewSource>;
   route_matrix?: {

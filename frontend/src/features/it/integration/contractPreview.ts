@@ -2,9 +2,10 @@
 import type { OverviewResponse, RejectsResponse, SyncRunsResponse } from "./contracts";
 
 export const CONTRACT_OVERVIEW: OverviewResponse = {
+  market: "SE",
   sources: {
-    orders: { status: "ok", rows: 12, rejected: 0, last_run_at: "2026-11-04T09:05:00Z", data_as_of: "2026-11-04T09:00:00Z" },
-    stock: { status: "ok", rows: 321, rejected: 0, last_run_at: "2026-11-04T09:05:00Z" },
+    orders: { availability: "supported", status: "ok", rows: 12, rejected: 0, last_run_at: "2026-11-04T09:05:00Z", data_as_of: "2026-11-04T09:00:00Z", last_successful_at: "2026-11-04T09:05:20Z" },
+    stock: { availability: "unconfigured", status: "unconfigured", last_run_status: "failed", last_run_at: "2026-11-04T09:05:00Z", data_as_of: "2026-11-04T09:00:00Z" },
     inbound: { status: "partial", rows: 8, rejected: 2, last_run_at: "2026-11-04T08:55:00Z", data_as_of: "2026-11-04T08:50:00Z" },
     products: { status: "ok", rows: 96, rejected: 0, unmapped: 3, last_run_at: "2026-11-04T09:00:00Z", data_as_of: "2026-11-04T08:57:00Z" },
     fleet: { status: "failed", rows: null, rejected: null, last_run_at: "2026-11-04T08:54:00Z" },

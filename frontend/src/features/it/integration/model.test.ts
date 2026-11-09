@@ -41,10 +41,23 @@ describe("US-INT-01 AC3/AC4 source status and reject projection", () => {
     const stock = sources.find((source) => source.entity === "stock")!;
     expect(stock.status).toBe("blocked");
     expect(stock.rows).toBeNull();
-    expect(stock.dataAsOf).toBeNull();
+    expect(stock.dataAsOf).toBe("2026-11-04 09:00 UTC");
+    expect(stock.latestStatus).toBe("failed");
+    expect(stock.availability).toBe("unconfigured");
     expect(safeCount(null)).toBeNull();
     expect(safeCount(undefined)).toBeNull();
     expect(safeCount(-1)).toBeNull();
+  });
+
+  it("test_US_INT_01_AC3_uses_persisted_overview_without_promoting_failed_run", () => {
+    const sources = normalizeSources({ sources: {
+      orders: { availability: "supported", status: "failed", last_run_status: "failed",
+        last_run_at: "2026-11-09T08:00:00Z", last_successful_at: "2026-11-08T08:00:00Z",
+        data_as_of: "2026-11-08T07:55:00Z", rows: 2, rejected: 2 },
+    } }, []);
+    expect(sources.find((source) => source.entity === "orders")).toMatchObject({
+      status: "failed", lastSuccessfulAt: "2026-11-08 08:00 UTC", dataAsOf: "2026-11-08 07:55 UTC",
+    });
   });
 
   it("never renders untrusted reject text, external keys or raw payloads", () => {

@@ -21,6 +21,7 @@ export interface SourceView {
   lastRunAt: string | null;
   dataAsOf: string | null;
   latestStatus: DisplayStatus;
+  availability: "supported" | "unconfigured" | "unknown";
   lastSuccessfulAt: string | null;
   /** API may return a configured interval, but this is NOT proof that a worker is running. */
   reportedIntervalMin: number | null;
@@ -122,17 +123,22 @@ export function normalizeSources(overview: OverviewResponse | null, runs: RunVie
     // A partial run is not a successful checkpoint; do not infer success
     // from data_as_of or last_run_at.
     const success = recent.find((run) => run.status === "ok" && run.finishedAt);
+    const availability = entry.availability === "supported" || entry.availability === "unconfigured"
+      ? entry.availability : "unknown";
+    const latestStatus = safeStatus(entry.last_run_status ?? latest?.status ?? entry.status);
     return {
       ...feed,
-      status: feed.entity === "stock" ? "blocked" : latest && latest.status !== "ok" && latest.status !== "unknown"
-        ? latest.status : safeStatus(entry.status ?? latest?.status),
-      rows: feed.entity === "stock" ? null : safeCount(entry.rows),
-      rejected: feed.entity === "stock" ? null : safeCount(entry.rejected),
+      status: feed.entity === "stock" && availability !== "supported" ? "blocked"
+        : latestStatus !== "unknown" ? latestStatus : safeStatus(entry.status),
+      availability,
+      rows: availability === "unconfigured" ? null : safeCount(entry.rows),
+      rejected: availability === "unconfigured" ? null : safeCount(entry.rejected),
       unmapped: feed.entity === "products" ? safeCount(entry.unmapped) : null,
       lastRunAt: timestamp(entry.last_run_at) ?? latest?.startedAt ?? null,
-      dataAsOf: feed.entity === "stock" ? null : timestamp(entry.data_as_of),
-      latestStatus: latest?.status ?? safeStatus(entry.status),
-      lastSuccessfulAt: feed.entity === "stock" ? null : success?.finishedAt ?? null,
+      dataAsOf: timestamp(entry.data_as_of),
+      latestStatus,
+      lastSuccessfulAt: availability === "unconfigured" ? null
+        : timestamp(entry.last_successful_at) ?? success?.finishedAt ?? null,
       reportedIntervalMin: safeCount(entry.interval_min),
     };
   });

@@ -1,10 +1,10 @@
 /**
  * M2 IT Data Integration — docs/03 §5.9, docs/06 §15/Appendix A, US-INT-01..05,
- * US-ADM-01. Read-only monitoring plus documented admin-only order sync request.
+ * US-ADM-01. Read-only monitoring; unsupported sync POST remains unavailable.
  * Production never falls back to mock data when backend endpoints are incomplete.
  */
 import { useState } from "react";
-import { Activity, ArrowRight, RefreshCcw, ShieldAlert } from "lucide-react";
+import { ArrowRight, RefreshCcw, ShieldAlert } from "lucide-react";
 import { isApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { EmptyState } from "../../components/StateViews";
@@ -31,9 +31,10 @@ function safeErrorHeading(error: unknown, label: string): string {
 export function DataIntegration() {
   const user = useAuthStore((store) => store.user);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-  const dashboard = useIntegrationDashboard(selectedRunId);
+  const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
+  const dashboard = useIntegrationDashboard(selectedRunId, selectedMarket);
   const {
-    allowed, isPreview, overviewQuery, runsQuery, rejectsQuery, manualSync,
+    allowed, isPreview, overviewQuery, runsQuery, rejectsQuery, markets,
     sources, runs, rejects, matrix, scheduler,
   } = dashboard;
   const activeRunId = selectedRunId ?? runs.find((run) => (run.rowsRejected ?? 0) > 0)?.id ?? null;
@@ -53,23 +54,16 @@ export function DataIntegration() {
     );
   }
 
-  const loading = overviewQuery.isPending || runsQuery.isPending;
+  const marketRequired = user?.market == null && selectedMarket === null;
+  const loading = overviewQuery.isPending || (!marketRequired && runsQuery.isPending);
   const refreshing = overviewQuery.isFetching || runsQuery.isFetching;
-
-  const syncMessage = manualSync.isSuccess
-    ? "Sync request accepted. Check a subsequent run for its actual outcome."
-    : manualSync.isError && isApiError(manualSync.error) && manualSync.error.code === "SYNC_IN_PROGRESS"
-      ? "Orders sync is already running. No second run was started."
-      : manualSync.isError
-        ? "Sync request could not be confirmed. Check backend availability and retry only after verification."
-        : null;
 
   return (
     <section data-screen="DataIntegration" className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-5">
         <div className="min-w-0">
           <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-apricot">
-            Admin · Market adapters · {user?.market ?? "Market not assigned"}
+            Admin · Market adapters · {user?.market ?? selectedMarket ?? "Select market"}
           </p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight text-ink">Data integration</h1>
           <p className="mt-2 max-w-2xl text-sm text-inkMuted">
@@ -90,35 +84,26 @@ export function DataIntegration() {
             <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
-          <button
-            type="button"
-            disabled={isPreview || manualSync.isPending}
-            onClick={() => manualSync.mutate()}
-            className="inline-flex items-center gap-2 rounded-control bg-pine px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Activity className="h-4 w-4" aria-hidden="true" />
-            {manualSync.isPending ? "Requesting…" : "Run POS orders sync"}
-          </button>
         </div>
       </header>
+
+      {user?.market == null && <label className="flex flex-col gap-1 text-sm font-semibold text-ink">Market
+        <select value={selectedMarket ?? ""} onChange={(event) => { setSelectedMarket(event.target.value || null); setSelectedRunId(null); }} className="max-w-xs rounded-control border bg-surface px-3 py-2">
+          <option value="">Select a market</option>
+          {markets.map((code) => <option key={code} value={code}>{code}</option>)}
+        </select>
+      </label>}
 
       {isPreview && (
         <div role="status" className="rounded-card border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-testid="integration-contract-preview">
           <strong>CONTRACT PREVIEW · NOT LIVE DATA.</strong> Synthetic responses demonstrate the dashboard.
-          No scheduler or source worker is confirmed, and manual sync is unavailable in preview mode.
+          No scheduler or source worker is confirmed. Preview data cannot trigger a sync.
         </div>
       )}
       <div className="rounded-card border border-border bg-surface p-4 text-sm text-inkMuted">
         This dashboard makes no routing decision, does not write to POS/WMS/ERP and cannot use an unavailable stock feed for a delivery promise.
         <span className="ml-1 font-semibold text-ink">A failed or partial run is never presented as a completed sync.</span>
       </div>
-
-      {syncMessage && (
-        <div role="status" className="rounded-card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          {syncMessage}
-        </div>
-      )}
-      {manualSync.isError && <p className="text-xs text-inkMuted">Sync request reference: {requestRef(manualSync.error) ?? "Not provided"}</p>}
 
       {overviewQuery.isError && (
         <SafeError kind={safeErrorHeading(overviewQuery.error, "Source overview")}
@@ -129,13 +114,14 @@ export function DataIntegration() {
           correlation={requestRef(runsQuery.error)} retry={() => void runsQuery.refetch()} />
       )}
 
-      <SourceCards sources={sources} loading={loading && !overviewQuery.isError && !runsQuery.isError} />
+      {marketRequired ? <EmptyState message="Select a market to inspect source evidence." />
+        : <SourceCards sources={sources} loading={loading && !overviewQuery.isError && !runsQuery.isError} />}
 
       <WorkflowSteps />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-5">
-          <RecentRuns runs={runs} loading={runsQuery.isPending && !runsQuery.isError} onSelect={setSelectedRunId} />
+          {!marketRequired && <RecentRuns runs={runs} loading={runsQuery.isPending && !runsQuery.isError} onSelect={setSelectedRunId} />}
           {shownRunId !== null && rejectsQuery.isError && (
             <SafeError kind={safeErrorHeading(rejectsQuery.error, "Rejected records")}
               correlation={requestRef(rejectsQuery.error)} retry={() => void rejectsQuery.refetch()} />
@@ -156,14 +142,13 @@ export function DataIntegration() {
             <ShieldAlert className="h-5 w-5 text-apricot" aria-hidden="true" />
             <h2 className="mt-3 font-bold">Restricted operations</h2>
             <p className="mt-2 text-sm text-white/80">
-              Only an admin can request a documented orders sync. Stock sync, CSV upload and
-              “run all” are not offered without verified runtime contracts.
+              Sync writes are unavailable while the backend POST route is unimplemented. This dashboard only reads persisted evidence.
             </p>
             <p className="mt-3 text-xs text-white/70">A 503 STOCK_UNAVAILABLE means unknown stock, not an empty batch.</p>
           </div>
         </aside>
       </div>
-      {!loading && runs.length === 0 && !runsQuery.isError && (
+      {!marketRequired && !loading && runs.length === 0 && !runsQuery.isError && (
         <EmptyState message="No runs are available. This is not evidence of successful or completed ingestion." />
       )}
       <footer className="flex items-center gap-2 border-t border-border pt-5 text-xs text-inkMuted">

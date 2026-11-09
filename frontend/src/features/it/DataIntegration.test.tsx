@@ -31,18 +31,17 @@ function mockApi(replies: {
   overview?: MockReply;
   runs?: MockReply;
   rejects?: MockReply;
-  sync?: MockReply;
 } = {}) {
   const calls: { path: string; method: string }[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = new URL(String(input)).pathname;
+    const url = new URL(String(input));
+    const path = url.pathname;
     const method = init?.method ?? "GET";
-    calls.push({ path, method });
+    calls.push({ path: path + url.search, method });
     let response: MockReply;
     if (path.endsWith("/integration/overview")) response = replies.overview ?? good;
     else if (path.endsWith("/sync-runs")) response = replies.runs ?? runsReply;
     else if (/\/sync-runs\/\d+\/rejects$/.test(path)) response = replies.rejects ?? { body: CONTRACT_REJECTS };
-    else if (path.endsWith("/sync/orders/run")) response = replies.sync ?? { body: { status: "running" } };
     else return new Response(null, { status: 404 });
     return new Response(JSON.stringify(response.body ?? {}), {
       status: response.status ?? 200,
@@ -87,7 +86,8 @@ describe("US-ADM-01 AC1: admin operational dashboard", () => {
     expect(within(products).getByText(/0 rejected/)).toBeInTheDocument();
     expect(within(stock).getByText(/BLOCKED/)).toBeInTheDocument();
     expect(within(stock).getByText(/unknown, never zero/)).toBeInTheDocument();
-    expect(within(stock).queryByText("321")).not.toBeInTheDocument();
+    expect(within(stock).getByText(/Last run result: failed/)).toBeInTheDocument();
+    expect(within(stock).getByText(/Data as of: 2026-11-04 09:00 UTC/)).toBeInTheDocument();
     expect(screen.getByText(/Active background worker is not verified/)).toBeInTheDocument();
     expect(screen.getByText(/25/)).toBeInTheDocument();
   });
@@ -98,7 +98,7 @@ describe("US-ADM-01 AC1: admin operational dashboard", () => {
     const inspect = await screen.findAllByRole("button", { name: /Inspect rejects/i });
     await userEvent.click(inspect[2]); // the partial inbound run from the contract fixture
     await waitFor(() => expect(calls.some((entry) =>
-      entry.path.endsWith("/sync-runs/302/rejects"))).toBe(true));
+      entry.path.includes("/sync-runs/302/rejects"))).toBe(true));
     expect(await screen.findByText("Quantity failed source validation.").catch(() => null)).toBeNull();
     expect(await screen.findByText("Date did not pass validation.")).toBeInTheDocument();
     const html = container.textContent ?? "";
@@ -155,26 +155,25 @@ describe("US-ADM-01 AC1: admin operational dashboard", () => {
   });
 });
 
-describe("US-ADM-01 AC2: admin-only manual sync", () => {
-  it("uses the documented orders POST and treats acceptance as a request, not sync completion", async () => {
+describe("US-ADM-01 AC2: read-only monitoring", () => {
+  it("never calls the unimplemented sync POST", async () => {
     const { calls } = mockApi();
     renderDashboard();
     await screen.findByText("Recent integration runs");
-    await userEvent.click(screen.getByRole("button", { name: "Run POS orders sync" }));
-    await waitFor(() => expect(calls.filter(({ path, method }) =>
-      path.endsWith("/sync/orders/run") && method === "POST")).toHaveLength(1));
-    expect(await screen.findByText(/Sync request accepted/)).toBeInTheDocument();
-    expect(calls.every(({ path }) => !/sync\/stock|routing|legacy|csv/.test(path))).toBe(true);
+    expect(screen.queryByRole("button", { name: "Run POS orders sync" })).not.toBeInTheDocument();
+    expect(calls.every(({ method }) => method === "GET")).toBe(true);
   });
 
-  it("handles 409 SYNC_IN_PROGRESS without claiming a completed run", async () => {
-    mockApi({ sync: { status: 409, body: {
-      error: { code: "SYNC_IN_PROGRESS", message: "PRIVATE implementation error" },
-    } } });
+  it("requires a market before a system admin reads runs", async () => {
+    startSession({ ...ADMIN, market: null });
+    const { calls } = mockApi({ overview: { body: { markets: [CONTRACT_OVERVIEW] } } });
     renderDashboard();
-    await userEvent.click(screen.getByRole("button", { name: "Run POS orders sync" }));
-    expect(await screen.findByText(/Orders sync is already running/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain("PRIVATE implementation error");
+    expect(await screen.findByText("Select a market to inspect source evidence.")).toBeInTheDocument();
+    expect(calls.some(({ path }) => path.endsWith("/sync-runs"))).toBe(false);
+    await waitFor(() => expect(screen.getByRole("option", { name: "SE" })).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText("Market"), "SE");
+    await waitFor(() => expect(calls.some(({ path }) => path.includes("/sync-runs?market=SE"))).toBe(true));
+    expect(await screen.findByTestId("feed-stock")).toHaveTextContent("BLOCKED");
   });
 
   it("prevents an unauthorized direct mount from fetching or syncing", async () => {
