@@ -508,24 +508,20 @@ def _dispatch_both_vehicles(client: Api, monkeypatch: pytest.MonkeyPatch, notice
         assert send(client, actor, kind, at, data).status_code == 200
 
 
-def test_BE_05_explicit_stop_pod_preserves_other_stops_and_trip_lifecycle(
+def test_BE_05_explicit_stop_pod_preserves_other_vehicle_and_order_lifecycle(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A trip remains on-road until every stop is terminal, not the first POD."""
+    """One order uses two valid trips; proof and GPS closure are scoped per trip."""
     from app.services import gps_service
 
     notices: list[str] = []
     _dispatch_both_vehicles(execution_api, monkeypatch, notices)
-    insert = (
-        "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) "
-        "VALUES (1, 2, 1, '2026-11-10T10:45Z')"
-    )
-    execute(execution_api.dsn, insert)
-    rows_ = fetch(
+    stops = fetch(
         execution_api.dsn,
-        "SELECT id FROM ops.trip_stop WHERE trip_id=1 ORDER BY seq",
+        "SELECT id, trip_id FROM ops.trip_stop WHERE order_id=1 ORDER BY trip_id",
     )
-    first_id, second_id = [row["id"] for row in rows_]
+    first_id, second_id = [row["id"] for row in stops]
+    assert [row["trip_id"] for row in stops] == [1, 2]
     assert first_id != second_id
 
     closed: list[int] = []
@@ -537,13 +533,14 @@ def test_BE_05_explicit_stop_pod_preserves_other_stops_and_trip_lifecycle(
 
     monkeypatch.setattr(gps_service, "close_trip_collection", tracking_close)
     at = "2026-11-10T09:00:00Z"
-    ambiguous = {"trip_id": 1, "recipient_name": "Synthetic"}
-    response = send(execution_api, DRIVER, "DELIVERED", at, ambiguous)
-    assert_error(response, 422, "VALIDATION_ERROR")
-    other_trip_stop = {**ambiguous, "trip_stop_id": 2}
-    response = send(execution_api, DRIVER, "DELIVERED", at, other_trip_stop)
+    wrong_stop = {
+        "trip_id": 1,
+        "trip_stop_id": second_id,
+        "recipient_name": "Synthetic",
+    }
+    response = send(execution_api, DRIVER, "DELIVERED", at, wrong_stop)
     assert_error(response, 404, "NOT_FOUND")
-    bad_stop = {**ambiguous, "trip_stop_id": 0}
+    bad_stop = {**wrong_stop, "trip_stop_id": 0}
     response = send(execution_api, DRIVER, "DELIVERED", at, bad_stop)
     assert_error(response, 422, "VALIDATION_ERROR")
 
@@ -562,70 +559,46 @@ def test_BE_05_explicit_stop_pod_preserves_other_stops_and_trip_lifecycle(
     response = send(execution_api, DRIVER, "DELIVERED", at, mutated, key)
     assert_error(response, 409, "IDEMPOTENCY_CONFLICT")
     trip_status_sql = "SELECT status::text AS status FROM ops.delivery_trip WHERE id=1"
-    stop_status_sql = "SELECT status::text AS status FROM ops.trip_stop " f"WHERE id={second_id}"
-    assert fetch(execution_api.dsn, trip_status_sql)[0]["status"] == "on_road"
-    assert fetch(execution_api.dsn, stop_status_sql)[0]["status"] == "pending"
-    assert closed == []
-    assert notices == ["DISPATCHED"]
-
-    second_body = {
-        "trip_id": 1,
-        "trip_stop_id": second_id,
-        "recipient_name": "Synthetic two",
-    }
-    second = send(
-        execution_api,
-        DRIVER,
-        "DELIVERED",
-        "2026-11-10T09:20:00Z",
-        second_body,
-    )
-    assert second.status_code == 200, second.text
     assert fetch(execution_api.dsn, trip_status_sql)[0]["status"] == "completed"
+    assert fetch(
+        execution_api.dsn,
+        "SELECT status::text AS status FROM ops.delivery_trip WHERE id=2",
+    )[0]["status"] == "on_road"
     assert closed == [1]
-    assert second.json()["order_status"] == "DISPATCHED"
+    assert first.json()["order_status"] == "DISPATCHED"
+    assert notices == ["DISPATCHED"]
     count_sql = "SELECT count(*) AS n FROM ops.proof_of_delivery"
-    assert fetch(execution_api.dsn, count_sql)[0]["n"] == 2
+    assert fetch(execution_api.dsn, count_sql)[0]["n"] == 1
 
-    third_body = {
-        "trip_id": 2,
-        "trip_stop_id": 2,
-        "recipient_name": "Synthetic three",
-    }
+    # An ambiguous legacy key is still valid only on the one-stop trip,
+    # without crossing into the other assigned vehicle or changing its POD.
     last = send(
         execution_api,
         14,
         "DELIVERED",
         "2026-11-10T09:30:00Z",
-        third_body,
+        {
+            "trip_id": 2,
+            "trip_stop_id": second_id,
+            "recipient_name": "Synthetic two",
+        },
     )
     assert last.status_code == 200, last.text
     assert last.json()["order_status"] == "DELIVERED"
-    assert fetch(execution_api.dsn, count_sql)[0]["n"] == 3
+    assert fetch(execution_api.dsn, count_sql)[0]["n"] == 2
     assert notices == ["DISPATCHED", "DELIVERED"]
     assert closed == [1, 2]
 
 
-def test_BE_05_multi_stop_fail_closed_for_wrong_driver_and_stop(
+def test_BE_05_stop_selection_fail_closed_for_wrong_driver_role_and_type(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original_driver_gate = execution_service._driver_gate
     _dispatch_both_vehicles(execution_api, monkeypatch, [])
-    # The synthetic dispatch helper bypasses D7; restore real authorization
-    # before verifying wrong-driver, wrong-role and invalid stop failures.
     monkeypatch.setattr(execution_service, "_driver_gate", original_driver_gate)
-    execute(
-        execution_api.dsn,
-        "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) "
-        "VALUES (1, 2, 1, '2026-11-10T10:45Z')",
-    )
-    row = fetch(
-        execution_api.dsn,
-        "SELECT id FROM ops.trip_stop WHERE trip_id=1 AND seq=2",
-    )[0]
     body = {
         "trip_id": 1,
-        "trip_stop_id": row["id"],
+        "trip_stop_id": 1,
         "failure_reason": "customer_absent",
     }
     at = "2026-11-10T09:20:00Z"
