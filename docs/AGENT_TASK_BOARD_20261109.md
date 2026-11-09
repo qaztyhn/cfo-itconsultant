@@ -15,12 +15,13 @@
 | [#149](https://github.com/qaztyhn/cfo-itconsultant/pull/149) | My Store Orders read-only UI: merged; server isolation E2E remains separate |
 | [#156](https://github.com/qaztyhn/cfo-itconsultant/pull/156) | Revenue Dashboard: merged; no unapproved revenue formula |
 | [#163](https://github.com/qaztyhn/cfo-itconsultant/pull/163) | Disabled WMS reservation adapter: merged as foundation, not a live write path |
+| [#147](https://github.com/qaztyhn/cfo-itconsultant/pull/147) | Read-only Dispatcher Exceptions triage: merged; backend diagnostics still partial, no E2E completion claim |
 
 ## Open PRs: reserved file scopes; do not duplicate
 
 - Core/WMS: [#129 Execution](https://github.com/qaztyhn/cfo-itconsultant/pull/129); [#137 GPS](https://github.com/qaztyhn/cfo-itconsultant/pull/137); [#127 Transfers](https://github.com/qaztyhn/cfo-itconsultant/pull/127); [#121 T07](https://github.com/qaztyhn/cfo-itconsultant/pull/121); [#148 scope/evidence](https://github.com/qaztyhn/cfo-itconsultant/pull/148); [#164 scope-gated stock writer](https://github.com/qaztyhn/cfo-itconsultant/pull/164). #164 is stacked on #148, which depends on #129; not an independently mergeable production writer.
 - M6 UI: [#154 Prep read UI](https://github.com/qaztyhn/cfo-itconsultant/pull/154); [#159 Prep API](https://github.com/qaztyhn/cfo-itconsultant/pull/159); [#160 Prep contract UI](https://github.com/qaztyhn/cfo-itconsultant/pull/160).
-- Frontend and KPI: [#143 KPI API](https://github.com/qaztyhn/cfo-itconsultant/pull/143), [#150 KPI UI](https://github.com/qaztyhn/cfo-itconsultant/pull/150), [#161 Handling Groups](https://github.com/qaztyhn/cfo-itconsultant/pull/161), [#165 No Feasible Date](https://github.com/qaztyhn/cfo-itconsultant/pull/165), [#166 seed](https://github.com/qaztyhn/cfo-itconsultant/pull/166), [#169 Sales UI](https://github.com/qaztyhn/cfo-itconsultant/pull/169), [#146 canonical Plan Review](https://github.com/qaztyhn/cfo-itconsultant/pull/146) (duplicate #151 closed unmerged), [#153 Manual Plan](https://github.com/qaztyhn/cfo-itconsultant/pull/153), [#147 Exceptions](https://github.com/qaztyhn/cfo-itconsultant/pull/147), Open PR does not mean merged/accepted.
+- Frontend and KPI: [#143 KPI API](https://github.com/qaztyhn/cfo-itconsultant/pull/143), [#150 KPI UI](https://github.com/qaztyhn/cfo-itconsultant/pull/150), [#161 Handling Groups](https://github.com/qaztyhn/cfo-itconsultant/pull/161), [#165 No Feasible Date](https://github.com/qaztyhn/cfo-itconsultant/pull/165), [#166 seed](https://github.com/qaztyhn/cfo-itconsultant/pull/166), [#169 Sales UI](https://github.com/qaztyhn/cfo-itconsultant/pull/169), [#146 canonical Plan Review](https://github.com/qaztyhn/cfo-itconsultant/pull/146) (duplicate #151 closed unmerged), [#153 Manual Plan](https://github.com/qaztyhn/cfo-itconsultant/pull/153), Open PR does not mean merged/accepted.
 
 ## Next independent assignments
 
