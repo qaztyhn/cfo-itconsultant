@@ -82,6 +82,22 @@ def test_US_GPS_01_AC1_device_gps_is_accepted_without_echoing_coordinates(gps: A
     assert points[0]["source"] == "device"
 
 
+@pytest.mark.parametrize("batch_size", [1, 100])
+def test_US_GPS_01_AC1_approved_batch_limit_accepts_boundaries(gps: Api, batch_size: int) -> None:
+    # Repeated identical points are legitimate idempotent replays of the same 30-minute sample.
+    # This tests the transport count independent of the separate duty/cadence rules.
+    result = submit(gps, [position("2026-11-10T07:00:00Z") for _ in range(batch_size)])
+    assert result.status_code == 202, result.text
+    assert result.json() == {"accepted": 1, "eta": None}
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
+
+
+def test_US_GPS_01_AC1_101_positions_rejected_atomically(gps: Api) -> None:
+    response = submit(gps, [position("2026-11-10T07:00:00Z") for _ in range(101)])
+    assert_error(response, 422, "VALIDATION_ERROR")
+    assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+
+
 def test_US_GPS_01_AC1_offline_points_can_arrive_out_of_order_in_current_shift(gps: Api) -> None:
     response = submit(gps, [position("2026-11-10T08:00:00Z"), position("2026-11-10T07:00:00Z")])
     assert response.status_code == 202 and response.json()["accepted"] == 2
