@@ -13,7 +13,7 @@ export interface StoreOrder {
   forecastEta: string | null;
   risk: string | null;
 }
-export interface OrderPage { items: StoreOrder[]; total: number | null; page: number; pageSize: number }
+export interface OrderPage { items: StoreOrder[]; total: number | null; page: number; pageSize: number; invalid: boolean }
 export interface StoreOrderDetail {
   id: number; reference: string; storeId: number; status: string;
   requestedDate: string | null; committedDate: string | null;
@@ -50,7 +50,7 @@ function status(value: unknown): string {
 }
 export function projectPage(raw: unknown, authorizedStores: readonly number[], requestedPage: number, pageSize: number): OrderPage {
   const data = record(raw);
-  if (!Array.isArray(data.items)) throw new Error("Invalid order list response");
+  if (!Array.isArray(data.items)) return { items: [], total: null, page: requestedPage, pageSize, invalid: true };
   const allowed = new Set(authorizedStores);
   const items: StoreOrder[] = data.items.flatMap(value => {
     const entry = record(value), store = record(entry.origin_store);
@@ -67,7 +67,7 @@ export function projectPage(raw: unknown, authorizedStores: readonly number[], r
       forecastEta: datetime(risk.forecast_eta), risk: clean(entry.risk_color, 20),
     }];
   });
-  return { items, total: nonnegative(data.total), page: requestedPage, pageSize };
+  return { items, total: nonnegative(data.total), page: requestedPage, pageSize, invalid: false };
 }
 export function projectDetail(raw: unknown, authorizedStores: readonly number[], expectedOrderId: number): StoreOrderDetail | null {
   const entry = record(raw), store = record(entry.origin_store);
