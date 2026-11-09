@@ -40,6 +40,10 @@ function pageOf(...orderNos: string[]): CsOrderPage {
   };
 }
 
+function pagedOf(page: number, total: number, ...orderNos: string[]): CsOrderPage {
+  return { ...pageOf(...orderNos), page, total };
+}
+
 const detail: CsOrderDetail = {
   id: 42,
   orderNo: "ORD-0042",
@@ -98,7 +102,7 @@ describe("CS Order Lookup — search", () => {
     renderLookup();
     await submit(user, "ORD-0042");
     expect(await screen.findByText("ORD-0042")).toBeInTheDocument();
-    expect(search).toHaveBeenCalledWith("ORD-0042", expect.any(AbortSignal));
+    expect(search).toHaveBeenCalledWith("ORD-0042", expect.any(AbortSignal), 1);
     expect(screen.getByText(/Showing 1 of 1 order/)).toBeInTheDocument();
   });
 
@@ -232,5 +236,114 @@ describe("CS Order Lookup — detail", () => {
     await user.click(screen.getByRole("button", { name: /ORD-0043/ }));
     expect(await within(region).findByText("ORD-0043")).toBeInTheDocument();
     expect(within(region).queryByText("called back")).toBeNull();
+  });
+});
+
+describe("CS Order Lookup — pagination and polling", () => {
+  it("test_US_CS_01_AC1_pager_is_hidden_when_all_results_fit_on_one_page", async () => {
+    const user = userEvent.setup();
+    search.mockResolvedValueOnce(pageOf("ORD-0042"));
+    renderLookup();
+    await submit(user, "ORD-0042");
+    expect(await screen.findByText("ORD-0042")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Search results pages" })).toBeNull();
+  });
+
+  it("test_US_CS_01_AC1_next_and_previous_request_the_adjacent_page_of_the_same_query", async () => {
+    const user = userEvent.setup();
+    search.mockResolvedValueOnce(pagedOf(1, 45, "ORD-0001", "ORD-0002"));
+    search.mockResolvedValueOnce(pagedOf(2, 45, "ORD-0021", "ORD-0022"));
+    search.mockResolvedValueOnce(pagedOf(1, 45, "ORD-0001", "ORD-0002"));
+    renderLookup();
+    await submit(user, "Anna");
+    expect(await screen.findByText("ORD-0001")).toBeInTheDocument();
+    expect(screen.getByText(/Showing 1–2 of 45 orders/)).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("ORD-0021")).toBeInTheDocument();
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith("Anna", expect.any(AbortSignal), 2));
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+    expect(screen.getByText(/Showing 21–22 of 45 orders/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Page 1 of 3")).toBeInTheDocument();
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith("Anna", expect.any(AbortSignal), 1));
+  });
+
+  it("test_US_CS_01_AC1_pager_buttons_stay_focusable_and_do_nothing_at_the_first_page", async () => {
+    const user = userEvent.setup();
+    search.mockResolvedValueOnce(pagedOf(1, 45, "ORD-0001"));
+    renderLookup();
+    await submit(user, "Anna");
+    await screen.findByText("ORD-0001");
+    const previous = screen.getByRole("button", { name: "Previous" });
+    expect(previous).toHaveAttribute("aria-disabled", "true");
+    expect(previous).not.toBeDisabled();
+    await user.click(previous);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+  });
+
+  it("test_US_CS_01_AC1_current_page_stays_visible_and_consistent_while_the_next_page_loads", async () => {
+    const user = userEvent.setup();
+    const next = deferred<CsOrderPage>();
+    search.mockResolvedValueOnce(pagedOf(1, 45, "ORD-0001"));
+    search.mockReturnValueOnce(next.promise);
+    renderLookup();
+    await submit(user, "Anna");
+    await screen.findByText("ORD-0001");
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("ORD-0001")).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();
+
+    act(() => next.resolve(pagedOf(2, 45, "ORD-0021")));
+    expect(await screen.findByText("ORD-0021")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+  });
+
+  it("test_US_CS_01_AC1_a_new_search_starts_from_page_one", async () => {
+    const user = userEvent.setup();
+    search.mockResolvedValueOnce(pagedOf(1, 45, "ORD-0001"));
+    search.mockResolvedValueOnce(pagedOf(2, 45, "ORD-0021"));
+    search.mockResolvedValueOnce(pagedOf(1, 1, "ORD-0900"));
+    renderLookup();
+    await submit(user, "Anna");
+    await screen.findByText("ORD-0001");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("ORD-0021");
+
+    await submit(user, "Bob");
+    expect(await screen.findByText("ORD-0900")).toBeInTheDocument();
+    expect(search).toHaveBeenLastCalledWith("Bob", expect.any(AbortSignal), 1);
+  });
+
+  it("test_CS_queries_do_not_poll_even_when_the_app_default_sets_a_refetch_interval", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+      search.mockResolvedValue(pageOf("ORD-0042"));
+      getDetail.mockResolvedValue(detail);
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchInterval: 20_000 } } });
+      render(
+        <QueryClientProvider client={client}>
+          <OrderLookup />
+        </QueryClientProvider>,
+      );
+      await submit(user, "ORD-0042");
+      await user.click(await screen.findByRole("button", { name: /ORD-0042/ }));
+      const mocks = [search, getDetail, vi.mocked(fetchEtaForecasts), vi.mocked(fetchNotifications), vi.mocked(fetchTimeline)];
+      await waitFor(() => mocks.forEach((mock) => expect(mock).toHaveBeenCalled()));
+
+      const before = mocks.map((mock) => mock.mock.calls.length);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(65_000);
+      });
+      expect(mocks.map((mock) => mock.mock.calls.length)).toEqual(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
