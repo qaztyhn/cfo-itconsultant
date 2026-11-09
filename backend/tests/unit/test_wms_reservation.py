@@ -23,6 +23,7 @@ from app.adapters.wms_reservation import (
     build_request,
     idempotency_key,
     reserve_with_recovery,
+    verify_ack,
 )
 from app.adapters.wms_sku import (
     ConfirmedMapping,
@@ -73,7 +74,7 @@ class FakeWms:
                     lines[0] = AckLine("OTHER", lines[0].warehouse_code, lines[0].quantity)
                 for ln in request.lines:
                     self.available[(ln.warehouse_code, ln.wms_sku)] -= ln.quantity
-                ack = ReservationAck(f"R-{len(self.by_key) + 1}", status, tuple(lines), "7", 12)
+                ack = ReservationAck(f"R-{len(self.by_key) + 1}", status, tuple(lines), "7", 12, request.idempotency_key)
                 self.by_key[request.idempotency_key] = ack
         if self.timeout_after_commit:
             self.timeout_after_commit -= 1
@@ -209,6 +210,15 @@ def test_non_exact_conversion_is_rejected_not_rounded() -> None:
 def run(coro):
     return asyncio.run(coro)
 
+
+def test_ack_must_echo_the_exact_reservation_idempotency_key() -> None:
+    req = request()
+    expected = tuple(AckLine(line.wms_sku, line.warehouse_code, line.quantity) for line in req.lines)
+    for bad_key in (None, "cfo-res-other"):
+        with pytest.raises(ReservationMismatch):
+            verify_ack(req, ReservationAck("R-1", "accepted", expected, "7", 12, bad_key))
+    good = ReservationAck("R-1", "accepted", expected, "7", 12, req.idempotency_key)
+    assert verify_ack(req, good) == good
 
 def test_accepted_reservation_is_verified_and_idempotent_key_is_stable() -> None:
     wms = FakeWms({("WH-1", "W-9"): D(100)})
