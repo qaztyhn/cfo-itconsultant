@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-08)
+## Sổ quyết định đã chốt (cập nhật 2026-11-09)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -39,6 +39,22 @@
 | [DEC-DEV2-D4-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d4--dec-dev2-d4-001-approved) | D4 thông báo theo template + biến allowlist, không được free-text | 08/11 | Chủ dự án: “Chọn cơ chế template có biến thay thế, không cho phép free-text tùy ý” | Approved; templates/API/tests pending |
 | [DEC-GDPR-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 phải GDPR by design; policy giờ có số cụ thể, chưa chứng minh tuân thủ GDPR thực tế | 08/11 | Chủ dự án: “D5 tôi muốn tuân thủ gdpr” | Approved direction; legal assessment outstanding (PR #86 has overlapping draft) |
 | [DEC-DEV2-D5-001](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md#d5--dec-dev2-d5-001-approved-policy-for-synthetic-mvp-real-data-legal-gate-remains) | D5 mốc 90/365/30/90 ngày theo loại, ngoại lệ tài xế/kế toán; **GPS xoá khi trip kết thúc**, không giữ 30 ngày | 08/11 | Chủ dự án: “d2, d5 tôi đồng ý với bạn”; GPS điều chỉnh D3 | Owner-approved product policy, legal/implementation pending; no production GDPR claim |
+
+| [DEC-OWNER-20261109](#dec-owner-20261109--27-quyết-định-liên-workstream-đã-duyệt-ngày-09112026) | 27 quyết định chốt: S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2 | 09/11 | Owner xác nhận rõ ràng 09/11; [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) | **Approved contract; code/migration/E2E pending** |
+
+| [DEC-GPS-RET-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | **Thay G4**: ngừng theo dõi ngay khi trip/ca kết thúc, lưu lịch sử tọa độ hợp lệ **tối đa 7 ngày** với quyền tra soát có lý do/audit; xóa đúng hạn, GPS thật cần privacy/legal sign-off | 09/11 | Owner xác nhận “ok lưu 7 ngày” sau khi trao đổi retention | **Approved policy; backend/UI/retention migrations pending** |
+| [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | Rà soát vận hành tổng thể **07:00 và 13:00 mỗi ngày theo giờ Thụy Điển (Europe/Stockholm)**; tách khỏi đồng bộ định kỳ và xử lý sự kiện | 09/11 | Owner xác nhận “7h và 13h” | **Approved review times only; toàn bộ D8 chưa duyệt** |
+
+| [DEC-STOCK-GRANT-BOOTSTRAP-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Owner ủy quyền System Admin tin cậy tạo **grant Stock Admin đầu tiên theo market**, có lý do/audit; **cấm tự cấp quyền cho mình** và không tự bootstrap | 09/11 | Owner đồng ý Q1 sau giải thích cấp quyền ban đầu | Quyết định đã chốt; schema/runbook/code cần review |
+| [ASM-WMS-MOVEMENT-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Giả định nghiệp vụ**: WMS cũ ghi nhận xuất kho A và nhập kho B khi chuyển kho; **chưa chứng minh API WMS trả movement ID hay liên kết snapshot** | 09/11 | Owner: “assume là có đi” | Giả định chốt; Dev 2 phải xác minh nguồn thật |
+| [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) | **WMS là nguồn sự thật duy nhất về xuất/nhập/chuyển kho và tồn thực tế**; CFO chỉ đọc batch tồn kho đầy đủ/mới, quản lý hold/committed reservations của riêng CFO, không đối soát chứng từ vật lý hay có hàng đợi đối soát WMS riêng | 09/11 | Owner: “cfo chỉ lấy dữ liệu từ wms nhé. sao phải quản lý mấy cái này” | Đã chốt ranh giới; Dev 1/2 phải sửa contract/PR #127 trước khi merge |
+| [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Đã thay thế**: trước đó đề xuất CFO tự đối soát chứng từ WMS; Owner làm rõ chỉ WMS quản lý chuyển kho, CFO đọc snapshot và không đếm trùng | 09/11 | Owner: “đồng ý” với Q2 | **Superseded** bởi DEC-WMS-READONLY-20261109 |
+
+| [ASM-WMS-RESERVATION-20261109](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md) | Owner cho phép **giả định WMS cũ hỗ trợ giữ hàng (reservation)**; giữ hàng làm giảm available, không giảm on-hand cho đến khi WMS xuất thực | 09/11 | Owner: “assume là có đi” khi được hỏi WMS có reservation không | **Giả định đã chốt; API thực tế chưa xác minh; CFO→WMS ghi reservation CHƯA được duyệt** |
+
+| [DEC-WMS-REVERSE-SKU-20261109](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md) | Nếu CFO gửi reserve/release sang WMS, phải **ánh xạ ngược mã global về SKU WMS gốc đúng market/kho, đơn vị tồn**; global có nhiều SKU gốc thì không tự chọn | 09/11 | Owner: “cái này nếu mà từ cfo về thì phải ánh xạ ngược lại mã sản phẩm cũ” | Yêu cầu có điều kiện đã chốt; quyền ghi WMS chưa duyệt |
+
+| [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) | CFO đọc batch tồn WMS để kiểm tra đơn; khi người có quyền xác nhận phương án, CFO **yêu cầu WMS reserve theo SKU gốc**, WMS trừ **available** (không trừ on_hand ngay), CFO **đọc lại/cập nhật ngay** từ WMS; không tính trùng reservation | 09/11 | Owner: “nếu cfo có đơn, thì so khớp với số lượng trong hiện tại lấy từ wms. sau khi đơn được xác nhận wms trừ thì cfo cũng phải cập nhật lại dữ liệu” | Chốt luồng nghiệp vụ; actual WMS write API & go-live chờ review |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -492,3 +508,86 @@
 - **Demo accounts:** UI hiện 7 thẻ không bao gồm Project Lead như `03` mục 5.0. M0 seed chỉ có 5 account; `wm.got`, `driver1`, `cs` cần đúng seed M1 mới đăng nhập thật. Chỉ điền email, không hard-code mật khẩu.
 - **Q11:** tiếp tục tuân theo ASM-007/DEC-SHIFTS-001; không cấp ca chỉ dựa vào `expected_staff`.
 - **Phạm vi:** `frontend/src/app`, `frontend/src/api`, `Sidebar`, `ScopePicker`, `DemoBanner`, `SignIn`; Dev 1 cần chuẩn hóa `owned_location_ids`, Dev 2 cần xác nhận POS URL/seed, Dev 3 cần smoke test backend thật. Mục này chỉ ghi nhận hiện trạng và phụ thuộc kỹ thuật, **chưa chốt owner assumptions mới**.
+
+## DEC-OWNER-20261109 — 27 quyết định liên workstream đã duyệt ngày 09/11/2026
+
+- **Người phê duyệt/ngày:** Chủ dự án ITConsultant, 2026-11-09, xác nhận toàn bộ 27 mã S/T18/D7/G/N/M6/API/KPI trong cuộc trò chuyện. **Bản ghi chi tiết và biên giới triển khai:** [OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md).
+- **S1–S5 (stock):** S1 — Admin phải có grant rõ và đang hiệu lực theo market. S2 — người tạo scope khác người duyệt; Warehouse Manager nộp evidence WMS và admin có quyền, khác người nộp, phê duyệt. S3 — scope market-wide trong pilot SE, version có hiệu lực sau duyệt, batch dùng version theo `as_of`, có binding lưu lại. S4 — mỗi warehouse × in-scope SKU phải có dòng thật trong batch đầy đủ, thiếu ⇒ unknown và từ chối cả CFO stock write (0 phải được gửi tường minh). S5 — evidence độc lập tối đa **30 ngày pilot**, gia hạn bằng version được duyệt mới; mapping/unit/conversion/scope đổi ⇒ tự thu hồi, WMS anomaly cần review.
+- **T18-1–3:** T18-1 — không cộng thêm inbound vào stock available khi chưa có chứng cứ nội dung WMS đã phản ánh đúng lượng chuyển; chỉ `snapshot.as_of` là chưa đủ, Warehouse Manager xác nhận nhận hàng theo nghiệp vụ. T18-2 — lead-time default theo market chỉ dùng khi được cấu hình/phê duyệt và lưu provenance, thiếu thì fail closed. T18-3 — không cho hủy/reversal sau `source_confirmed` trước khi có contract riêng.
+- **D7-1–4:** D7-1 — dữ liệu HR/tachograph thực phải do người đủ thẩm quyền vận tải/compliance kiểm chứng; synthetic chỉ demo. D7-2 — bằng chứng cho **56 ngày lịch**, ngày nghỉ có chứng cứ khác ngày unknown, kiểm lại khi lập kế hoạch/duyệt/dispatch. D7-3 — nghỉ liên tục mặc định **11h**, tách duty/driving/rest và ca chính thức. D7-4 — thiếu bằng lái, permissible mass, phạm vi Regulation 561/bối cảnh xe/rơ-moóc ⇒ không cho tự duyệt/giao, không suy từ nhãn xe.
+- **G1–G5:** G1 — admin/supervisor có quyền theo market phân **một Dispatcher chính/trip**, bàn giao có audit. G2 — chỉ đúng Dispatcher được giao xem GPS khi assignment+trip+ca còn hợp lệ. G3 — thông báo/ack từng tài xế theo notice version và phải có privacy/legal/DPIA sign-off để dùng dữ liệu thật. G4 — device mỗi **30 phút**, upload **≤100 điểm/batch** trong ca/chuyến, xóa GPS sau trip hoặc hết ca (đến trước), không giữ 30 ngày. G5 — simulator có danh tính producer và synthetic provenance riêng.
+- **N1–N5:** N1 — Dispatcher có quyền duyệt DELAY window, đổi ngày phải có thỏa thuận khách hợp lệ. N2 — start/end/version/approver/effective time rõ, không suy từ ETA instant. N3 — pin template version + typed allowlist variables, không free-text. N4 — event/risk/queued notification/outbox cùng caller DB transaction; gửi bên ngoài sau commit. N5 — giữ retry cap hiện có, chỉ Mailpit/test recipients.
+- **M6-1:** Thành công POD unique **theo `trip_stop`** chứ không toàn `order`; phải migration bỏ unique index theo order đang có.
+- **API-1/2:** Gate dùng `checks.*.passed` (không phải `pass`); rejected candidates flat `warehouse_id, vehicle_code, failed_check, code, detail`. UI đã merge #136 sửa trong **PR mới**.
+- **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
+- **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
+
+## DEC-GPS-RET-20261109 — G4 cập nhật: lịch sử GPS 7 ngày
+
+- **Chốt bởi Owner ngày 09/11/2026:** ngừng thu và cắt quyền xem GPS live **ngay** khi trip/ca kết thúc (đến trước), nhưng giữ vị trí đã thu hợp lệ **tối đa 7 ngày sau khi kết thúc khoảng thu hợp lệ** để tra soát sự cố/khiếu nại theo quyền được phê duyệt, lý do cụ thể và log audit.
+- **Thay thế một phần G4 trước đó:** quy tắc “xóa toàn bộ raw GPS ngay sau trip/ca” trong DEC-OWNER-20261109 nay không còn áp dụng; các điều kiện 30 phút/device, tối đa 100 điểm/batch, không theo dõi ngoài ca vẫn giữ nguyên. Lịch sử GPS không được tự động hiển thị ở live endpoints hay cho mọi Dispatcher cùng market.
+- **Quyền riêng tư:** cần mục đích hợp lệ, đánh giá pháp lý/DPIA và thông báo từng tài xế trước khi dùng dữ liệu người thật; quá 7 ngày xóa các điểm và xử lý backup/cache theo quy trình. Không tự lưu quá hạn khi có khiếu nại nếu chưa được duyệt riêng.
+- **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md). **Code/migration và triển khai thật chưa hoàn thành.**
+
+## DEC-D8-OPS-20261109 — Rà soát vận hành hai lần mỗi ngày
+
+- **Chốt bởi Owner ngày 09/11/2026:** rà soát vận hành tổng thể **07:00 và 13:00 giờ địa phương Thụy Điển (Europe/Stockholm)**, mỗi ngày, gồm đơn còn tồn/đến hạn/nguy cơ trễ, độ tươi tồn kho, năng lực kho và lịch chính thức kho/tài xế.
+- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Chỉ **hai mốc giờ rà soát** được duyệt; **chưa phê duyệt toàn bộ job list/tần suất/cron/hosting của D8**, không bật job hoặc phát sinh chi phí từ quyết định này.
+- **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md).
+
+## DEC-STOCK-GRANT-BOOTSTRAP-20261109 — System Admin cấp quyền đầu tiên cho Stock Admin
+
+- Owner chỉ định/ủy quyền **System Admin** đủ tin cậy thiết lập grant Stock Admin đầu tiên **theo market** (pilot SE). Grant phải rõ người cấp/nhận, market, quyền, hiệu lực, thời gian, lý do và audit; **không tự cấp cho chính mình**, không tạo stock-admin mặc định khi seed/login.
+- Giữ S1/S2: chỉ grant còn hiệu lực mới được quản trị/phê duyệt scope hoặc chứng cứ tồn; người tạo scope khác người duyệt, Warehouse Manager nộp chứng cứ khác người phê duyệt. Việc tự động cho phép cấp grant tiếp hoặc cấp quyền của System Admin không được suy từ chức danh, cần review kỹ thuật/ủy quyền.
+- [Quyết định và giới hạn triển khai](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). **Chưa thực thi cấp quyền thật.**
+
+## ASM-WMS-MOVEMENT-20261109 — Giả định WMS cũ ghi nhận chuyển kho
+
+- Owner cho phép **assume** quản lý kho đã ghi nhận **xuất kho nguồn và nhập kho đích trên WMS cũ**. CFO vẫn chỉ GET/đọc, không sửa WMS. **Giả định này không có nghĩa API WMS đang trả mã movement, transfer ID, acknowledgment hoặc snapshot linkage**; Dev 2 phải kiểm tra dữ liệu có thể lấy thật.
+
+## DEC-T18-WMS-RECON-20261109 — Đối soát chuyển kho theo chứng cứ WMS (ĐÃ ĐƯỢC THAY THẾ)
+
+**ĐÍNH CHÍNH:** Nội dung cũ bên dưới chỉ là lịch sử đề xuất và đã bị Owner thay thế bởi [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). CFO chỉ đọc tồn kho WMS; không tạo luồng đối soát chứng từ hoặc buộc Warehouse Manager xác minh bằng chứng trong CFO. Đừng triển khai quy trình này.
+
+- Ưu tiên đối chiếu chứng từ movement/receipt WMS cho **cả kho nguồn và kho đích**, đúng transfer, kho, SKU, số lượng, trạng thái và batch/version. Thiếu API/cặp chứng cứ thì Warehouse Manager cung cấp bằng chứng WMS và **người có thẩm quyền độc lập, theo market** phê duyệt với audit; thiếu thẩm quyền/chứng cứ ⇒ pending/fail closed.
+- Không giải phóng điều chỉnh xuất kho hoặc cộng nhập vào hàng khả dụng chỉ vì snapshot mới hơn hoặc lượng tăng/giảm tình cờ; tránh double-subtract kho nguồn, double-add kho đích. Giữ chốt nghiệp vụ receipt của Warehouse Manager, không coi receipt là chứng cứ stock snapshot đã phản ánh lượng hàng.
+- **Mốc escalation 24 giờ vẫn là đề xuất Q3 chưa được Owner phê duyệt.** Chi tiết [decision record](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). Code/Source API/migration chưa nghiệm thu.
+
+## DEC-WMS-READONLY-20261109 — WMS quản lý kho, CFO chỉ đọc
+
+- **Owner đã làm rõ:** WMS là nguồn sự thật của hàng xuất/nhập/chuyển và số tồn thực tế. CFO không phải hệ quản lý kho, **không đối soát chứng từ chuyển kho trong CFO**, không ghi ngược WMS và không lập các trạng thái/hàng đợi đối soát chuyển kho. WMS cập nhật stock, CFO đọc snapshot mới hợp lệ để lập kế hoạch.
+- CFO vẫn kiểm tra tính đầy đủ, độ mới batch và quản lý held/committed reservation **của các đơn CFO** để không cam kết trùng hàng. Không tự cộng inbound CFO hoặc trừ lại physical outbound bên ngoài WMS snapshot. Stock unknown/stale không giả là số 0.
+- Quy trình transfer do CFO đề xuất trong #127 cần review lại: chỉ có thể giữ phần gợi ý/yêu cầu không mang thẩm quyền WMS; các xác nhận xuất/nhập hoặc reconciliation CFO không được triển khai như nguồn sự thật tồn kho khi chưa đổi hợp đồng.
+- **Không còn cần Owner duyệt Q3 cảnh báo 24 giờ cho 'chuyển kho chưa đối soát' trong CFO**; việc WMS có lệch chứng từ thuộc WMS. Giữ cảnh báo stale stock / failed sync ở tích hợp.
+- [Biên bản chi tiết](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). Q1 về Stock Admin chỉ quản trị scope/chứng cứ cấu hình CFO, không điều hành tồn kho vật lý WMS.
+
+## ASM-WMS-RESERVATION-20261109 — Giả định WMS có chức năng giữ hàng
+
+- **Chốt giả định bởi Owner ngày 09/11/2026:** WMS cũ hỗ trợ giữ hàng theo đơn (reservation). WMS vẫn là nguồn sự thật về lượng tồn vật lý và lượng đã giữ; chỉ trừ **available** khi reserve, chỉ giảm **on-hand** khi WMS xuất hàng thật.
+- CFO **không được trừ hai lần** reservation đã phản ánh trong WMS available. Khi WMS đã giữ 60 từ 100, số khả dụng WMS là 40, không phải 40 trừ tiếp 60. Tạm giữ nội bộ CFO cần có ranh giới/đối chiếu với WMS để tránh cam kết trùng.
+- Owner mới đặt câu hỏi về phương án CFO **gửi yêu cầu reservation sang WMS**; đây sẽ là **ngoại lệ ghi dữ liệu** so với [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). **Chưa được coi là phê duyệt write API.** Dev 1/2 phải kiểm chứng WMS có API và đề xuất hợp đồng reserve/confirm/release, ACK tức thời, idempotency, timeout và rollback/compensation; không cho phép CFO xuất hàng hoặc sửa tồn vật lý.
+- [Biên bản](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md). Không triển khai code/lấy credential/migration trước review và xác nhận quyền ghi cụ thể.
+
+## DEC-WMS-REVERSE-SKU-20261109 — Ánh xạ ngược SKU khi gửi dữ liệu sang WMS
+
+- **Đã chốt có điều kiện:** nếu CFO được phê duyệt gửi reserve/release sang WMS, phải chuyển mã global CFO sang **SKU gốc đúng chuẩn WMS chấp nhận**, gắn đúng market, kho, dòng đơn, đơn vị số lượng và phiên bản mapping được xác nhận. Giữ `local_sku` gốc của đơn POS; **không mặc định POS SKU trùng WMS SKU** nếu chưa kiểm tra contract nguồn.
+- Một global product có thể tương ứng nhiều local SKU, nên không được tự lấy SKU đầu tiên, không gộp pool không chứng cứ. Không tìm được SKU duy nhất theo dòng đơn/kho, SKU chưa confirmed, mapping hết hiệu lực, sai đơn vị hoặc số lượng WMS ⇒ **không gửi lệnh**.
+- Nếu WMS xác nhận reservation thì phải khớp warehouse/SKU/quantity/idempotency; không trừ hai lần WMS available. **Quy tắc này chưa cho phép CFO ghi WMS**; Owner vẫn cần duyệt ngoại lệ reserve/release sau khi Dev xác minh API thực tế.
+- [Biên bản](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
+## DEC-WMS-RESERVE-SYNC-20261109 — Duyệt đơn, WMS giữ hàng, CFO cập nhật ngay
+
+- CFO trước khi lên kế hoạch kiểm tra số tồn khả dụng từ WMS theo batch đủ mới, market/kho/SKU gốc WMS đã ánh xạ chuẩn. CFO vẫn tạo hold tạm tối đa 15 phút; hold tạm khác với reservation WMS.
+- **Khi Sales/Dispatcher hợp lệ xác nhận phương án**, CFO được **theo định hướng nghiệp vụ** gửi yêu cầu WMS reserve số lượng tương ứng theo đúng SKU gốc WMS và đơn vị WMS. WMS là bên quyết định atomic availability, bao gồm các đơn từ hệ thống khác; WMS phải ACK reservation thật trước khi CFO coi hàng đã được bảo đảm. Không tự approve nếu WMS không xác nhận.
+- WMS reserve làm giảm **available** chứ không trừ **on_hand vật lý** ngay. WMS chỉ trừ on_hand khi xuất hàng thật, đồng thời tiêu thụ reservation. CFO phải **đọc/cập nhật WMS ngay sau ACK**, không đợi polling 5 phút; polling chỉ kiểm lại. Không trừ hai lần lượng đã nằm trong WMS reserved. Nếu stock feed đến chậm, khóa/bảo vệ lượng chưa phản ánh hoặc fail-closed cho giao dịch mới.
+- Quyết định này là **ngoại lệ nghiệp vụ reserve hẹp** so với quy tắc chỉ GET WMS trước đây; không cấp quyền thay đổi on_hand, không ghi POS, không giao/nhận/chuyển hàng vật lý, không khởi động đối soát chuyển kho CFO. API WMS thực tế, WMS idempotency, ACK/timeout, rollback và API release/adjust cần Dev 1/Dev 2 xác minh, đặc tả, kiểm thử và phê duyệt triển khai trước khi bật ghi thật.
+- [Biên bản](decisions/DEC_WMS_RESERVE_SYNC_20261109.md). Không sửa code hoặc merge PR code chỉ từ quyết định này.
+
+## PROPOSAL-M6-PREP-QUEUE-001 — Đồng bộ API Prep queue và IANA timezone (09/11/2026)
+
+- **Trạng thái:** quyết định kỹ thuật **được tư vấn đề xuất** theo yêu cầu chốt M6 của Dev1; **chưa có lời phê duyệt tường minh của chủ dự án**, vì vậy giữ PR docs ở Draft đến khi xác nhận. Không được gán nhãn owner-approved hay tự merge.
+- **Endpoint chuẩn:** `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD`, phản hồi đầy đủ `capacity + orders` của Phụ lục A, bao gồm `schedule_verified` bắt buộc và `next_action`. `GET /prep-queue?warehouse_id=&date=` là đường cũ, nếu duy trì chỉ làm alias dùng chung implementation.
+- **Shape:** `share` trong [0,1]; capacity/booked/work phút là JSON integer; useful hours, kg là JSON number; không serialize Decimal sang chuỗi (trừ tiền). Cutoff `HH:mm` theo market; mốc ca / prep / loading ISO 8601 aware offset. Đơn nhiều xe giữ loading theo từng trip.
+- **Fail-closed:** thiếu roster chính thức hoặc xác minh công suất → `schedule_verified=false`, `total_min=free_min=0`, UI hiện `Capacity not verified`; vẫn đọc được đơn đã duyệt nếu có nguồn tin cậy, tuyệt đối không bịa công suất. Không biến lỗi thiếu adapter/thực thi thành `200` giả hoặc cho phép approve/dispatch vượt safety checks.
+- **Múi giờ:** thêm `timezone` IANA non-null cho mọi location ở `GET /locations` và `GET /locations/{id}`, lấy từ `ref.market.timezone`. UI dùng `resolveTimeZone(location.timezone)`, không dùng browser timezone hay hardcode SE. Không thêm nguồn dữ liệu trùng lặp vào `/auth/me`.
+- **Nguồn chi tiết:** [06 §8.2, §13.1, Phụ lục A](06_API_Specification.md); phải review cùng [PR #129](https://github.com/qaztyhn/cfo-itconsultant/pull/129), bổ sung contract/E2E tests trước triển khai production. Không tuyên bố các route/schema này đã hoàn thiện.

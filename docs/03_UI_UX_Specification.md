@@ -127,10 +127,10 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Dải 3 bước:** (1) Feasibility "9 candidates checked · 3 pass all 5 hard checks" (2) Ranking "Fewest trucks first, then lowest score. Tie-break: larger planning reserve, simpler operation, earlier ETA, smaller trucks" (3) **Your decision** (nền `#FFF4EE`) "Approve, pick an alternative, change criteria or plan manually".
 - **Ba plan card** (rộng bằng nhau; card #1 viền `pine` 2px):
   - Nhãn: `Recommended · #1` (pill `pine`) / `Alternative · #2`, `#3`; nhãn phụ mono bên phải (`Lowest score`, `Shortest drive`, `Same source` — sinh từ khác biệt nổi bật).
-  - Tên kho (H2); dòng "Truck 12 t · GBG-12-03 · 48 km". **Đơn nhiều xe (v1.2):** dòng thành "2 trucks · Truck 18 t + Truck 12 t · 48 km" và card có khối `VehicleList` (thu gọn được) hiện từng xe, tài xế, tải, phần hàng; chip nhỏ "Arrive together ±30 min".
+  - Tên kho (H2); dòng "Truck 12 t · GBG-12-03 · 48 km". **Đơn nhiều xe (v1.2):** dòng thành "2 trucks · Truck 18 t + Truck 12 t · 48 km" và card có khối `VehicleList` hiện từng xe, `driver_employee_id` (nếu đúng quyền), tải, phần hàng; **chỉ hiện tên tài xế khi backend thực sự trả theo API đã duyệt**; chip nhỏ "Arrive together ±30 min".
   - **Số lớn chính: điểm xếp hạng** (`score`) hoặc, theo thiết kế, một con số nổi bật. *Thay con số tiền bằng* **`0.26` + nhãn "rank score"** và hai số phụ: `48 km` và `Fill 60%`.
   - Hàng 5 check chip (✓ Stock, ✓ Prep, ✓ Truck, ✓ Site/date, ✓ Safety).
-  - Lưới 2×2: Goods ready · Depart · ETA · Site closes (mono). Dưới: **"Slack before site closes 85 min"** (cửa sổ đóng − ETA) và **"Planning reserve 3.6 d · Safe"** (chip theo `reserve_class`: Safe nền On track, Tight nền At risk).
+  - Lưới dữ liệu: Goods ready · Depart · ETA; **Site closes/Slack chỉ hiện khi server có chứng cứ hợp lệ** (current backend không trả `promise_window_preview`). Planning reserve hiển thị theo `planning_reserve_min`, Safe/Tight theo `reserve_class`; không tự dựng promise window.
   - Thanh tiến độ mảnh thể hiện mức đầy công suất kho (60%).
   - Đoạn giải thích (từ `explanation`); khối mono chi tiết: `Prep 10.15 h · fill 60% · 12.0 km · drive 1 h 50 · reserve 5 220 min`.
   - Nút: card #1 "Approve plan" (`pine`), card #2/#3 "Select this plan" (viền).
@@ -140,9 +140,9 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Panel "Change criteria and rerun":** "Creates a new planning run; current plans become superseded. Logged as CRITERIA_CHANGED_RERUN." Điều khiển: **"Optimise for"** (xem mục 7: thay "Lowest cost / Largest buffer" bằng preset trọng số **Balanced 50/50 · Shortest distance 80/20 · Lowest warehouse load 20/80** và ô tùy chỉnh trọng số), **Exclude warehouse** (checkbox từng kho), **Try date** (chỉ cho dạng `range`/`latest`, trong tập ngày khách chấp nhận), nút "Rerun plan" → modal lý do.
 - **Panel "Manual fallback":** "Choose warehouse, truck and times yourself. A reason is required; checks still run and warnings stay visible. Flagged in KPIs." Nút "Plan manually" → màn nhập tay (chọn kho/xe/tài xế/giờ + mã lý do).
 - **Màn nhập tay (v1.2):** mở từ đơn `PLANNED` hoặc `NO_FEASIBLE_DATE`. Chọn kho, ngày, rồi **thêm một hoặc nhiều xe** (mỗi xe: tài xế, phần hàng theo dòng, giờ xuất phát/ETA); thanh tổng hiện "Allocated 20 000 / 20 000 kg · 18.4 / 18.4 m³", nút xác nhận chỉ bật khi chia đủ hàng; mã lý do bắt buộc; lỗi gate hiện mã check dưới xe tương ứng.
-- **Banner gợi ý lập lại (v1.2):** khi mở Plan review từ alert `REPLAN_SUGGESTED`, đầu trang có banner nền `#FFF4EE`: "Suggested replan · <lý do: source change / stock changed / vehicle issue / delivery failed>. The current plan is ignored when computing this suggestion." Bên dưới tóm tắt kế hoạch hiện tại (kho, xe, ngày, ETA) để so sánh. Nút: **"Approve suggested plan"** (`apricot`) và **"Keep current plan"** (viền, mở modal lý do). Không có bộ đếm hold (lần chạy gợi ý không giữ chỗ).
+- **Banner gợi ý lập lại (v1.2):** khi mở Plan review từ alert `REPLAN_SUGGESTED`, đầu trang có banner nền `#FFF4EE`: "Suggested replan · <lý do: source change / stock changed / vehicle issue / delivery failed>. The current plan is ignored when computing this suggestion." Bên dưới tóm tắt kế hoạch hiện tại (kho, xe, ngày, ETA) để so sánh. Nút: **"Plan Again to approve"** (tạo run mới có hold, không duyệt trực tiếp suggestion) và **"Keep current plan"** (chỉ khi server hỗ trợ, cần lý do). `replan_suggestion` không có hold và không được Approve trực tiếp.
 - **Decision bar:** "**Approve the recommended plan** — Reserves 4 stock lines, 148 prep minutes at Göteborg on Tue 10 Nov and GBG-12-03 from 10:48 to 13:40 in one transaction (đơn nhiều xe: "…and 2 trucks (GBG-18-01, GBG-12-03)…"). The customer gets a confirmation; every decision is logged." Nút `apricot` **"Approve #1"** (bỏ số tiền). Khi chọn phương án khác trong card #2/#3: thanh đổi thành "Approve plan #2…" và mở modal lý do bắt buộc.
-- **Bộ đếm hold:** chip "Hold expires in 11:42" (mono), nút "Extend (+15 min, 2 left)". Hết hạn: chip đỏ nhạt, vẫn cho duyệt (hệ thống kiểm tra lại), kèm cảnh báo.
+- **Bộ đếm hold:** chip "Hold expires in 11:42" (mono), nút "Extend (+15 min, 2 left)". Hết hạn: chip cảnh báo, **khóa Approve**, chỉ cho Plan Again để tạo run/hold mới trên cùng order (DEC-HOLD-001).
 - **Khi `reserve_class = tight`:** hộp tick "I accept the tight schedule" bắt buộc trước khi Approve.
 - **Khi duyệt `409 RESOURCE_CONFLICT`:** toast giữ lại + nút "Re-run plan".
 
@@ -164,7 +164,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Cột phải — "Customer notifications":** danh sách (giờ, loại · kênh, nội dung ngắn, trạng thái). **Bản nháp DELAY** hiện thẻ nền `#FFF4EE`: "Draft · Delay notice — new window 13:00–13:30" với **Edit**, **Send**, **Discard** (lý do bắt buộc). Chân: "A new draft appears only if the ETA moves ≥ 30 min from the last notified window. Customers see status and ETA only — never driver location." Liên kết "Open inbox".
 - **Thẻ "Approved plan":** Warehouse · Truck · Prep (giờ/phút) · **Distance** (thay "Cost") · Score.
 - **Event log:** hiệu ứng của `RISK · AT_RISK` lấy theo mức thật (ví dụ "Goods ready 30 min overdue" khớp `milestone_grace_min = 30`); hiệu ứng của `RISK · PREDICTED_LATE` là "Alert to dispatcher; delay notice draft created" (không "delay email queued").
-- **Panel bổ sung "Live position" (D3 / DEC-DEV2-D3-001: chỉ Dispatcher được gán rõ cho chuyến, khi `gps_enabled`, chuyến `on_road` và tài xế trong ca đã xác nhận):** bản đồ Leaflet/OSM với kho, điểm giao, đường đi, xe; dòng "Last fix 10:52 · accuracy 12 m · source device/simulator"; trạng thái "GPS lost since 10:20" (nền Predicted late); biểu ngữ "No DPIA on file — demo only". Không hiển thị cho Dispatcher khác dù cùng market hay vai trò khác; khi trip hoặc ca kết thúc phải ẩn ngay và xóa dữ liệu tọa độ (kể cả queue offline), chỉ bật lại cho chuyến kế tiếp có phân công/ca hợp lệ.
+- **Panel bổ sung "Live position" (D3 / DEC-DEV2-D3-001: chỉ Dispatcher được gán rõ cho chuyến, khi `gps_enabled`, chuyến `on_road` và tài xế trong ca đã xác nhận):** bản đồ Leaflet/OSM với kho, điểm giao, đường đi, xe; dòng "Last fix 10:52 · accuracy 12 m · source device/simulator"; trạng thái "GPS lost since 10:20" (nền Predicted late); biểu ngữ "No DPIA on file — demo only". Không hiển thị cho Dispatcher khác dù cùng market hay vai trò khác; khi trip hoặc ca kết thúc phải **ẩn GPS live, chấm dứt thu và xóa queue offline không hợp lệ ngay**; chỉ cho phép lịch sử tọa độ hợp lệ tối đa **7 ngày** ở khu vực tra soát được phân quyền, có lý do/audit và privacy/legal sign-off, không hiển thị mặc định trong live panel, chỉ bật lại cho chuyến kế tiếp có phân công/ca hợp lệ.
 - Hộp thoại khẩn cấp cho `VEHICLE_ISSUE`: hiển thị cảnh báo kèm nút "Review suggested plan" (gợi ý lập lại tự động) và "Replan this order".
 - **Đơn nhiều xe:** ô FORECAST ETA theo xe tới muộn nhất; danh sách nhỏ trạng thái từng xe (Loaded / Dispatched / Delivered / Failed); Live position hiện mọi xe của đơn.
 
@@ -361,3 +361,23 @@ WCAG AA: tương phản chữ ≥ 4,5:1 (đã kiểm với các cặp màu ở m
 | 20 | 08 Notification inbox | 5.8 |
 | 21–22 | 09 Data integration | 5.9 |
 | 23 | 10–11 Driver PWA | 5.10 |
+
+## 13. Approved UI/backend contract corrections — 2026-11-09
+
+Reference: [27 approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). PR #136 was **already merged**; Dev 3 must create a **new frontend hotfix PR** using actual backend responses, not only MSW mocks.
+
+- Five gate field `checks.<name>.passed` rather than `pass`; absent gate is a failure. Rejected candidates are flat `warehouse_id,vehicle_code,failed_check,code,detail`, not nested DTO. Public nested `vehicle` is supported, **driver name is not returned by backend**; never invent it.
+- Disable approval for `replan_suggestion`, missing/expired hold, non-feasible run, non-proposed plan, failed gate or in-flight submit. When date differs, require a matching agreed `date_negotiation_id`. Keep five-gate D7 fail-closed. Show actionable infeasible/Plan Again states.
+- Do not infer `promise_window_preview`, site closing time, customer ETA window or freshness from an unsupported endpoint. Tight reserve class requires explicit UI acknowledgment where specified, without inventing an approval payload field.
+- GPS needs individually assigned primary Dispatcher/trip and notice/privacy sign-off for real employees. DELAY must have approved start/end/version and fixed typed template before dispatch. KPI has 10 keys and unavailable diagnostics shown as unknown (`null`), using local market days.
+
+
+
+### 13.1 — Quyết định bổ sung 09/11/2026 (GPS 7 ngày và D8 review 07:00/13:00)
+
+- [DEC-GPS-RET-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) thay đổi **thời điểm xóa lịch sử GPS**: ngay khi trip/ca kết thúc phải ngừng thu và thu hồi quyền xem live, chỉ lưu tối đa **7 ngày** cho tra soát cụ thể, quyền hạn/audit riêng. Không biến panel live thành công cụ xem lịch sử nhân viên. Chưa cho bật GPS người thật khi thiếu DPIA/legal review.
+- [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) duyệt hai mốc **07:00 và 13:00 giờ Thụy Điển** cho rà soát vận hành tổng thể; không phải lịch duy nhất CFO cập nhật đơn và không đồng nghĩa toàn bộ Scheduler đã được owner duyệt.
+
+### 13.2 WMS reservation acknowledgment and updated CFO inventory — business flow approved 09/11/2026
+
+[DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md): When an authorized Sales/Dispatcher confirms a feasible plan, do not show it as stock-guaranteed until an authoritative WMS reservation ACK has been persisted. UI must distinguish **temporary CFO hold → requesting WMS reservation → WMS confirmed / WMS rejected / WMS uncertain**; on WMS confirmation show the updated CFO stock state based on an **immediate** WMS read/refresh, with source freshness. WMS reserves reduce availability, not physical on_hand; never display double-subtracted stock. If WMS is unavailable or a response is uncertain, show a retry/status-check explanation, not a fabricated successful approval. Actual WMS integration endpoint and app flow require Dev 1/2/3 contracts and E2E tests before enabling.
