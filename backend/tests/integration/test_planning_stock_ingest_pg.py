@@ -32,12 +32,19 @@ def _prepare_governance(db: str) -> None:
         "qty_sale,qty_base,unit_price,line_total) VALUES (1,1,'A',1,1,2.5,1,1)",
     )
 
+    warehouses = fetch(
+        db,
+        "SELECT id,code FROM ref.location WHERE market_id=1 AND type='warehouse' ORDER BY id",
+    )
+    assert {row["code"] for row in warehouses} == {"WH-1", "WH-2"}
+    warehouse_ids = [row["id"] for row in warehouses]
+
     async def create(session) -> int:
         row = await scope_service.create_scope(
             session,
             ADMIN_A,
             skus=["A"],
-            warehouse_ids=[1, 2],
+            warehouse_ids=warehouse_ids,
             reason_text="Reviewed synthetic stock scope",
         )
         return row.id
