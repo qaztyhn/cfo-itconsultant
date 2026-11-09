@@ -43,9 +43,9 @@
 | [DEC-OWNER-20261109](#dec-owner-20261109--27-quyết-định-liên-workstream-đã-duyệt-ngày-09112026) | 27 quyết định chốt: S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2 | 09/11 | Owner xác nhận rõ ràng 09/11; [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) | **Approved contract; code/migration/E2E pending** |
 
 | [DEC-GPS-RET-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | **Thay G4**: ngừng theo dõi ngay khi trip/ca kết thúc, lưu lịch sử tọa độ hợp lệ **tối đa 7 ngày** với quyền tra soát có lý do/audit; xóa đúng hạn, GPS thật cần privacy/legal sign-off | 09/11 | Owner xác nhận “ok lưu 7 ngày” sau khi trao đổi retention | **Approved policy; backend/UI/retention migrations pending** |
-| [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | Rà soát vận hành tổng thể **07:00 và 13:00 mỗi ngày theo giờ Thụy Điển (Europe/Stockholm)**; tách khỏi đồng bộ định kỳ và xử lý sự kiện | 09/11 | Owner xác nhận “7h và 13h” | **Approved review times only; toàn bộ D8 chưa duyệt** |
+| [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | Rà soát vận hành tổng thể **07:00 và 13:00 mỗi ngày theo giờ Thụy Điển (Europe/Stockholm)**; tách khỏi đồng bộ định kỳ và xử lý sự kiện | 09/11 | Owner xác nhận “7h và 13h” | **Review times approved; D8 staging job calendar subsequently approved by DEC-D8-STAGING-SCHEDULE-20261109; production pending** |
 
-| [DEC-STOCK-GRANT-BOOTSTRAP-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Owner ủy quyền System Admin tin cậy tạo **grant Stock Admin đầu tiên theo market**, có lý do/audit; **cấm tự cấp quyền cho mình** và không tự bootstrap | 09/11 | Owner đồng ý Q1 sau giải thích cấp quyền ban đầu | Quyết định đã chốt; schema/runbook/code cần review |
+| [DEC-STOCK-GRANT-BOOTSTRAP-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Owner ủy quyền System Admin tin cậy tạo **grant Stock Admin đầu tiên theo market**, có lý do/audit; **cấm tự cấp quyền cho mình** và không tự bootstrap | 09/11 | Owner đồng ý Q1 sau giải thích cấp quyền ban đầu | Quyết định đầu tiên đã chốt; DEC-STOCK-GRANT-CONTROL-20261109 mở rộng quyền cấp/thu hồi grant tiếp theo; schema/runbook/code cần review |
 | [ASM-WMS-MOVEMENT-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Giả định nghiệp vụ**: WMS cũ ghi nhận xuất kho A và nhập kho B khi chuyển kho; **chưa chứng minh API WMS trả movement ID hay liên kết snapshot** | 09/11 | Owner: “assume là có đi” | Giả định chốt; Dev 2 phải xác minh nguồn thật |
 | [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) | **WMS là nguồn sự thật duy nhất về xuất/nhập/chuyển kho và tồn thực tế**; CFO chỉ đọc batch tồn kho đầy đủ/mới, quản lý hold/committed reservations của riêng CFO, không đối soát chứng từ vật lý hay có hàng đợi đối soát WMS riêng | 09/11 | Owner: “cfo chỉ lấy dữ liệu từ wms nhé. sao phải quản lý mấy cái này” | Đã chốt ranh giới; Dev 1/2 phải sửa contract/PR #127 trước khi merge |
 | [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Đã thay thế**: trước đó đề xuất CFO tự đối soát chứng từ WMS; Owner làm rõ chỉ WMS quản lý chuyển kho, CFO đọc snapshot và không đếm trùng | 09/11 | Owner: “đồng ý” với Q2 | **Superseded** bởi DEC-WMS-READONLY-20261109 |
@@ -55,6 +55,22 @@
 | [DEC-WMS-REVERSE-SKU-20261109](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md) | Nếu CFO gửi reserve/release sang WMS, phải **ánh xạ ngược mã global về SKU WMS gốc đúng market/kho, đơn vị tồn**; global có nhiều SKU gốc thì không tự chọn | 09/11 | Owner: “cái này nếu mà từ cfo về thì phải ánh xạ ngược lại mã sản phẩm cũ” | Yêu cầu có điều kiện đã chốt; quyền ghi WMS chưa duyệt |
 
 | [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) | CFO đọc batch tồn WMS để kiểm tra đơn; khi người có quyền xác nhận phương án, CFO **yêu cầu WMS reserve theo SKU gốc**, WMS trừ **available** (không trừ on_hand ngay), CFO **đọc lại/cập nhật ngay** từ WMS; không tính trùng reservation | 09/11 | Owner: “nếu cfo có đơn, thì so khớp với số lượng trong hiện tại lấy từ wms. sau khi đơn được xác nhận wms trừ thì cfo cũng phải cập nhật lại dữ liệu” | Chốt luồng nghiệp vụ; actual WMS write API & go-live chờ review |
+
+| [DEC-CS-SEARCH-20261109](#dec-cs-search-20261109--tra-cứu-đơn-theo-điện-thoại-bằng-q) | CS tìm đơn qua `q` theo mã/tên/**điện thoại liên hệ**, chuẩn hóa và kiểm soát truy vấn ở backend; không tạo param mới | 09/11 | Owner xác nhận CS-01; [biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) | Approved policy; backend/anti-enumeration tests pending |
+| [DEC-CS-PRIVACY-20261109](#dec-cs-privacy-20261109--phản-hồi-cs-chỉ-gồm-dữ-liệu-được-phép-và-đã-che) | CS chỉ nhận phone/email đã che; backend loại GPS/tọa độ, receiving restrictions/mã cổng, score và dữ liệu nội bộ; không có quyền điều phối | 09/11 | Owner xác nhận CS-02; [biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) | Approved policy; CS-specific API projection/DTO/E2E pending |
+| [DEC-M6-PREP-QUEUE-20261109](#dec-m6-prep-queue-20261109--phê-duyệt-proposal-m6-prep-queue-001) | Phê duyệt contract `PROPOSAL-M6-PREP-QUEUE-001` (canonical endpoint, verified capacity, timezone backend) | 09/11 | Owner xác nhận M6; [biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) | Approved contract; #129/#159/#154/#160 E2E pending |
+| [DEC-STOCK-GRANT-CONTROL-20261109](#dec-stock-grant-control-20261109--chỉ-system-admin-được-owner-ủy-quyền-cấp-thu-hồi-grant) | Chỉ System Admin được Owner ủy quyền cấp **và thu hồi** mọi Stock Admin grant theo market, cấm self-grant | 09/11 | Owner xác nhận STOCK; [biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) | Approved policy; auth/DDL/RBAC/audit pending |
+| [DEC-D8-STAGING-SCHEDULE-20261109](#dec-d8-staging-schedule-20261109--duyệt-lịch-job-chỉ-cho-staging-demo) | Duyệt lịch job D8 đề xuất để **triển khai/test staging**, không bật production, không duyệt hosting hay tick DTO chưa review | 09/11 | Owner xác nhận D8; [biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) | Approved staging baseline only; implementation/production authorization pending |
+
+| [DEC-INT-WMS-DEMO-20261109](#dec-int-wms-demo-20261109--wms-reserve-mock-stagingdemo) | WMS fake reserve adapter chỉ staging/demo, báo simulated; WMS thật vẫn disabled | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; API WMS thật chưa xác minh |
+| [DEC-INT-TRANSFER-BOUNDARY-20261109](#dec-int-transfer-boundary-20261109--cfo-chỉ-yêu-cầu-chuyển-kho) | CFO chỉ gợi ý/yêu cầu transfer; WMS thực thi/ghi nhập-xuất vật lý, không CFO inbound ảo | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; PR #127 cần sửa trước merge |
+| [DEC-INT-AGREED-DATE-20261109](#dec-int-agreed-date-20261109--dispatcher-chủ-động-áp-dụng-ngày-đã-thỏa-thuận) | Chỉ Dispatcher explicit Apply agreed date sau contact record được xác minh, audit/version rồi replan mới | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; Dev 1/3 API/state/E2E pending |
+| [DEC-INT-GPS-HISTORY-20261109](#dec-int-gps-history-20261109--truy-cập-gps-lịch-sử-theo-case) | GPS lịch sử ≤7 ngày chỉ reviewer privacy/compliance được chỉ định theo case/lý do/audit, không Dispatcher thường | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; schema/permission, privacy/legal gate pending |
+| [DEC-INT-KPI-PERIOD-20261109](#dec-int-kpi-period-20261109--kpi-khoảng-ngày-và-market) | KPI mặc định 30 ngày, tối đa 366; System Admin chọn market; 10 keys và 2 diagnostics null | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; DTO/RBAC/tests pending |
+| [DEC-INT-PREP-ACTUAL-START-20261109](#dec-int-prep-actual-start-20261109--prep-start-null-khi-chưa-bắt-đầu) | prep_window.start chỉ actual START_PREP aware ISO hoặc null, không giả planned start | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; backend/frontend tests pending |
+| [DEC-INT-SEED-GOLDEN-20261109](#dec-int-seed-golden-20261109--giữ-golden-sửa-synthetic-seed) | Giữ golden expectations, chỉnh synthetic seed cho hợp lệ; bất khả thi thì báo BLOCKED | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; seed #166/E2E pending |
+| [DEC-INT-CS-GET-PRIVACY-20261109](#dec-int-cs-get-privacy-20261109--bảo-vệ-số-điện-thoại-trong-get-q) | Giữ GET q; HTTPS, rate-limit, log redaction, no-referrer; còn rủi ro URL/browser history | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; backend/privacy tests pending |
+| [DEC-INT-D8-STAGING-EXEC-20261109](#dec-int-d8-staging-exec-20261109--d8-chỉ-test-stagingmanual) | D8 chỉ chạy trên staging hiện có hoặc manual test, không bật/mua prod worker | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; Dev 2 staging tests pending |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -421,7 +437,7 @@
 - **Chốt sản phẩm (đã duyệt):** customer contact/CS content **90 ngày** sau case/đơn cuối cùng đóng; đơn điều phối không phải chứng từ kế toán **365 ngày** sau `DELIVERED/CANCELLED`; dữ liệu tài khoản/địa chỉ nhân viên không thuộc nghĩa vụ khác **90 ngày** sau nghỉ việc và không còn active/legal hold; lịch ca/attendance không thuộc trường hợp luật khác **24 tháng** sau ca; log kỹ thuật **30 ngày**, bảo mật **90 ngày**, staging backup tối đa **30 ngày**. GPS: **xóa ngay khi trip kết thúc/ca chính thức hết hiệu lực**. Hồ sơ tachograph thực sự áp dụng giữ **ít nhất 12 tháng**; hồ sơ giờ làm tài xế thuộc phạm vi giữ **ít nhất 24 tháng**; chứng từ kế toán Thụy Điển giữ đến **31/12 của năm thứ bảy sau năm dương lịch mà năm tài chính kết thúc**, không áp dụng 7 năm cho mọi bản ghi CFO. Audit/milestone bất biến: **24 tháng chỉ là mốc review**, không tự động xóa/sửa. DSAR thông thường **1 tháng**, thông báo breach thuộc diện phải báo **72 giờ**. Lưu theo mốc `anchor`, bản ghi chung và legal hold, có dry-run policy.
 - **Giới hạn:** đây là con số **chính sách vận hành đã được owner chốt**, **không** có nghĩa mọi thời hạn tự động đạt GDPR. Với dữ liệu thật, kiểm lại luật Thụy Điển, mục đích/basis, nghĩa vụ thuế/lao động và quyền của chủ thể; mục đích chấm dứt sớm hơn phải xóa sớm hơn khi không còn căn cứ, nghĩa vụ dài hơn phải archive riêng hạn chế truy cập. Xem bảng chi tiết và test tại [approved decisions](decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md). Không triển khai job xóa dữ liệu thật trước legal review.
 
-**D6:** chủ dự án “D6 TÔI SẼ TỔ CHỨC RIÊNG SAU”, **deferred / không phê duyệt triển khai cloud**. **D8:** chỉ yêu cầu đề xuất lịch chạy hợp lý theo Thụy Điển, **chưa phê duyệt**; xem [D8 proposal](proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md).
+**D6:** chủ dự án “D6 TÔI SẼ TỔ CHỨC RIÊNG SAU”, **deferred / không phê duyệt triển khai cloud**. **D8 (trạng thái lịch sử ngày 08/11):** tại thời điểm đó mới yêu cầu proposal; **ngày 09/11 Owner đã duyệt lịch/tần suất để test staging/demo**, chưa bật production theo [DEC-D8-STAGING-SCHEDULE-20261109](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md). Xem [D8 proposal](proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md).
 
 ## DEC-SRC-D1-001 — Chốt chi tiết D1-A–D Source Contract
 
@@ -430,7 +446,7 @@
 - **D1-B — ghi/validate:** POST tạo `DRAFT` version 1; persisted DRAFT cần `customer_id,address_id,store_code,date_mode`. Validate yêu cầu liên hệ (tên và ít nhất phone/email), địa chỉ thuộc khách có tọa độ, SKU tồn tại ở POS, line_no không trùng, qty dương ≤3 số thập phân và `unit_price` chuỗi decimal **không âm**, đúng 2 số thập phân (**giá 0 hợp lệ**). Date mode `exact/range/latest` với `date_from/date_to` tương ứng, giờ nhận `HH:MM` hợp lệ, không mặc định 24/7. Không tin địa chỉ/tọa độ client, snapshot từ server và chỉ refresh khi người dùng đổi. `special_requirements`/ `receiving_restrictions` text tùy chọn **không** tự chứng minh an toàn/thiết bị xe; cần Dispatcher nếu chưa thể hiện bằng trường có cấu trúc. Trả `422 VALIDATION_ERROR` `details.errors[{loc,type,msg}]`, không phản chiếu PII; SKU nguồn có nhưng CFO chưa mapping **không phải lỗi POS**, xử lý theo ASM-005/DEC-ROUTING-002. GET/POST/PUT/validate/submit/cancel dùng chung order DTO, POST 201, các write khác 200.
 - **D1-C — lifecycle:** DRAFT→VALIDATED→SUBMITTED_FOR_PLANNING, chỉnh VALIDATED quay DRAFT; PUT full replacement sau submit **được phép nhưng phải validate lại toàn đơn**, tăng `source_version`, so khớp `expected_version` bằng transaction/row lock, sai → `409 VERSION_CONFLICT` (mã source mới). Cancel từ DRAFT/VALIDATED/SUBMITTED với version và reason, trạng thái terminal `CANCELLED`, idempotent retry, không tái submit; adapter poll `CANCELLED` và xử lý trạng thái qua chuyển hợp lệ/audit. **Trước khi CFO duyệt:** đóng/release hold an toàn theo state machine. **Sau khi CFO đã duyệt, trước DISPATCHED:** tạo `ORDER_CHANGED_AFTER_APPROVAL`, **tự chạy `replan_suggestion` và kiểm lại toàn bộ 5 gate**, không tự hold/approve hay bỏ plan đã cam kết; Dispatcher duyệt đổi phương án trong transaction hoặc giữ kế hoạch cũ kèm lý do. **Sau DISPATCHED:** chỉ alert và Dispatcher can thiệp; không tự hủy/thay chuyến đang chạy, không xóa fulfillment history. Đơn source `CANCELLED` sau CFO đã duyệt không tự tạo giao hàng mới; Dispatcher xem xét việc hủy. CFO không ghi ngược POS.
 - **D1-D — Q8/9/10:** lịch ngày làm việc/ngày lễ theo market instance và khung giờ nhận từng địa chỉ được seed/cấu hình rõ; thiếu calendar thì fail closed. Stock snapshot phải publish đầy đủ **cùng một batch `as_of`**, kể cả zero-row có completeness marker; chưa có batch không có nghĩa tồn=0. Tồn kho **Q10 cập nhật theo `DEC-SRC-Q10-SKU-001`**: mỗi SKU có một đơn vị chuẩn; một bản ghi duy nhất cho `(batch_id, warehouse_code, sku)`; quy đổi đơn vị khi bán và dùng `units_to_base` khi đưa về CFO, không tạo pool hay tự gom SKU theo số lượng bằng nhau. Mẫu dữ liệu đa-SKU cùng global product chưa chứng minh độc lập phải fail closed; không last-row-wins/cộng mù. Dev 1 + Dev 2 phải review migration/adapter và regression tests.
-- **Phân công & trạng thái:** chi tiết đầy đủ trong [DEC_SRC_D1_APPROVED_20261108.md](decisions/DEC_SRC_D1_APPROVED_20261108.md). **Đã duyệt quyết định, chưa hoàn thành code.** Dev 2 triển khai nguồn/adapter, Dev 1 review & xử lý replan/stock/state machine, Dev 3 POS. D6 vẫn owner tổ chức riêng; D8 chỉ đang được đề xuất.
+- **Phân công & trạng thái:** chi tiết đầy đủ trong [DEC_SRC_D1_APPROVED_20261108.md](decisions/DEC_SRC_D1_APPROVED_20261108.md). **Đã duyệt quyết định, chưa hoàn thành code.** Dev 2 triển khai nguồn/adapter, Dev 1 review & xử lý replan/stock/state machine, Dev 3 POS. D6 vẫn owner tổ chức riêng; D8 **sau đó** được duyệt lịch staging/demo-only ngày 09/11, không production (DEC-D8-STAGING-SCHEDULE-20261109).
 
 ## DEC-SRC-Q9-ERROR-001 — Duyệt 503 STOCK_UNAVAILABLE của Source API
 
@@ -532,13 +548,13 @@
 ## DEC-D8-OPS-20261109 — Rà soát vận hành hai lần mỗi ngày
 
 - **Chốt bởi Owner ngày 09/11/2026:** rà soát vận hành tổng thể **07:00 và 13:00 giờ địa phương Thụy Điển (Europe/Stockholm)**, mỗi ngày, gồm đơn còn tồn/đến hạn/nguy cơ trễ, độ tươi tồn kho, năng lực kho và lịch chính thức kho/tài xế.
-- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Chỉ **hai mốc giờ rà soát** được duyệt; **chưa phê duyệt toàn bộ job list/tần suất/cron/hosting của D8**, không bật job hoặc phát sinh chi phí từ quyết định này.
+- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Quyết định này lúc ban hành chỉ duyệt **hai mốc giờ rà soát**. **Bổ sung sau trong ngày 09/11:** DEC-D8-STAGING-SCHEDULE-20261109 duyệt toàn bộ lịch job/tần suất đề xuất **chỉ cho staging/demo**, không production/tick API/cron hosting/chi phí thật; không bật production job từ bản ghi này.
 - **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md).
 
 ## DEC-STOCK-GRANT-BOOTSTRAP-20261109 — System Admin cấp quyền đầu tiên cho Stock Admin
 
 - Owner chỉ định/ủy quyền **System Admin** đủ tin cậy thiết lập grant Stock Admin đầu tiên **theo market** (pilot SE). Grant phải rõ người cấp/nhận, market, quyền, hiệu lực, thời gian, lý do và audit; **không tự cấp cho chính mình**, không tạo stock-admin mặc định khi seed/login.
-- Giữ S1/S2: chỉ grant còn hiệu lực mới được quản trị/phê duyệt scope hoặc chứng cứ tồn; người tạo scope khác người duyệt, Warehouse Manager nộp chứng cứ khác người phê duyệt. Việc tự động cho phép cấp grant tiếp hoặc cấp quyền của System Admin không được suy từ chức danh, cần review kỹ thuật/ủy quyền.
+- Giữ S1/S2: chỉ grant còn hiệu lực mới được quản trị/phê duyệt scope hoặc chứng cứ tồn; người tạo scope khác người duyệt, Warehouse Manager nộp chứng cứ khác người phê duyệt. **Bổ sung sau trong ngày 09/11 (DEC-STOCK-GRANT-CONTROL-20261109):** chỉ System Admin có ủy quyền tường minh từ Owner mới được cấp/thu hồi cả grant tiếp theo, không suy quyền từ chức danh; representation/audit/RBAC cần review kỹ thuật.
 - [Quyết định và giới hạn triển khai](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). **Chưa thực thi cấp quyền thật.**
 
 ## ASM-WMS-MOVEMENT-20261109 — Giả định WMS cũ ghi nhận chuyển kho
@@ -585,9 +601,80 @@
 
 ## PROPOSAL-M6-PREP-QUEUE-001 — Đồng bộ API Prep queue và IANA timezone (09/11/2026)
 
-- **Trạng thái:** quyết định kỹ thuật **được tư vấn đề xuất** theo yêu cầu chốt M6 của Dev1; **chưa có lời phê duyệt tường minh của chủ dự án**, vì vậy giữ PR docs ở Draft đến khi xác nhận. Không được gán nhãn owner-approved hay tự merge.
+- **Trạng thái: OWNER APPROVED (09/11/2026).** Chủ dự án đã phê duyệt nguyên vẹn hợp đồng kỹ thuật này qua DEC-M6-PREP-QUEUE-20261109 ([biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md)). Nội dung proposal bên dưới trở thành baseline triển khai, **không** chứng nhận backend/frontend đã tích hợp hoặc cho phép tự merge #129/#159/#154/#160.
 - **Endpoint chuẩn:** `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD`, phản hồi đầy đủ `capacity + orders` của Phụ lục A, bao gồm `schedule_verified` bắt buộc và `next_action`. `GET /prep-queue?warehouse_id=&date=` là đường cũ, nếu duy trì chỉ làm alias dùng chung implementation.
 - **Shape:** `share` trong [0,1]; capacity/booked/work phút là JSON integer; useful hours, kg là JSON number; không serialize Decimal sang chuỗi (trừ tiền). Cutoff `HH:mm` theo market; mốc ca / prep / loading ISO 8601 aware offset. Đơn nhiều xe giữ loading theo từng trip.
 - **Fail-closed:** thiếu roster chính thức hoặc xác minh công suất → `schedule_verified=false`, `total_min=free_min=0`, UI hiện `Capacity not verified`; vẫn đọc được đơn đã duyệt nếu có nguồn tin cậy, tuyệt đối không bịa công suất. Không biến lỗi thiếu adapter/thực thi thành `200` giả hoặc cho phép approve/dispatch vượt safety checks.
 - **Múi giờ:** thêm `timezone` IANA non-null cho mọi location ở `GET /locations` và `GET /locations/{id}`, lấy từ `ref.market.timezone`. UI dùng `resolveTimeZone(location.timezone)`, không dùng browser timezone hay hardcode SE. Không thêm nguồn dữ liệu trùng lặp vào `/auth/me`.
 - **Nguồn chi tiết:** [06 §8.2, §13.1, Phụ lục A](06_API_Specification.md); phải review cùng [PR #129](https://github.com/qaztyhn/cfo-itconsultant/pull/129), bổ sung contract/E2E tests trước triển khai production. Không tuyên bố các route/schema này đã hoàn thiện.
+
+## DEC-CS-SEARCH-20261109 — Tra cứu đơn theo điện thoại bằng q
+
+- **Ngày/người chốt:** Owner dự án, 09/11/2026, xác nhận “CS-01: Mở rộng q để tìm số điện thoại, kiểm soát truy vấn ở backend”.
+- **Nghiệp vụ:** giữ nguyên `GET /api/v1/orders?q=` để tìm theo `order_no`, `external_ref`, tên khách và số điện thoại liên hệ; **không thêm query param**. Chuẩn hóa định dạng/số điện thoại ở server; không cho liệt kê theo vài chữ số, không mở phạm vi CS vượt market hoặc tiết lộ số thô qua response/log.
+- **Chưa triển khai:** Dev 1 cập nhật query và test pagination, RBAC, chống dò số/PII; Dev 3 UI dùng `q`, không coi tìm theo điện thoại đã có cho tới lúc API thật qua kiểm thử. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
+
+## DEC-CS-PRIVACY-20261109 — Phản hồi CS chỉ gồm dữ liệu được phép và đã che
+
+- **Ngày/người chốt:** Owner, 09/11/2026, xác nhận “CS-02: CS chỉ xem thông tin khách đã che; backend loại bỏ các trường nhạy cảm”.
+- **Nghiệp vụ:** backend xây dựng CS-specific allowlisted DTO; điện thoại/email chỉ dạng masked, không trả số/email gốc; không trả GPS/`delivery.lat/lon`, `receiving_restrictions`/mã cổng, thông tin nội bộ/điểm số. UI dùng MaskedText mặc định, không reveal, không quyền approve/dispatch/replan/change-promise/DELAY-send. Không chỉ che ở frontend.
+- **Chưa triển khai:** Dev 1 quyết định tên trường CS DTO qua review contract/OpenAPI và test kiểm tra response thật, role+market. Các endpoint notifications/ETA/contact-logs còn stub không được tuyên bố E2E. Form contact-log Dev 3 chỉ **mock-only** cục bộ, không giả lưu thật hoặc sửa global mocks/shared router. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
+
+## DEC-M6-PREP-QUEUE-20261109 — Phê duyệt PROPOSAL-M6-PREP-QUEUE-001
+
+- **Ngày/người chốt:** Owner, 09/11/2026, xác nhận “M6: Duyệt Prep Queue contract chuẩn trong PROPOSAL-M6-PREP-QUEUE-001”.
+- **Quy tắc:** canonical `GET /api/v1/warehouses/{id}/prep-queue?date=`; `capacity.schedule_verified` bắt buộc; thiếu roster xác minh = 0 công suất khả dụng, không bịa capacity; `GET /locations` trả IANA market timezone; multi-vehicle và thời gian ISO aware đúng Appendix A.1. `GET /prep-queue` chỉ alias dùng cùng implementation nếu còn duy trì. Hợp đồng cũ giữ để truy vết, nay chuyển từ proposed sang **owner-approved**.
+- **Chưa triển khai:** #129/#159 backend và #154/#160 frontend cần reconcile, CI và real-API/PG E2E; **không** duyệt merge PR hay M6 E2E. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
+
+## DEC-STOCK-GRANT-CONTROL-20261109 — Chỉ System Admin được Owner ủy quyền cấp/thu hồi grant
+
+- **Ngày/người chốt:** Owner, 09/11/2026, xác nhận “STOCK: Chỉ System Admin được Owner ủy quyền cấp/thu hồi Stock Admin grants”.
+- **Nghiệp vụ:** System Admin có **ủy quyền tường minh, còn hiệu lực từ Owner** là tác nhân duy nhất cấp/thu hồi Stock Admin grant market-scoped, **bao gồm grant đầu tiên và các grant tiếp theo**. Cấm self-grant; Stock Admin không tự cấp/thu hồi grant; actor, recipient, market, reason, version/effectivity và audit bất biến. Duy trì S1/S2 tách người tạo/duyệt scope/evidence; không mở quyền WMS write.
+- **Chưa triển khai:** Dev 1/2 review nguồn xác minh ủy quyền, điểm bootstrap, revocation/cạnh tranh, DDL/RBAC/API/audit và tests; PR #148/#164 chưa tự merge. Mở rộng DEC-STOCK-GRANT-BOOTSTRAP-20261109 vốn chỉ chốt grant ban đầu. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
+
+## DEC-D8-STAGING-SCHEDULE-20261109 — Duyệt lịch job chỉ cho staging/demo
+
+- **Ngày/người chốt:** Owner, 09/11/2026, xác nhận “D8: Duyệt lịch job đề xuất để triển khai và kiểm thử staging, chưa bật production”.
+- **Phạm vi duyệt:** bảng job/tần suất trong [D8 proposal](proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md) chỉ là **baseline staging/demo**; `operational_review` 07:00/13:00 Europe/Stockholm từ DEC-D8-OPS vẫn giữ. `attendance_gen` **disabled** khi chưa có hợp đồng lịch chính thức. Không tự approve/dispatch, đổi lịch, gửi DELAY chưa duyệt, bật GPS người thật hoặc gửi thông báo cho khách thật.
+- **Không duyệt:** bật production cron/worker, tính SLA, chọn/huy động hosting trả phí, tick endpoint và mã lỗi chưa review, D6, WMS write hay quyền xử lý dữ liệu thật. Dev 2 + Dev 1 phải review security/locks/idempotency/DST/E2E trước PR code; muốn production cần phê duyệt riêng. GPS lưu lịch sử đến 7 ngày theo quyết định mới, không quay về xóa ngay bản ghi hợp lệ. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
+
+## Quy tắc Merge do Owner kiểm soát — 09/11/2026 (Q1)
+
+- **Owner quyết định:** “tôi cần nó chuyển sang cho phép merge. tôi sẽ tự bấm merge. ... Q1 tôi tự merge”. Integration Lead phải giải quyết conflict, sửa code/test/contract, CI và reviewer để **từng PR an toàn** được chuyển từ Draft sang Ready for review và GitHub cho phép Owner bấm Merge. **Chỉ Owner thao tác Merge**; agent không tự merge/bypass branch protection.
+- Không đánh đồng `Draft=false` với mergeable; phải kiểm GitHub mergeability, required checks, reviewers, dependency stack và E2E thực tế. Có thể chia partial/fail-closed slice độc lập, ghi trung thực blockers production. Không biến blocker bảo mật thành mục đã hoàn thành.
+
+## DEC-INT-WMS-DEMO-20261109 — WMS reserve mock staging/demo
+
+- **Owner chốt Q2:** giả lập reserve/status/release bằng fake WMS ở staging/demo, hiện nhãn simulated; retry, ACK, idempotency và refresh được test. **WMS thật disabled**, không quyền write physical on_hand, không coi fake ACK là đã giữ hàng thật. Real WMS API/credentials/release/approval phải xác minh riêng. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-TRANSFER-BOUNDARY-20261109 — CFO chỉ yêu cầu chuyển kho
+
+- **Owner chốt Q3:** CFO chỉ tạo gợi ý/yêu cầu, WMS thực thi xuất/nhập vật lý. #127 cần sửa/hạ cấp `confirm-source`/`receive` để không tạo authority hoặc inbound tồn vật lý giả. Giữ audit hợp lệ; chưa cho reversal tự động. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-AGREED-DATE-20261109 — Dispatcher chủ động áp dụng ngày đã thỏa thuận
+
+- **Owner chốt Q4:** có contact/negotiation record thật trước; Dispatcher có quyền bấm `Apply agreed date`, revalidate agreement và version, audit/transition rồi **lập phương án mới**, không tự approve, không đổi ngày chỉ vì lưu note, không viết lại POS nếu chưa có contract. Cần Dev 1/3 rà API state và idempotency. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-GPS-HISTORY-20261109 — Truy cập GPS lịch sử theo case
+
+- **Owner chốt Q5:** chỉ privacy/compliance reviewer được ủy quyền theo `case_id`, lý do, market/trip scope, audit bất biến; Dispatcher live không mặc nhiên xem GPS lịch sử. Lưu tối đa 7 ngày; legal/privacy/DPIA và per-driver evidence là gate bắt buộc trước real data. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-KPI-PERIOD-20261109 — KPI khoảng ngày và market
+
+- **Owner chốt Q6:** mặc định 30 ngày, tối đa 366 ngày; System Admin nhiều market phải chọn market rõ; cohort local IANA; đúng 10 KPI keys, `hard_constraint_violations` và `event_to_alert_latency_s_median` tiếp tục `null` khi chưa có nguồn. Dev 1/3 review date DTO inclusive/exclusive và tests. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-PREP-ACTUAL-START-20261109 — Prep start null khi chưa bắt đầu
+
+- **Owner chốt Q7:** `prep_window.start` = mốc `START_PREP` thực tế đã persist hoặc `null` trước khi bắt đầu; aware ISO nếu có. Không lấy planned time làm actual. Trường planned riêng phải có hợp đồng sau này nếu cần. Đồng bộ #159/#154/#160. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-SEED-GOLDEN-20261109 — Giữ golden, sửa synthetic seed
+
+- **Owner chốt Q8:** giữ expected outcomes đã duyệt; sửa test/demo synthetic input/capacity/handling/vehicle/shift để thực sự khả thi. Không chế driver legal evidence hay weaken safety gates. Nếu impossible/contradicts approved PRD → báo BLOCKED bằng chứng định lượng, chờ thay đổi contract riêng. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-CS-GET-PRIVACY-20261109 — Bảo vệ số điện thoại trong GET q
+
+- **Owner chốt Q9:** giữ `GET /orders?q=` hiện đã duyệt, HTTPS, backend scope/throttle, redact raw query/phone khỏi server/proxy/APM/access/analytics/error logs, `Referrer-Policy: no-referrer` cho trang CS, không lưu raw phone vào telemetry/navigation state. **Rủi ro còn lại:** GET URL vẫn có thể xuất hiện trong browser history/network/debug/proxies; muốn loại bỏ toàn diện cần chốt POST search contract khác. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
+
+## DEC-INT-D8-STAGING-EXEC-20261109 — D8 chỉ test staging/manual
+
+- **Owner chốt Q10:** dùng staging/test hiện có hoặc trigger thủ công để chứng minh jobs, giữ 07:00/13:00 Europe/Stockholm, DST/locks/idempotency. Không tự mua hạ tầng, không bật production worker, không real recipient/GPS. `attendance_gen` vẫn disabled; cần Owner chốt riêng nếu đòi 24/7 SLA/hosting. [Biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
