@@ -33,6 +33,13 @@ PII_KEYS = frozenset(
         "contact_email",
         "delivery_address",
         "recipient_name",
+        "q",
+        "query",
+        "query_string",
+        "raw_uri",
+        "request_uri",
+        "request_url",
+        "full_url",
     }
 )
 SERVICES = frozenset({"api", "engine", "integration", "scheduler", "notify"})
@@ -40,6 +47,7 @@ LEVELS = frozenset({"debug", "info", "warning", "error", "critical"})
 _TOP_LEVEL = ("order_id", "market", "duration_ms")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 _REDACTED = "[redacted]"
+_SENSITIVE_QUERY_RE = re.compile(r"(?i)([?&](?:q|contact_phone|phone)=)[^&#\\s]+")
 
 _logger = logging.getLogger("cfo.jsonl")
 _logger.propagate = False
@@ -64,7 +72,7 @@ def scrub(value: Any) -> Any:
     if isinstance(value, list | tuple | set):
         return [scrub(v) for v in value]
     if isinstance(value, str):
-        return _EMAIL_RE.sub(_REDACTED, value)
+        return _SENSITIVE_QUERY_RE.sub(r"\\1[redacted]", _EMAIL_RE.sub(_REDACTED, value))
     return value
 
 
@@ -83,7 +91,7 @@ def build_record(service: str, event: str, level: str = "info", **fields: object
         "correlation_id": correlation_id,
         "order_id": top["order_id"],
         "market": top["market"],
-        "event": _EMAIL_RE.sub(_REDACTED, event),
+        "event": scrub(event),
         "duration_ms": top["duration_ms"],
         "extra": scrub(fields),
     }
