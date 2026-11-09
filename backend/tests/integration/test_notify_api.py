@@ -15,7 +15,7 @@ from app.main import create_app
 from app.services import notify_service
 from tests.integration.conftest import async_url
 from tests.integration.dev2_helpers import transact
-from tests.integration.test_notify_backend import NOW, WINDOW, actor, prepare
+from tests.integration.test_notify_backend import WINDOW, actor, prepare
 
 pytestmark = pytest.mark.integration
 
