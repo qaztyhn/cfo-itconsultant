@@ -46,7 +46,8 @@ def monitoring(api: Api) -> Api:
         "VALUES (2,'private@example.test','BAD_DATE',"
         "'Sensitive address email token',"
         "'{\"customer\":\"private@example.test\",\"secret\":\"token\"}'::jsonb),"
-        "(2,'private@example.test','UNEXPECTED private@example.test','PII','{}'::jsonb)",
+        "(2,'private@example.test','UNEXPECTED private@example.test',"
+        "'PII','{}'::jsonb)",
         "INSERT INTO stg.sync_checkpoint(market_id,entity,last_updated_since) VALUES "
         "(1,'orders','2026-11-08T09:59Z'),"
         "(2,'orders','2026-11-08T12:59Z')",
