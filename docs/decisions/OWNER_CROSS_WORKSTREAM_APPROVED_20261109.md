@@ -70,3 +70,7 @@ The earlier S1/S2 and T18-1 rules are supplemented by [DEC-STOCK-GRANT-BOOTSTRAP
 **Dev 3:** independent hotfix PR for merged #136, using the actual backend `passed` and flat rejected candidate fields and correct plan approval guards.
 
 **Required acceptance:** Reviewed migration/API updates where needed, actor + market RBAC, valid/invalid history/stock paths, concurrency, rollback, cross-market privacy, actual PostgreSQL E2E and exact-head CI. Keep fail-closed behavior until fully validated; **do not auto-merge PR code**. This record does not substitute for legal, DPIA or compliance sign-off.
+
+## Latest exception to WMS read-only contract (2026-11-09)
+
+[DEC-WMS-RESERVE-SYNC-20261109](DEC_WMS_RESERVE_SYNC_20261109.md) selects the **narrow reserve-on-authorized-approval business workflow**: CFO checks fresh WMS available, submits a request using confirmed reverse-mapped original WMS SKU, WMS atomically reserves and reduces available, CFO immediately refreshes stock, and no WMS-reflected reservation can be subtracted twice. WMS alone controls physical on_hand. This exception does not authorize CFO WMS transfer reconciliation or on_hand writes, and is not evidence a real WMS API/credential/production write is ready. Review Dev 1/2 contract/implementation before activation.
