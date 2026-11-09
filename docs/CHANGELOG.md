@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-05 — explicit trip-stop POD and trip lifecycle] — 2026-11-09 — Dev 1 (PR pending)
+
+- `POST /orders/{id}/events` accepts optional `trip_stop_id` for `DELIVERED` / `FAILED`. It is mandatory when one approved order has more than one stop on the selected `trip_id`. A legacy unambiguous single-stop event remains valid. The backend always checks `trip_stop_id` belongs to the current approved plan, requested order and trip, and checks driver assignment/official duty; no arbitrary stop lookup or GPS exposure.
+- Completing one stop **does not** end its trip, close GPS collection or set `ended_at` until every stop on that trip is terminal, including stops for other orders. The order remains `DISPATCHED` until all of its own current-plan stops finish; existing per-trip-stop POD uniqueness and unchanged idempotency apply. Terminal GPS cleanup stays in the same SQL transaction. No relaxation of licence, 11-hour rest, shift or D7/56-day completeness checks.
+- FastAPI payload OpenAPI description and docs/06 §8.1 aligned. Existing migration `0012` already enforces POD uniqueness per trip stop, so no new DDL/migration is needed. Real PostgreSQL regression tests added for ambiguous/wrong stop, wrong driver, replay, trip terminal boundary and multi-vehicle aggregation.
+- Deployment remains **fail closed** until verified duty completeness and risk/notification integrations permit execution. This PR does not enable GPS tracking, WMS writes or customer notifications.
+
+
 ## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
 
 - `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.
