@@ -1026,7 +1026,11 @@ Quy tắc và hạn chế đã biết [A]:
 
 **Implementation handoff:** Dev 1 owns DDL/migrations/approval/transfer/POD and Dev 2 reviews Source/WMS evidence, GPS and outbox storage; each PR must include rollback, authorization, idempotency and PostgreSQL tests. No unreviewed schema insertion or legal sign-off claims.
 
-### 12.0a Stock Admin first grant and transfer/WMS reconciliation (owner-approved policy)
+### 12.0b Owner clarification: WMS owns physical stock, CFO read-only (DEC-WMS-READONLY-20261109)
+
+**This newer decision supersedes the CFO-side transfer-to-WMS proof/reconciliation design in §12.0a below.** WMS owns physical outbound/inbound, transfer movement records, stock corrections and reconciliation. CFO only consumes complete/fresh WMS stock snapshots, validates scope/quality and maintains **its own order held/committed reservation accounting**; no synthesized physical transfer balances, duplicate reconciliation approvals or 24-hour reconciliation queue. Historical transfer/inbound table designs must be reviewed for compatibility with #127; no schema or migration is implicitly changed by this docs note. [Decision](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md).
+
+### 12.0a Stock Admin first grant and transfer/WMS reconciliation (owner-approved policy) (transfer reconciliation proposal superseded)
 
 - **Grant bootstrap:** Owner-ủy quyền System Admin cấp grant đầu tiên theo market, không tự cấp cho mình, grant active/revocable/auditable. DB/API phải lưu grantor, grantee, market, scope/validity, reason và audit. Ràng buộc tác giả/approver scope riêng; Warehouse Manager nộp evidence khác người duyệt. **Không tự tạo bảng/cột hay seed grant chỉ từ văn bản này; review DDL/migration trong #148.**
 - **WMS operational assumption:** WMS cũ có ghi nhận outgoing/incoming movement khi chuyển kho; dữ liệu qua API/CSV, mã chứng từ/transfer-link, version/snapshot inclusion **chưa kiểm chứng**. Thiết kế data model có tham chiếu chứng cứ WMS cho từng transfer line, kho nguồn/đích, SKU, số lượng, status, Source batch/version, kết quả đối soát và người xác minh/duyệt (phải tách actor). Không suy ACK bằng timestamp hoặc quantity delta.
