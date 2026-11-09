@@ -102,7 +102,7 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
       <p className="text-body text-inkMuted">Recognised when an order is delivered. Failed and cancelled orders are excluded.</p>
     </header>
     <p className="rounded-card border border-border bg-surface px-4 py-3 text-body text-inkMuted">
-      Illustrative values from seeded orders. Revenue = unit price × quantity of goods; delivery and packaging fees are not included.
+      Figures come from the CFO reporting API for the selected market and period. Revenue covers goods only; delivery and packaging fees are excluded.
     </p>
     <div className="flex flex-col gap-4 rounded-card border border-border bg-surface p-4 lg:flex-row lg:flex-wrap lg:items-end">
       <fieldset className="flex flex-wrap gap-2" aria-label="Revenue view">
