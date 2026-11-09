@@ -1,0 +1,23 @@
+{
+  "source_kind": "synthetic_demo",
+  "market": "SE",
+  "stock": [
+    {
+      "warehouse_code": "GBG",
+      "wms_sku": "WMS-CEM-25",
+      "wms_unit": "bag",
+      "on_hand": "100.000"
+    }
+  ],
+  "mapping": [
+    {
+      "market": "SE",
+      "warehouse_code": "GBG",
+      "pos_sku": "SE-CEM-MOR-25",
+      "wms_sku": "WMS-CEM-25",
+      "wms_unit": "bag",
+      "mapping_version": "synthetic:confirmed-v1",
+      "confirmed": true
+    }
+  ]
+}

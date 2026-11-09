@@ -1,0 +1,26 @@
+name: disposable-wms-contract
+on:
+  pull_request:
+    paths:
+      - "backend/app/adapters/disposable_wms_service.py"
+      - "backend/tests/unit/test_disposable_wms_service.py"
+      - "tools/disposable_wms/**"
+      - ".github/workflows/disposable-wms-contract.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disposable-wms:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check app/adapters/disposable_wms_service.py tests/unit/test_disposable_wms_service.py
+      - run: black --check app/adapters/disposable_wms_service.py tests/unit/test_disposable_wms_service.py
+      - run: pytest tests/unit/test_disposable_wms_service.py -v
