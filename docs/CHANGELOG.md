@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T18 theo DEC-INT-TRANSFER-BOUNDARY (Q3): CFO yêu cầu, WMS thực thi] — 2026-11-09 — Integration Lead (#127)
+
+- `POST /transfers/{id}/confirm-source` và `/receive` bị **vô hiệu**: vẫn kiểm RBAC/phạm vi (404/403 giữ nguyên) rồi trả `409 ILLEGAL_TRANSITION`, không ghi inbound, trạng thái hay audit. Chỉ còn: gợi ý, duyệt yêu cầu chuyển kho (`approved`), hủy trước `source_confirmed` (T18-3 chặn từ `source_confirmed`). `confirmed_inbound` vẫn không tính inbound `source=transfer`. Tên hành động audit `TRANSFER_CONFIRMED/RECEIVED` chỉ còn là lịch sử.
+
 ## [T18 — receipt cần inbound đúng một-một] — 2026-11-09 — Dev 1 (#127)
 
 - `receive` so khớp inbound với dòng chuyển kho theo **multiset**: dòng inbound trùng (cùng sản phẩm/số lượng) không còn được coi là bằng chứng hợp lệ (trước đây so bằng set nên bị gộp). Thêm test đồng thời (hai lần duyệt khác key, hai lần xác nhận kho nguồn), inbound trùng/thiếu, snapshot kho đích bị thay không tự nhận hàng.

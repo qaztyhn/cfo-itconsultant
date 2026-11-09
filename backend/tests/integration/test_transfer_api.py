@@ -102,39 +102,6 @@ def test_US_ATP_02_AC3_approve_audits_once_with_idempotent_replay(transfer_api: 
     assert first.json()["expected_arrival_date"] == "2026-11-05"
 
 
-def test_US_ATP_03_AC1_AC3_source_confirm_and_dest_receive_in_one_transaction(
-    transfer_api: Api,
-) -> None:
-    transfer_id = approved(transfer_api)
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/confirm-source", 7), 404, "NOT_FOUND")
-    confirmed = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
-    assert confirmed.status_code == 200, confirmed.text
-    assert confirmed.json()["status"] == "source_confirmed"
-    inbound = fetch(
-        transfer_api.dsn, "SELECT source,confirmed,received,qty,eta_date FROM ops.inbound_shipment"
-    )
-    assert [(x["source"], x["confirmed"], x["received"], x["qty"]) for x in inbound] == [
-        ("transfer", True, False, 40)
-    ]
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", WAREHOUSE), 404, "NOT_FOUND")
-    received = post(transfer_api, f"/transfers/{transfer_id}/receive", 7)
-    assert received.status_code == 200, received.text
-    assert received.json()["status"] == "received"
-    assert fetch(transfer_api.dsn, "SELECT received FROM ops.inbound_shipment")[0]["received"] is True
-    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1  # source warehouse only
-    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 1  # destination warehouse has its own action
-    assert_error(
-        post(
-            transfer_api,
-            f"/transfers/{transfer_id}/cancel",
-            DISPATCHER,
-            {"reason_text": "No longer required"},
-        ),
-        409,
-        "ILLEGAL_TRANSITION",
-    )
-
-
 def test_US_ATP_03_AC2_RBAC_location_scope_and_market(transfer_api: Api) -> None:
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", SALES), 403, "FORBIDDEN")
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", ZZ_WAREHOUSE), 403, "FORBIDDEN")
@@ -255,24 +222,6 @@ def test_D1_01_cancel_rbac_and_unknown_transfer(transfer_api: Api) -> None:
     assert status_of(transfer_api) == "approved" and audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
 
 
-def test_D1_01_cancel_after_source_confirmation_or_receipt_fails_closed(transfer_api: Api) -> None:
-    transfer_id = approved(transfer_api)
-    body = {"reason_text": "Too late"}
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
-    assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 409, "ILLEGAL_TRANSITION"
-    )
-    assert status_of(transfer_api) == "source_confirmed"
-    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7).status_code == 200
-    assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body), 409, "ILLEGAL_TRANSITION"
-    )
-    assert status_of(transfer_api) == "received"
-    inbound = fetch(transfer_api.dsn, "SELECT confirmed,received FROM ops.inbound_shipment")
-    assert [(r["confirmed"], r["received"]) for r in inbound] == [(True, True)]  # no reversal, no WMS effect
-    assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 0
-
-
 def test_D1_01_cancel_rolls_back_when_the_audit_insert_fails(transfer_api: Api) -> None:
     transfer_id = approved(transfer_api)
     execute(transfer_api.dsn, FAIL_AUDIT[0].format(action="TRANSFER_CANCELLED"), FAIL_AUDIT[1])
@@ -285,59 +234,6 @@ def test_D1_01_cancel_rolls_back_when_the_audit_insert_fails(transfer_api: Api) 
     retry = post(transfer_api, f"/transfers/{transfer_id}/cancel", DISPATCHER, body, key)
     assert retry.status_code == 200, retry.text  # the failed attempt did not poison the idempotency key
     assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 1
-
-
-def test_D1_02_receive_records_transfer_received_not_confirmed(transfer_api: Api) -> None:
-    transfer_id = approved(transfer_api)
-    assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "ILLEGAL_TRANSITION"
-    )  # not confirmed yet
-    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
-    [confirmed] = audit_rows(transfer_api, "TRANSFER_CONFIRMED")
-    assert confirmed["actor_role"] == "warehouse"
-    assert (confirmed["before"]["status"], confirmed["after"]["status"]) == ("approved", "source_confirmed")  # type: ignore[index]
-    key = str(uuid4())
-    first = post(transfer_api, f"/transfers/{transfer_id}/receive", 7, None, key)
-    assert first.status_code == 200, first.text
-    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7, None, key).json() == first.json()
-    [received] = audit_rows(transfer_api, "TRANSFER_RECEIVED")
-    assert received["actor_role"] == "warehouse" and received["actor_user_id"] == 7
-    assert (received["entity"], received["entity_id"], received["order_id"]) == (
-        "stock_transfer",
-        str(transfer_id),
-        1,
-    )
-    assert (received["before"]["status"], received["after"]["status"]) == ("source_confirmed", "received")  # type: ignore[index]
-    assert received["ts"] is not None
-    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1  # receipt never reuses the source action
-    assert not fetch(
-        transfer_api.dsn, "SELECT 1 FROM audit.decision_log WHERE snapshot->>'stage' = 'warehouse_received'"
-    )
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "ILLEGAL_TRANSITION")
-    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 1
-
-
-def test_D1_02_receive_is_destination_scoped_and_rolls_back_with_its_audit(transfer_api: Api) -> None:
-    transfer_id = approved(transfer_api)
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
-    for actor in (
-        WAREHOUSE,
-        SALES,
-        DISPATCHER,
-        ZZ_WAREHOUSE,
-    ):  # not the source manager, not other roles/markets
-        assert post(transfer_api, f"/transfers/{transfer_id}/receive", actor).status_code in (403, 404)
-    assert (
-        status_of(transfer_api) == "source_confirmed" and audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
-    )
-    execute(transfer_api.dsn, FAIL_AUDIT[0].format(action="TRANSFER_RECEIVED"), FAIL_AUDIT[1])
-    with pytest.raises(Exception):  # noqa: B017, PT011
-        post(transfer_api, f"/transfers/{transfer_id}/receive", 7)
-    assert status_of(transfer_api) == "source_confirmed"
-    assert fetch(transfer_api.dsn, "SELECT received FROM ops.inbound_shipment")[0]["received"] is False
-    execute(transfer_api.dsn, *DROP_FAIL_AUDIT)
-    assert post(transfer_api, f"/transfers/{transfer_id}/receive", 7).status_code == 200
 
 
 def test_US_ATP_02_missing_stale_stock_and_no_eligible_order_fail_closed(transfer_api: Api) -> None:
@@ -358,42 +254,6 @@ def test_US_ATP_02_AC3_distinct_key_cannot_approve_same_shortage_twice(transfer_
         "RESOURCE_CONFLICT",
     )
     assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.stock_transfer")[0]["n"] == 1
-
-
-def test_US_ATP_03_AC1_source_confirmation_cannot_reuse_confirmed_outbound_stock(
-    transfer_api: Api,
-) -> None:
-    transfer_id = approved(transfer_api)
-    execute(
-        transfer_api.dsn,
-        "INSERT INTO ops.stock_transfer (order_id,from_warehouse_id,to_warehouse_id,status,"
-        "lead_days,suggestion) VALUES (NULL,1,3,'source_confirmed',1,'{}')",
-        "INSERT INTO ops.stock_transfer_line (transfer_id,global_product_id,qty) " "VALUES (2,1,30)",
-    )
-    denied = post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE)
-    assert_error(denied, 409, "RESOURCE_CONFLICT")
-    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
-    assert (
-        fetch(
-            transfer_api.dsn,
-            "SELECT count(*) AS n FROM audit.decision_log WHERE action='TRANSFER_CONFIRMED'",
-        )[0]["n"]
-        == 0
-    )
-
-
-def test_US_ATP_03_AC1_source_snapshot_staleness_blocks_confirmation(transfer_api: Api) -> None:
-    transfer_id = approved(transfer_api)
-    execute(
-        transfer_api.dsn,
-        "UPDATE ops.stock_snapshot SET as_of='2026-11-01T09:00Z' WHERE warehouse_id=1",
-    )
-    assert_error(
-        post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
-        409,
-        "RESOURCE_CONFLICT",
-    )
-    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
 
 
 def test_US_ATP_02_nonshortage_order_has_no_transfer_suggestions(transfer_api: Api) -> None:
@@ -460,22 +320,6 @@ def test_T18_2_missing_market_lead_default_fails_closed(transfer_api: Api) -> No
     assert_error(transfer_api.get("/orders/1/transfer-suggestions", DISPATCHER), 409, "PLAN_NOT_APPROVABLE")
 
 
-def test_T18_1_pending_transfer_inbound_is_never_counted_as_available(transfer_api: Api) -> None:
-    from app.services.planning_context import confirmed_inbound
-    from tests.integration.test_planning_context_stock import _run  # reuse the session helper
-
-    transfer_id = approved(transfer_api)
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
-    # a non-transfer (ERP) confirmed inbound for the same warehouse/product is still counted
-    execute(
-        transfer_api.dsn,
-        "INSERT INTO ops.inbound_shipment (inbound_ref,warehouse_id,global_product_id,qty,eta_date,confirmed,"
-        "received,source) VALUES ('ERP-1',3,1,5,'2026-11-12',true,false,'erp')",
-    )
-    inbound = _run(transfer_api.dsn, lambda s: confirmed_inbound(s, [3], [1]))
-    assert [(i.inbound_ref, i.qty) for i in inbound[3]] == [("ERP-1", 5)]
-
-
 def test_T18_concurrent_approvals_with_distinct_keys_create_one_transfer(transfer_api: Api) -> None:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -489,49 +333,67 @@ def test_T18_concurrent_approvals_with_distinct_keys_create_one_transfer(transfe
     assert audit_count(transfer_api, "TRANSFER_APPROVED") == 1
 
 
-def test_T18_concurrent_source_confirmation_creates_exactly_one_inbound(transfer_api: Api) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-
+def test_Q3_cfo_physical_confirmation_and_receipt_are_disabled_and_write_nothing(transfer_api: Api) -> None:
+    """DEC-INT-TRANSFER-BOUNDARY: CFO requests transfers; WMS alone executes physical outbound/inbound."""
     transfer_id = approved(transfer_api)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(
-            pool.map(
-                lambda _: post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
-                range(2),
-            )
-        )
-    assert sorted(r.status_code for r in results)[0] == 200, [r.text for r in results]
-    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 1
-    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1
-
-
-def test_T18_duplicate_or_missing_inbound_proof_blocks_receipt(transfer_api: Api) -> None:
-    transfer_id = approved(transfer_api)
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
-    execute(
-        transfer_api.dsn,
-        "INSERT INTO ops.inbound_shipment (inbound_ref,warehouse_id,global_product_id,qty,eta_date,"
-        "confirmed,received,source,transfer_id) VALUES ('DUP-1',3,1,40,'2026-11-12',true,false,'transfer',"
-        f"{transfer_id})",
-    )
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "RESOURCE_CONFLICT")
-    execute(transfer_api.dsn, "DELETE FROM ops.inbound_shipment")
-    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "RESOURCE_CONFLICT")
-    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "source_confirmed"
+    for path, actor in (("confirm-source", WAREHOUSE), ("receive", 7)):
+        assert_error(post(transfer_api, f"/transfers/{transfer_id}/{path}", actor), 409, "ILLEGAL_TRANSITION")
+    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 0
     assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
 
 
-def test_T18_1_destination_snapshot_replacement_never_adds_or_receives_transfer_stock(
+def test_Q3_disabled_physical_actions_keep_scope_and_rbac(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/confirm-source", 7), 404, "NOT_FOUND")
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", WAREHOUSE), 404, "NOT_FOUND")
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/confirm-source", DISPATCHER), 403, "FORBIDDEN")
+    assert_error(post(transfer_api, "/transfers/999/receive", 7), 404, "NOT_FOUND")
+
+
+def test_Q3_a_snapshot_replacement_never_changes_a_requested_transfer_or_adds_inbound(
     transfer_api: Api,
 ) -> None:
-    """A newer destination snapshot (as_of alone) is not proof: no auto-receipt, no inbound change."""
     transfer_id = approved(transfer_api)
-    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
     execute(
         transfer_api.dsn,
         "UPDATE ops.stock_snapshot SET on_hand=60, as_of='2026-11-04T09:30:00Z' WHERE warehouse_id=3",
     )
-    row = fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]
-    assert row["status"] == "source_confirmed"
-    inbound = fetch(transfer_api.dsn, "SELECT confirmed, received FROM ops.inbound_shipment")
-    assert [(i["confirmed"], i["received"]) for i in inbound] == [(True, False)]
+    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "approved"
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 0
+    assert transfer_id == 1
+
+
+def test_T18_1_transfer_sourced_inbound_is_never_counted_as_available(transfer_api: Api) -> None:
+    from app.services.planning_context import confirmed_inbound
+    from tests.integration.test_planning_context_stock import _run
+
+    transfer_id = approved(transfer_api)
+    execute(
+        transfer_api.dsn,
+        "INSERT INTO ops.inbound_shipment (inbound_ref,warehouse_id,global_product_id,qty,eta_date,confirmed,"
+        "received,source,transfer_id) VALUES "
+        f"('TR-1',3,1,40,'2026-11-12',true,false,'transfer',{transfer_id}), "
+        "('ERP-1',3,1,5,'2026-11-12',true,false,'erp',NULL)",
+    )
+    inbound = _run(transfer_api.dsn, lambda s: confirmed_inbound(s, [3], [1]))
+    assert [(i.inbound_ref, i.qty) for i in inbound[3]] == [("ERP-1", 5)]
+
+
+def test_T18_3_cancel_is_blocked_at_and_after_source_confirmed(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    for status in ("source_confirmed", "received"):
+        execute(transfer_api.dsn, f"UPDATE ops.stock_transfer SET status='{status}' WHERE id={transfer_id}")
+        assert_error(
+            post(
+                transfer_api,
+                f"/transfers/{transfer_id}/cancel",
+                DISPATCHER,
+                {"reason_text": "No longer needed"},
+            ),
+            409,
+            "ILLEGAL_TRANSITION",
+        )
+        assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == status
+    assert audit_count(transfer_api, "TRANSFER_CANCELLED") == 0

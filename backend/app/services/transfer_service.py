@@ -11,7 +11,7 @@ from datetime import date, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +23,6 @@ from app.domain.models.hr import LocationManager
 from app.domain.models.ops import (
     CustomerOrder,
     IdempotencyKey,
-    InboundShipment,
     OrderLine,
     StockSnapshot,
     StockTransfer,
@@ -495,166 +494,29 @@ async def list_transfers(
     return {"items": [_out(row) for row in rows], "page": page, "page_size": page_size, "total": total}
 
 
+PHYSICAL_BY_WMS = "Physical outbound/inbound and receipt are executed and recorded by the WMS, not by CFO."
+
+
 async def confirm_source(
     session: AsyncSession, actor: object, transfer_id: int, idempotency_key: str
 ) -> dict[str, object]:
+    """DEC-INT-TRANSFER-BOUNDARY (Q3): CFO only requests a transfer; WMS executes physical movements.
+
+    The former CFO "source confirmed" action created a stock-authoritative inbound from an internal click.
+    It is disabled: scope/RBAC are still checked (unknown/foreign transfers stay 404) and nothing is written.
+    """
     transfer, market = await _transfer(session, actor, transfer_id, lock=False)
     await _manager(session, actor, transfer.from_warehouse_id, market)
-    record, replay = await _claim(
-        session, actor, f"POST /transfers/{transfer_id}/confirm-source", idempotency_key, {}
-    )
-    if replay is not None:
-        return replay
-    transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
-    if transfer.status != "approved" or transfer.expected_arrival_date is None:
-        raise _error("ILLEGAL_TRANSITION", "Source confirmation requires an approved transfer.")
-    lines = (
-        await session.scalars(
-            select(StockTransferLine)
-            .where(StockTransferLine.transfer_id == transfer.id)
-            .order_by(StockTransferLine.global_product_id)
-        )
-    ).all()
-    if not lines:
-        raise _error("PLAN_NOT_APPROVABLE", "Transfer has no verified lines.")
-    # Lock the stock resources in deterministic order to avoid confirming beyond available supply.
-    for line in lines:
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-            {"k": f"stock:{transfer.from_warehouse_id}:{line.global_product_id}"},
-        )
-    stock = await available_stock(
-        session,
-        [transfer.from_warehouse_id],
-        [line.global_product_id for line in lines],
-        now=clock.now(),
-        exclude_order_id=None,
-    )
-    product_ids = [line.global_product_id for line in lines]
-    snapshots = (
-        await session.scalars(
-            select(StockSnapshot).where(
-                StockSnapshot.warehouse_id == transfer.from_warehouse_id,
-                StockSnapshot.global_product_id.in_(product_ids),
-            )
-        )
-    ).all()
-    stale_min = (market.config or {}).get("stale_stock_min", 15)
-    if type(stale_min) is not int or stale_min <= 0:
-        raise _error("PLAN_NOT_APPROVABLE", "Stock freshness policy is unavailable.")
-    fresh = {
-        item.global_product_id
-        for item in snapshots
-        if item.as_of >= clock.now() - timedelta(minutes=stale_min)
-    }
-    if any(product_id not in fresh for product_id in product_ids):
-        raise _error("RESOURCE_CONFLICT", "Source warehouse stock evidence is missing or stale.")
-    outgoing = (
-        await session.execute(
-            select(StockTransferLine.global_product_id, func.sum(StockTransferLine.qty))
-            .join(StockTransfer, StockTransfer.id == StockTransferLine.transfer_id)
-            .where(
-                StockTransfer.from_warehouse_id == transfer.from_warehouse_id,
-                StockTransfer.status.in_(("source_confirmed", "received")),
-                StockTransferLine.global_product_id.in_(product_ids),
-            )
-            .group_by(StockTransferLine.global_product_id)
-        )
-    ).all()
-    outstanding = {product_id: qty for product_id, qty in outgoing}
-    for line in lines:
-        available = stock[transfer.from_warehouse_id][line.global_product_id] - outstanding.get(
-            line.global_product_id, Decimal(0)
-        )
-        if available < line.qty:
-            raise _error("RESOURCE_CONFLICT", "Source warehouse no longer has sufficient stock.")
-    for line in lines:
-        session.add(
-            InboundShipment(
-                inbound_ref=f"TRANSFER-{transfer.id}",
-                warehouse_id=transfer.to_warehouse_id,
-                global_product_id=line.global_product_id,
-                qty=line.qty,
-                eta_date=transfer.expected_arrival_date,
-                confirmed=True,
-                received=False,
-                source="transfer",
-                transfer_id=transfer.id,
-            )
-        )
-    before = _out(transfer)
-    transfer.status = "source_confirmed"
-    transfer.source_confirmed_by = _employee_id(actor)
-    transfer.source_confirmed_at = clock.now()
-    await session.flush()
-    await record_decision(
-        session,
-        Action.TRANSFER_CONFIRMED,  # source warehouse only (DEC-DEV1-D1-02); receipt has its own action
-        "stock_transfer",
-        str(transfer.id),
-        order_id=transfer.order_id,
-        before=before,
-        after=_out(transfer),
-        actor_user_id=_user_id(actor),
-        actor_employee_id=_employee_id(actor),
-        actor_role="warehouse",
-    )
-    return _save(record, _out(transfer))
+    raise _error("ILLEGAL_TRANSITION", PHYSICAL_BY_WMS)
 
 
 async def receive(
     session: AsyncSession, actor: object, transfer_id: int, idempotency_key: str
 ) -> dict[str, object]:
+    """DEC-INT-TRANSFER-BOUNDARY (Q3): a CFO click is not a WMS receipt; disabled, nothing is written."""
     transfer, market = await _transfer(session, actor, transfer_id, lock=False)
     await _manager(session, actor, transfer.to_warehouse_id, market)
-    record, replay = await _claim(
-        session, actor, f"POST /transfers/{transfer_id}/receive", idempotency_key, {}
-    )
-    if replay is not None:
-        return replay
-    transfer, _ = await _transfer(session, actor, transfer_id, lock=True)
-    if transfer.status != "source_confirmed":
-        raise _error("ILLEGAL_TRANSITION", "Receiving requires a source-confirmed transfer.")
-    lines = (
-        await session.scalars(select(StockTransferLine).where(StockTransferLine.transfer_id == transfer.id))
-    ).all()
-    inbound = (
-        await session.scalars(
-            select(InboundShipment)
-            .where(
-                InboundShipment.transfer_id == transfer.id,
-                InboundShipment.source == "transfer",
-                InboundShipment.confirmed.is_(True),
-                InboundShipment.received.is_(False),
-            )
-            .with_for_update()
-        )
-    ).all()
-    # Multiset comparison: a duplicated inbound row for the same product/qty must not pass as proof.
-    if not lines or sorted((i.global_product_id, i.qty) for i in inbound) != sorted(
-        (line.global_product_id, line.qty) for line in lines
-    ):
-        raise _error("RESOURCE_CONFLICT", "Transfer inbound rows are missing or inconsistent.")
-    before = _out(transfer)
-    for row in inbound:
-        row.received = True
-    transfer.status = "received"
-    transfer.received_at = clock.now()
-    await session.flush()
-    # DEC-DEV1-D1-02: the destination's receipt has its own action; TRANSFER_CONFIRMED is never reused for it.
-    await record_decision(
-        session,
-        Action.TRANSFER_RECEIVED,
-        "stock_transfer",
-        str(transfer.id),
-        order_id=transfer.order_id,
-        before=before,
-        after=_out(transfer),
-        actor_user_id=_user_id(actor),
-        actor_employee_id=_employee_id(actor),
-        actor_role="warehouse",
-    )
-    return _save(record, _out(transfer))
+    raise _error("ILLEGAL_TRANSITION", PHYSICAL_BY_WMS)
 
 
 async def cancel(
