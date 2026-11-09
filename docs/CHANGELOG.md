@@ -2,6 +2,15 @@
 
 
 
+## [DEC-CS-SEARCH / DEC-CS-PRIVACY / DEC-M6-PREP-QUEUE / DEC-STOCK-GRANT-CONTROL / DEC-D8-STAGING-SCHEDULE — 20261109] — 2026-11-09 — five owner approvals, docs-only
+
+- **CS-01:** `GET /orders?q=` được duyệt mở rộng tìm `contact_phone` (chuẩn hóa/giới hạn ở backend), ngoài mã đơn, external ref và tên; không thêm param mới. Scope và chống dò số/PII cần Dev 1 code/test.
+- **CS-02:** CS có response projection do backend lọc, phone/email chỉ masked; loại tọa độ, mã cổng/receiving restrictions và dữ liệu lập kế hoạch nội bộ; không cấp quyền approve/dispatch/replan/DELAY-send. Contact-log/ETA/notifications stub chưa E2E, CS UI chỉ mock-only trong phạm vi riêng.
+- **M6:** Owner phê duyệt nội dung `PROPOSAL-M6-PREP-QUEUE-001`: canonical `/warehouses/{id}/prep-queue`, `schedule_verified`, market IANA timezone. #129/#159/#154/#160 vẫn cần đối chiếu API, tests, không auto-merge.
+- **STOCK:** chỉ System Admin được **Owner ủy quyền** mới cấp/thu hồi **tất cả** Stock Admin grant (ban đầu và tiếp theo) theo market; cấm self-grant. Phạm vi không bao gồm WMS on-hand writes; schema/RBAC/audit cần review.
+- **D8:** phê duyệt lịch/cadence job trong D8 proposal **để triển khai/test staging/demo**, giữ review 07:00/13:00 Europe/Stockholm; không bật production, trả phí hosting, gửi khách thật hay theo dõi tài xế thật. `attendance_gen` vẫn disabled; tick DTO/code còn review riêng.
+- [Biên bản quyết định](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md); cập nhật `ASSUMPTIONS`, `02`, `03`, `05`, `06`, `09` và D8 proposal. **Chỉ docs, không code, migration, runtime activation hoặc merge PR**. Các mục ASM-004/ASM-008 và những đề xuất không được chọn tiếp tục chưa duyệt.
+
 ## [DEC-WMS-RESERVE-SYNC-20261109] — 2026-11-09 — owner-approved business workflow, docs-only
 
 - Owner chốt quy trình **CFO so tồn WMS khi nhận đơn → Sales/Dispatcher xác nhận phương án → CFO yêu cầu WMS reserve bằng SKU gốc → WMS atomic ACK và giảm available (không giảm on_hand vật lý) → CFO đọc/cập nhật WMS ngay**, không chờ polling 5 phút. Không double-subtract reservation đã nằm trong WMS stock.
