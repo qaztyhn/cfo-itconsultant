@@ -175,7 +175,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
         </div>
       </section>
       {choice && <PrepActionDialog key={scope.warehouseId + ":" + scope.date + ":" + choice.order.order_id + ":" + choice.type + ":" + (choice.tripId ?? 0)}
-        choice={choice} warehouseId={scope.warehouseId} onClose={() => setChoice(null)}
+        choice={choice} warehouseId={scope.warehouseId} reportDate={scope.date} onClose={() => setChoice(null)}
         onAcknowledged={async () => {
           setAcknowledged(ACTION_NAMES[choice.type] + " acknowledged by CFO for " + choice.order.order_no + ".");
           await query.refetch();
