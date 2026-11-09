@@ -51,7 +51,8 @@ def prepare(dsn: str, *, status: str = "APPROVED") -> None:
         "UPDATE ops.customer_order SET approved_plan_id=1,committed_date='2026-11-10',"
         "promise_start='2026-11-10T08:00Z',promise_end='2026-11-10T10:00Z' WHERE id=1",
         "INSERT INTO ops.alert(order_id,market_id,type,level,message,target_roles,dedupe_key) "
-        "VALUES (1,1,'PREDICTED_LATE','critical','Synthetic late signal','{dispatcher}','risk:1:PREDICTED_LATE')",
+        "VALUES (1,1,'PREDICTED_LATE','critical','Synthetic late signal',"
+        "'{dispatcher}','risk:1:PREDICTED_LATE')",
     )
 
 
@@ -159,7 +160,9 @@ def test_US_NOT_02_AC1_draft_and_send_are_separate_with_idempotency(empty_db: st
         )
     assert error.value.code == "IDEMPOTENCY_CONFLICT"
     assert fetch(empty_db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 1
-    assert fetch(empty_db, "SELECT count(*) FROM audit.decision_log WHERE action='NOTIFICATION_SENT'")[0][0] == 0
+    assert fetch(
+        empty_db, "SELECT count(*) FROM audit.decision_log WHERE action='NOTIFICATION_SENT'"
+    )[0][0] == 0
 
 
 def test_US_NOT_02_AC5_cross_market_and_non_dispatcher_cannot_send(empty_db: str) -> None:
@@ -171,8 +174,8 @@ def test_US_NOT_02_AC5_cross_market_and_non_dispatcher_cannot_send(empty_db: str
         with pytest.raises(DomainError) as error:
             run(
                 empty_db,
-                lambda s: notify_service.send_draft(
-                    draft, bad, {"eta_window": WINDOW, "version": 1}, str(uuid4()), session=s
+                lambda s, person=bad: notify_service.send_draft(
+                    draft, person, {"eta_window": WINDOW, "version": 1}, str(uuid4()), session=s
                 ),
             )
         assert error.value.code in ("FORBIDDEN", "NOT_FOUND")
@@ -190,7 +193,9 @@ def test_US_NOT_02_AC3_discard_requires_reason_and_audits_once(empty_db: str) ->
     first = run(empty_db, lambda s: notify_service.discard_draft(draft, actor(), "Not approved", session=s))
     second = run(empty_db, lambda s: notify_service.discard_draft(draft, actor(), "Not approved", session=s))
     assert first == second == {"id": draft, "status": "suppressed"}
-    assert fetch(empty_db, "SELECT count(*) FROM audit.decision_log WHERE action='NOTIFICATION_SUPPRESSED'")[0][0] == 1
+    assert fetch(
+        empty_db, "SELECT count(*) FROM audit.decision_log WHERE action='NOTIFICATION_SUPPRESSED'"
+    )[0][0] == 1
 
 
 def test_US_NOT_02_AC1_changed_date_requires_customer_agreement(empty_db: str) -> None:
