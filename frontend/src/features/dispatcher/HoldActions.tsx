@@ -32,9 +32,10 @@ function extendErrorMessage(error: unknown): string {
 export interface HoldActionsProps {
   run: PlanningRun;
   expired: boolean;
+  planAgainOnly?: boolean; // chỉ hiện nút Plan Again, không hiện nút gia hạn
 }
 
-export function HoldActions({ run, expired }: HoldActionsProps) {
+export function HoldActions({ run, expired, planAgainOnly = false }: HoldActionsProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,20 +65,22 @@ export function HoldActions({ run, expired }: HoldActionsProps) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => extension.mutate()}
-        disabled={!canExtend}
-        className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
-      >
-        {extension.isPending ? "Extending…" : "Extend hold +15 min"}
-        {!expired && <span className="ml-2 font-mono text-caption text-inkMuted">{left > 0 ? `${left} left` : "No extensions left"}</span>}
-      </button>
+      {!planAgainOnly && (
+        <button
+          type="button"
+          onClick={() => extension.mutate()}
+          disabled={!canExtend}
+          className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
+        >
+          {extension.isPending ? "Extending…" : "Extend hold +15 min"}
+          {!expired && <span className="ml-2 font-mono text-caption text-inkMuted">{left > 0 ? `${left} left` : "No extensions left"}</span>}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setModalOpen(true)}
         className={
-          expired
+          expired || planAgainOnly
             ? "rounded-control bg-apricot px-3 py-1.5 text-body font-semibold text-deepPine"
             : "rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink"
         }

@@ -74,11 +74,11 @@ function holdFor(runId: number): HoldState {
 }
 
 const ALL_PASS: PlanChecks = {
-  stock: { pass: true, code: "STOCK_OK" },
-  preparation: { pass: true, code: "PREP_OK" },
-  truck: { pass: true, code: "TRUCK_OK" },
-  site_date: { pass: true, code: "DATE_OK" },
-  safety: { pass: true, code: "SAFETY_OK" },
+  stock: { passed: true, code: "STOCK_OK" },
+  preparation: { passed: true, code: "PREP_OK" },
+  truck: { passed: true, code: "TRUCK_OK" },
+  site_date: { passed: true, code: "DATE_OK" },
+  safety: { passed: true, code: "SAFETY_OK" },
 };
 
 interface VehicleSeed {
@@ -99,8 +99,9 @@ interface VehicleSeed {
 function vehicle(v: VehicleSeed): PlanVehicle {
   return {
     seq: v.seq,
+    vehicle_id: v.id,
+    driver_employee_id: v.driverId,
     vehicle: { id: v.id, code: v.code, name: v.name, capacity_kg: v.capKg, capacity_m3: v.capM3 },
-    driver: { employee_id: v.driverId, name: v.driver },
     load_kg: v.loadKg,
     load_m3: v.loadM3,
     load_lines: [{ line_no: v.seq, qty_base: "100" }],
@@ -134,8 +135,8 @@ function fullPlan(runId: number, s: PlanSeed): Plan {
     vehicle_count: s.vehicles.length,
     vehicles: s.vehicles,
     warehouse: s.warehouse,
-    total_capacity_kg: sum((v) => Number(v.vehicle.capacity_kg)),
-    total_capacity_m3: sum((v) => Number(v.vehicle.capacity_m3)),
+    total_capacity_kg: sum((v) => Number(v.vehicle?.capacity_kg ?? 0)),
+    total_capacity_m3: sum((v) => Number(v.vehicle?.capacity_m3 ?? 0)),
     goods_ready_at: "2026-11-10T09:30:00+01:00",
     loading_start_at: "2026-11-10T09:30:00+01:00",
     depart_at: s.vehicles[0].depart_at,
@@ -165,16 +166,7 @@ function compactPlan(p: Plan): Plan {
     target_date: p.target_date,
     eta_at: p.eta_at,
     vehicle_count: p.vehicle_count,
-    vehicles: p.vehicles.map((v) => ({
-      seq: v.seq,
-      vehicle: v.vehicle,
-      load_kg: v.load_kg,
-      load_m3: v.load_m3,
-      load_lines: v.load_lines,
-      loading_start_at: v.loading_start_at,
-      depart_at: v.depart_at,
-      eta_at: v.eta_at,
-    })),
+    vehicles: p.vehicles.map((v) => ({ seq: v.seq, eta_at: v.eta_at })),
   };
 }
 
@@ -228,10 +220,10 @@ function multiVehiclePlans(runId: number): Plan[] {
 }
 
 const REJECTED: RejectedCandidate[] = [
-  { warehouse: { id: 2, name: "Stockholm DC" }, vehicle: { code: "STO-12-04" }, failed_check: "site_date", code: "OUTSIDE_RECEIVING_HOURS", detail: { message: "ETA 15:45 is outside site window 08:00–14:30." } },
-  { warehouse: { id: 1, name: "Göteborg DC" }, vehicle: { code: "GBG-03-02" }, failed_check: "truck", code: "NO_TRUCK_FIT", detail: { message: "Order weighs 4 120 kg; van GBG-03-02 carries 3 500 kg." } },
-  { warehouse: { id: 3, name: "Malmö DC" }, vehicle: { code: "MLM-12-02" }, failed_check: "truck", code: "TRUCK_BUSY", detail: { message: "MLM-12-02 is committed to SE-2026-000131 on Tue 10 Nov." } },
-  { warehouse: { id: 2, name: "Stockholm DC" }, vehicle: null, failed_check: "safety", code: "DRIVER_HOURS_EXCEEDED", detail: { message: "Drive time exceeds the 9 h limit for STO → Kungsbacka." } },
+  { warehouse_id: 2, vehicle_code: "STO-12-04", failed_check: "site_date", code: "OUTSIDE_RECEIVING_HOURS", detail: { message: "ETA 15:45 is outside site window 08:00–14:30." } },
+  { warehouse_id: 1, vehicle_code: "GBG-03-02", failed_check: "truck", code: "NO_TRUCK_FIT", detail: { message: "Order weighs 4 120 kg; van GBG-03-02 carries 3 500 kg." } },
+  { warehouse_id: 3, vehicle_code: "MLM-12-02", failed_check: "truck", code: "TRUCK_BUSY", detail: { message: "MLM-12-02 is committed to SE-2026-000131 on Tue 10 Nov." } },
+  { warehouse_id: 2, vehicle_code: null, failed_check: "safety", code: "DRIVER_HOURS_EXCEEDED", detail: { message: "Drive time exceeds the 9 h limit for STO → Kungsbacka." } },
 ];
 
 function buildRun(runId: number, full: boolean): PlanningRun | undefined {
@@ -267,7 +259,7 @@ function buildRun(runId: number, full: boolean): PlanningRun | undefined {
     earliest_feasible_date: infeasible ? "2026-11-12" : null,
     planning_reserve_min: allPlans[0]?.planning_reserve_min ?? null,
     workload: { labour_hours: 10.15 },
-    rejected_candidates: infeasible ? [] : REJECTED,
+    rejected_candidates: REJECTED,
     transfer_suggestions: [],
   };
 }
@@ -280,6 +272,17 @@ export const planningHandlers = [
     if (!auth.ok) return auth.response;
     const run = buildRun(Number(params.id), isFullView(auth.account.user.roles));
     return run ? HttpResponse.json(run) : errorResponse(request, 404, "NOT_FOUND", "Planning run not found.");
+  }),
+
+  http.get(`${BASE}/orders/:id/date-negotiations`, ({ params, request }) => {
+    const auth = authorize(request, ["dispatcher"]);
+    if (!auth.ok) return auth.response;
+    // Đơn 160 (run 413) khách yêu cầu 05/11 nhưng phương án giao 10/11: cần thỏa thuận `agreed` đúng ngày đó.
+    const items =
+      Number(params.id) === 160
+        ? [{ id: 55, proposed_date: "2026-11-10", outcome: "agreed", channel: "phone", contacted_at: "2026-11-04T09:40:00Z", remind_at: null }]
+        : [];
+    return HttpResponse.json({ items });
   }),
 
   http.get(`${BASE}/orders/:id/planning-runs`, ({ params, request }) => {

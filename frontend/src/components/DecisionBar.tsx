@@ -6,18 +6,39 @@
 import type { Plan } from "../api/contracts/planning";
 import { formatTime } from "../lib/planFormat";
 
+export type ApproveBlockReason = "replan" | "no_hold" | "not_proposed" | "date_agreement";
+
 export interface DecisionBarProps {
   plan: Plan | null;
   expired: boolean;
   approved: boolean;
+  blockReason?: ApproveBlockReason | null;
+  /** reserve_class = tight: bắt buộc tick trước khi Approve (docs/03 mục 5.2). */
+  requireTightAccept?: boolean;
+  tightAccepted?: boolean;
+  onTightAcceptChange?: (accepted: boolean) => void;
   onApprove: () => void;
   className?: string;
 }
 
-export function DecisionBar({ plan, expired, approved, onApprove, className }: DecisionBarProps) {
-  const blocked = !plan || expired || approved;
+export function DecisionBar({
+  plan,
+  expired,
+  approved,
+  blockReason = null,
+  requireTightAccept = false,
+  tightAccepted = false,
+  onTightAcceptChange,
+  onApprove,
+  className,
+}: DecisionBarProps) {
+  const blocked = !plan || expired || approved || blockReason !== null || (requireTightAccept && !tightAccepted);
   let status = "Select a plan to approve.";
   if (approved) status = "Plan approved.";
+  else if (blockReason === "replan") status = "This is a replan suggestion and cannot be approved. Use Plan Again.";
+  else if (blockReason === "no_hold") status = "No active hold on this run, so it cannot be approved.";
+  else if (blockReason === "not_proposed") status = "This plan is no longer proposed and cannot be approved.";
+  else if (blockReason === "date_agreement") status = "This date differs from the customer's requested date. Record the customer's agreement first.";
   else if (expired) status = "Hold expired. Use Plan Again to continue.";
   else if (plan) {
     const noun = plan.vehicle_count === 1 ? "vehicle" : "vehicles";
@@ -34,6 +55,18 @@ export function DecisionBar({ plan, expired, approved, onApprove, className }: D
         .join(" ")}
     >
       <p className="text-body">{status}</p>
+      
+      {requireTightAccept && plan && !approved && (
+        <label className="flex items-center gap-2 text-body">
+          <input
+            type="checkbox"
+            checked={tightAccepted}
+            onChange={(event) => onTightAcceptChange?.(event.target.checked)}
+          />
+          I accept the tight schedule
+        </label>
+      )}
+
       <button
         type="button"
         onClick={onApprove}

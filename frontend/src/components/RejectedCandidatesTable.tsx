@@ -29,9 +29,9 @@ export function RejectedCandidatesTable({ candidates, className }: RejectedCandi
         </thead>
         <tbody>
           {candidates.map((c, index) => (
-                        <tr key={`${c.warehouse?.id ?? "w"}-${c.vehicle?.code ?? "v"}-${index}`} className="border-t hover:bg-rowHover">
-              <td className="px-4 py-2">{c.warehouse?.name ?? "—"}</td>
-              <td className="px-4 py-2 font-mono">{c.vehicle?.code ?? "—"}</td>
+            <tr key={`${c.warehouse_id ?? "w"}-${c.vehicle_code ?? "v"}-${index}`} className="border-t hover:bg-rowHover">
+              <td className="px-4 py-2">{c.warehouse_id != null ? `Warehouse #${c.warehouse_id}` : "—"}</td>
+              <td className="px-4 py-2 font-mono">{c.vehicle_code ?? "—"}</td>
               <td className="px-4 py-2">
                 <span className="rounded-full bg-risk-predictedLate-bg px-2 py-0.5 font-mono text-caption text-risk-predictedLate-fg">
                   <span aria-hidden="true">✕ </span>

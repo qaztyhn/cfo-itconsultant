@@ -634,7 +634,14 @@ export const handlers = [
     if (!order || !record || !orderInScope(auth.account.user, record)) {
       return errorResponse(request, 404, "NOT_FOUND", "Order not found."); // ngoài phạm vi cũng 404, không lộ sự tồn tại
     }
-    return HttpResponse.json(projectOrderDetail(auth.account.user, order));
+    
+    const detail = projectOrderDetail(auth.account.user, order);
+    // docs/06 mục 5.1: ngày khách yêu cầu nằm trong date_request. Chỉ thêm khi vai trò còn thấy date_to (driver thì không).
+    return HttpResponse.json(
+      detail.date_to === undefined
+        ? detail
+        : { ...detail, date_request: { mode: order.date_mode, date_from: order.date_from, date_to: order.date_to } },
+    );
   }),
 
   // Alerts

@@ -12,6 +12,9 @@ import { fetchPlanningRun, planningKeys } from "../../api/planning";
 import { PATHS } from "../../app/access";
 import { useAuthStore } from "../../app/store";
 import { DataFreshness } from "../../components/DataFreshness";
+
+import type { ApproveBlockReason } from "../../components/DecisionBar";
+
 import { HoldCountdown } from "../../components/HoldCountdown";
 import { PageHeader } from "../../components/PageHeader";
 import { PlanCard } from "../../components/PlanCard";
@@ -61,6 +64,7 @@ export function PlanReview() {
           key={run.id}
           run={run}
           showDriver={isDispatcher}
+          canPlanAgain={isDispatcher}
           freshness={freshness}
           freshnessSettled={!freshnessQuery.isPending}
           onHoldExpire={() => void runQuery.refetch()}
@@ -75,21 +79,41 @@ interface RunBodyProps {
   showDriver: boolean;
   freshness: { asOf: string | null; nextSyncAt: string | null; stale: boolean };
   freshnessSettled: boolean;
+  canPlanAgain: boolean;
   onHoldExpire: () => void;
 }
 
-function RunBody({ run, showDriver, freshness, freshnessSettled, onHoldExpire }: RunBodyProps) {
+function RunBody({ run, showDriver, freshness, freshnessSettled, canPlanAgain, onHoldExpire }: RunBodyProps) {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [approved, setApproved] = useState(false);
   const expired = useHoldExpired(run.hold_expires_at);
 
   const plans = run.plans.slice(0, MAX_PLANS);
-  const selected = plans.find((p) => p.rank === selectedRank) ?? plans[0] ?? null;
+    const selected = plans.find((p) => p.rank === selectedRank) ?? plans[0] ?? null;
+
+  const blockReason: ApproveBlockReason | null =
+    run.kind === "replan_suggestion"
+      ? "replan"
+      : run.hold_expires_at === null
+        ? "no_hold"
+        : selected && selected.status !== "proposed"
+          ? "not_proposed"
+          : null;
 
   if (run.result === "infeasible" || plans.length === 0) {
     const gate = run.failed_check ? `Failed gate: ${gateLabel(run.failed_check)}.` : "";
     const earliest = run.earliest_feasible_date ? ` Earliest feasible date ${run.earliest_feasible_date}.` : "";
-    return <EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />;
+    return (
+      <>
+        <EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />
+        <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />
+        {canPlanAgain && (
+          <div className="flex flex-wrap items-center gap-3">
+            <HoldActions run={run} expired={false} planAgainOnly />
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
@@ -134,7 +158,7 @@ function RunBody({ run, showDriver, freshness, freshnessSettled, onHoldExpire }:
 
       <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />
 
-      <ApprovalFlow run={run} plan={selected} showDriver={showDriver} expired={expired} onApproved={() => setApproved(true)} />
+      <ApprovalFlow run={run} plan={selected} showDriver={showDriver} expired={expired} blockReason={blockReason} onApproved={() => setApproved(true)} />
     </>
   );
 }

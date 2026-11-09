@@ -8,3 +8,13 @@ import { apiGet } from "./client";
 export function fetchOrderCounts(signal?: AbortSignal): Promise<BadgeCounts> {
   return apiGet<BadgeCounts>("/orders/counts", undefined, signal);
 }
+
+/** Phần của GET /orders/{id} (docs/06 mục 5.1) mà màn duyệt phương án cần: ngày khách yêu cầu. */
+export interface OrderDateRequest {
+  id: number;
+  date_request: { mode: string; date_from: string | null; date_to: string | null };
+}
+
+export function fetchOrderDateRequest(orderId: number, signal?: AbortSignal): Promise<OrderDateRequest> {
+  return apiGet<OrderDateRequest>(`/orders/${orderId}`, undefined, signal);
+}

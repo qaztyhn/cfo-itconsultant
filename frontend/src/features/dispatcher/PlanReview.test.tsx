@@ -99,7 +99,7 @@ describe("PlanReview — plans", () => {
     const original = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
       headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}1` },
     }).then((r) => r.json());
-    original.plans[0].checks.truck = { pass: false, code: "TRUCK_BUSY" };
+    original.plans[0].checks.truck = { passed: false, code: "TRUCK_BUSY" };
     server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(original)));
 
     renderAt(runUrl(MOCK_RUN_IDS.normal));
@@ -121,7 +121,7 @@ describe("PlanReview — plans", () => {
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
     await screen.findAllByRole("article");
-    expect(within(planCards()[0]).getByText(/Driver Björn Eriksson/)).toBeInTheDocument();
+    expect(within(planCards()[0]).getByText(/Driver #71/)).toBeInTheDocument();
   });
 
   it("explains why other candidates were rejected", async () => {
@@ -263,7 +263,7 @@ describe("PlanReview — access", () => {
     signIn("admin@cfo.demo");
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(screen.queryByText(/Driver Björn/)).not.toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 300));expect(screen.queryByText(/Driver #71/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Driver #71/)).not.toBeInTheDocument();
   });
 });

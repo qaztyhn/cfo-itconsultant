@@ -6,6 +6,7 @@ import { apiGet, apiPost } from "./client";
 import type {
   ApprovePlanInput,
   ApprovePlanResponse,
+  DateNegotiationList,
   PlanAgainInput,
   PlanningRun,
 } from "./contracts/planning";
@@ -13,6 +14,7 @@ import type {
 export const planningKeys = {
   run: (runId: number) => ["planning-run", runId] as const,
   runs: (orderId: number) => ["planning-runs", orderId] as const,
+  dateNegotiations: (orderId: number) => ["date-negotiations", orderId] as const,
 };
 
 export function fetchPlanningRun(runId: number, signal?: AbortSignal): Promise<PlanningRun> {
@@ -42,4 +44,9 @@ export function approvePlan(
   idempotencyKey: string,
 ): Promise<ApprovePlanResponse> {
   return apiPost<ApprovePlanResponse>(`/plans/${planId}/approve`, input, idempotencyKey);
+}
+
+/** Lịch sử thương lượng ngày giao của đơn (chỉ dispatcher). */
+export function fetchDateNegotiations(orderId: number, signal?: AbortSignal): Promise<DateNegotiationList> {
+  return apiGet<DateNegotiationList>(`/orders/${orderId}/date-negotiations`, undefined, signal);
 }

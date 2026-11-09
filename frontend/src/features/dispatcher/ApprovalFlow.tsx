@@ -4,13 +4,13 @@
  * - Chỉ báo thành công khi backend trả order.status === "APPROVED". Không bypass 409 nào.
  * - T16 backend hiện fail-closed khi chưa có recheck adapter: lỗi PLAN_NOT_APPROVABLE được hiển thị nguyên văn, không giả thành công.
  */
-import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";import { useRef, useState } from "react";
 import { ApiError, isApiError, newIdempotencyKey } from "../../api/client";
 import { USE_MOCKS } from "../../api/config";
 import type { ApprovePlanInput, ApprovePlanResponse, Plan, PlanningRun } from "../../api/contracts/planning";
-import { approvePlan, planningKeys } from "../../api/planning";
-import { DecisionBar } from "../../components/DecisionBar";
+import { approvePlan, fetchDateNegotiations, planningKeys } from "../../api/planning";
+import { fetchOrderDateRequest } from "../../api/orders";
+import { DecisionBar, type ApproveBlockReason } from "../../components/DecisionBar";
 import { ReasonModal, type ReasonOption, type ReasonResult } from "../../components/ReasonModal";
 import { describeCommit, formatDayTime, formatTime } from "../../lib/planFormat";
 
@@ -23,7 +23,7 @@ const ALT_REASONS: ReasonOption[] = [
 ];
 
 /** Lỗi được hiển thị thành khung cố định (không có nút bỏ qua); lỗi khác ném lại để modal hiện và cho thử lại. */
-const PANEL_CODES = new Set(["RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE", "HOLD_EXPIRED", "FORBIDDEN", "APPROVAL_NOT_CONFIRMED"]);
+const PANEL_CODES = new Set(["RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE", "HOLD_EXPIRED", "FORBIDDEN", "APPROVAL_NOT_CONFIRMED", "DATE_AGREEMENT_REQUIRED"]);
 
 const CONFLICT_CAUSE: Record<string, string> = {
   vehicle: "A selected vehicle is no longer available.",
@@ -38,21 +38,48 @@ export interface ApprovalFlowProps {
   plan: Plan | null;
   showDriver: boolean;
   expired: boolean;
+  blockReason?: ApproveBlockReason | null;
   onApproved: () => void;
   /** Mặc định theo chế độ chạy; tách ra để test. */
   mock?: boolean;
 }
 
-export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock = USE_MOCKS }: ApprovalFlowProps) {
+export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serverBlockReason = null, onApproved, mock = USE_MOCKS }: ApprovalFlowProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [result, setResult] = useState<ApprovePlanResponse | null>(null);
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  
+  const requireTight = run.reserve_class === "tight";
+  const [tightAcceptedPlanId, setTightAcceptedPlanId] = useState<number | null>(null);
+  const tightAccepted = plan !== null && tightAcceptedPlanId === plan.id;
+
+    // showDriver chính là "là dispatcher": chỉ dispatcher đọc được ngày khách yêu cầu và lịch sử thương lượng (docs/06 mục 6.5).
+  const orderQuery = useQuery({
+    queryKey: ["orders", "date-request", run.order_id],
+    queryFn: ({ signal }) => fetchOrderDateRequest(run.order_id, signal),
+    enabled: showDriver,
+  });
+  const negotiationsQuery = useQuery({
+    queryKey: planningKeys.dateNegotiations(run.order_id),
+    queryFn: ({ signal }) => fetchDateNegotiations(run.order_id, signal),
+    enabled: showDriver,
+  });
+
+  const requestedDate = orderQuery.data?.date_request.date_to;
+  const dateDiffers = Boolean(plan) && requestedDate !== undefined && plan?.target_date !== requestedDate;
+  const agreement = dateDiffers
+    ? negotiationsQuery.data?.items.find((n) => n.outcome === "agreed" && n.proposed_date === plan?.target_date)
+    : undefined;
+  const negotiationsLoaded = negotiationsQuery.isSuccess;
+  const blockReason: ApproveBlockReason | null =
+    serverBlockReason ?? (dateDiffers && negotiationsLoaded && !agreement ? "date_agreement" : null);
 
   async function handleConfirm({ reasonCode, reasonText }: ReasonResult) {
-    if (!plan || expired) return;
-    const body: ApprovePlanInput = plan.rank > 1 ? { reason_code: reasonCode, reason_text: reasonText } : reasonText ? { note: reasonText } : {};
+    if (!plan || expired || blockReason || (requireTight && !tightAccepted)) return;
+    const base: ApprovePlanInput = plan.rank > 1 ? { reason_code: reasonCode, reason_text: reasonText } : reasonText ? { note: reasonText } : {};
+    const body: ApprovePlanInput = agreement ? { ...base, date_negotiation_id: agreement.id } : base;
     const fingerprint = `${plan.id}:${JSON.stringify(body)}`;
     if (keyRef.current?.fingerprint !== fingerprint) keyRef.current = { fingerprint, key: newIdempotencyKey() };
 
@@ -86,6 +113,10 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
         plan={plan}
         expired={expired}
         approved={result !== null}
+        blockReason={blockReason}
+        requireTightAccept={requireTight}
+        tightAccepted={tightAccepted}
+        onTightAcceptChange={(accepted) => setTightAcceptedPlanId(accepted && plan ? plan.id : null)}
         onApprove={() => {
           setProblem(null);
           setOpen(true);
@@ -93,7 +124,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
       />
       {plan && (
         <ReasonModal
-          open={open && !expired && result === null}
+          open={open && !expired && !blockReason && result === null}
           title={`Approve plan #${plan.rank}`}
           description={describeCommit(plan, showDriver)}
           reasons={plan.rank > 1 ? ALT_REASONS : undefined}

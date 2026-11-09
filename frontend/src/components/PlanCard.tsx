@@ -85,7 +85,7 @@ export function PlanCard({ plan, reserveClass, showDriver = false, actions, clas
         <div className="flex flex-wrap gap-2" role="group" aria-label="Feasibility gates">
           {GATE_KEYS.map((key) => {
             const gate = plan.checks?.[key];
-            return gate ? <CheckChip key={key} name={gateLabel(key)} passed={gate.pass} code={gate.code} /> : null;
+            return gate ? <CheckChip key={key} name={gateLabel(key)} passed={gate.passed} code={gate.code} /> : null;
           })}
         </div>
       )}

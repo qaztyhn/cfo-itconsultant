@@ -184,7 +184,7 @@ describe("Approval", () => {
     await userEvent.setup().click(approveButton(1));
 
     const dialog = await screen.findByRole("dialog", { name: "Approve plan #1" });
-    expect(dialog).toHaveAccessibleDescription(/GBG-12-03.*driver Björn Eriksson.*GBG-18-01.*driver Anders Pettersen/);
+    expect(dialog).toHaveAccessibleDescription(/GBG-12-03.*driver #71.*GBG-18-01.*driver #73/);
     expect(dialog).toHaveAccessibleDescription(/2 vehicles/);
     expect(dialog.textContent).not.toMatch(/\$|€|\bSEK\b|\bkr\b/);
   });
