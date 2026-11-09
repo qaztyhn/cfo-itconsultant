@@ -4,12 +4,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.demo_ci import check_db_report
 from tools.demo_db_verify import (
-    APP_NOW, Check, evaluate, safe_context, sync_outcome, verify,
+    APP_NOW, Check, evaluate, safe_context, source_version, sync_outcome, verify,
 )
 
 ENV = {
@@ -134,6 +135,69 @@ class DemoDatabaseProofTests(unittest.TestCase):
         self.assertEqual([x.status for x in result], ["PASS", "PASS"])
         db.assert_called_once_with(ENV["COMPOSE_PROJECT_NAME"])
         src.assert_called_once_with(SOURCE, ENV["SOURCE_SE_API_KEY"])
+
+    def fake_source(self, *, cancellation=False, incomplete=False, wrong_store=False):
+        rows = [
+            {"id": f"OTHER-{n:03d}", "version": 1,
+             "status": "SUBMITTED_FOR_PLANNING", "store_code": "ST-001"}
+            for n in range(100)
+        ] + [
+            {"id": "SE-2026-000149", "version": 2,
+             "status": "SUBMITTED_FOR_PLANNING", "store_code": "ST-099" if wrong_store else "ST-001"},
+            {"id": "SE-2026-000156", "version": 1,
+             "status": "SUBMITTED_FOR_PLANNING", "store_code": "ST-001"},
+        ]
+        cancels = ([{"id": "SE-2026-000149", "version": 3, "status": "CANCELLED"}]
+                   if cancellation else [])
+        calls = []
+
+        class Response:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+            def __init__(self, payload):
+                self.payload = payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return None
+            def read(self, _size):
+                return json.dumps(self.payload).encode()
+
+        class Opener:
+            def open(self, req, timeout):
+                self_delay = timeout
+                assert self_delay == 12 and req.get_method() == "GET"
+                args = parse_qs(urlsplit(req.full_url).query)
+                status = args["status"][0]
+                page = int(args["page"][0])
+                size = int(args["page_size"][0])
+                calls.append((status, page))
+                group = rows if status == "SUBMITTED_FOR_PLANNING" else cancels
+                page_items = group[(page - 1) * size:page * size]
+                if incomplete and page == 2:
+                    page_items = []
+                return Response({"items": page_items, "total": len(group),
+                                 "page": page, "page_size": size})
+
+        return Opener(), calls
+
+    def test_US_INT_01_AC3_paginates_both_source_status_feeds(self):
+        opener, calls = self.fake_source()
+        with patch("tools.demo_db_verify.build_opener", return_value=opener):
+            self.assertEqual(source_version(SOURCE, "synthetic-only"), (2, 1))
+        self.assertEqual(calls, [
+            ("SUBMITTED_FOR_PLANNING", 1),
+            ("SUBMITTED_FOR_PLANNING", 2),
+            ("CANCELLED", 1),
+        ])
+
+    def test_US_INT_01_AC4_cancelled_or_incomplete_source_pages_are_rejected(self):
+        for mode in ("cancellation", "incomplete", "wrong_store"):
+            with self.subTest(mode=mode):
+                opener, _ = self.fake_source(**{mode: True})
+                with patch("tools.demo_db_verify.build_opener", return_value=opener):
+                    with self.assertRaises(ValueError):
+                        source_version(SOURCE, "synthetic-only")
 
     def test_US_INT_01_AC4_database_failure_not_reported_as_success(self):
         report = self.make_report("PASS")

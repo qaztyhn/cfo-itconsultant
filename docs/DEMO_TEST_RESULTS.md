@@ -36,6 +36,12 @@ Every status below refers to a specific surface and evidence type:
 
 ## Incremental evidence contract — database proof slice (2026-11-09)
 
+**Verification update (P0):** The Source-version verifier now checks the complete
+submitted **and** cancelled paginated D1 feeds, not just page 1. Incomplete
+pages, contradictory cancellation, duplicate IDs, wrong store or changed
+versions fail closed. It still does not prove an atomic Source snapshot;
+re-read/DB proofs remain BLOCKED until real acceptance is merged.
+
 **Code added, new exact-head Compose run not yet verified at the time of this
 change.** `tools/demo_db_verify.py` reads the real Source versions and CFO
 PostgreSQL rows *after* an actually accepted Sales Sync & Check event, with
