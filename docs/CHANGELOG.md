@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DEC-WMS-REVERSE-SKU-20261109] — 2026-11-09 — owner conditional mapping rule, docs-only
+
+- Owner yêu cầu **nếu** CFO gửi reserve/release sang WMS, phải ánh xạ ngược global CFO thành **SKU gốc WMS đúng market/kho/dòng đơn và đơn vị tồn**. Local SKU nguồn POS phải được giữ; không mặc định POS SKU trùng WMS SKU. Global→local có thể 1:n, không tự chọn SKU hoặc pool; thiếu mapping confirmed/provenance ⇒ chặn lệnh.
+- Vẫn **chưa có phê duyệt CFO ghi WMS** hay xác minh API WMS. [Decision record](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
 ## [ASM-WMS-RESERVATION-20261109] — 2026-11-09 — owner assumption, docs-only
 
 - Owner cho phép **giả định WMS có chức năng reservation**. Reserve làm giảm **available** nhưng không trừ `on_hand` vật lý trước khi thực sự xuất kho. CFO không được double-subtract WMS-reserved quantity.
