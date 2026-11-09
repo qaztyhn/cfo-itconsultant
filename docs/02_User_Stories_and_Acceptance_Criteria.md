@@ -130,6 +130,14 @@
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
 
+**Newer owner clarification [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) takes precedence over the WMS proof/reviewer acceptance proposal below:** CFO does **not** manage physical transfer reconciliation. WMS owns stock/transfer records; CFO reads complete/fresh stock snapshots and maintains only its own planning holds/commits. Do not implement AC-WMS-02/03 as an independent CFO evidence-approval workflow or a 24h reconciliation queue. Review legacy transfer confirm/receive acceptance in #127 before implementation.
+
+**Stock Admin bootstrap & WMS transfer reconciliation — acceptance supplement (09/11/2026):**
+- AC-BOOT-01. Chỉ **System Admin được Owner ủy quyền** mới bootstrap grant Stock Admin đầu tiên cho market; không tự cấp cho chính mình, không seed quyền mặc định; audit người cấp/nhận, market, quyền, hiệu lực, lý do và before/after.
+- AC-WMS-01. Giả định WMS cũ ghi nhận **xuất và nhập chuyển kho**; adapter phải chứng minh dữ liệu đó thật sự đọc được, không tự giả mã giao dịch/ACK. CFO không ghi ngược WMS.
+- AC-WMS-02. WMS đối soát đúng source/destination/transfer/SKU/qty và batch/version hoặc bằng chứng thủ công do Warehouse Manager nộp, **người phê duyệt có quyền độc lập** chấp nhận với audit. Không tự suy snapshot.as_of hoặc lượng tồn tăng/giảm.
+- AC-WMS-03. Khi chưa chứng minh WMS đã phản ánh outbound/inbound, không tính lặp phần điều chỉnh nguồn/đích, không đánh dấu hàng sẵn có nhờ inbound CFO chưa xác minh; chặn quyết định ATP liên quan nếu chứng cứ thiếu. Replay idempotent; xung đột/partial/503 ⇒ fail closed.
+
 **US-ATP-03 — Quản lý kho nguồn xác nhận chuyển kho** · Là *quản lý kho nguồn*, tôi xác nhận có thể xuất. · BR-EMP-03
 - AC1. *Given* tôi là quản lý có `can_approve` của kho nguồn, *When* `confirm-source`, *Then* tạo `inbound_shipment(source=transfer, confirmed=true, eta_date=…)` và đơn có thể chạy lại kế hoạch.
 - AC2. *Given* tôi là quản lý kho khác, *Then* `403`.
@@ -324,16 +332,16 @@
 - AC2. *Given* `gps_enabled = false`, *Then* `403 GPS_DISABLED`; chuyến chưa `on_road` → `409 NOT_ON_TRIP`.
 - AC3. *Then* app hiện thông báo quyền riêng tư (mục đích, ai xem, chỉ gửi khi chuyến đang chạy, thời gian lưu) và xin quyền vị trí trước khi gửi.
 - AC5. *Given* chuyến đã `completed` hoặc chưa `on_road` (ngoài giờ chạy chuyến), *Then* app không gửi vị trí và API trả `409 NOT_ON_TRIP`.
-- AC4. *Given* bộ giả lập `gps_simulator.py`, *Then* gửi vị trí dọc tuyến mỗi 1–2 phút (`source=simulator`).
+- AC4. *Given* bộ giả lập `gps_simulator.py`, *Then* chỉ producer synthetic có danh tính xác thực **riêng** được gửi nguồn `simulator`; nhãn `source=simulator` từ tài xế không được tin. Kịch bản demo 1–2 phút tách biệt cadence device 30 phút (G5).
 
 **US-GPS-02 — Dispatcher xem GPS** · Là *dispatcher*, tôi xem vị trí xe và ETA. · BR-GPS-01
-- AC1. *Then* `GET /gps/live` và `/trips/{id}/positions` chỉ trả cho `dispatcher`; `customer_service`, `sales`, `warehouse`, `viewer`, khách nhận `403`.
+- AC1. *Then* `GET /gps/live` và `/trips/{id}/positions` **chỉ trả cho Dispatcher chính được phân công rõ cho đúng trip**, còn trong ca tài xế và khi trip `on_road`; Dispatcher khác cùng market hoặc role khác đều không được xem. Quyền phân công do Admin/supervisor có grant theo market và ghi audit (G1/G2).
 - AC2. *Then* không endpoint nào trả GPS dưới dạng tổng hợp theo tài xế (không báo cáo năng suất cá nhân).
 - AC3. *Given* bản demo chưa có DPIA, *Then* UI hiện biểu ngữ "chưa có DPIA, chỉ demo".
 
 **US-GPS-03 — Mất tín hiệu và xóa dữ liệu** · 
 - AC1. *Given* chuyến `on_road` không có vị trí quá 60 phút, *Then* alert `GPS_LOST` cho dispatcher.
-- AC2. *Given* chuyến kết thúc > 30 ngày, *When* `retention_job` chạy, *Then* điểm GPS bị xóa.
+- AC2. *Given* trip hoặc ca tài xế kết thúc (mốc đến trước), *Then* **ngừng thu GPS và thu hồi quyền xem live ngay**; queue offline không còn quyền phải bị xóa/chặn replay. Raw GPS hợp lệ đã thu được lưu tối đa **7 ngày** trong kho lịch sử hạn chế quyền tra soát có lý do và audit, sau đó xóa theo expiry. GPS thật vẫn cần privacy/legal/DPIA sign-off (DEC-GPS-RET-20261109).
 
 ---
 
@@ -342,7 +350,7 @@
 **US-RSK-01 — Tính lại ETA đúng lúc** · FR-RSK-01
 - AC1. *Given* không có sự kiện/GPS/thay đổi nguồn, *Then* không có dòng `eta_forecast` mới (không tính vô ích).
 - AC2. *Given* mốc `GOODS_READY` kế hoạch 11:00 và đến 11:31 chưa có sự kiện, *When* `milestone_overdue_check` chạy, *Then* ETA được tính lại với trigger `overdue_milestone`.
-- AC3. *Given* đơn nhiều ngày, *Then* 07:00 mỗi sáng chạy kiểm tra `morning_check`.
+- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các Job D8 khác chưa được owner phê duyệt (DEC-D8-OPS-20261109).
 - AC4. *Given* chậm chuẩn bị nhưng `depart_at` kế hoạch còn dư thời gian hấp thụ, *Then* `forecast_eta = planned_eta`, tiêu hao 0%.
 
 **US-RSK-02 — Trạng thái rủi ro** · BR-RSK-01
@@ -370,7 +378,7 @@
 - AC4. *Given* `shadow_mode = true`, *Then* thông báo ở trạng thái `suppressed` (`suppressed_reason = shadow_mode`).
 
 **US-NOT-02 — Báo trễ do dispatcher gửi** · BR-RSK-02, FR-NOT-02
-- AC1. *Given* alert PREDICTED_LATE, *Then* có `notification(status=draft, template=DELAY)` với khung ETA mới đề xuất.
+- AC1. *Given* alert PREDICTED_LATE **và đã có khung ETA start/end/version được Dispatcher duyệt**, *Then* tạo `notification(status=draft, template=DELAY)` trong transaction của risk, không tự gửi; nếu chưa có khung được duyệt thì chặn draft/send (N1/N2/N4).
 - AC2. *When* dispatcher sửa nội dung/khung giờ và `send`, *Then* `queued → sent`, ghi `NOTIFICATION_SENT`, lưu `eta_window` đã thông báo.
 - AC3. *When* dispatcher `discard` không có lý do, *Then* `422`; có lý do → `suppressed`, ghi `NOTIFICATION_SUPPRESSED`.
 - AC4. *Given* đã gửi khung 11:00–13:00 và ETA mới lệch < 30 phút, *Then* không tạo bản nháp mới; lệch ≥ 30 phút → tạo bản nháp mới.
@@ -378,7 +386,7 @@
 
 **US-NOT-03 — Giờ yên lặng và gửi lại** · FR-NOT-03
 - AC1. *Given* thông báo `DISPATCHED` tạo lúc 22:30, *Then* `scheduled_for` = 07:00 hôm sau.
-- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* gửi ngay.
+- AC2. *Given* thông báo `DELAY` lúc 22:30, *Then* gửi ngay **theo ngoại lệ đã ghi trong AC hiện có**, nhưng vẫn chỉ đến Mailpit/test recipients. Quyết định N5 giữ retry cap và không duyệt backoff mới; nếu thay đổi ngoại lệ quiet-hours cần owner review riêng.
 - AC3. *Given* SMTP lỗi, *Then* thử lại tối đa 3 lần rồi `failed` kèm `last_error`.
 - AC4. *Then* `dedupe_key` ngăn gửi trùng một mẫu cho cùng đơn, cùng kế hoạch/lần giao và cùng trạng thái; sau khi lập lại kế hoạch, `CONFIRMED`/`DISPATCHED` của kế hoạch mới vẫn được tạo.
 
@@ -503,3 +511,26 @@
 | 14 | US-KPI-01/02, US-REV-01, US-LOG-01 | FR-KPI-01/02, FR-LOG-01, BR-KPI-01, BR-GEN-04 |
 | 15 | US-ADM-01..03 | FR-ADM-01, BR-GPS-01 |
 | 16 | US-SRC-01..03 | FR-INT-01, BR-GEN-02 |
+
+### Owner-approved acceptance addendum — 2026-11-09
+
+Các AC trên được làm rõ bởi [27 owner decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). Bổ sung bắt buộc cho việc nghiệm thu: T07 scope/evidence 30 ngày & snapshot coverage đầy đủ; T18 chứng cứ WMS thể hiện inbound (không chỉ timestamp); D7 history 56 ngày từng ngày có verifier, nghỉ 11h; M6 POD delivered theo mỗi `trip_stop`; GPS notice/ack riêng từng driver, upload ≤100 điểm/batch và xoá ngay khi hết trip/ca; D4 outbox cùng transaction và DELAY start/end được duyệt; API sử dụng `passed`/flat rejected candidates; M8 có 10 KPI keys, diagnostics thiếu nguồn = `null`, cohort theo market-local approval/delivery/work_date. Nếu thiếu chứng cứ thì test phải chứng minh fail-closed. Chưa có migration/API/E2E thật không được đánh dấu Done.
+
+### Conditional acceptance — reverse product mapping for future WMS reservation (DEC-WMS-REVERSE-SKU-20261109)
+
+- AC-WMS-SKU-01. Given one confirmed SKU mapped to a global product, a future authorized WMS reserve/release uses original WMS-recognized SKU for that market/warehouse and quantity in its fixed WMS inventory unit, not CFO global code.
+- AC-WMS-SKU-02. Given two source SKUs mapping to one global product, preserve original order-line and verified warehouse allocation; do **not** choose an arbitrary inverse or combine stock aliases.
+- AC-WMS-SKU-03. Given POS SKU differs from WMS SKU, missing or changed mapping, missing warehouse/market, invalid conversion or stale context, **block** outbound request until identity and quantities are verified.
+- AC-WMS-SKU-04. Match authoritative WMS ACK with requested SKU/warehouse/qty and idempotency; avoid double deduction. **This acceptance does not grant WMS write permission.**
+
+[Decision](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
+
+### WMS stock confirmation — owner-approved business acceptance (DEC-WMS-RESERVE-SYNC-20261109)
+
+- AC-WMS-RES-01. Given CFO has an eligible 100%-mapped order and fresh complete WMS stock, when planning, then CFO checks WMS availability (including reservations from all WMS channels) and counts only temporary CFO holds not already reflected in WMS. Missing/stale data fails closed.
+- AC-WMS-RES-02. Given authorized Sales/Dispatcher approves a valid plan, then CFO must construct an idempotent WMS reserve for correctly reverse-mapped native SKU, warehouse and stock unit. Only after WMS confirms the exact lines/qty may CFO guarantee stock and finalize approval; failed, partial or unknown reserve may not be presented as approved.
+- AC-WMS-RES-03. Given WMS confirms reserve 60 from on_hand 100, then WMS available becomes 40 while on_hand stays 100 until actual issue; CFO **immediately** refreshes its WMS-derived stock/order state and does **not** deduct 60 a second time. Scheduled polling verifies later changes.
+- AC-WMS-RES-04. Given successful WMS ACK but delayed published snapshot, concurrent second order, timeout or failed local commit, CFO must never promise duplicate stock; use reviewed version-linked pending protection/fail-closed state, idempotent status lookup and compensation. Actual WMS API and rollout require explicit technical/security review.
+
+[Decision](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
