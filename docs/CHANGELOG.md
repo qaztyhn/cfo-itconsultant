@@ -1,5 +1,16 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-02 — CS production phone-search gate and CFO log privacy] — 2026-11-09 — Dev 1
+
+- Non-synthetic production `GET /orders?q=` phone-shaped lookup returns
+  `403 FORBIDDEN` by default. Only explicit opt-in after independent infrastructure
+  privacy review can reach existing RBAC/market-scoped lookup.
+- Prevents raw `q` values and query-string phone digits reaching first-party CFO
+  structured event logs; adds fail-closed, no-PII HTTP and log tests. Does not
+  redact browser/proxy/WAF/APM/uvicorn access logs or grant production permission.
+- No schema migration or new API endpoint. Issue #181 remains the deployment gate;
+  no production phone search, distributed rate limiter or real data enabled.
+
 ## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
 
 - `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) Owner đã chốt phương án A (`DEC-MANUAL-PLAN-20261109`); proposal còn mang tính tài liệu về bộ kiểm tra engine, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
