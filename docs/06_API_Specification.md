@@ -427,7 +427,7 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/warehouses/{id}/prep-queue` | Đơn cần chuẩn bị theo ngày: workload từng nhóm, giờ kế hoạch, mốc đã ghi |
+| GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint chính Prep queue: approved-plan workload, capacity theo ca và milestones; contract chi tiết ở Phụ lục A |
 | GET | `/warehouses/{id}/capacity?from=&to=` | Công suất tính toán theo ngày: số người có mặt, giờ công khả dụng, đã đặt (`committed`, `held`) |
 
 ### 8.3 Tài xế
@@ -602,12 +602,12 @@ Duyệt ở PR qaztyhn/cfo-itconsultant#12 (Q1 chấp nhận có điều chỉnh
 **`GET /locations`, `GET /locations/{id}`** — admin, dispatcher (market), warehouse (nơi được phân công).
 Lọc: `type`, `is_active` (mặc định `true`), `q` (mã hoặc tên). Sắp xếp: `code` (mặc định), `name`, `type`. Danh sách và chi tiết cùng schema; mọi vai trò được phép nhận cùng trường.
 ```json
-{ "id": 7, "market": "SE", "type": "warehouse", "code": "STO", "name": "Stockholm DC",
+{ "id": 7, "market": "SE", "timezone": "Europe/Stockholm", "type": "warehouse", "code": "STO", "name": "Stockholm DC",
   "address": "…", "lat": 59.3293, "lon": 18.0686, "loading_cutoff_time": "15:00", "is_active": true,
   "owner": { "employee_id": 40, "name": "…" },
   "managers": { "primary": { "employee_id": 40, "name": "…" }, "deputy": null } }
 ```
-Nullable: `address`, `lat`, `lon`, `loading_cutoff_time` (chỉ kho bắt buộc), `owner`, `managers.primary`, `managers.deputy`. `managers` = bản ghi `hr.location_manager` hiệu lực hôm nay. Không trả `efficiency_factor`.
+Nullable: `address`, `lat`, `lon`, `loading_cutoff_time` (chỉ kho bắt buộc), `owner`, `managers.primary`, `managers.deputy`. `managers` = bản ghi `hr.location_manager` hiệu lực hôm nay. Không trả `efficiency_factor`. `timezone` là trường **bắt buộc, không nullable**, giá trị IANA lấy từ `ref.market.timezone` qua `location.market_id`; trả cho **mọi loại location** trong cả list lẫn detail. Không suy timezone từ trình duyệt và không dùng `/auth/me` làm nguồn riêng; market timezone bị thiếu/không hợp lệ phải báo lỗi rõ, không mặc định UTC.
 
 **`GET /employees`, `GET /employees/{id}`** — admin; dispatcher (nhân viên của market); warehouse (nhân viên có phân công hiệu lực hôm nay tại nơi của mình).
 Lọc: `position_code`, `location_id` (phân công hiệu lực hôm nay), `status`, `q` (tên; admin thêm `employee_no`). Sắp xếp: `last_name` (mặc định `last_name,first_name`), `first_name`, `position_code`; admin thêm `employee_no`, `hire_date`. Dispatcher và warehouse không thấy nhân viên `terminated`.
@@ -845,9 +845,19 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 |---|---|---|
 | GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
 | GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
-| GET | `/prep-queue?warehouse_id=&date=` | `capacity { booked_min, total_min, free_min, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id, at, vehicle_code, after_cutoff, loaded}], prep_state ('running'|'paused'|null), status, next_action}]` (một đơn nhiều xe có nhiều dòng loading) |
+| GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint **chuẩn** của Prep queue (thay cho `/prep-queue?warehouse_id=&date=`): `capacity { booked_min, total_min, free_min, schedule_verified, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id,at,vehicle_code,after_cutoff,loaded}], prep_state ('running'|'paused'|null), status, next_action}]`. Đơn nhiều xe có nhiều dòng loading. |
 | GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ template, channel, status, recipient_masked, subject, body_html, body_text, eta_window, suppressed_reason }` (người nhận đã che) |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
+
+### A.1 M6 Prep queue contract alignment (đề xuất kỹ thuật 09/11/2026 — chờ owner xác nhận)
+
+- **Một nguồn contract:** `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD`; `date` là ngày nghiệp vụ theo `ref.market.timezone` của kho (nếu bỏ qua: ngày hiện tại theo market). Dùng cùng RBAC và warehouse/market scope như §8.2. Đường dẫn `GET /prep-queue?warehouse_id=&date=` trong Phụ lục A cũ không còn canonical; nếu giữ tương thích, phải delegate cùng implementation và cùng shape, không triển khai một endpoint thứ hai với nghiệp vụ khác.
+- **Đơn vị:** `share` là JSON number từ 0 đến 1 (`delivery_share`); `present` và `lines` là integer. `booked_min`, `total_min`, `free_min`, `shifts[].minutes`, `shifts[].booked`, `orders[].work_min` là số nguyên JSON theo phút; `useful_hours`, `weight_kg` là JSON number có thể có phần thập phân. **Không** serialize các trường capacity/weight dưới dạng Decimal string (chuỗi decimal chỉ dành cho tiền theo §1). Tất cả các tổng và phần tử ca phải dùng cùng quy tắc làm tròn để đối chiếu được.
+- **Thời gian:** `cutoff` là `HH:mm` theo market; `shifts[].start/end`, `prep_window.start/end`, `loading[].at` là ISO 8601 **có offset** vì biểu thị thời điểm/ca cụ thể (hỗ trợ ca qua ngày và DST). UI luôn hiển thị thành giờ 24h theo `location.timezone`, không theo browser; schema `/warehouses/{id}/capacity` tại §13.2 vẫn dùng giờ ca `HH:mm` cho mục đích riêng.
+- **Dữ liệu tin cậy:** `capacity.schedule_verified` **bắt buộc boolean**; chỉ `true` khi roster ca chính thức do Warehouse Manager/quản lý có thẩm quyền xác nhận và dữ liệu cần thiết để xác minh công suất của ngày đó đã đủ; không suy từ `expected_staff`, seed hoặc ca tự tạo. Khi `false`, server có thể trả **200 read-only** với `total_min=0`, `free_min=0`, `shifts=[]` (hoặc chỉ ca có provenance rõ, không tính capacity), trong khi `booked_min` vẫn phản ánh đặt chỗ thực đã có nếu xác minh được; UI phải hiện `Capacity not verified` và không trình bày 0 như một kết luận rằng có đủ công suất. Quy tắc không phê duyệt kế hoạch khi thiếu lịch, ca tài xế hoặc duty history **vẫn fail closed**.
+- **Tính toán:** `shifts[].minutes` là phút công suất khả dụng ca theo `present × useful_hours × share × 60`, có làm tròn nhất quán; `shifts[].booked` và `capacity.booked_min` là phút đã giữ/đặt thực theo `committed` và `held` trong `/capacity`, không cộng trùng; `free_min=max(0,total_min-booked_min)`. Booked có thể lớn hơn total sau thay đổi lịch; khi đó hiện cảnh báo thiếu công suất, không tạo free âm.
+- **Orders:** chỉ các đơn với plan đã duyệt và thuộc kho/ngày phù hợp; mỗi xe có một phần tử `loading[]`, giữ `loaded` riêng từng trip; `next_action` lấy từ trạng thái/quyền kiểm tra ở server (nullable khi không có hành động), không suy đoán từ UI. Nếu backend **chưa tính được shape đáng tin cậy**, trả lỗi API chuẩn (không đổi stub `409 PLAN_NOT_APPROVABLE` thành `200` có số giả); `200` thiếu roster là trường hợp hợp lệ khác với service chưa tích hợp.
+- **Tích hợp:** cập nhật OpenAPI/DTO, UI `resolveTimeZone`, test API contract/role-scope, đa xe, ca qua nửa đêm/DST và thiếu lịch xác minh. PR #129 vẫn Draft cho đến khi phụ thuộc execution/risk/notification và các blocker an toàn được giải quyết; riêng API read-only không được coi là chứng minh toàn bộ M6 đã xong.
 
 **Bổ sung vào phản hồi `PlanningRun` (mục 6.2):**
 ```json
