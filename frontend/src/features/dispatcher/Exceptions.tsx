@@ -32,8 +32,10 @@ function FetchError({ error, retry }: {error: unknown; retry: ()=>void}) {
 }
 
 function Detail({ type, id, onClose }: { type: Tab; id: number; onClose: ()=>void }) {
+  const user = useAuthStore(s=>s.user);
   const query = useQuery({
-    queryKey: ["dispatcher-exception-detail",type,id],
+    queryKey: ["dispatcher-exception-detail",user?.id,user?.market,type,id],
+    enabled: Boolean(user?.roles.includes("dispatcher")),
     queryFn: ({signal}) => apiGet<unknown>(
       type === "no-feasible" || type === "replan" ? `/planning-runs/${id}` : `/orders/${id}`,
       undefined,signal),
