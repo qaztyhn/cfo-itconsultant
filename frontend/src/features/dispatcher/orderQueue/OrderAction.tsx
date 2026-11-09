@@ -18,6 +18,8 @@ function describeError(error: unknown): string {
     if (error.status === 403 || error.code === "FORBIDDEN") return "You are not allowed to do this for this order.";
     return `${error.message} (${error.code})`;
   }
+  if (error instanceof Error && error.message.startsWith("The newest")) return error.message;
+  if (error instanceof Error && error.message.startsWith("Invalid planning history")) return error.message;
   return "Could not reach the server. Check the order status before retrying.";
 }
 
