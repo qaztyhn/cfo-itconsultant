@@ -88,7 +88,9 @@ def _source_ingest(db: str, as_of: str):
 def test_real_source_stock_writer_unblocks_snapshot_after_approved_scope(db: str) -> None:
     _prepare_governance(db)
     result, preflight = _source_ingest(db, NOW.isoformat())
-    assert result.status == "ok"
+    assert result.status == "ok", fetch(
+        db, "SELECT error FROM stg.sync_run WHERE entity='stock' ORDER BY id DESC LIMIT 1"
+    )[0][0]
     assert preflight.status == "PASS"
     assert preflight.expected_pairs == 2
     assert preflight.missing == preflight.stale == ()
