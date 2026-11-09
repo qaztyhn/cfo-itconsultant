@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.adapters.order_wire import SourceCancellation, SourceOrder
 from app.adapters.registry import AdapterConfigurationError, AdapterRegistry
-from app.adapters.rest_adapter import SourceReadError
+from app.adapters.rest_adapter import RestMarketAdapter, SourceReadError
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
 from app.domain.models.ref import Market
@@ -36,11 +36,11 @@ class SyncNowOutput(BaseModel):
     already_decided: bool
 
 
-async def _read_submitted(reader: object, external_ref: str) -> SourceOrder | None:
+async def _read_submitted(reader: RestMarketAdapter, external_ref: str) -> SourceOrder | None:
     """Demo bridge: fully read both D1 status lists; contradictory source status blocks routing."""
     # The concrete authenticated RestMarketAdapter owns HTTP validation/page guards.
     submitted: SourceOrder | None = None
-    async for row in reader._pages(  # type: ignore[attr-defined]
+    async for row in reader._pages(
         "orders",
         None,
         SourceOrder,
