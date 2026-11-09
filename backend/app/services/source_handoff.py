@@ -152,14 +152,16 @@ async def accept_source_order(
     existing = await session.scalar(
         select(CustomerOrder)
         .where(
-            CustomerOrder.market_id == market.id, CustomerOrder.external_ref == source.id
+            CustomerOrder.market_id == market.id,
+            CustomerOrder.external_ref == source.id,
         )
         .with_for_update()
     )
     if routing is not None:
         if source.version < routing.decided_source_version:
             raise DomainError(
-                "RESOURCE_CONFLICT", "Source version predates the immutable routing decision."
+                "RESOURCE_CONFLICT",
+                "Source version predates the immutable routing decision.",
             )
         if routing.route == "legacy":
             if existing is not None:
@@ -167,12 +169,17 @@ async def accept_source_order(
                     "RESOURCE_CONFLICT", "Legacy route has an unexpected CFO order."
                 )
             answer = _result(
-                source, "legacy", None, already_decided=True, sync_status="already_current"
+                source,
+                "legacy",
+                None,
+                already_decided=True,
+                sync_status="already_current",
             )
         else:
             if existing is None:
                 raise DomainError(
-                    "RESOURCE_CONFLICT", "CFO routing exists but order is not initialised."
+                    "RESOURCE_CONFLICT",
+                    "CFO routing exists but order is not initialised.",
                 )
             if source.version > existing.source_version:
                 outcome = await ingest_orders.apply(session, market, source)
@@ -231,7 +238,9 @@ async def accept_source_order(
         or mapping[sku].units_to_base <= 0
         for sku in skus
     ):
-        return _result(source, "unresolved", None, already_decided=False, sync_status="unresolved")
+        return _result(
+            source, "unresolved", None, already_decided=False, sync_status="unresolved"
+        )
 
     customer_id: int | None = None
     sales_employee_id: int | None = None
@@ -253,7 +262,11 @@ async def accept_source_order(
             )
         if customer_id is None or (source.sales_code and sales_employee_id is None):
             return _result(
-                source, "unresolved", None, already_decided=False, sync_status="unresolved"
+                source,
+                "unresolved",
+                None,
+                already_decided=False,
+                sync_status="unresolved",
             )
 
     now = clock.now()
@@ -280,7 +293,9 @@ async def accept_source_order(
                 qty = exact(ln.qty, 12, 3, positive=True)
                 price = exact(ln.unit_price, 12, 2)
                 amount = exact(
-                    (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), 14, 2
+                    (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    14,
+                    2,
                 )
                 lines.append(
                     (ln, qty, price, exact(qty * factor, 12, 3, positive=True), amount)
