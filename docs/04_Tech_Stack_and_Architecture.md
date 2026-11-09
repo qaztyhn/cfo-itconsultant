@@ -281,6 +281,8 @@ Khi kho đích `w` thiếu hàng (mọi kho đều `STOCK_SHORT`): với từng 
 
 **DEC-DEV1-D1-01/02 (owner-approved, 08/11):** khi hủy chuyển kho phải có lý do và audit `TRANSFER_CANCELLED` với actor/ts/before/after trong cùng transaction; không dùng `TRANSFER_APPROVED`. Kho nguồn xác nhận xuất ghi `TRANSFER_CONFIRMED`; kho đích nhận ghi mã riêng `TRANSFER_RECEIVED` (không reuse CONFIRMED với snapshot stage khác). Kiểm state transition, warehouse scope, idempotency; thiếu hợp đồng hoàn nguyên WMS thì fail closed, CFO không ghi ngược Source.
 
+**DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109 (owner-approved):** Owner ủy quyền System Admin đáng tin cậy cấp **grant Stock Admin đầu tiên cho market**, không tự cấp chính mình, có lý do, actor và audit; quyền stock không tự có chỉ bởi role admin. Giả định Warehouse Manager ghi xuất tại kho A và nhập tại kho B trên WMS cũ, **nhưng API WMS trả movement/ack là chưa xác minh**. Ưu tiên đối soát chứng cứ WMS có liên kết transfer/kho/SKU/qty/batch; nếu thiếu thì Warehouse Manager cung cấp chứng cứ, người có quyền độc lập theo market xác nhận và ghi audit. Không suy từ timestamp hoặc lượng tăng/giảm; không trừ lại khi WMS đã trừ, không cộng lại khi WMS đã cộng. CFO vẫn GET/read-only, không tự động bật stock writer hoặc đảo chuyển kho; escalation 24h còn là đề xuất. [Biên bản](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md).
+
 ### 6.5 Ứng viên ánh xạ sản phẩm bằng quy tắc [C]
 
 Cho `local_sku` chưa ánh xạ: (1) trùng `gtin` → ứng viên mạnh nhất; (2) độ tương đồng tên `pg_trgm` ≥ 0,45 cùng `category`; (3) gán nhóm xử lý theo `ref.handling_group_rule` (theo `category_like`, khoảng khối lượng, ưu tiên thấp trước). Lưu vào `mapping_task.candidates`. **Chỉ IT xác nhận**.
