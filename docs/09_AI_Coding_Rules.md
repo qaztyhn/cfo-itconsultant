@@ -79,6 +79,9 @@ Khi có mâu thuẫn, tài liệu đứng trước thắng:
 31. **D1-03 — scope SKU CFO:** quản trị viên **có thẩm quyền** theo market/pilot quản lý/phê duyệt, lưu version/hiệu lực/audit. Cấm tự suy scope từ mappings hoặc Source batch; SKU trong scope sai mapping => không ghi bất kỳ phần nào của batch.
 32. **D1-04 — evidence tồn kho độc lập:** Warehouse Manager cung cấp chứng cứ từ kho/WMS, quản trị viên có thẩm quyền duyệt; phải lưu evidence/provenance, approver, version, hiệu lực, audit trước khi cộng SKU cùng kho/global product. Thiếu/hết hiệu lực/không chắc => fail closed. Không tự invent DDL/field/route/evidence action chưa được Dev 1/2 review theo `05`/`06`.
 
+33. **Owner Q1 — grant đầu tiên:** chỉ System Admin được Owner ủy quyền mới cấp Stock Admin grant đầu tiên cho market; **cấm self-grant**, cấm seed/implicit superuser permissions; identity, scope, actor, reason, timestamps, before/after audit. Thiếu quyền/ủy quyền ⇒ fail closed; không đổi S1/S2.
+34. **Owner Q2 — WMS transfer evidence:** giả định WMS cũ ghi nhận xuất/nhập chuyển kho, nhưng chưa chứng minh WMS API expose ID/ACK. Dev 2 xác minh adapter/CSV; ưu tiên chứng cứ WMS gắn transfer/warehouse/SKU/qty/batch, thiếu thì Warehouse Manager nộp và reviewer độc lập có quyền theo market phê duyệt với audit. Không suy included-in-stock từ snapshot timestamp hoặc quantity delta; không double subtract/add, không ghi ngược WMS, test replay/rollback/concurrent/503. **24h escalation Q3 chưa duyệt**. [Quyết định](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md).
+
 ## 5. Quy ước backend (Python)
 
 - **Phiên bản/công cụ:** Python 3.12; FastAPI; SQLAlchemy 2.0 async; Alembic; Pydantic v2; httpx; APScheduler; pytest, pytest-asyncio; ruff, black, mypy.
