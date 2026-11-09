@@ -100,7 +100,9 @@ def _fingerprint(snapshot: NotificationSnapshot, *, channel: str, rendered: Rend
     ).hexdigest()
 
 
-def freeze_snapshot(snapshot: NotificationSnapshot, *, channel: str) -> tuple[dict[str, object], RenderedMessage]:
+def freeze_snapshot(
+    snapshot: NotificationSnapshot, *, channel: str
+) -> tuple[dict[str, object], RenderedMessage]:
     """Atomic immutable-by-convention variable/version envelope for an outbox row."""
     rendered = render_snapshot(snapshot, channel=channel)
     data: dict[str, object] = {
