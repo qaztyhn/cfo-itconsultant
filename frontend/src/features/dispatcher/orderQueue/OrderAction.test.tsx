@@ -72,26 +72,39 @@ describe("OrderAction", () => {
     await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/88"));
   });
 
-  it("newest replan suggestion never falls back to an older feasible run", async () => {
-    server.use(queue(order()), http.get(RUNS, () => HttpResponse.json({ items: [
+  it("newest replan suggestion opens latest advisory diagnostics, never older feasible run", async () => {
+    server.use(queue(order()), landing(99), http.get(RUNS, () => HttpResponse.json({ items: [
       { id: 99, order_id: 4021, run_no: 4, kind: "replan_suggestion", result: "feasible", hold_expires_at: null },
       { id: 88, order_id: 4021, run_no: 3, kind: "rerun", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
     ] })));
     renderAt("/dispatcher/orders");
     await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
-    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/newest run is a replan suggestion/i);
-    expect(currentPath()).toBe("/dispatcher/orders");
+    await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/99"));
+    expect(currentPath()).not.toBe("/dispatcher/plan-review/88");
   });
 
-  it("newest infeasible run never falls back to the older feasible run", async () => {
-    server.use(queue(order()), http.get(RUNS, () => HttpResponse.json({ items: [
+  it("newest infeasible run opens latest diagnostic DTO, never older feasible run", async () => {
+    server.use(queue(order()), landing(99), http.get(RUNS, () => HttpResponse.json({ items: [
       { id: 99, order_id: 4021, run_no: 4, kind: "rerun", result: "infeasible", hold_expires_at: null },
       { id: 88, order_id: 4021, run_no: 3, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
     ] })));
     renderAt("/dispatcher/orders");
     await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
-    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/not feasible/i);
-    expect(currentPath()).toBe("/dispatcher/orders");
+    await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/99"));
+    expect(currentPath()).not.toBe("/dispatcher/plan-review/88");
+  });
+
+  it("NO_FEASIBLE_DATE order exposes real latest diagnostics and the Exceptions route", async () => {
+    server.use(queue(order({ status: "NO_FEASIBLE_DATE" })), landing(99), http.get(RUNS, () => HttpResponse.json({ items: [
+      { id: 99, order_id: 4021, run_no: 4, kind: "rerun", result: "infeasible", hold_expires_at: null },
+      { id: 88, order_id: 4021, run_no: 3, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+    ] })));
+    renderAt("/dispatcher/orders");
+    const diagnostics = await firstButton("Review diagnostics for order SE-2026-004021");
+    expect(main().getAllByRole("link", { name: "Exceptions" }).some(link =>
+      link.getAttribute("href") === "/dispatcher/exceptions?tab=no-feasible")).toBe(true);
+    await userEvent.setup().click(diagnostics);
+    await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/99"));
   });
 
   it("newest expired hold opens that run for truthful expiry and Plan Again", async () => {
@@ -111,7 +124,7 @@ describe("OrderAction", () => {
     ] })));
     renderAt("/dispatcher/orders");
     await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
-    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/no valid hold/i);
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/Invalid planning history/i);
     expect(currentPath()).toBe("/dispatcher/orders");
   });
 
