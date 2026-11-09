@@ -33,12 +33,14 @@ describe("US-KPI-01 AC1 daily trends",()=>{
 describe("US-LOG-01 AC3 safe decision log",()=>{
   it("whitelists codes and references; discards actor names, reasons and arbitrary snapshots",()=>{
     const result=decisions({total:1,items:[{
-      id:7,created_at:"2026-11-09T08:00:00Z",action:"ALT_SELECTED",order_id:42,
+      id:7,ts:"2026-11-09T08:00:00Z",action:"ALT_SELECTED",order_id:42,actor_user_id:12,actor_role:"dispatcher",
       actor_name:"PRIVATE ACTOR",reason_text:"PRIVATE REASON",before:{phone:"PRIVATE PHONE"},
       after:{email:"PRIVATE EMAIL"},correlation_id:"6c0fd48c-c8e0-4f0d-a334-b99b79fc59e4",
     }]});
-    expect(result.items[0]).toMatchObject({id:7,action:"ALT_SELECTED",subject:"Order #42"});
+    expect(result.items[0]).toMatchObject({id:7,action:"ALT_SELECTED",subject:"Order #42",at:"2026-11-09T08:00:00Z",actor:"dispatcher · user #12"});
     expect(JSON.stringify(result)).not.toContain("PRIVATE");
     expect(result.items[0].correlationId).toBe("6c0fd48c-c8e0-4f0d-a334-b99b79fc59e4");
+    expect(decisions({items:[{id:8,ts:"2026-11-09T08:00:00Z PRIVATE",actor_role:"PRIVATE",actor_user_id:123}]}).items[0])
+      .toMatchObject({at:"Unavailable",actor:"User #123"});
   });
 });
