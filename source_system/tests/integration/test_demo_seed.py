@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import runpy
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -50,7 +51,7 @@ async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback()
         assert snapshot.batch_id >= 1
         async with AsyncSession(engine) as session, session.begin():
             await session.execute(
-                update(Order).where(Order.id == "SE-2026-000123").values(date_to="2026-11-11")
+                update(Order).where(Order.id == "SE-2026-000123").values(date_to=date(2026, 11, 11))
             )
         with pytest.raises(ValueError, match="Conflicting source order identity"):
             async with AsyncSession(engine) as session, session.begin():
