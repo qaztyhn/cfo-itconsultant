@@ -115,9 +115,7 @@ def is_phone_query(value: str) -> bool:
     """Recognize phone-shaped queries without logging or exposing their value."""
     raw = value.strip()
     digits = re.sub(r"[^0-9]", "", raw)
-    return bool(re.fullmatch(r"[+0-9 ()./-]+", raw)) and (
-        raw.startswith("+") or len(digits) >= 8
-    )
+    return bool(re.fullmatch(r"[+0-9 ()./-]+", raw)) and (raw.startswith("+") or len(digits) >= 8)
 
 
 def _not_found() -> DomainError:
@@ -416,7 +414,8 @@ async def get_order(session: AsyncSession, scope: OrderScope, order_id: int) -> 
                 "date_from": order.date_from,
                 "date_to": order.date_to,
                 "window": (
-                    None if order.window_start is None
+                    None
+                    if order.window_start is None
                     else {"start": _hhmm(order.window_start), "end": _hhmm(order.window_end)}
                 ),
             },
@@ -426,8 +425,7 @@ async def get_order(session: AsyncSession, scope: OrderScope, order_id: int) -> 
                 "promise_end": order.promise_end,
             },
             "risk": (
-                None if risk is None
-                else {"status": risk.risk_status, "forecast_eta": risk.forecast_eta}
+                None if risk is None else {"status": risk.risk_status, "forecast_eta": risk.forecast_eta}
             ),
             "version": order.version,
             "submitted_at": order.submitted_at,
