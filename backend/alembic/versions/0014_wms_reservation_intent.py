@@ -40,8 +40,7 @@ CREATE TABLE ops.wms_reservation_intent (
        AND refreshed_batch_id >= reflected_in_batch_id)
   )
 )
-"""
-    )
+""")
     op.execute("CREATE INDEX ix_wms_intent_market_status ON ops.wms_reservation_intent (market_id,status)")
     op.execute(
         "CREATE TRIGGER trg_set_updated_at BEFORE UPDATE ON ops.wms_reservation_intent "
