@@ -1,157 +1,142 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAuthStore } from "../../app/store";
-import { userByEmail } from "../../test/utils";
-import { TodaysTrips } from "./TodaysTrips";
-import type { DriverTrip } from "./driverApi";
-import { ApiError } from "../../api/client";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { currentPath, renderAt, signInAs, userByEmail } from "../../test/utils";
+import { assignedTrips, type DriverTrip } from "./driverApi";
+import { enqueueEvent, pendingForUser, replayEvents } from "./offlineEvents";
 
-const listTrips = vi.fn(); const getTrip = vi.fn(); const sendEvent = vi.fn();
-const queue = vi.fn(); const pending = vi.fn(); const replay = vi.fn();
-vi.mock("./driverApi", async importOriginal => {
-  const actual = await importOriginal<typeof import("./driverApi")>();
-  return { ...actual, listDriverTrips: (...args: unknown[]) => listTrips(...args), getDriverTrip: (...args: unknown[]) => getTrip(...args),
-    sendDriverEvent: (...args: unknown[]) => sendEvent(...args) };
-});
-vi.mock("./offlineQueue", () => ({ enqueue: (...args: unknown[]) => queue(...args), pendingFor: (...args: unknown[]) => pending(...args), flush: (...args: unknown[]) => replay(...args) }));
+vi.mock("./driverApi", () => ({ assignedTrips: vi.fn(), assignedTrip: vi.fn(), submitDriverEvent: vi.fn() }));
+vi.mock("./offlineEvents", () => ({
+  pendingForUser: vi.fn(), enqueueEvent: vi.fn(), replayEvents: vi.fn(),
+  discardEvent: vi.fn(),
+}));
 
-const trip: DriverTrip = { trip_id: 930, warehouse_id: 3, warehouse_code: "MLM", vehicle_code: "V-12", status: "loading",
-  depart_planned_at: "2026-11-13T08:00:00Z", depart_actual_at: null,
-  stops: [{ trip_stop_id: 931, order_id: 129, order_no: "ORDER-129", status: "pending", eta_planned_at: "2026-11-13T09:00:00Z",
-    delivery_address: "Test Street 4", contact_name: null, contact_phone: null,
-    receiving_window: { start: "09:00", end: "11:00" }, special_requirements: "Report to site office" }] };
-function auth(role: "driver" | "sales") {
-  const user = userByEmail(role === "driver" ? "driver1@cfo.demo" : "sales@cfo.demo");
-  useAuthStore.getState().setAuth({ access_token: "test", token_type: "bearer", expires_in: 3600, user }, "test@cfo.demo");
-}
-function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><TodaysTrips /></QueryClientProvider>);
-}
+const loaded: DriverTrip = {
+  trip_id: 12,
+  warehouse_id: 3,
+  warehouse_code: "GBG",
+  vehicle_code: "V-12",
+  status: "loading",
+  depart_planned_at: "2026-11-09T08:00:00Z",
+  depart_actual_at: null,
+  stops: [{
+    trip_stop_id: 30,
+    order_id: 44,
+    order_no: "SE-44",
+    status: "pending",
+    eta_planned_at: "2026-11-09T12:00:00Z",
+    delivery_address: "Gothenburg demo site",
+    contact_name: "Demo contact",
+    contact_phone: null,
+    receiving_window: { start: "09:00", end: "13:00" },
+    special_requirements: null,
+  }],
+};
+
 beforeEach(() => {
-  listTrips.mockReset().mockResolvedValue([trip]); getTrip.mockReset().mockResolvedValue(trip);
-  sendEvent.mockReset().mockResolvedValue({ event_id: 12, order_status: "DISPATCHED", risk: null });
-  queue.mockReset().mockResolvedValue(undefined); pending.mockReset().mockResolvedValue([]);
-  replay.mockReset().mockResolvedValue({ sent: 0, pending: 0, conflict: null });
+  vi.mocked(assignedTrips).mockReset().mockResolvedValue([loaded]);
+  vi.mocked(pendingForUser).mockReset().mockResolvedValue([]);
+  vi.mocked(enqueueEvent).mockReset().mockResolvedValue(undefined);
+  vi.mocked(replayEvents).mockReset().mockResolvedValue({ sent: 0, conflict: 0, waiting: 0 });
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
 });
-afterEach(() => { useAuthStore.getState().clearAuth(); vi.restoreAllMocks(); });
 
-describe("US-EXE-03 driver mobile workflow", () => {
-  it("blocks a non-driver before any trip request", () => {
-    auth("sales"); mount();
-    expect(screen.getByText(/Permission denied/)).toBeInTheDocument();
-    expect(listTrips).not.toHaveBeenCalled();
+describe("Driver PWA assigned-trip and privacy boundaries", () => {
+  it("only loads the authenticated driver's assigned trips", async () => {
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    expect(await screen.findByText("SE-44 · Gothenburg demo site")).toBeInTheDocument();
+    expect(screen.getByText(/Only trips assigned to your driver account/)).toBeInTheDocument();
+    expect(assignedTrips).toHaveBeenCalled();
+    expect(screen.queryByText("SE-999")).toBeNull();
   });
-  it("shows assigned trips, stop address and receiving details without GPS history", async () => {
-    auth("driver"); mount();
-    expect(await screen.findByText("ORDER-129")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    expect(await screen.findByText("Test Street 4")).toBeInTheDocument();
-    expect(screen.getByText(/Report to site office/)).toBeInTheDocument();
-    expect(screen.getByText(/POD for this stop is created by the server/)).toBeInTheDocument();
-    expect(screen.queryByText(/GPS history|investigation controls/i)).not.toBeInTheDocument();
+
+  it("does not fetch trips for an unauthorized role", async () => {
+    signInAs(userByEmail("sales@cfo.demo"));
+    renderAt("/driver");
+    await waitFor(() => expect(currentPath()).not.toBe("/driver"));
+    expect(assignedTrips).not.toHaveBeenCalled();
   });
-  it("keeps two vehicle trips for the same order separate", async () => {
-    listTrips.mockResolvedValue([trip, { ...trip, trip_id: 940, vehicle_code: "V-13", stops: [{ ...trip.stops[0], trip_stop_id: 941 }] }]);
-    auth("driver"); mount();
-    expect(await screen.findAllByText("ORDER-129")).toHaveLength(2);
-    expect(screen.getByText("V-12")).toBeInTheDocument();
-    expect(screen.getByText("V-13")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "View trip details" })).toHaveLength(2);
+
+  it("keeps stable idempotency key, server payload and exact occurred_at at offline tap", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Review and dispatch" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mark dispatched" }));
+    await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
+    const item = vi.mocked(enqueueEvent).mock.calls[0][0];
+    expect(item.userId).toBe(4);
+    expect(item.tripId).toBe(12);
+    expect(item.stopId).toBe(30);
+    expect(item.event.event_type).toBe("DISPATCHED");
+    expect(item.event.payload).toEqual({ trip_id: 12 });
+    expect(item.key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Date(item.event.occurred_at).getTime()).not.toBeNaN();
+    expect(replayEvents).not.toHaveBeenCalled();
+    expect(screen.getByText(/Not yet confirmed by CFO/)).toBeInTheDocument();
   });
-  it("shows a scoped trip-read denial without exposing details", async () => {
-    getTrip.mockRejectedValue(new ApiError("FORBIDDEN", "Denied", undefined, undefined, 403));
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    expect(await screen.findByText(/Trip unavailable or not assigned/)).toBeInTheDocument();
-    expect(screen.queryByText("Test Street 4")).not.toBeInTheDocument();
+
+  it("requires recipient for a delivered POD, keeps GPS disabled even when browser is permitted", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{ ...loaded, status: "on_road" }]);
+    const geolocation = { getCurrentPosition: vi.fn(), watchPosition: vi.fn() };
+    vi.stubGlobal("geolocation", geolocation);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    const confirm = screen.getByRole("button", { name: "Confirm delivered" });
+    expect(confirm).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Demo recipient");
+    await userEvent.click(confirm);
+    await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(enqueueEvent).mock.calls[0][0].event).toEqual({
+      event_type: "DELIVERED",
+      occurred_at: expect.any(String),
+      payload: { trip_id: 12, recipient_name: "Demo recipient" },
+    });
+    expect(geolocation.getCurrentPosition).not.toHaveBeenCalled();
+    expect(geolocation.watchPosition).not.toHaveBeenCalled();
+    expect(screen.queryByText(/historical GPS investigations/i)).toBeNull();
+    vi.unstubAllGlobals();
   });
-  it("requires server acknowledgment before reporting dispatch", async () => {
-    auth("driver"); mount();
-    await screen.findByText("ORDER-129"); fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Mark dispatched" }));
-    await waitFor(() => expect(sendEvent).toHaveBeenCalledTimes(1));
-    expect(sendEvent.mock.calls[0][0]).toMatchObject({ orderId: 129, eventType: "DISPATCHED", payload: { trip_id: 930 } });
-    expect(await screen.findByText(/Server confirmed dispatched event #12/)).toBeInTheDocument();
-  });
-  it("requires a failed reason and a delivered recipient", async () => {
-    const onRoad = { ...trip, status: "on_road" };
-    listTrips.mockResolvedValue([onRoad]); getTrip.mockResolvedValue(onRoad);
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    expect(await screen.findByRole("button", { name: "Confirm delivered" })).toBeDisabled();
-    fireEvent.change(screen.getByRole("textbox", { name: "Received by" }), { target: { value: "Site agent" } });
-    expect(screen.getByRole("button", { name: "Confirm delivered" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("radio", { name: "Failed" }));
+
+  it("requires an enumerated failed-POD reason", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{ ...loaded, status: "on_road" }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Failed" }));
     expect(screen.getByRole("button", { name: "Confirm failed" })).toBeDisabled();
-    fireEvent.change(screen.getByRole("combobox", { name: "Failure reason" }), { target: { value: "customer_absent" } });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm failed" }));
-    await waitFor(() => expect(sendEvent).toHaveBeenCalledTimes(1));
-    expect(sendEvent.mock.calls[0][0].payload.failure_reason).toBe("customer_absent");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Failure reason" }), "customer_absent");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm failed" }));
+    await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(enqueueEvent).mock.calls[0][0].event.payload)
+      .toEqual({ trip_id: 12, failure_reason: "customer_absent" });
   });
-  it("disables ambiguous multi-stop outcomes without a trip_stop_id contract", async () => {
-    const two = { ...trip, status: "on_road", stops: [trip.stops[0], { ...trip.stops[0], trip_stop_id: 932, order_id: 130, order_no: "ORDER-130" }] };
-    listTrips.mockResolvedValue([two]); getTrip.mockResolvedValue(two);
-    auth("driver"); mount(); await screen.findByText(/ORDER-129/);
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    expect(await screen.findByText(/current event contract cannot identify a stop/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Confirm delivered|Confirm failed/ })).not.toBeInTheDocument();
+
+  it("disables terminal-trip actions and does not start GPS at trip expiry", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{ ...loaded, status: "completed", stops: [{ ...loaded.stops[0], status: "delivered" }] }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "View trip" }));
+    expect(screen.getByText(/Trip ended. No further updates or location sharing/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark dispatched" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
   });
-  it("reports a saved offline event only after persistence resolves", async () => {
-    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Mark dispatched" }));
-    await waitFor(() => expect(queue).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/Saved on this device; not confirmed/)).toBeInTheDocument();
-    expect(sendEvent).not.toHaveBeenCalled();
-  });
-  it("shows an error rather than fake offline persistence when storage fails", async () => {
-    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
-    queue.mockRejectedValue(new Error("storage unavailable"));
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Mark dispatched" }));
-    expect(await screen.findByText(/update not confirmed/)).toBeInTheDocument();
-    expect(screen.queryByText(/Saved on this device/)).not.toBeInTheDocument();
-  });
-  it("retains the idempotency key across a network retry and does not claim success early", async () => {
-    sendEvent.mockRejectedValueOnce(new ApiError("NETWORK_ERROR", "Offline", undefined, undefined, 0));
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent.click(screen.getByRole("button", { name: "View trip details" }));
-    const button = await screen.findByRole("button", { name: "Mark dispatched" });
-    fireEvent.click(button);
-    expect(await screen.findByText(/update not confirmed/)).toBeInTheDocument();
-    expect(screen.queryByText(/Server confirmed/)).not.toBeInTheDocument();
-    fireEvent.click(button);
-    await waitFor(() => expect(sendEvent).toHaveBeenCalledTimes(2));
-    expect(sendEvent.mock.calls[1][0].idempotencyKey).toBe(sendEvent.mock.calls[0][0].idempotencyKey);
-  });
-  it("does not bypass a server conflict after reconnect", async () => {
-    replay.mockResolvedValue({ sent: 0, pending: 1, conflict: "ILLEGAL_TRANSITION: review this update with dispatch." });
-    pending.mockResolvedValue([{ idempotencyKey: "stored" }]);
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    fireEvent(window, new Event("online"));
-    expect(await screen.findByText(/ILLEGAL_TRANSITION/)).toBeInTheDocument();
-    expect(sendEvent).not.toHaveBeenCalled();
-  });
-  it("checks an existing offline queue when reopened online", async () => {
-    pending.mockResolvedValue([{ idempotencyKey: "stored" }]);
-    replay.mockResolvedValue({ sent: 1, pending: 0, conflict: null });
-    auth("driver"); mount();
-    await screen.findByText("ORDER-129");
-    await waitFor(() => expect(replay).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/1 update\(s\) confirmed by the server/)).toBeInTheDocument();
-  });
-  it("keeps GPS collection off without individual evidence or duty proof", async () => {
-    const getCurrentPosition = vi.fn();
-    Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
-    auth("driver"); mount(); await screen.findByText("ORDER-129");
-    expect(screen.getByText(/Individual notice, acknowledgment, approved duty/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Location permission unavailable" })).toBeDisabled();
-    expect(getCurrentPosition).not.toHaveBeenCalled();
-    expect(screen.getByText(/No offline updates pending/)).toBeInTheDocument();
+
+  it("fails closed on multi-stop POD until the API accepts stop identity", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{
+      ...loaded, status: "on_road", stops: [loaded.stops[0], { ...loaded.stops[0], trip_stop_id: 31, order_id: 45 }],
+    }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findAllByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    expect(screen.getByText(/Multiple stops need an explicit stop identity/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
   });
 });

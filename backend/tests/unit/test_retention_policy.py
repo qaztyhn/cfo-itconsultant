@@ -71,8 +71,10 @@ def test_D5_statutory_minimum_and_immutable_review_are_never_deletion_eligibilit
     assert assess(record(category, anchor="2000-01-01T00:00:00Z"), now=NOW) == outcome
 
 
-def test_D3_gps_workflow_overrides_a_day_count_and_duty_history_is_separate() -> None:
+def test_D3_gps_seven_day_retention_and_duty_history_is_separate() -> None:
     assert assess(record("raw_gps", anchor=None), now=NOW) == "gps_cleanup_required"
+    assert assess(record("raw_gps", anchor=NOW.isoformat()), now=NOW) == "gps_retained_within_seven_days"
+    assert assess(record("raw_gps", anchor="2020-01-01T00:00:00Z"), now=NOW) == "gps_cleanup_required"
     assert assess(record("raw_gps", terminal=False), now=NOW) == "active_gps_or_unknown_workflow"
     assert RULES["driver_work_time"].unit == "months"
 

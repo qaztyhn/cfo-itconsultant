@@ -36,6 +36,7 @@ class Action(StrEnum):
     HOLD_EXTENDED = "HOLD_EXTENDED"
     HOLD_EXPIRED = "HOLD_EXPIRED"
     GPS_SETTING_CHANGED = "GPS_SETTING_CHANGED"
+    GPS_HISTORY_ACCESSED = "GPS_HISTORY_ACCESSED"  # restricted audited investigation access
     CONFIG_CHANGED = "CONFIG_CHANGED"
     EMPLOYEE_ASSIGNMENT_CHANGED = "EMPLOYEE_ASSIGNMENT_CHANGED"
     USER_ROLE_CHANGED = "USER_ROLE_CHANGED"
@@ -66,6 +67,7 @@ REASON_REQUIRED: frozenset[Action] = frozenset(
         Action.ORDER_REPLAN,
         Action.ORDER_CANCELLED,
         Action.NOTIFICATION_SUPPRESSED,
+        Action.GPS_HISTORY_ACCESSED,  # mandatory case/reason for restricted review
         Action.TRANSFER_CANCELLED,  # dispatcher: mandatory reason
         Action.ROUTING_MANUAL_START_RECORDED,  # DEC-ROUTING-002: ngoại lệ có lý do
         Action.ROUTING_MANUAL_CONFLICT_ESCALATED,

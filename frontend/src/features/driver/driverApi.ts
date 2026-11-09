@@ -1,20 +1,23 @@
-import { apiFetch, buildQuery } from "../../api/client";
-import { USE_MOCKS } from "../../api/config";
+/** Driver-only API contracts from docs/06 §8 and the current execution router.
+ * The OpenAPI generated schema is not yet checked in. These types describe only
+ * fields actually returned by execution_service.driver_trips; no speculative GPS data.
+ */
+import { apiGet, apiPost } from "../../api/client";
 
-// Shape verified against the current #129 execution service, not the older global MSW fixture.
-export interface DriverStop {
+export type DriverStop = {
   trip_stop_id: number;
   order_id: number;
   order_no: string;
   status: string;
   eta_planned_at: string;
-  delivery_address: string | null;
-  contact_name: string | null;
+  delivery_address: string;
+  contact_name: string;
   contact_phone: string | null;
   receiving_window: { start: string | null; end: string | null };
   special_requirements: string | null;
-}
-export interface DriverTrip {
+};
+
+export type DriverTrip = {
   trip_id: number;
   warehouse_id: number;
   warehouse_code: string;
@@ -23,70 +26,50 @@ export interface DriverTrip {
   depart_planned_at: string;
   depart_actual_at: string | null;
   stops: DriverStop[];
-}
-export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED";
-export interface DriverEvent {
-  tripId: number;
-  orderId: number;
-  eventType: DriverEventType;
-  occurredAt: string;
-  idempotencyKey: string;
-  payload: Record<string, string | number>;
-}
-export interface EventAck { event_id: number; order_status: string; risk: unknown }
-
-export function isDriverTrip(value: unknown): value is DriverTrip {
-  if (typeof value !== "object" || value === null) return false;
-  const trip = value as Record<string, unknown>;
-  return Number.isInteger(trip.trip_id) && typeof trip.status === "string" &&
-    typeof trip.vehicle_code === "string" && typeof trip.warehouse_code === "string" &&
-    typeof trip.depart_planned_at === "string" && Array.isArray(trip.stops) &&
-    trip.stops.every((stop: unknown) => {
-      if (typeof stop !== "object" || stop === null) return false;
-      const row = stop as Record<string, unknown>;
-      return Number.isInteger(row.trip_stop_id) && Number.isInteger(row.order_id) &&
-        typeof row.order_no === "string" && typeof row.status === "string" &&
-        typeof row.eta_planned_at === "string" &&
-        typeof row.receiving_window === "object" && row.receiving_window !== null;
-    });
-}
-
-const PREVIEW: DriverTrip = {
-  trip_id: 930, warehouse_id: 3, warehouse_code: "MLM-DC", vehicle_code: "MLM-12-02",
-  status: "loading", depart_planned_at: "2026-11-13T08:00:00+01:00", depart_actual_at: null,
-  stops: [{ trip_stop_id: 931, order_id: 129, order_no: "SE-2026-000129", status: "pending",
-    eta_planned_at: "2026-11-13T09:10:00+01:00", delivery_address: "Kvarnbyn 4, Mölndal",
-    contact_name: null, contact_phone: null, receiving_window: { start: "09:00:00", end: "11:00:00" },
-    special_requirements: "Report to the site office." }],
 };
 
-export async function listDriverTrips(day?: string, signal?: AbortSignal, mock = USE_MOCKS): Promise<DriverTrip[]> {
-  if (mock) return [PREVIEW];
-  const data = await apiFetch<{ items: DriverTrip[] }>(`/driver/trips${buildQuery({ date: day })}`, { signal });
-  if (!Array.isArray(data.items) || !data.items.every(isDriverTrip)) throw new Error("Trip list response is incomplete.");
-  return data.items;
+type TripList = { items: DriverTrip[] };
+
+export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED";
+export type DriverEventPayload =
+  | { trip_id: number }
+  | { trip_id: number; recipient_name: string; note?: string }
+  | { trip_id: number; failure_reason: string; note?: string };
+
+export type DriverEvent = {
+  event_type: DriverEventType;
+  occurred_at: string;
+  payload: DriverEventPayload;
+};
+
+export type EventAck = { event_id: number; order_status: string };
+
+function isAssignedTrip(value: unknown): value is DriverTrip {
+  if (!value || typeof value !== "object") return false;
+  const trip = value as Partial<DriverTrip>;
+  return typeof trip.trip_id === "number" && typeof trip.vehicle_code === "string" &&
+    typeof trip.status === "string" && Array.isArray(trip.stops) &&
+    trip.stops.every((stop) => stop && typeof stop.order_id === "number" &&
+      typeof stop.trip_stop_id === "number" && typeof stop.order_no === "string");
 }
 
-export async function getDriverTrip(id: number, signal?: AbortSignal, mock = USE_MOCKS): Promise<DriverTrip> {
-  if (mock) {
-    if (id !== PREVIEW.trip_id) throw new Error("Trip not assigned.");
-    return PREVIEW;
-  }
-  const trip = await apiFetch<DriverTrip>(`/driver/trips/${id}`, { signal });
-  if (!isDriverTrip(trip) || trip.trip_id !== id) throw new Error("Trip detail response is incomplete.");
+export function assignedTrips(): Promise<DriverTrip[]> {
+  return apiGet<TripList>("/driver/trips").then((response) =>
+    Array.isArray(response?.items) ? response.items.filter(isAssignedTrip) : [],
+  );
+}
+
+export async function assignedTrip(tripId: number): Promise<DriverTrip> {
+  const trip = await apiGet<DriverTrip>(`/driver/trips/${tripId}`);
+  if (!isAssignedTrip(trip)) throw new Error("Unverified trip contract.");
   return trip;
 }
 
-export async function sendDriverEvent(event: DriverEvent, mock = USE_MOCKS): Promise<EventAck> {
-  if (mock) throw new Error("Synthetic preview cannot confirm a delivery event.");
-  return apiFetch<EventAck>(`/orders/${event.orderId}/events`, {
-    method: "POST", idempotencyKey: event.idempotencyKey,
-    body: JSON.stringify({ event_type: event.eventType, occurred_at: event.occurredAt, payload: event.payload }),
-  });
+export function submitDriverEvent(orderId: number, event: DriverEvent, key: string): Promise<EventAck> {
+  return apiPost<EventAck>(`/orders/${orderId}/events`, event, key);
 }
 
-export function eventAllowed(trip: DriverTrip, event: DriverEvent): boolean {
-  if (trip.trip_id !== event.tripId || !trip.stops.some(s => s.order_id === event.orderId && s.status === "pending")) return false;
-  if (event.eventType === "DISPATCHED") return trip.status === "loading";
-  return trip.status === "on_road";
-}
+/** No GPS POST here: current main registers a NotImplementedError endpoint,
+ * and real-worker consent, qualified duty windows and privacy approval are not proven.
+ * Never collect, persist or upload coordinates without that reviewed handoff.
+ */
