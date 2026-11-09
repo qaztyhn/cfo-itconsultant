@@ -2,6 +2,7 @@
 
 Real PostgreSQL tests, not a market-combined synthetic fixture.
 """
+
 import pytest
 
 from app.core.security import issue_token
@@ -83,10 +84,12 @@ def test_be23_inclusive_30_day_default_and_366_day_max(markets: Api) -> None:
     last = markets.get("/kpi/summary", DISPATCHER, to="2026-11-11")
     assert last.status_code == 200
     assert last.json()["period"] == {"from": "2026-10-13", "to": "2026-11-11"}
-    max_window = markets.get("/kpi/daily", DISPATCHER, metric="manual_plan_count",
-        **{"from": "2025-11-11", "to": "2026-11-11"})
+    max_window = markets.get(
+        "/kpi/daily", DISPATCHER, metric="manual_plan_count", **{"from": "2025-11-11", "to": "2026-11-11"}
+    )
     assert max_window.status_code == 200
     assert len(max_window.json()["points"]) == 366
-    over = markets.get("/kpi/daily", DISPATCHER, metric="manual_plan_count",
-        **{"from": "2025-11-10", "to": "2026-11-11"})
+    over = markets.get(
+        "/kpi/daily", DISPATCHER, metric="manual_plan_count", **{"from": "2025-11-10", "to": "2026-11-11"}
+    )
     assert_error(over, 422, "VALIDATION_ERROR")
