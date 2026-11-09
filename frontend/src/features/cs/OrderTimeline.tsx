@@ -41,6 +41,7 @@ export function OrderTimeline({ orderId }: { orderId: number }) {
     queryKey: csKeys.timeline(orderId),
     queryFn: ({ signal }) => fetchTimeline(orderId, signal),
     retry: false,
+    refetchInterval: false,
   });
 
   function body() {

@@ -14,6 +14,7 @@ export function NotificationHistory({ orderId }: { orderId: number }) {
     queryKey: csKeys.notifications(orderId),
     queryFn: ({ signal }) => fetchNotifications(orderId, signal),
     retry: false,
+    refetchInterval: false,
   });
 
   function body() {

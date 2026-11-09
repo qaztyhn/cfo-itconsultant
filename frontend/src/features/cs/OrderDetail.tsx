@@ -38,6 +38,7 @@ export function OrderDetail({ orderId }: { orderId: number }) {
     queryKey: csKeys.detail(orderId),
     queryFn: ({ signal }) => fetchOrderDetail(orderId, signal),
     retry: false,
+    refetchInterval: false,
   });
 
   if (detail.isPending) {

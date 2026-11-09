@@ -29,6 +29,7 @@ export function OrderLookup() {
     queryFn: ({ signal }) => searchOrders(query, signal),
     enabled: query !== "",
     retry: false,
+    refetchInterval: false,
   });
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {

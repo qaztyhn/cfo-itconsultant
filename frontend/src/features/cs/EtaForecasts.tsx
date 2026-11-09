@@ -14,6 +14,7 @@ export function EtaForecasts({ orderId }: { orderId: number }) {
     queryKey: csKeys.eta(orderId),
     queryFn: ({ signal }) => fetchEtaForecasts(orderId, signal),
     retry: false,
+    refetchInterval: false,
   });
 
   function body() {
