@@ -86,6 +86,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     renderAt("/driver");
     await screen.findByText("SE-44 · Gothenburg demo site");
     await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    await userEvent.click(screen.getByRole("button", { name: /Select stop 30/ }));
     const confirm = screen.getByRole("button", { name: "Confirm delivered" });
     expect(confirm).toBeDisabled();
     await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Demo recipient");
@@ -108,6 +109,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     renderAt("/driver");
     await screen.findByText("SE-44 · Gothenburg demo site");
     await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    await userEvent.click(screen.getByRole("button", { name: /Select stop 30/ }));
     await userEvent.click(screen.getByRole("radio", { name: "Failed" }));
     expect(screen.getByRole("button", { name: "Confirm failed" })).toBeDisabled();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Failure reason" }), "customer_absent");
