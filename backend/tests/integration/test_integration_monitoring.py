@@ -102,6 +102,8 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
     assert data["scheduler"]["runtime_health"] == "unverified"
     assert data["scheduler"]["last_tick_at"] is None
     assert data["scheduler"]["last_tick_status"] == "unknown"
+    assert data["scheduler"]["jobs"] == []
+    assert "stock" not in data["scheduler"]["supported_feed_types"]
     assert data["route_matrix"]["pairs"] == 0
     stock = next(item for item in data["sources"] if item["entity"] == "stock")
     assert (
