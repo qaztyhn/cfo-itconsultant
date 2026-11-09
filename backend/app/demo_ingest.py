@@ -22,11 +22,7 @@ ENTITIES = ("customers", "products", "inbound", "fleet", "orders", "stock")
 
 async def run(entity: str) -> int:
     settings = get_settings()
-    if (
-        settings.app_env != "test"
-        or settings.app_now != DEMO_NOW
-        or os.environ.get("DEMO_DISPOSABLE") != "1"
-    ):
+    if settings.app_env != "test" or settings.app_now != DEMO_NOW or os.environ.get("DEMO_DISPOSABLE") != "1":
         print("BLOCKED: demo ingestion requires disposable APP_ENV=test and approved APP_NOW.")
         return 2
     clock.init_from_settings(settings.app_now)
