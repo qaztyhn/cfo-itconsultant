@@ -63,7 +63,8 @@ def test_US_NOT_02_AC5_send_auth_and_free_text_rejected(
     assert client.post(url, json=payload).status_code == 400
     for extra in ("subject", "body", "gps", "driver_name", "cs_notes"):
         response = client.post(
-            url, json={**payload, extra: "private value"},
+            url,
+            json={**payload, extra: "private value"},
             headers={"Idempotency-Key": str(uuid4())},
         )
         assert response.status_code == 422, response.text
@@ -107,15 +108,11 @@ def test_US_NOT_02_AC3_discard_request_requires_reason(
     client, _, dsn = notifications_api
     draft = transact(
         dsn,
-        lambda s: notify_service.create_delay_draft(
-            1, {**WINDOW, "version": 1}, session=s, actor=actor()
-        ),
+        lambda s: notify_service.create_delay_draft(1, {**WINDOW, "version": 1}, session=s, actor=actor()),
     )
     assert client.post(f"/api/v1/notifications/{draft}/discard", json={}).status_code == 422
     invalid = client.post(f"/api/v1/notifications/{draft}/discard", json={"reason_text": "  "})
     assert invalid.status_code == 422
-    response = client.post(
-        f"/api/v1/notifications/{draft}/discard", json={"reason_text": "Do not notify"}
-    )
+    response = client.post(f"/api/v1/notifications/{draft}/discard", json={"reason_text": "Do not notify"})
     assert response.status_code == 200
     assert response.json() == {"id": draft, "status": "suppressed"}

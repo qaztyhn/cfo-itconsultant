@@ -240,9 +240,7 @@ async def list_notifications(
     }
 
 
-async def get_notification(
-    session: AsyncSession, notification_id: int, actor: object
-) -> dict[str, object]:
+async def get_notification(session: AsyncSession, notification_id: int, actor: object) -> dict[str, object]:
     record = await _scope_notification(session, notification_id, actor)
     order = await session.get(CustomerOrder, record.order_id)
     assert order is not None
@@ -288,7 +286,8 @@ async def get_notification(
 
 
 async def _deduped_insert(
-    session: AsyncSession, *,
+    session: AsyncSession,
+    *,
     order: CustomerOrder,
     market: Market,
     template: Template,
@@ -459,10 +458,13 @@ async def create_delay_draft(
     if latest_sent is not None:
         previous = approved_window_from_snapshot(latest_sent.eta_window)
         if previous is not None:
-            minutes = max(
-                abs((window.start - previous.start).total_seconds()),
-                abs((window.end - previous.end).total_seconds()),
-            ) / 60
+            minutes = (
+                max(
+                    abs((window.start - previous.start).total_seconds()),
+                    abs((window.end - previous.end).total_seconds()),
+                )
+                / 60
+            )
             if minutes < config.delay_min_shift_min:
                 return None
     approved = ApprovedEta(

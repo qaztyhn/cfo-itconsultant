@@ -73,9 +73,7 @@ async def discard_notification(
     notification_id: int, payload: DiscardInput, user: AuthUser, db: DbSession
 ) -> dict[str, object]:
     """Suppress a draft, never forward the internal free-text reason to a recipient."""
-    return await notify_service.discard_draft(
-        notification_id, user, payload.reason_text, session=db
-    )
+    return await notify_service.discard_draft(notification_id, user, payload.reason_text, session=db)
 
 
 @router.get("/orders/{order_id}/notifications")

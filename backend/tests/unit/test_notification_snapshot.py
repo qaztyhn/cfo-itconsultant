@@ -45,9 +45,10 @@ def test_US_NOT_02_AC1_snapshot_preserves_approver_version_and_window() -> None:
     assert frozen["snapshot"]["template_version"] == "1"
     assert frozen["snapshot"]["approved_eta"]["version"] == 3
     assert frozen["snapshot"]["approved_eta"]["approved_by_employee_id"] == 12
-    assert read_snapshot(
-        frozen, channel="email", template="DELAY", subject=message.subject, body=message.body
-    ) == message
+    assert (
+        read_snapshot(frozen, channel="email", template="DELAY", subject=message.subject, body=message.body)
+        == message
+    )
     assert "GPS" not in message.body and "driver" not in message.body.lower()
 
 
@@ -85,20 +86,32 @@ def test_US_NOT_03_AC4_mutated_snapshot_fails_closed() -> None:
         ),
         channel="email",
     )
-    assert read_snapshot(
-        envelope, channel="email", template="CONFIRMED",
-        subject=rendered.subject, body=rendered.body,
-    ) == rendered
+    assert (
+        read_snapshot(
+            envelope,
+            channel="email",
+            template="CONFIRMED",
+            subject=rendered.subject,
+            body=rendered.body,
+        )
+        == rendered
+    )
     with pytest.raises(ValueError, match="integrity"):
         read_snapshot(
-            envelope, channel="email", template="CONFIRMED",
-            subject=rendered.subject, body="free-text GPS injected",
+            envelope,
+            channel="email",
+            template="CONFIRMED",
+            subject=rendered.subject,
+            body="free-text GPS injected",
         )
     envelope["snapshot"]["template_version"] = "999"
     with pytest.raises(ValueError, match="version"):
         read_snapshot(
-            envelope, channel="email", template="CONFIRMED",
-            subject=rendered.subject, body=rendered.body,
+            envelope,
+            channel="email",
+            template="CONFIRMED",
+            subject=rendered.subject,
+            body=rendered.body,
         )
 
 

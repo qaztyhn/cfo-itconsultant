@@ -140,8 +140,7 @@ def read_snapshot(
         if stored.start is not None or stored.end is not None:
             raise ValueError("Unexpected delivery window")
     elif (
-        stored.start != snapshot.variables.eta_window.start
-        or stored.end != snapshot.variables.eta_window.end
+        stored.start != snapshot.variables.eta_window.start or stored.end != snapshot.variables.eta_window.end
     ):
         raise ValueError("Delivery window does not match immutable snapshot")
     return rendered
