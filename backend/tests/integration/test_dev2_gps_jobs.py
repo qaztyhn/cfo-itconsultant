@@ -141,17 +141,14 @@ def test_US_GPS_03_AC2_finished_trip_without_end_time_does_not_keep_gps_forever(
 @pytest.mark.parametrize(
     "change",
     [
-        "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-11-07T00:00Z'",
-        "UPDATE ops.delivery_trip SET status='cancelled'",
-        "UPDATE hr.employee_shift_schedule SET end_time='00:00'",
         "UPDATE hr.employee_shift_schedule SET status='cancelled',cancelled_at='2026-11-07T00:00Z'",
-        "UPDATE hr.employee SET status='terminated',end_date='2026-11-06'",
-        "UPDATE ref.market SET gps_enabled=false",
-        "DELETE FROM hr.employee_assignment",
         "DELETE FROM hr.employee_shift_schedule",
+        "UPDATE ref.market SET gps_enabled=false",
     ],
 )
-def test_US_GPS_03_AC2_cleanup_obeys_verified_duty_and_resolves_loss(empty_db: str, change: str) -> None:
+def test_US_GPS_03_AC2_loss_of_verified_duty_or_gps_switch_off_purges_points_immediately(
+    empty_db: str, change: str
+) -> None:
     _on_road_with_old_signal(empty_db)
     _duty(empty_db)
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
@@ -160,6 +157,31 @@ def test_US_GPS_03_AC2_cleanup_obeys_verified_duty_and_resolves_loss(empty_db: s
     assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
     assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 0
     assert _open_gps_lost(empty_db) == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-11-07T00:00Z'",
+        "UPDATE ops.delivery_trip SET status='cancelled'",
+        "UPDATE hr.employee_shift_schedule SET end_time='00:00'",
+        "UPDATE hr.employee SET status='terminated',end_date='2026-11-06'",
+        "DELETE FROM hr.employee_assignment",
+    ],
+)
+def test_DEC_GPS_RET_session_end_stops_tracking_but_valid_points_wait_for_seven_days(
+    empty_db: str, change: str
+) -> None:
+    _on_road_with_old_signal(empty_db)
+    _duty(empty_db)
+    assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 1
+    execute(empty_db, change)
+    assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0  # valid point is retained
+    assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
+    assert transact(empty_db, lambda s: check_lost(s, now=NOW)) == 0  # no more tracking/alerts
+    assert _open_gps_lost(empty_db) == []
+    expiry = datetime(2026, 11, 13, 22, 31, tzinfo=UTC)  # recorded 2026-11-06T22:30Z + 7 x 24 h + 1 min
+    assert transact(empty_db, lambda s: purge_positions(s, now=expiry)) == 1
 
 
 def test_US_GPS_03_AC2_only_current_trip_duty_points_survive_until_shift_end(
@@ -175,13 +197,10 @@ def test_US_GPS_03_AC2_only_current_trip_duty_points_survive_until_shift_end(
     )
     assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 2
     assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
-    assert (
-        transact(
-            empty_db,
-            lambda s: purge_positions(s, now=datetime(2026, 11, 7, 4, tzinfo=UTC)),
-        )
-        == 1
-    )
+    # after the shift ended the valid point is retained (7 days), not deleted at once
+    after_shift = datetime(2026, 11, 7, 4, tzinfo=UTC)
+    assert transact(empty_db, lambda s: purge_positions(s, now=after_shift)) == 0
+    assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
     assert fetch(empty_db, "SELECT count(*) FROM hr.employee_shift_schedule")[0][0] == 1
 
 
@@ -192,4 +211,12 @@ def test_US_GPS_03_AC2_market_timezone_drives_overnight_duty(empty_db: str) -> N
     # 00:00 UTC is 01:00 Stockholm: previous day's 22–04 schedule is still active.
     assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
     ended = datetime(2026, 11, 7, 3, tzinfo=UTC)  # 04:00 market-local, exclusive end.
-    assert transact(empty_db, lambda s: purge_positions(s, now=ended)) == 1
+    assert (
+        transact(empty_db, lambda s: purge_positions(s, now=ended)) == 0
+    )  # collected inside the shift: kept
+    execute(
+        empty_db,
+        "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) "
+        "VALUES (1,1,59,18,'2026-11-07T03:00Z','simulator')",  # exactly at the (exclusive) shift end
+    )
+    assert transact(empty_db, lambda s: purge_positions(s, now=ended)) == 1  # invalid: outside the shift
