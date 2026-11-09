@@ -71,36 +71,79 @@ def sync_outcome(path: Path) -> str:
 
 
 def source_version(source_url: str, api_key: str) -> tuple[int, int]:
-    """Get source versions again from authenticated read-only D1 list, no redirect."""
+    """Scan BOTH fully paginated D1 status feeds and require exact unmodified versions.
+
+    Page-one-only lookup is unsafe once source records exceed 100. Fail closed
+    on partial pages, contradictory cancellation, duplicate IDs, version
+    changes, stale totals or invalid market/store metadata. This is a
+    read-only verifier, never a substitute for the transactional Source API.
+    """
     if not api_key:
         raise ValueError("Missing Source authentication.")
-    req = Request(
-        source_url.rstrip("/") + "/orders?status=SUBMITTED_FOR_PLANNING&page=1&page_size=100",
-        headers={"X-API-Key": api_key},
-        method="GET",
-    )
-    opener = build_opener(NoRedirect())
-    with opener.open(req, timeout=12) as response:
-        if response.status != 200 or "json" not in response.headers.get("Content-Type", "").lower():
-            raise ValueError("Source read was not authenticated JSON.")
-        body = json.loads(response.read(262144))
-    items = body.get("items") if isinstance(body, dict) else None
-    if not isinstance(items, list):
-        raise ValueError("Source list is not verified.")
     versions: dict[str, int] = {}
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        ref = item.get("id")
-        if ref in (GOOD_REF, UNMAPPED_REF):
-            ver = item.get("version")
-            if ref in versions or type(ver) is not int or ver <= 0 or item.get("status") != "SUBMITTED_FOR_PLANNING":
-                raise ValueError("Source version or status is not verified.")
-            versions[ref] = ver
-    if set(versions) != {GOOD_REF, UNMAPPED_REF}:
-        raise ValueError("Demo source records unavailable.")
+    cancelled: set[str] = set()
+    opener = build_opener(NoRedirect())
+    targets = {GOOD_REF, UNMAPPED_REF}
+    page_size = 100
+    for status in ("SUBMITTED_FOR_PLANNING", "CANCELLED"):
+        seen: set[str] = set()
+        total: int | None = None
+        page = 1
+        while True:
+            if page > 100:
+                raise ValueError("Source order feed exceeds verified page bound.")
+            req = Request(
+                source_url.rstrip("/") +
+                f"/orders?status={status}&page={page}&page_size={page_size}",
+                headers={"X-API-Key": api_key}, method="GET",
+            )
+            with opener.open(req, timeout=12) as response:
+                if (
+                    response.status != 200
+                    or "json" not in response.headers.get("Content-Type", "").lower()
+                ):
+                    raise ValueError("Source read was not authenticated JSON.")
+                body = json.loads(response.read(262144))
+            if not isinstance(body, dict):
+                raise ValueError("Invalid Source page.")
+            items = body.get("items")
+            count = body.get("total")
+            if (
+                type(count) is not int or count < 0 or count > 10000
+                or type(body.get("page")) is not int or body["page"] != page
+                or type(body.get("page_size")) is not int or body["page_size"] != page_size
+                or not isinstance(items, list) or len(items) > page_size
+                or (total is not None and total != count)
+            ):
+                raise ValueError("Incomplete or inconsistent Source pagination.")
+            total = count
+            for row in items:
+                if not isinstance(row, dict):
+                    raise ValueError("Invalid Source record.")
+                ref, version = row.get("id"), row.get("version")
+                if (
+                    not isinstance(ref, str) or not ref
+                    or ref in seen
+                    or row.get("status") != status
+                    or type(version) is not int or version <= 0
+                ):
+                    raise ValueError("Duplicate or invalid Source record.")
+                seen.add(ref)
+                if ref in targets:
+                    if status == "CANCELLED":
+                        cancelled.add(ref)
+                    else:
+                        if row.get("store_code") != "ST-001":
+                            raise ValueError("Source store scope is not approved.")
+                        versions[ref] = version
+            if len(seen) == total:
+                break
+            if not items or len(seen) > total or page * page_size >= total:
+                raise ValueError("Source pagination ended before all records were checked.")
+            page += 1
+    if set(versions) != targets or cancelled.intersection(targets):
+        raise ValueError("Required submitted Source records are absent or cancelled.")
     return versions[GOOD_REF], versions[UNMAPPED_REF]
-
 
 # Only fixed, synthetic references, never user-supplied SQL values or identifiers.
 SQL = """
