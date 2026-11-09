@@ -51,14 +51,14 @@ def _run(dsn: str, fn):
 
 def _request():
     lines = resolve_reservation_lines(
-        "ZZ",
+        "SE",
         "WH-1",
         [OrderLineRef(1, "SKU1", 1, Decimal("20"), "map-v1")],
         {"SKU1": ConfirmedMapping("SKU1", 1, "pcs", Decimal(1), True, "map-v1")},
-        [WmsSkuRelation("ZZ", "WH-1", "SKU1", "WMS-1", "pcs", Decimal(1), False, True)],
+        [WmsSkuRelation("SE", "WH-1", "SKU1", "WMS-1", "pcs", Decimal(1), False, True)],
         {("WH-1", "WMS-1")},
     )
-    return build_request("ZZ", 1, 1, lines)
+    return build_request("SE", 1, 1, lines)
 
 
 def _prepare(db: str) -> None:
@@ -86,7 +86,7 @@ def test_changed_intent_is_rejected_without_second_reservation(db: str) -> None:
     request = _request()
     _run(db, lambda s: wms_intent.begin_intent(s, request, synthetic=True))
     different = build_request(
-        "ZZ", 1, 1, (request.lines[0].__class__(1, "SKU1", "WMS-1", "WH-1", Decimal(21), "pcs", "map-v1"),)
+        "SE", 1, 1, (request.lines[0].__class__(1, "SKU1", "WMS-1", "WH-1", Decimal(21), "pcs", "map-v1"),)
     )
     with pytest.raises(DomainError) as err:
         _run(db, lambda s: wms_intent.begin_intent(s, different, synthetic=True))
@@ -114,7 +114,7 @@ def test_ack_commit_failure_recovers_from_same_synthetic_key(db: str, monkeypatc
     with pytest.raises(RuntimeError):
         _run(db, lost_commit)
     assert fetch(db, "SELECT status FROM ops.wms_reservation_intent")[0][0] == "pending"
-    recovered = asyncio.run(port.status("ZZ", request.idempotency_key))
+    recovered = asyncio.run(port.status("SE", request.idempotency_key))
     assert recovered == ack
     stored = _run(db, lambda s: wms_intent.record_ack(s, request.idempotency_key, recovered))
     assert stored.status == "acked"
@@ -175,11 +175,11 @@ def test_mapping_must_be_confirmed_and_exact() -> None:
     assert request.lines[0].wms_sku == "WMS-1"
     with pytest.raises(ReverseSkuError):
         resolve_reservation_lines(
-            "ZZ",
+            "SE",
             "WH-1",
             [OrderLineRef(1, "SKU1", 1, Decimal(20), "map-v1")],
             {"SKU1": ConfirmedMapping("SKU1", 1, "pcs", Decimal(1), False, "map-v1")},
-            [WmsSkuRelation("ZZ", "WH-1", "SKU1", "WMS-1", "pcs", Decimal(1), False, True)],
+            [WmsSkuRelation("SE", "WH-1", "SKU1", "WMS-1", "pcs", Decimal(1), False, True)],
             {("WH-1", "WMS-1")},
         )
 
@@ -242,8 +242,8 @@ def test_synthetic_release_is_idempotent_and_never_mutates_on_hand(db: str, monk
     request = _request()
     port = synthetic_wms.SyntheticWmsPort({("WH-1", "WMS-1"): Decimal(50)})
     ack = asyncio.run(port.reserve(request))
-    first = asyncio.run(port.release("ZZ", ack.reservation_id, request.idempotency_key + ":release"))
-    second = asyncio.run(port.release("ZZ", ack.reservation_id, request.idempotency_key + ":release"))
+    first = asyncio.run(port.release("SE", ack.reservation_id, request.idempotency_key + ":release"))
+    second = asyncio.run(port.release("SE", ack.reservation_id, request.idempotency_key + ":release"))
     assert first == second
     assert first.status == "released"
     row = asyncio.run(port.fetch_stock()).items[0]
