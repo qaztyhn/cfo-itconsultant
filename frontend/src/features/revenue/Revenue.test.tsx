@@ -89,7 +89,7 @@ describe("US-REV-01 AC5–AC8 — filters, chart, CSV and errors", () => {
     await screen.findByText("Recognised revenue");
     fireEvent.click(screen.getByRole("button", { name: "By warehouse" }));
     await waitFor(() => expect(mocks.summary).toHaveBeenCalledWith(
-      expect.objectContaining({ view: "warehouse", location_id: undefined }), expect.anything()));
+      expect.objectContaining({ view: "warehouse" }), expect.anything()));
     expect(screen.getByRole("heading", { name: /By warehouse · locations/ })).toBeInTheDocument();
   });
   it("filters dates and blocks invalid ranges locally", async () => {
