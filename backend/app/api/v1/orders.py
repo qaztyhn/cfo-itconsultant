@@ -10,14 +10,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
+from app.core.security import LoginRateLimiter
 from app.deps import AuthUser, DbSession
 from app.services import order_read_service
 
 router = APIRouter(tags=["orders"])
+# Process-local admission control for the documented single-instance MVP.
+# Gateway/proxy limits and access-log redaction remain deployment prerequisites.
+phone_search_rate_limiter = LoginRateLimiter()
 
 
 class Ref(BaseModel):
@@ -134,6 +138,38 @@ class OrderOut(BaseModel):
     submitted_at: datetime
 
 
+class CsContactOut(BaseModel):
+    name: str
+    phone: str | None = None  # always server-masked
+    email: str | None = None  # always server-masked
+
+
+class CsDeliveryOut(BaseModel):
+    address: str  # no coordinates, receiving restrictions or access codes
+
+
+class CsRiskOut(BaseModel):
+    status: str
+    forecast_eta: datetime
+
+
+class CsOrderOut(BaseModel):
+    """CS-only allowlist. Never inherit full OrderOut fields or auto-serialize ORM."""
+
+    id: int
+    order_no: str
+    status: str
+    market: str
+    customer: NamedRef
+    contact: CsContactOut
+    delivery: CsDeliveryOut
+    date_request: DateRequestOut
+    committed: CommittedOut
+    risk: CsRiskOut | None = None
+    version: int
+    submitted_at: datetime
+
+
 class NavCounts(BaseModel):
     order_queue: int
     exceptions: int
@@ -165,6 +201,7 @@ _ERRORS: dict[int | str, dict[str, object]] = {
 async def list_orders(
     user: AuthUser,
     db: DbSession,
+    response: Response,
     status: Annotated[str | None, Query(description="One or more statuses, comma separated")] = None,
     risk_color: str | None = None,
     committed_date_from: date | None = None,
@@ -180,6 +217,10 @@ async def list_orders(
 ) -> Page[OrderListItem]:
     """GET /orders — phạm vi 06 mục 5.2; mặc định sắp theo thứ tự đặt `submitted_at, id` (mục 5.4)."""
     scope = await order_read_service.resolve_order_scope(db, user)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if q and order_read_service.is_phone_query(q):
+        phone_search_rate_limiter.hit(f"{user.id}:{scope.market_id}")
     items, total = await order_read_service.list_orders(
         db,
         scope,
@@ -209,12 +250,18 @@ async def order_counts(user: AuthUser, db: DbSession) -> OrderCounts:
 
 
 @router.get(
-    "/orders/{order_id}", response_model=OrderOut, response_model_exclude_unset=True, responses=_ERRORS
+    "/orders/{order_id}",
+    response_model=OrderOut | CsOrderOut,
+    response_model_exclude_unset=True,
+    responses=_ERRORS,
 )
-async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut:
+async def get_order(order_id: int, user: AuthUser, db: DbSession) -> OrderOut | CsOrderOut:
     """GET /orders/{id} — trường theo vai trò (06 mục 5.3); ngoài phạm vi → 404."""
     scope = await order_read_service.resolve_order_scope(db, user)
-    return OrderOut.model_validate(await order_read_service.get_order(db, scope, order_id))
+    data = await order_read_service.get_order(db, scope, order_id)
+    if scope.role == "customer_service":
+        return CsOrderOut.model_validate(data)
+    return OrderOut.model_validate(data)
 
 
 class TimelineActor(BaseModel):
@@ -258,6 +305,8 @@ async def replan_order(order_id: int) -> dict[str, object]:
 async def cancel_order(order_id: int) -> dict[str, object]:
     """POST /orders/{order_id}/cancel — dispatcher; reason_text bắt buộc; chỉ trước DISPATCHED."""
     raise NotImplementedError
+
+
 
 
 @router.post("/orders/{order_id}/contact-logs")
