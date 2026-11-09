@@ -31,16 +31,16 @@ export function RevenueChart({ data }: { data: RevenueDaily }) {
             const x = step * (index + 0.5);
             return <g key={point.day}>
               <rect x={x - Math.min(13, step * 0.33)} y={y(recognised)}
-                width={Math.min(26, step * 0.66)} height={bottom - y(recognised)} fill="var(--color-pine, #0F4D47)">
+                width={Math.min(26, step * 0.66)} height={bottom - y(recognised)} className="fill-pine">
                 <title>{point.day}: recognised {money(point.recognised, data.currency)}</title>
               </rect>
               {(index === 0 || index === points.length - 1 || index % Math.max(1, Math.ceil(points.length / 7)) === 0) &&
                 <text x={x} y={bottom + 20} textAnchor="middle" fontSize="11" fill="currentColor">{point.day.slice(5)}</text>}
             </g>;
           })}
-          <polyline points={polyline} fill="none" stroke="var(--color-apricot, #E07B39)" strokeWidth="2.5" />
+          <polyline points={polyline} fill="none" className="stroke-apricot" strokeWidth="2.5" />
           {points.map((point, index) => <circle key={point.day} cx={step * (index + 0.5)}
-            cy={y(Number(point.booked))} r="3" fill="var(--color-apricot, #E07B39)">
+            cy={y(Number(point.booked))} r="3" className="fill-apricot">
             <title>{point.day}: booked {money(point.booked, data.currency)}</title>
           </circle>)}
         </svg>
