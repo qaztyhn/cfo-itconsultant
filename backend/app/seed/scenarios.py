@@ -331,7 +331,8 @@ def generate(seed: int = RANDOM_SEED) -> DemoFixture:
                 "vehicle_code": "MLM-12-02",
                 "from_ts": "2026-11-10T06:00:00+01:00",
                 "to_ts": "2026-11-10T18:00:00+01:00",
-                "kind": "busy",
+                # Existing T07 fleet contract: blocked interval is an external booking.
+                "kind": "external_booking",
             }
         ],
         "driver_shifts": _driver_shifts(),

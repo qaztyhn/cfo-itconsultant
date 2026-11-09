@@ -11,3 +11,8 @@ dist/
 logs/
 
 *.tsbuildinfo
+
+# Disposable synthetic demo exports / safe status reports (never commit runtime files)
+demo-fixtures.json
+demo-*-results.json
+.demo-manifest.*
