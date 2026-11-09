@@ -25,3 +25,7 @@ This is a **required mapping invariant for a proposed integration**, not authori
 6. WMS accepts only part of the requested lines, returns mismatch, times out or duplicates a request → do not mark CFO stock guaranteed, use reviewed idempotent retry/lookup and compensating release when appropriate.
 
 Existing scope/routing rules still apply: only 100%-confirmed SKU orders enter CFO; no physical_stock_pool alias inference or CFO writes to WMS without a separate owner-approved contract.
+
+## Subsequent owner confirmation of reserve flow
+
+The reservation flow itself has now been **approved as business intent** in [DEC-WMS-RESERVE-SYNC-20261109](DEC_WMS_RESERVE_SYNC_20261109.md): CFO checks WMS data, authorized user confirms, WMS reserves/lowers available and CFO immediately refreshes its stock. The reverse-SKU guard above is mandatory in this future request. This still does not constitute verified WMS API or deployment security authorization.
