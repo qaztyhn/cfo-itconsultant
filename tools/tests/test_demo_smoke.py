@@ -16,8 +16,9 @@ class FakeHttp:
     def __init__(self, *, routed: bool = False) -> None:
         self.routed = routed
         self.calls: list[tuple[str, str, object, object]] = []
-        self.good = next(o for o in FIXTURE["orders"] if o["id"] == GOOD_REF)
-        self.bad = next(o for o in FIXTURE["orders"] if o["id"] == UNMAPPED_REF)
+        # Source API adds version on top of the generator's input manifest.
+        self.good = {**next(o for o in FIXTURE["orders"] if o["id"] == GOOD_REF), "version": 1}
+        self.bad = {**next(o for o in FIXTURE["orders"] if o["id"] == UNMAPPED_REF), "version": 1}
 
     def send(self, url: str, *, method: str = "GET", headers=None, body=None):
         self.calls.append((method, url, body, headers))
@@ -26,7 +27,9 @@ class FakeHttp:
         if url.endswith(":5173/"):
             return 200, None
         if "/orders?status=SUBMITTED_FOR_PLANNING" in url:
-            return 200, {"items": [self.good, self.bad, next(o for o in FIXTURE["orders"] if o["id"].endswith("000137"))]}
+            return 200, {"items": [self.good, self.bad, {
+                **next(o for o in FIXTURE["orders"] if o["id"].endswith("000137")), "version": 1,
+            }]}
         if url.endswith("/orders?page_size=1"):
             return (400 if ":8100/" in url else 401), None
         if url.endswith("/orders?page_size=2"):
