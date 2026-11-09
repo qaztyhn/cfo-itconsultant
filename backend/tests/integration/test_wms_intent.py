@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from alembic import command
 from app.adapters import synthetic_wms
 from app.adapters.wms_reservation import ReservationMismatch, build_request
 from app.adapters.wms_sku import (
@@ -20,8 +19,7 @@ from app.adapters.wms_sku import (
 )
 from app.core.errors import DomainError
 from app.services import wms_intent
-from tests.integration import rows
-from tests.integration.conftest import alembic_config, async_url, execute, fetch
+from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.test_approval_service import db as db  # noqa: F401
 
 pytestmark = pytest.mark.integration
@@ -31,7 +29,7 @@ def _run(dsn: str, fn):
     async def go():
         engine = create_async_engine(async_url(dsn), poolclass=NullPool)
         try:
-            async with async_sessionmaker(engine)() as session, session.begin():
+            async with async_sessionmaker(engine, expire_on_commit=False)() as session, session.begin():
                 return await fn(session)
         finally:
             await engine.dispose()
