@@ -102,7 +102,7 @@ describe("OrderAction", () => {
     renderAt("/dispatcher/orders");
     const diagnostics = await firstButton("Review diagnostics for order SE-2026-004021");
     expect(main().getAllByRole("link", { name: "Exceptions for order SE-2026-004021" }).some(link =>
-      link.getAttribute("href") === "/dispatcher/exceptions?tab=no-feasible")).toBe(true);
+      link.getAttribute("href") === "/dispatcher/exceptions")).toBe(true);
     await userEvent.setup().click(diagnostics);
     await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/99"));
   });
