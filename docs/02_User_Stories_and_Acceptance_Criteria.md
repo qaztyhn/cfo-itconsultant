@@ -422,6 +422,8 @@
 **US-CS-01 — Tra cứu trạng thái** · Là *CSKH*, tôi trả lời khách nhanh.
 - AC1. *Then* tìm đơn theo `order_no`, tên khách, điện thoại; xem trạng thái, khung giờ cam kết, ETA hiện tại, lịch sử thông báo.
 - AC2. *Then* không thấy GPS, điểm số, quyết định nội bộ, giá vốn; mọi endpoint GPS trả `403`.
+- **Owner-approved CS-01 (09/11/2026):** sử dụng `GET /orders?q=` hiện có, tìm cả `external_ref` và số `contact_phone` sau chuẩn hóa ở backend; giới hạn tra cứu ngắn, scope market/role, không lộ phone qua danh sách/log, không thêm param mới.
+- **Owner-approved CS-02:** CS nhận phone/email **masked từ backend**, không có raw phone/email hoặc `delivery.lat/lon`, `receiving_restrictions`/gate code hay score/decision nội bộ trong response; UI không reveal. Chi tiết tên/kiểu DTO riêng cho CS qua contract review. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
 
 **US-CS-02 — Nhật ký liên hệ** · 
 - AC1. *When* `POST /orders/{id}/contact-logs` với `channel`, `reason_code`, *Then* lưu kèm nhân viên và giờ; dispatcher xem được.
