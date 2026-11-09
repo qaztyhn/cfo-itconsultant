@@ -106,9 +106,7 @@ def prepare_intent(
         or line.source_version != first.source_version
         for line in originals
     ):
-        _reject(
-            "All WMS reservation lines must belong to one order, warehouse and source version."
-        )
+        _reject("All WMS reservation lines must belong to one order, warehouse and source version.")
 
     seen: set[int] = set()
     built: list[WmsLine] = []
@@ -142,9 +140,7 @@ def prepare_intent(
             _reject("A positive exact fixed-unit conversion is required.")
         if not 0 <= line.wms_quantity_scale <= 3:
             _reject("WMS quantity precision is not verified.")
-        quantity = (
-            line.sale_quantity * line.units_to_base / line.base_units_per_wms_unit
-        )
+        quantity = line.sale_quantity * line.units_to_base / line.base_units_per_wms_unit
         scale = Decimal(1).scaleb(-line.wms_quantity_scale)
         if not _positive(quantity) or quantity != quantity.quantize(scale):
             _reject("The WMS stock unit cannot represent the order quantity exactly.")
@@ -204,6 +200,4 @@ def require_snapshot_inclusion(
         or authoritative_included_reservation_ids is None
         or reservation_id not in authoritative_included_reservation_ids
     ):
-        _reject(
-            "WMS snapshot inclusion is unverified; keep stock unavailable for new commitments."
-        )
+        _reject("WMS snapshot inclusion is unverified; keep stock unavailable for new commitments.")
