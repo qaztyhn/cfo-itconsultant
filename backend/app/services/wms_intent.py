@@ -148,7 +148,9 @@ async def begin_intent(
         or expected != requested
         or any(line.warehouse_code != warehouse.code.strip() for line in request.lines)
     ):
-        raise DomainError("RESOURCE_CONFLICT", "WMS reservation differs from CFO routing, order or warehouse.")
+        raise DomainError(
+            "RESOURCE_CONFLICT", "WMS reservation differs from CFO routing, order or warehouse."
+        )
     payload = _payload(request)
     digest = _digest(payload)
     found = await session.scalar(
