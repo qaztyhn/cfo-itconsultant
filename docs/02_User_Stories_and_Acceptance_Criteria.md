@@ -333,7 +333,7 @@
 
 **US-GPS-03 — Mất tín hiệu và xóa dữ liệu** · 
 - AC1. *Given* chuyến `on_road` không có vị trí quá 60 phút, *Then* alert `GPS_LOST` cho dispatcher.
-- AC2. *Given* trip kết thúc hoặc ca tài xế hết hạn (mốc nào sớm hơn), *Then* raw GPS bị xóa **trong transaction kết thúc trip** hoặc qua cleanup ở mốc kết thúc ca; job chỉ là backstop, không giữ 30 ngày. Client cũng xóa queue offline (G4).
+- AC2. *Given* trip hoặc ca tài xế kết thúc (mốc đến trước), *Then* **ngừng thu GPS và thu hồi quyền xem live ngay**; queue offline không còn quyền phải bị xóa/chặn replay. Raw GPS hợp lệ đã thu được lưu tối đa **7 ngày** trong kho lịch sử hạn chế quyền tra soát có lý do và audit, sau đó xóa theo expiry. GPS thật vẫn cần privacy/legal/DPIA sign-off (DEC-GPS-RET-20261109).
 
 ---
 
@@ -342,7 +342,7 @@
 **US-RSK-01 — Tính lại ETA đúng lúc** · FR-RSK-01
 - AC1. *Given* không có sự kiện/GPS/thay đổi nguồn, *Then* không có dòng `eta_forecast` mới (không tính vô ích).
 - AC2. *Given* mốc `GOODS_READY` kế hoạch 11:00 và đến 11:31 chưa có sự kiện, *When* `milestone_overdue_check` chạy, *Then* ETA được tính lại với trigger `overdue_milestone`.
-- AC3. *Given* đơn nhiều ngày, *Then* 07:00 mỗi sáng chạy kiểm tra `morning_check`.
+- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các Job D8 khác chưa được owner phê duyệt (DEC-D8-OPS-20261109).
 - AC4. *Given* chậm chuẩn bị nhưng `depart_at` kế hoạch còn dư thời gian hấp thụ, *Then* `forecast_eta = planned_eta`, tiêu hao 0%.
 
 **US-RSK-02 — Trạng thái rủi ro** · BR-RSK-01
