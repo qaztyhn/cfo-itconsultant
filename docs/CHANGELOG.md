@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-01 — CS masked API/UI DTO compatibility] — 2026-11-09 — Dev 1
+
+- Server `GET /orders/{id}` for `customer_service` now emits `contact.phone_masked` / `email_masked`, not legacy `contact.phone` / `email`, matching merged frontend #176's defensive allowlist. Added safe `external_ref` and `risk.color` fields needed by the current UI. Existing CS allowlist still omits raw contact values, GPS, coordinates, receiving restrictions, internal scores, plan IDs and private notes. Other roles' response contracts remain unchanged.
+- Updated API Pydantic model / generated OpenAPI, docs/06 §5.3a and PostgreSQL integration assertions. **Does not enable real-phone search** without the separate ingress/proxy/access/analytics log-redaction and effective abuse controls (#181). No schema migration or new business decision.
+
+
 ## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
 
 - `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.

@@ -186,6 +186,25 @@ Trường/khối không được phép bị **bỏ hẳn** khỏi phản hồi (
 
 **Owner-approved CS-02 (DEC-CS-PRIVACY-20261109):** Backend phải xuất allowlisted DTO **dành riêng cho `customer_service`**, không được chỉ ẩn dữ liệu ở frontend. `contact` giữ tên nhưng chỉ có phone/email **đã mask** (không chứa số/email gốc trong payload); loại `delivery.lat`, `delivery.lon`, `delivery.receiving_restrictions` và mọi gate/access code, GPS/điểm số/quyết định nội bộ khỏi response CS. Trường/kiểu masked cụ thể trong generated DTO cần Dev 1/3 thống nhất và kiểm thử trước triển khai, không tự dùng lại schema `ContactOut`/`DeliveryOut` đầy đủ cho CS. Sales và các vai trò khác không được tự nới quyền từ thay đổi này. CS không được approve/dispatch/replan/change promise/DELAY send; backend kiểm 403 ở các mutation. API ETA/notifications/contact-logs còn stub phải thông báo chưa khả dụng, không giả E2E. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
 
+#### 5.3a CS masked detail DTO — BE-01 integrated contract (2026-11-09)
+
+The `customer_service` branch uses a **dedicated server-side allowlist** (no `OrderOut` inheritance). This is the existing privacy decision, aligned with the merged CS UI #176 — not a new authorization grant:
+
+```json
+{
+  "id": 42, "order_no": "ORD-0042", "external_ref": "POS-9001",
+  "status": "APPROVED", "market": "SE", "version": 2, "submitted_at": "2026-11-05T07:12:00Z",
+  "customer": { "name": "Synthetic customer" },
+  "contact": { "name": "Synthetic recipient", "phone_masked": "******67", "email_masked": "***@***" },
+  "delivery": { "address": "Synthetic street" },
+  "date_request": { "mode": "latest", "date_from": null, "date_to": "2026-11-13", "window": null },
+  "committed": { "date": "2026-11-13", "promise_start": null, "promise_end": null },
+  "risk": { "status": "AT_RISK", "color": "orange", "forecast_eta": "2026-11-13T11:30:00Z" }
+}
+```
+
+`contact.phone_masked` / `email_masked` are strings or `null`. **Raw `contact.phone` and `contact.email` keys are forbidden** in CS API. `risk` may be `null`, and never includes scores/slack/cost. The `delivery` block contains only `address`; no GPS, coordinates, receiving restrictions, gate codes, notes, internal planning, price, or run/approval IDs. The frontend defensively checks masked formats but masking is *server-owned*. Sales/Dispatcher/other roles retain their prior DTOs. Backend CS mutation permission is unchanged (read-only except separately approved contact logging). This DTO alignment does **not** satisfy CS phone-search production log-redaction and rate-limit gates (#181).
+
 ### 5.4 `GET /orders` và `GET /orders/counts` (v1.4, Q7)
 
 Phần tử danh sách (trường bị cấm theo mục 5.3 thì bỏ):
