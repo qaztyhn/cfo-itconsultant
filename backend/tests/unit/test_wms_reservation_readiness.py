@@ -125,9 +125,7 @@ def test_WMS_duplicate_line_or_mixed_order_warehouse_source_version_rejected() -
     "quantity,scale",
     [(Decimal("0.25"), 0), (Decimal("0.0001"), 3), (Decimal("1"), 4)],
 )
-def test_WMS_fractional_or_unverified_precision_fails_without_rounding(
-    quantity: Decimal, scale: int
-) -> None:
+def test_WMS_fractional_or_unverified_precision_fails_without_rounding(quantity: Decimal, scale: int) -> None:
     with pytest.raises(DomainError) as error:
         prepare_intent(
             (
@@ -192,9 +190,7 @@ def test_WMS_exact_ack_returns_external_identity_not_cfo_approval() -> None:
 def test_WMS_delayed_snapshot_or_timestamp_alone_cannot_clear_protection() -> None:
     for proof in (None, frozenset(), frozenset({"unrelated-reservation"})):
         with pytest.raises(DomainError) as error:
-            require_snapshot_inclusion(
-                "wms-resv-001", authoritative_included_reservation_ids=proof
-            )
+            require_snapshot_inclusion("wms-resv-001", authoritative_included_reservation_ids=proof)
         assert error.value.code == "PLAN_NOT_APPROVABLE"
 
 
