@@ -575,6 +575,7 @@ def test_M6_1_failure_after_the_pod_insert_rolls_back_pod_stop_and_gps_purge(
         fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
     )  # GPS purge undone
 
+
 def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
