@@ -464,3 +464,102 @@ def test_M6_1_two_vehicles_deliver_same_order_one_pod_per_trip_stop(
     )
     assert [p["result"] for p in pods] == ["delivered", "delivered"]
     assert len({p["trip_stop_id"] for p in pods}) == 2
+
+
+def _dispatch_both_vehicles(client: Api, monkeypatch: pytest.MonkeyPatch, notices: list[str]) -> None:
+    async def test_driver_gate(*_args: object) -> None:
+        return None
+
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None) -> int:
+        notices.append(template)
+        return len(notices)
+
+    monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    monkeypatch.setattr(notify_service, "enqueue", test_enqueue)
+    monkeypatch.setattr(execution_service, "_driver_gate", test_driver_gate)
+    for actor, kind, at, data in (
+        (WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
+        (WAREHOUSE, "GOODS_READY", "2026-11-10T07:30:00Z", {}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:00:00Z", {"trip_id": 1}),
+        (WAREHOUSE, "LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
+        (DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
+        (14, "DISPATCHED", "2026-11-10T08:12:00Z", {"trip_id": 2}),
+    ):
+        assert send(client, actor, kind, at, data).status_code == 200
+
+
+def test_M6_1_delivery_replay_with_same_idempotency_key_never_duplicates_pod(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notices: list[str] = []
+    _dispatch_both_vehicles(execution_api, monkeypatch, notices)
+    body = {"trip_id": 1, "recipient_name": "Synthetic one"}
+    key = str(uuid4())
+    first = send(execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", body, key)
+    again = send(execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", body, key)
+    assert first.status_code == 200 and again.status_code == 200 and again.json() == first.json()
+    # a fresh key for the already completed stop is an illegal transition, not a second POD
+    assert_error(
+        send(execution_api, DRIVER, "DELIVERED", "2026-11-10T09:31:00Z", body), 409, "ILLEGAL_TRANSITION"
+    )
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 1
+    assert (
+        fetch(execution_api.dsn, "SELECT status::text AS s FROM ops.customer_order")[0]["s"] == "DISPATCHED"
+    )
+    assert notices == ["DISPATCHED"]  # no DELIVERED notice until every stop is delivered
+
+
+def test_M6_1_both_vehicles_delivering_concurrently_complete_the_order_once(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    notices: list[str] = []
+    _dispatch_both_vehicles(execution_api, monkeypatch, notices)
+    calls = (
+        (DRIVER, "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "Synthetic one"}),
+        (14, "2026-11-10T09:30:00Z", {"trip_id": 2, "recipient_name": "Synthetic two"}),
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda c: send(execution_api, c[0], "DELIVERED", c[1], c[2]), calls))
+    assert [r.status_code for r in results] == [200, 200], [r.text for r in results]
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 2
+    assert fetch(execution_api.dsn, "SELECT status::text AS s FROM ops.customer_order")[0]["s"] == "DELIVERED"
+    assert notices.count("DELIVERED") == 1 and notices.count("DISPATCHED") == 1
+
+
+def test_M6_1_failure_after_the_pod_insert_rolls_back_pod_stop_and_gps_purge(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notices: list[str] = []
+    _dispatch_both_vehicles(execution_api, monkeypatch, notices)
+    execute(
+        execution_api.dsn,
+        "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'simulator')",
+    )
+
+    async def failing_risk(order_id: int, trigger: str, *, session: object = None) -> None:
+        return None  # M7 produced no verified result for a non-terminal order -> whole event rolls back
+
+    monkeypatch.setattr(risk_service, "recalculate", failing_risk)
+    response = send(
+        execution_api,
+        DRIVER,
+        "DELIVERED",
+        "2026-11-10T09:30:00Z",
+        {"trip_id": 1, "recipient_name": "Synthetic"},
+    )
+    assert_error(response, 409, "PLAN_NOT_APPROVABLE")
+    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
+    assert (
+        fetch(execution_api.dsn, "SELECT status::text AS s FROM ops.trip_stop WHERE id=1")[0]["s"]
+        == "pending"
+    )
+    assert (
+        fetch(execution_api.dsn, "SELECT status::text AS s FROM ops.delivery_trip WHERE id=1")[0]["s"]
+        == "on_road"
+    )
+    assert (
+        fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
+    )  # GPS purge undone
