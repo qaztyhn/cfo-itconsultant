@@ -662,6 +662,22 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 
 **Nguồn roster và `attendance_gen` (ASM-007, thay Q11 = B):** roster điểm danh lấy từ **lịch phân ca chính thức do Warehouse Manager lập cho từng nhân viên/ngày/ca** (mục 13.0a). `shift_template.expected_staff` chỉ là số dự kiến để so sánh: hệ thống **không** tự chia người vào ca theo số này, **không** đưa người dư vào ca cuối. `attendance_gen` chỉ chép lịch đã được quản lý xác nhận thành dòng `planned`; khi bảng lịch chính thức chưa có (chờ PR migration riêng) thì job **không tạo dòng nào**. `PUT …/attendance` và `all_present` chỉ cập nhật người đã có trong lịch, không tạo ca. Thiếu lịch → công suất chỉ tính từ dòng điểm danh thực có (có thể bằng 0) và phải được cảnh báo là chưa xác minh, không dựng số người giả định.
 
+### BE-23 — explicit market selection for System Admin (DEC-INT-KPI-PERIOD-20261109)
+
+The operational KPI read routes `GET /kpi/summary`, `GET /kpi/daily`,
+`GET /kpi/diagnostics`, `GET /audit/decisions`, and the baseline write
+`PUT /kpi/baseline/{metric}` accept optional `?market=SE` (market code).
+An **unassigned System Admin must supply the market** (missing => 403);
+an employee-scoped Admin/Dispatcher/Warehouse may only request their own
+authenticated market, never select another market. Unknown/inaccessible
+market is 404. Market selection never joins results across currencies.
+
+KPI date inputs `?from=YYYY-MM-DD&to=YYYY-MM-DD` are inclusive calendar
+days in the selected market IANA timezone. Default interval is the 30
+calendar days ending on `to` or on current market-local day. At most
+366 inclusive calendar days; longer/reversed periods are rejected 422.
+The published 10 KPI metrics and null diagnostics remain unchanged.
+
 ## 14. KPI
 
 | Phương thức | Đường dẫn | Mô tả |
