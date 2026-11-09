@@ -64,13 +64,13 @@ async def extend_hold(run_id: int, user: AuthUser, db: DbSession) -> dict[str, o
 
 @router.post("/planning-runs/{run_id}/keep-current")
 async def keep_current(
-    run_id: int, user: AuthUser, body: Annotated[dict[str, object], Body()]
+    run_id: int, user: AuthUser, db: DbSession, body: Annotated[dict[str, object], Body()]
 ) -> dict[str, object]:
-    """Replan-suggestion keep-current requires T16/T07 adapter, no silent success."""
+    """Dispatcher keeps the current approved plan (mandatory reason, audited, same transaction)."""
     reason = body.get("reason_text")
     if not isinstance(reason, str) or not reason.strip():
         raise DomainError("REASON_REQUIRED", "Keep-current requires an auditable reason.")
-    await approval_service.keep_current(run_id, user, reason)
+    await approval_service.keep_current(run_id, user, reason, session=db)
     return {"run_id": run_id, "status": "kept"}
 
 

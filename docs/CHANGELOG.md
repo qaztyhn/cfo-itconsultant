@@ -21,6 +21,10 @@
 - `planning_inputs.official_driver_context` (và qua đó planning + T16 five-gate) cùng `execution_service._driver_gate` (dispatch/giao) dùng **cùng một proof** rồi chạy cùng quy tắc engine (`driver_problem`: ca chính thức, nghỉ 11 giờ liên tục, giờ làm, giới hạn lái, bằng lái, xe ngoài/trong phạm vi 561). Không thêm quy tắc pháp lý mới, không đổi DB/API/migration.
 - **Nguồn bằng chứng production chưa được phê duyệt** (lưu trữ/người xác nhận — xem proposal D7): reader mặc định `None` ⇒ vẫn fail closed (`EVIDENCE_MISSING`). Hành vi "cho phép" chỉ được chứng minh qua reader test; cần quyết định Owner về phương án lưu trữ A/B và người attest trước khi bật cho tài xế thật.
 
+## [Keep Current cho gợi ý lập lại (06 §6.6)] — 2026-11-09 — Dev 1
+
+- `POST /planning-runs/{id}/keep-current` thực thi thật (trước đây luôn từ chối): chỉ Dispatcher cùng market, `reason_text` bắt buộc (`422 REASON_REQUIRED`), chỉ áp dụng cho `planning_run.kind='replan_suggestion'` mới nhất của đơn còn kế hoạch đã duyệt trước dispatch; một lần duy nhất (quyết định lại/stale ⇒ `409 ILLEGAL_TRANSITION`). Cùng transaction: đóng alert `replan:{order}:{run}` và ghi `REPLAN_KEPT` (lý do, plan giữ lại, actor). Kế hoạch đã duyệt, giữ chỗ, chuyến và trạng thái đơn **không đổi**; không bao giờ tự duyệt gợi ý. Khóa theo thứ tự đơn → run (như approve). Chưa làm: duyệt kế hoạch thay thế từ gợi ý (cần quyết định/triển khai riêng).
+
 ## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
 
 - `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.
