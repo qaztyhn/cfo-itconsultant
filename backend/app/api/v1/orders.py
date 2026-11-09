@@ -11,12 +11,12 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
 from app.core.security import LoginRateLimiter
 from app.deps import AuthUser, DbSession
-from app.services import order_read_service
+from app.services import contact_log_service, order_read_service
 
 router = APIRouter(tags=["orders"])
 # Process-local admission control for the documented single-instance MVP.
@@ -307,13 +307,70 @@ async def cancel_order(order_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.post("/orders/{order_id}/contact-logs")
-async def create_contact_log(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/contact-logs — customer_service (06 mục 11)."""
-    raise NotImplementedError
+class ContactLogIn(BaseModel):
+    """Only the approved CS contact fields (docs/06 §11)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$", min_length=1, max_length=32)
+    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$", min_length=1, max_length=64)
+    note: str | None = Field(default=None, max_length=1000)
 
 
-@router.get("/orders/{order_id}/contact-logs")
-async def list_contact_logs(order_id: int) -> dict[str, object]:
-    """GET /orders/{order_id}/contact-logs — dispatcher, CS."""
-    raise NotImplementedError
+class ContactLogOut(BaseModel):
+    id: int
+    order_id: int
+    channel: str
+    reason_code: str
+    note: str | None
+    employee_id: int
+    contacted_at: datetime
+
+
+class ContactLogPage(BaseModel):
+    items: list[ContactLogOut]
+    page: int
+    page_size: int
+    total: int
+
+
+@router.post(
+    "/orders/{order_id}/contact-logs",
+    response_model=ContactLogOut,
+    status_code=201,
+    responses=_ERRORS,
+)
+async def create_contact_log(
+    order_id: int,
+    user: AuthUser,
+    db: DbSession,
+    body: ContactLogIn,
+) -> ContactLogOut:
+    """CS only: append contact log and audit in caller-owned DB transaction."""
+    result = await contact_log_service.create(
+        db,
+        user,
+        order_id,
+        channel=body.channel,
+        reason_code=body.reason_code,
+        note=body.note,
+    )
+    return ContactLogOut.model_validate(result)
+
+
+@router.get(
+    "/orders/{order_id}/contact-logs",
+    response_model=ContactLogPage,
+    responses=_ERRORS,
+)
+async def list_contact_logs(
+    order_id: int,
+    user: AuthUser,
+    db: DbSession,
+    page: PageNo = 1,
+    page_size: PageSize = 50,
+) -> ContactLogPage:
+    """Read-only contact log history for CS or Dispatcher, same-market only."""
+    return ContactLogPage.model_validate(
+        await contact_log_service.list_logs(db, user, order_id, page=page, page_size=page_size)
+    )
