@@ -49,9 +49,7 @@ def check_manifest(data: dict[str, Any]) -> None:
     ):
         raise ValueError("Synthetic driving history cannot be promoted to verified")
     edge_cases = data.get("driver_edge_cases", [])
-    if len(edge_cases) != 9 or any(
-        row.get("legally_verified") is not False for row in edge_cases
-    ):
+    if len(edge_cases) != 9 or any(row.get("legally_verified") is not False for row in edge_cases):
         raise ValueError("D7 edge cases must remain unverified")
     rows = data.get("stock_snapshot", {}).get("items", [])
     if len(rows) != 300 or len({(r.get("warehouse_code"), r.get("sku")) for r in rows}) != 300:
