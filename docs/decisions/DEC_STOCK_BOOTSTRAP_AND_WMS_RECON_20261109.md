@@ -15,7 +15,10 @@
 
 The owner expressly permits assuming that Warehouse Managers **do record the warehouse A outbound and warehouse B inbound movements in the existing WMS** for an inter-warehouse transfer. CFO continues read-only toward legacy POS/WMS/ERP and **must not modify WMS**. This assumption does **not** prove a WMS API exists, that it exposes a unique movement ID, an acknowledgment version, or a transfer-to-snapshot reference. Dev 2 must verify the actual read API/CSV export, record format, coverage, permissions, currency/freshness and reconciliation evidence with real Source/WMS contracts. If unsupported, fail closed and use a reviewed manual-evidence workflow, not invented data.
 
-## DEC-T18-WMS-RECON-20261109 — WMS-evidence-first reconciliation
+## DEC-T18-WMS-RECON-20261109 — WMS-evidence-first reconciliation (SUPERSEDED BY OWNER CLARIFICATION)
+
+**Superseded in product scope:** Owner subsequently clarified that CFO **only reads stock from the legacy WMS** and must not independently reconcile physical inter-warehouse movements or run a CFO reconciliation approval queue. See [DEC-WMS-READONLY-20261109](DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). The below text is retained as historical proposal context **not a current implementation requirement**. It does not authorize a movement-proof workflow or 24-hour follow-up. Stock freshness/coverage and no-double-count remain required.
+
 
 1. Prefer **authoritative WMS movement/receipt evidence** for **both source outbound and destination inbound** linked to the CFO transfer and its warehouse, SKU/global-product mapping, quantity, movement direction/status and source batch/version/timestamp. Match each transfer line and store immutable references/provenance, reviewer, decision time and outcome; evidence must be sufficiently specific to determine whether a movement is reflected in each stock snapshot. An arbitrary latest `as_of`, unchanged/changed quantities or a numeric coincidence is **not** proof.
 2. **Outbound side:** avoid subtracting an already-reflected WMS source movement again. Preserve the unresolved transfer adjustment when WMS incorporation cannot be proven; do not release/de-duplicate adjustments solely from a newer timestamp or a quantity delta. If evidence cannot establish availability, fail closed for the affected stock decision.
