@@ -15,7 +15,7 @@ function open(choice: ActionChoice) {
   const onClose = vi.fn();
   const onAcknowledged = vi.fn().mockResolvedValue(undefined);
   const view = render(<PrepActionDialog choice={choice} warehouseId={1}
-    onClose={onClose} onAcknowledged={onAcknowledged} />);
+    reportDate="2025-11-09" onClose={onClose} onAcknowledged={onAcknowledged} />);
   return { onClose, onAcknowledged, ...view };
 }
 
