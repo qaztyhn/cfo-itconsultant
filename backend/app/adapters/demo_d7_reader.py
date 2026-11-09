@@ -115,9 +115,7 @@ class DisposableD7Reader:
                     if not isinstance(rest, dict):
                         return None
                     days.append(
-                        DayEvidence(
-                            day, "off_duty", rest=(_instant(rest["start"]), _instant(rest["end"]))
-                        )
+                        DayEvidence(day, "off_duty", rest=(_instant(rest["start"]), _instant(rest["end"])))
                     )
                 else:
                     driving = tuple(
