@@ -1,0 +1,20 @@
+name: "BE05 temporary Black diff (non-deploy)"
+on:
+  push:
+    branches:
+      - feat/be05-stop-scoped-pod-20261109
+jobs:
+  show-black-diff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Show formatting-only diff
+        run: |
+          python -m pip install --disable-pip-version-check black
+          cd backend
+          black --diff tests/integration/test_execution_api.py
