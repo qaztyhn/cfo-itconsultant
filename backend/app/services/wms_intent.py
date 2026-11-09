@@ -22,9 +22,9 @@ from app.adapters.wms_reservation import (
 from app.adapters.wms_sku import ReservationLine
 from app.core.config import get_settings
 from app.core.errors import DomainError
-from app.domain.models.ops import CustomerOrder
+from app.domain.models.ops import CustomerOrder, OrderLine, OrderRouting
 from app.domain.models.plan import FulfilmentPlan
-from app.domain.models.ref import Market
+from app.domain.models.ref import Location, Market
 from app.domain.models.wms import WmsReservationIntent
 
 
@@ -125,6 +125,30 @@ async def begin_intent(
         or order.status != "PLANNED"
     ):
         raise DomainError("PLAN_NOT_APPROVABLE", "WMS intent requires a currently proposed plan.")
+    route = await session.scalar(
+        select(OrderRouting.route).where(
+            OrderRouting.market_id == market.id,
+            OrderRouting.external_ref == order.external_ref,
+        )
+    )
+    warehouse = await session.get(Location, plan.warehouse_id)
+    originals = (
+        await session.scalars(
+            select(OrderLine).where(OrderLine.order_id == order.id).order_by(OrderLine.id)
+        )
+    ).all()
+    expected = {(line.id, line.local_sku) for line in originals}
+    requested = {(line.order_line_id, line.pos_sku) for line in request.lines}
+    if (
+        route != "cfo"
+        or warehouse is None
+        or warehouse.market_id != market.id
+        or warehouse.code.strip() != request.lines[0].warehouse_code
+        or len(originals) != len(request.lines)
+        or expected != requested
+        or any(line.warehouse_code != warehouse.code.strip() for line in request.lines)
+    ):
+        raise DomainError("RESOURCE_CONFLICT", "WMS reservation differs from CFO routing, order or warehouse.")
     payload = _payload(request)
     digest = _digest(payload)
     found = await session.scalar(
