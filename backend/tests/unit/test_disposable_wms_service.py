@@ -1,6 +1,5 @@
 """Disposable WMS HTTP + persistent SQLite acceptance: never an approval E2E."""
 import copy
-import json
 from pathlib import Path
 
 import pytest
@@ -126,7 +125,9 @@ def test_stock_capacity_idempotency_collision_partial_and_tamper_denied(database
         assert not verify_batch(bad_sig, KEY, expected_reservation_id=changed["included_reservation_ids"][0])
         no_include = copy.deepcopy(changed)
         no_include["included_reservation_ids"] = []
-        assert not verify_batch(no_include, KEY, expected_reservation_id=changed["included_reservation_ids"][0])
+        assert not verify_batch(
+            no_include, KEY, expected_reservation_id=changed["included_reservation_ids"][0]
+        )
         assert client.get("/v1/status/SE/wrong", headers=HEADERS).status_code == 404
 
 
