@@ -100,11 +100,12 @@ export async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
   }
   // Older queued POD events with no trip_stop_id cannot be sent after a
   // contract upgrade. Exact stop identity must match both outbox and server.
-  if (item.event.payload.trip_stop_id === undefined) {
+  const payloadStopId = "trip_stop_id" in item.event.payload ? item.event.payload.trip_stop_id : undefined;
+  if (payloadStopId === undefined) {
     // Legacy single-stop queued events remain replayable against the merged
     // backend. Never infer a stop from an ambiguous multi-stop trip.
     if (trip.stops.length !== 1 || stopScopedPodEnabled()) return false;
-  } else if (item.event.payload.trip_stop_id !== item.stopId) {
+  } else if (payloadStopId !== item.stopId) {
     return false;
   }
   const matchingTerminal = item.event.event_type === "DELIVERED" ? "delivered" : "failed";
