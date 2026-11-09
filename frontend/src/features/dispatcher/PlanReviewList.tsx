@@ -1,9 +1,11 @@
 /**
- * A1 Plan review (danh sách) — Đơn PLANNED + Hold expires in + Reserve class.
- * Đặc tả: docs/03 (mục tương ứng + điều chỉnh mục 7). Mọi màn có trạng thái rỗng/tải/lỗi.
- * Owner: Dev 3 (luồng C) — M5.
+ * Entry point for Plan Review. The Order Queue provides the live PLANNED
+ * orders and resolves each review using the server-issued planning-run ID.
+ * Redirect rather than show the former blank placeholder screen.
  */
+import { Navigate } from "react-router-dom";
+import { PATHS } from "../../app/access";
+
 export function PlanReviewList() {
-  // TODO(#C-PlanReviewList)
-  return <section data-screen="PlanReviewList" />;
+  return <Navigate to={`${PATHS.dispatcherOrders}?status=PLANNED`} replace />;
 }
