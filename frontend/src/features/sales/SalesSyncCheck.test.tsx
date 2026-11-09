@@ -152,7 +152,7 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
         "Operation could not be completed", `cid-${status}`, undefined, status));
       const view = mount();
       search();
-      expect(await screen.findByText("Operation could not be completed")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: status === 403 ? "Permission denied" : status === 404 ? "Order not found or outside your store" : status === 409 ? "Conflict — refresh before proceeding" : status === 422 ? "Invalid order or request" : "Source or CFO unavailable" })).toBeInTheDocument();
       expect(screen.getByText(`cid-${status}`)).toBeInTheDocument();
       expect(screen.queryByText("Synced · CFO routing confirmed.")).not.toBeInTheDocument();
       expect(screen.queryByText(/Delivery confirmed/)).not.toBeInTheDocument();
@@ -163,7 +163,7 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
   it("reuses the same Idempotency-Key on a failed sync retry", async () => {
     mock.sync.mockRejectedValueOnce(new ApiError("SYNC_IN_PROGRESS", "Still syncing", "cid", undefined, 409));
     mount(); search();
-    expect(await screen.findByText("Still syncing")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Conflict — refresh before proceeding" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mock.sync).toHaveBeenCalledTimes(2));
     expect(mock.sync.mock.calls[0][1]).toEqual(mock.sync.mock.calls[1][1]);
@@ -172,7 +172,7 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
     mock.confirm.mockRejectedValueOnce(new ApiError("RESOURCE_CONFLICT", "Resource conflict", "cid", undefined, 409));
     mount(); await eligibleFlow();
     fireEvent.click(screen.getByRole("button", { name: "Confirm standard delivery plan" }));
-    expect(await screen.findByText("Resource conflict")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Conflict — refresh before proceeding" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mock.confirm).toHaveBeenCalledTimes(2));
     expect(mock.confirm.mock.calls[0][1]).toBe(mock.confirm.mock.calls[1][1]);
