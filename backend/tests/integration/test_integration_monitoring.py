@@ -25,8 +25,10 @@ def monitoring(api: Api) -> Api:
         *rows.REF_HR,
         "INSERT INTO ref.app_user (email,password_hash,roles) "
         "VALUES ('admin.integration@test.invalid','synthetic-not-usable','{admin}')",
+        "INSERT INTO hr.employee (market_id,employee_no,first_name,last_name,position_code,hire_date) "
+        "VALUES (1,'E3','Synthetic','Three','TEST_POS','2026-01-01')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
-        "VALUES (1,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
+        "VALUES (3,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
         "INSERT INTO ref.market (code,name,timezone,currency) "
         "VALUES ('YY','Second synthetic market','UTC','EUR')",
         "INSERT INTO ref.market (code,name,timezone,currency) "
@@ -174,7 +176,7 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
     async def scenario() -> None:
         engine = create_async_engine(async_url(monitoring.dsn), poolclass=NullPool)
         maker = async_sessionmaker(engine, expire_on_commit=False)
-        user = CurrentUser(id=3, employee_id=1, roles=("admin",), market="ZZ")
+        user = CurrentUser(id=3, employee_id=3, roles=("admin",), market="ZZ")
 
         async def reader() -> list[int]:
             totals: list[int] = []
