@@ -187,10 +187,10 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 8 | Trễ giữa chừng (đơn 000141) | xanh → vàng → cam → PREDICTED_LATE sau hai lần; bản nháp DELAY; dispatcher sửa và gửi; không gửi lại khi lệch < 30 phút |
 | 9 | Hai dispatcher duyệt cùng lúc tranh một xe | Một thành công, một `409 RESOURCE_CONFLICT` |
 | 10 | Nạp lại cùng dữ liệu; dòng lỗi | Không nhân đôi; reject; `partial` |
-| 11 | SKU chưa ánh xạ (đơn 000156) | `BLOCKED_UNMAPPED_SKU` → IT xác nhận → mở khóa → lập kế hoạch tự động |
+| 11 | SKU chưa ánh xạ (đơn synthetic 000156) | Theo **ASM-005/DEC-ROUTING-002**: Sales kiểm tra CFO trước khi điều phối thủ công; thiếu bất kỳ confirmed mapping ⇒ tuyến **legacy/manual** của hệ thống nguồn, **không** mở FIFO plan/hold trong CFO, IT mapping sau này không tự kéo hồi tố đơn cũ trở lại CFO. Kiểm tra routing immutability và double-fulfilment guard |
 | 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, **gợi ý lập lại tự động** (không giữ chỗ, không tính kế hoạch cũ), dispatcher duyệt (kế hoạch cũ `superseded`, `CONFIRMED` mới), giao thành công; hai POD; doanh thu tính một lần |
-| 13 | GPS | Simulator → bản đồ dispatcher; CS/khách `403`; mất tín hiệu 60 phút → alert; retention 30 ngày |
-| 14 | Hold hết hạn / gia hạn | Extend 2 lần, lần 3 bị từ chối; Approve sau hết hạn vẫn kiểm tra lại |
+| 13 | GPS | Simulator riêng trên staging → live chỉ Dispatcher được gán chuyến/trong ca; khách/CS/Sales 403; lost >60 phút alert. Kết thúc trip/ca ⇒ dừng thu/live ngay; lịch sử hợp lệ giữ tối đa 7 ngày, chỉ privacy/compliance reviewer theo case/audit (real-driver legal/DPIA/notice gate); test xóa khi hết hạn |
+| 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy GPS/điểm; Sales chỉ duyệt rank-1 tiêu chuẩn ở cửa hàng mình, không được duyệt ngoại lệ/plan khác; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
 | 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
@@ -233,7 +233,7 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 - [ ] Mọi hàng ma trận quyền `06` mục 3 có test cho đường cho phép và bị cấm; CS/khách/sales không bao giờ nhận GPS.
 - [ ] Không có double-book xe, tài xế, hàng (kiểm bằng test đồng thời); nạp lại idempotent.
 - [ ] Mọi quyết định có `decision_log`; `decision_log`/`milestone_event` bất biến; log kỹ thuật không PII.
-- [ ] Dashboard KPI đủ 8 chỉ số + 2 chẩn đoán, ngày theo múi giờ market, so với baseline; "cost per delivery" hiển thị là giờ công và km, không quy tiền.
+- [ ] Dashboard KPI đủ **10 KPI** + 2 diagnostics `null` khi chưa có nguồn, mặc định 30 ngày/tối đa 366 và System Admin chọn market; ngày theo timezone market, so với baseline. `labour_hours_per_delivery` và `km_per_delivery` tách thành hai số liệu, không hiển thị cost/SEK.
 - [ ] Engine ≥ 90% dòng; lập kế hoạch một đơn < 2 giây; bảng đơn < 1 giây với 1.000 đơn.
 - [ ] Giao diện khớp ngôn ngữ hình ảnh và bố cục ở `03`; các điều chỉnh mục 7 của `03` đã áp dụng; driver PWA cài được, offline gửi lại không trùng.
 - [ ] Staging online chạy với ping 5 phút; email qua Mailpit/Brevo; SMS mô phỏng; biểu ngữ DPIA hiện khi GPS bật.
