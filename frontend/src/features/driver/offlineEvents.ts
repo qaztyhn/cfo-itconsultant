@@ -3,7 +3,7 @@
  * No GPS or coordinates are ever written here.
  */
 import { isApiError } from "../../api/client";
-import { assignedTrip, submitDriverEvent, type DriverEvent } from "./driverApi";
+import { assignedTrip, stopScopedPodEnabled, submitDriverEvent, type DriverEvent } from "./driverApi";
 
 export type PendingEvent = {
   key: string;
@@ -100,8 +100,13 @@ export async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
   }
   // Older queued POD events with no trip_stop_id cannot be sent after a
   // contract upgrade. Exact stop identity must match both outbox and server.
-  if (!("trip_stop_id" in item.event.payload) ||
-      item.event.payload.trip_stop_id !== item.stopId) return false;
+  if (item.event.payload.trip_stop_id === undefined) {
+    // Legacy single-stop queued events remain replayable against the merged
+    // backend. Never infer a stop from an ambiguous multi-stop trip.
+    if (trip.stops.length !== 1 || stopScopedPodEnabled()) return false;
+  } else if (item.event.payload.trip_stop_id !== item.stopId) {
+    return false;
+  }
   const matchingTerminal = item.event.event_type === "DELIVERED" ? "delivered" : "failed";
   return (trip.status === "on_road" &&
       (assignedStop.status === "pending" || assignedStop.status === matchingTerminal)) ||
