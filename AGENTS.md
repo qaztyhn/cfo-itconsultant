@@ -31,7 +31,7 @@ When documents disagree, apply the precedence specified by `docs/09_AI_Coding_Ru
 
 `docs/10_Team_Assignment.md` assigns file ownership and review responsibilities. Do not interpret its schedule as overriding the specifications. If a required file is missing, **stop work that depends on it and report the missing contract**; do not invent it.
 
-**Known documentation inconsistency to flag, not silently fix:** `09` §4 invariant 10 and v1.2 explicitly require **multiple vehicles for one order**, whereas a stale bullet in `09` §13 describes that algorithm as outside MVP. Before implementing affected behavior, request that the team reconciles this bullet; do not bring back the removed `MANUAL_PLANNING` or `HANDLED_EXTERNALLY` statuses.
+**Owner-approved amendments (2026-11-09):** `docs/ASSUMPTIONS.md`, [DEC-CS/M6/STOCK/D8](docs/decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md), [DEC-WMS-RESERVE-SYNC](docs/decisions/DEC_WMS_RESERVE_SYNC_20261109.md) and [DEC-INTEGRATION Q2–Q10](docs/decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) supersede older, conflicting prose. Multi-vehicle plans remain in MVP; the obsolete warning about `09` §13 has been reconciled. Approved policy is **not** proof of implementation, WMS write permission, GPS legal clearance or passing end-to-end tests.
 
 ## Load only the context needed for the task
 
@@ -48,8 +48,8 @@ Read targeted sections, not all ten specifications every turn; `09` is the expli
 ## Non-negotiable safety and product rules (summary; `09` controls)
 
 - **No automatic approval**. Sales may explicitly confirm only an eligible, scoped standard plan via the same approval transaction; dispatcher retains all exception/replan authority. No unagreed dates or automatic DELAY notices.
-- **GPS access is enforced server-side for dispatcher only**. Never expose GPS or customer PII in logs or unauthorized responses.
-- **CFO reads source systems; never write back** to POS/WMS/ERP. Sales may request an immediate read from CFO via existing adapter, with 5-minute polling as fallback.
+- **GPS is role-, trip-, duty- and case-scoped on the server**: only the assigned Dispatcher may read live positions during an authorized trip/shift. After trip/duty ends, live access stops immediately; legitimate history may be retained up to 7 days and read only by an explicitly authorized privacy/compliance reviewer assigned to a case, with audit and legal/privacy clearance. No customer/CS/Sales GPS access, PII logs or real-worker GPS before sign-off.
+- **CFO reads POS/ERP and authoritative WMS stock, never changes physical WMS on_hand or transfer/receipt records.** Owner approved the *business intent* for a narrowly scoped CFO→WMS **reservation/release request at authorized plan confirmation**, requiring verified original WMS SKU/unit, precise ACK, idempotency and immediate stock re-read. **Real WMS outbound writes remain disabled pending separately reviewed API, permissions and rollout**; synthetic reserve/status/release is staging-only and labelled simulated. Sales sync-now reads POS via CFO; 5-minute polling is fallback. No POS/ERP write-back.
 - **Engine is pure**: no DB, network, clock, filesystem, environment, or I/O. Use injected inputs and clock.
 - **One warehouse per order; no combining orders in one trip; one order may require multiple vehicles.**
 - **Planning holds may overlap; only approval acquires prescribed locks and rejects overcommit**. Close superseded plans in the same transaction.

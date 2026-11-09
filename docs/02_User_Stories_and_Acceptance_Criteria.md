@@ -130,18 +130,18 @@
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
 
-**Newer owner clarification [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) takes precedence over the WMS proof/reviewer acceptance proposal below:** CFO does **not** manage physical transfer reconciliation. WMS owns stock/transfer records; CFO reads complete/fresh stock snapshots and maintains only its own planning holds/commits. Do not implement AC-WMS-02/03 as an independent CFO evidence-approval workflow or a 24h reconciliation queue. Review legacy transfer confirm/receive acceptance in #127 before implementation.
+**LATEST OWNER OVERRIDE — DEC-INT-TRANSFER-BOUNDARY/Q3 (2026-11-09)** [decision](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md): CFO **gợi ý/yêu cầu/hủy** chuyển kho, WMS **duy nhất** thực hiện và ghi nhận xuất/nhập vật lý. `confirm-source` và `receive` trên CFO là route legacy trả `409 ILLEGAL_TRANSITION` sau RBAC, không tạo inbound; #127 đã merge với guard này. AC-WMS-02/03 bên dưới là **lịch sử đề xuất bị thay thế** nếu đòi CFO reviewer nhận/chấp thuận chứng cứ vật lý. CFO chỉ đọc tồn WMS mới/đầy đủ và không tính trùng physical inbound hoặc reservation.
 
 **Stock Admin bootstrap & WMS transfer reconciliation — acceptance supplement (09/11/2026):**
-- AC-BOOT-01. Chỉ **System Admin được Owner ủy quyền** mới bootstrap grant Stock Admin đầu tiên cho market; không tự cấp cho chính mình, không seed quyền mặc định; audit người cấp/nhận, market, quyền, hiệu lực, lý do và before/after.
+- AC-BOOT-01 (đã mở rộng bởi DEC-STOCK-GRANT-CONTROL-20261109). **Chỉ System Admin có ủy quyền tường minh từ Owner** được cấp **và thu hồi** mọi Stock Admin grant theo market, ban đầu và tiếp theo; không self-grant/seed implicit grant, audit scope, actor, grantor/grantee, reason, hiệu lực và before/after. Stock Admin có grant nhưng không có ủy quyền Owner **không** được cấp quyền tiếp.
 - AC-WMS-01. Giả định WMS cũ ghi nhận **xuất và nhập chuyển kho**; adapter phải chứng minh dữ liệu đó thật sự đọc được, không tự giả mã giao dịch/ACK. CFO không ghi ngược WMS.
-- AC-WMS-02. WMS đối soát đúng source/destination/transfer/SKU/qty và batch/version hoặc bằng chứng thủ công do Warehouse Manager nộp, **người phê duyệt có quyền độc lập** chấp nhận với audit. Không tự suy snapshot.as_of hoặc lượng tồn tăng/giảm.
-- AC-WMS-03. Khi chưa chứng minh WMS đã phản ánh outbound/inbound, không tính lặp phần điều chỉnh nguồn/đích, không đánh dấu hàng sẵn có nhờ inbound CFO chưa xác minh; chặn quyết định ATP liên quan nếu chứng cứ thiếu. Replay idempotent; xung đột/partial/503 ⇒ fail closed.
+- AC-WMS-02 (**superseded as CFO workflow; historical only**). WMS chịu trách nhiệm đối soát transfer/physical stock trong chính WMS. CFO không được yêu cầu Warehouse Manager nộp evidence chuyển kho để CFO reviewer xác nhận nhập/xuất; không tạo queue phê duyệt chứng từ vật lý. Chỉ dựa vào snapshot WMS có provenance và coverage được xác minh; thiếu bằng chứng → không hứa tồn.
+- AC-WMS-03 (current safety invariant). Không tự cộng inbound chuyển kho hoặc trừ lại hàng vật lý WMS đã phản ánh; thiếu batch/SKU/WMS provenance ⇒ `unknown`, không tính stock available nhờ CFO request; không tạo giả WMS `ACK`, replay/idempotency và 503 phải fail-closed.
 
-**US-ATP-03 — Quản lý kho nguồn xác nhận chuyển kho** · Là *quản lý kho nguồn*, tôi xác nhận có thể xuất. · BR-EMP-03
-- AC1. *Given* tôi là quản lý có `can_approve` của kho nguồn, *When* `confirm-source`, *Then* tạo `inbound_shipment(source=transfer, confirmed=true, eta_date=…)` và đơn có thể chạy lại kế hoạch.
-- AC2. *Given* tôi là quản lý kho khác, *Then* `403`.
-- AC3. *When* kho đích `receive`, *Then* `received = true`.
+**US-ATP-03 — Legacy acceptance superseded by Q3 (WMS physical transfer authority)** · CFO kho chỉ xem request, **không xác nhận xuất/nhập vật lý**. WMS là source-of-truth; hành động CFO cũ giữ endpoint fail-closed có kiểm scope.
+- AC1. *Given* quản lý kho nguồn có quyền, *When* gọi CFO `confirm-source`, *Then* nhận `409 ILLEGAL_TRANSITION`, **không** sinh `inbound_shipment`, không thay đổi tồn WMS, không chuyển trạng thái request.
+- AC2. *Given* người quản lý khác không có scope, *When* gọi route legacy `confirm-source/receive`, *Then* từ chối theo RBAC (không lộ transfer ngoài phạm vi), không tạo thay đổi trạng thái hoặc tồn.
+- AC3. *When* kho đích gọi CFO `receive`, *Then* trả `409 ILLEGAL_TRANSITION` sau kiểm quyền; **chỉ WMS** ghi nhận receipt/physical inbound, CFO chỉ đọc snapshot sau đó.
 
 ---
 
@@ -237,7 +237,7 @@
 **US-PLN-07 — Không có phương án khả thi** · Là *dispatcher*, tôi biết vì sao và ngày nào khả thi. · BR-RNK-04/05
 - AC1. *Given* mọi kho thiếu hàng, *Then* `failed_check = stock`, đơn `NO_FEASIBLE_DATE`, `earliest_feasible_date` (tối đa 14 ngày tới) và gợi ý chuyển kho.
 - AC2. *Given* ngày yêu cầu tự đổi mà khách chưa đồng ý, *Then* hệ thống **không** đổi `date_to`.
-- AC3. *When* dispatcher ghi `date_negotiation(agreed)`, *Then* đơn có thể chạy lại với ngày mới (`version + 1`, ghi `DATE_NEGOTIATION_RECORDED`).
+- AC3. *When* Dispatcher ghi `date_negotiation(agreed)`, *Then* lưu contact record/`DATE_NEGOTIATION_RECORDED` nhưng **chưa** đổi ngày hoặc version của đơn và không tự replan. Chỉ hành động **Apply agreed date** riêng của Dispatcher sau kiểm agreement/version/audit mới yêu cầu cập nhật ngày và chạy planning lại (Q4); không tự approve.
 - AC4. *When* ghi `unreachable`, *Then* `remind_at = now + 24 giờ` và xuất hiện nhắc.
 - AC5. *When* ghi `declined`, *Then* dispatcher có thể hủy với lý do.
 
@@ -434,7 +434,7 @@
 ## Epic 14 — KPI và nhật ký
 
 **US-KPI-01 — Dashboard KPI** · FR-KPI-01
-- AC1. *Then* hiện 8 chỉ số kèm baseline và thay đổi so với baseline; có biểu đồ chuỗi theo ngày (ngày tính theo múi giờ market).
+- AC1. *Then* dashboard hiện **10 KPI vận hành**, có baseline/biến động và biểu đồ theo **ngày market-local**; mặc định 30 ngày, tối đa 366. Hai diagnostics chưa đủ nguồn (`hard_constraint_violations`, `event_to_alert_latency_s_median`) trả `null`, không giả 0; System Admin chọn market rõ trước khi xem.
 - AC2. *Given* đơn FAILED, *Then* không nằm trong mẫu số `on_time_rate`.
 - AC3. *Then* "cost per delivery" hiển thị là giờ công và km trung bình mỗi lần giao, không quy ra tiền.
 - AC4. *Then* `/kpi/*` chỉ cho `admin` hoặc người có `ops`; Business owner (`revenue_all`) nhận `403`.

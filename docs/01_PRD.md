@@ -156,7 +156,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-EXE-03 (M)** Giao thất bại có lý do chọn sẵn, đếm riêng; dispatcher xếp lại.
 - **FR-RSK-01 (M)** Tính lại ETA khi có sự kiện, GPS mới, dữ liệu nguồn đổi, mốc quá hạn 30 phút, và 07:00 hằng ngày với đơn nhiều ngày; không tính vô ích. [C]
 - **FR-RSK-02 (M)** Trạng thái rủi ro theo % tiêu hao dự trữ (xanh < 33%, vàng 33–66%, cam > 66%; trễ khi slack âm 2 lần liên tiếp; quá hạn). Cam và trễ báo dispatcher. [C][T]
-- **FR-GPS-01 (M)** GPS có trong MVP: driver PWA gửi vị trí mỗi 30 phút (chỉnh được), có bộ giả lập; **chỉ dispatcher xem**; khách và CS không bao giờ thấy; mất tín hiệu > 60 phút → alert; xóa sau 30 ngày; cờ `gps_enabled` theo nước và ghi nhận DPIA. Chỉ gửi vị trí khi chuyến đang chạy (`on_road`), không theo dõi ngoài giờ làm. **Giả định pháp lý:** tài xế được thông báo khi ký hợp đồng lao động và trong app (mục đích, ai xem, khi nào gửi, thời gian lưu); vì đồng ý trong quan hệ lao động thường không được coi là tự nguyện theo GDPR, cơ sở pháp lý dự kiến là lợi ích hợp pháp/thực hiện hợp đồng, kèm DPIA và tham vấn nhân viên trước khi dùng thật. [C][S][A]
+- **FR-GPS-01 (M, Owner amendment 09/11)** GPS trong MVP: driver PWA gửi vị trí mỗi **30 phút** chỉ khi trip `on_road` và tài xế đang trong **ca chính thức**, GPS theo market được bật, có notice/ack theo phiên bản cho từng tài xế; không thu ngoài ca. Chỉ **Dispatcher được gán chuyến** xem live trong ca; dừng thu và thu hồi live ngay khi trip/ca kết thúc, xóa offline queue không hợp lệ. Lịch sử GPS đã thu hợp lệ được giữ **tối đa 7 ngày** trong phạm vi bị hạn chế, chỉ **privacy/compliance reviewer có case, lý do, scope và audit** được truy cập; khách/CS/Sales không xem. Mất tín hiệu >60 phút → alert; synthetic simulator tách với người thật. **Chưa bật GPS người thật** khi thiếu review pháp lý, DPIA, thông báo/nghĩa vụ liên quan; không mặc định consent là căn cứ GDPR. [DEC-GPS-RET](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md), [Q5](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md). [C][S][A]
 
 ### 5.9 Thông báo
 - **FR-NOT-01 (M)** 4 loại: xác nhận ngày và khung giờ (khi duyệt), đã xuất kho, đã giao (hoặc giao thất bại), báo trễ. Email thật (Mailpit/Brevo), SMS mô phỏng. [C]
@@ -170,8 +170,8 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-EMP-03 (M)** RBAC theo vai trò và phạm vi địa điểm, kiểm ở máy chủ.
 
 ### 5.11 KPI, log, quản trị
-- **FR-KPI-01 (M)** Dashboard 6 KPI của slide (thời gian lập kế hoạch, giao đúng hạn, giờ công và km mỗi lần giao thay cho "cost per delivery", sai số chuẩn bị, sai số ETA, tỷ lệ chấp nhận kế hoạch) + tỷ lệ giao thất bại + mức dùng công suất; so với baseline nhập tay. [S][C]
-- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (ngoài 8 KPI vận hành): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn theo cửa hàng và theo kho, **không cộng với nhau**; xuất CSV có ghi nhật ký. Chỉ tiền hàng, không phí giao/đóng gói/nhân công/giá vốn/lợi nhuận. [C][A]
+- **FR-KPI-01 (M, 10 KPI owner-approved)** Dashboard vận hành có **10 khóa**: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`; so với baseline nhập tay, market-local cohorts, mặc định 30 ngày/tối đa 366 ngày, System Admin chọn market tường minh. Hai diagnostics `hard_constraint_violations` và `event_to_alert_latency_s_median` phải là `null` khi thiếu nguồn; không bịa dữ liệu/0. [Q6](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md). [S][C]
+- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (**tách khỏi 10 KPI vận hành**): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn cửa hàng/kho **không cộng nhau**; xuất CSV có audit. Chỉ tiền hàng, không thêm phí/giá vốn/lợi nhuận khi chưa được duyệt. [C][A]
 - **FR-LOG-01 (M)** Nhật ký quyết định trong DB (chỉ thêm) và log kỹ thuật JSONL; không PII trong log.
 - **FR-ADM-01 (M)** IT xem lịch sử đồng bộ, dòng bị loại, cấu hình market, bật/tắt GPS, ghi nhận DPIA.
 
@@ -230,7 +230,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-RNK-02** Xếp hạng: số xe ít hơn trước; hòa điểm: dự trữ lớn hơn → điểm phức tạp thấp hơn → ETA sớm hơn → xe nhỏ hơn mà vẫn đủ chứa (tổng tải nhỏ hơn) → mã xe nhỏ hơn. Đơn đã chiếm gần hết tải xe thì không cần ghép đơn (ghép đơn ngoài MVP). Điểm phức tạp = +1 mỗi: dùng hàng nhập chưa về, lên hàng dời ca, cần chuyển kho. [S][C]
 - **BR-RNK-03** Trả 1 phương án tốt nhất + 2 thay thế (tối đa 2 phương án mỗi kho), kèm lý do. [S]
 - **BR-RNK-04** Không có phương án: báo check hỏng xa nhất và ngày khả thi sớm nhất (tìm tối đa 14 ngày). [S][A]
-- **BR-RNK-05** Đổi ngày chỉ khi có `date_negotiation.agreed` (người, kênh, giờ); `declined` → hủy được; `unreachable` → nhắc sau 24 giờ. [C]
+- **BR-RNK-05 (Q4 mới nhất)** Chỉ Dispatcher được bấm riêng **Apply agreed date** sau khi đã lưu `date_negotiation.agreed` và backend kiểm chứng agreement/version/audit; việc ghi `agreed` **không** tự đổi ngày/phiên bản hoặc replan. Sau thao tác Apply mới tạo phiên lập kế hoạch và kiểm lại 5 gate; không tự approve hoặc ghi ngược POS. `declined` → có thể đề xuất hủy với lý do; `unreachable` → nhắc 24 giờ. [C]
 
 ### 6.7 Giữ chỗ và duyệt
 - **BR-RES-01** Ba trạng thái giữ chỗ cho tồn kho, giờ công, xe, tài xế: `held` (đang được chọn, có hạn), `committed` (đã chọn), chưa ai chọn (không có dòng). [C]
@@ -253,7 +253,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-NOT-01** Khách nhận: ngày và khung giờ đã xác nhận, đã xuất kho, đã giao/giao thất bại, báo trễ. [S]
 - **BR-NOT-02** Chỉ báo trễ khi thay đổi có ý nghĩa: lệch ≥ 30 phút so với khung đã thông báo. [S][A]
 - **BR-NOT-03** Không gửi 21:00–07:00 giờ địa phương, trừ báo trễ. [A]
-- **BR-GPS-01** Chỉ dispatcher xem GPS; khách/CS không bao giờ; GPS chỉ bật khi `gps_enabled`; xóa 30 ngày sau chuyến; mất tín hiệu > 60 phút → alert; bản demo hiện "chưa có DPIA". [C][S]
+- **BR-GPS-01 (sửa 09/11)** Live GPS chỉ Dispatcher được gán trip đang on-road trong ca chính thức; khách/CS/Sales không xem. Dừng thu/live khi trip hoặc ca kết thúc; lịch sử hợp lệ tối đa **7 ngày** chỉ dành privacy/compliance reviewer được chỉ định theo case và audit sau privacy/legal sign-off. Mất tín hiệu >60 phút → alert; demo hiện cảnh báo khi thiếu DPIA. [C][S]
 
 ### 6.9 Nhân sự và quyền
 - **BR-EMP-01** Mỗi nhân viên `active` có đúng một phân công đang hiệu lực. [C]
@@ -329,7 +329,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | 3 | Company A kiểm soát kho, cửa hàng, lịch xe [T] | Hãng vận tải ngoài là phần mở rộng |
 | 4 | Dữ liệu tồn kho/hàng nhập đủ tươi (5 phút) | Cờ dữ liệu cũ sau 15 phút; adapter có thể đổi sang CDC |
 | 5 | Chất lượng ánh xạ sản phẩm | Hàng đợi IT, quy tắc gợi ý, chặn đơn rõ ràng |
-| 6 | **GPS tài xế là dữ liệu cá nhân người lao động** | Cờ theo nước, DPIA, tham vấn nhân viên, chỉ dispatcher, chỉ khi chuyến `on_road`, xóa 30 ngày; cơ sở pháp lý dự kiến là lợi ích hợp pháp/thực hiện hợp đồng (không dựa vào "đồng ý"), cần pháp lý xác nhận khi pilot; PWA chỉ định vị khi mở app (iOS hạn chế) nên dùng bộ giả lập demo; app native là phần mở rộng |
+| 6 | **GPS tài xế là dữ liệu cá nhân người lao động** | GPS chỉ trong trip/ca, cadence 30 phút; Dispatcher gán trip xem live, lịch sử hợp lệ tối đa 7 ngày cho case-specific privacy/compliance reviewer với audit, legal/DPIA/notice review trước người thật. Không dùng consent đơn thuần làm cơ sở pháp lý mặc định; dùng simulator synthetic cho demo. |
 | 7 | Giới hạn free-tier (Render ngủ, Supabase tạm dừng, ORS quota) | Ping 5 phút; ma trận lộ trình tính trước và cache; kiểm tra lại giới hạn trước khi deploy |
 | 8 | Khách DN thật sự nhạy giao hàng nhất (A1) | Phỏng vấn khách trong pilot |
 | 9 | Các hằng số [A] (giờ hữu ích, định mức, tốc độ, hệ số cờ…) chưa đo thực tế | Cấu hình được; hiệu chỉnh bằng `improvement_log` sau pilot |
@@ -346,7 +346,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | 1 | Nhóm xử lý N1–N6, cờ | AI gợi ý từ thuộc tính ERP, **quản lý kho** duyệt | Bảng quy tắc cứng; **IT** nhập định mức và xác nhận; AI ở giai đoạn 2 | Chưa có số liệu kho thật; dữ liệu `improvement_log` làm nền cho AI sau này; một bộ định mức chung tránh lệch giữa các nước |
 | 2 | Xếp hạng | Cheapest feasible plan / lowest cost | `0,5 × n_km + 0,5 × n_fill` (min–max), thấp hơn tốt hơn | "Rẻ" = gần kho (chi phí vận chuyển) và kho không quá tải; không quy tiền vì thiếu số liệu chi phí |
 | 3 | Hòa điểm | Delivery buffer lớn hơn, thao tác đơn giản hơn | Ít xe hơn → dự trữ lập kế hoạch → điểm phức tạp → ETA sớm → xe nhỏ hơn mà đủ chứa | Buffer không cộng vào thời gian chuyến (BR-DEL-04); xe nhỏ hơn gần nghĩa "rẻ" hơn |
-| 4 | GPS tài xế | Ngoài MVP, sau đánh giá GDPR | Trong MVP; chỉ dispatcher; chỉ khi `on_road`; xóa 30 ngày; DPIA trước khi dùng thật | Giá trị phát hiện trễ sớm; giả định cơ sở pháp lý ở FR-GPS-01 |
+| 4 | GPS tài xế | Ngoài MVP, sau đánh giá GDPR | Trong MVP dạng synthetic/demo; chỉ Dispatcher gán trip xem live khi on-road/ca; ngừng thu/live khi hết trip/ca, lịch sử hợp lệ tối đa 7 ngày cho reviewer theo case; DPIA/legal trước người thật | Bỏ chính sách cũ “xóa 30 ngày”; xem FR-GPS-01 |
 | 5 | Tech stack | Azure (EU), Azure Maps, SMS/email EU | Supabase/Render/Vercel, OpenRouteService, Mailpit/Brevo, SMS mô phỏng; lõi giống (PostgreSQL, Python, React, PWA) | MVP mô phỏng nên dùng công cụ miễn phí; provider nằm sau interface |
 | 6 | Thời gian | 6 tuần | Không cố định, làm xong càng nhanh càng tốt (lịch 7 ngày ở `08` chỉ tham khảo) | — |
 | 7 | Thiết bị kho | Equipment-level scheduling ngoài MVP | **Bỏ** (khớp slide); năng lực cẩu/ben là thuộc tính xe | Chưa biết thiết bị cụ thể và cách dùng |
@@ -363,7 +363,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | Tích hợp | API polling ~5 phút, dự phòng CSV qua SFTP | API hệ thống nguồn giả lập; dự phòng tải CSV lên |
 | Công suất kho | Người × giờ năng suất − việc đã đặt | Thêm tỷ lệ 90% dành cho đơn giao |
 | Báo trễ | Gửi khi thay đổi có ý nghĩa | Hệ thống tạo nháp, **dispatcher bấm gửi**; ngưỡng lệch ≥ 30 phút |
-| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; trang 10 thêm manual interventions/order, rollout effort, shared component reuse | 8 KPI (6 của slide + giao thất bại + mức dùng công suất); manual interventions ≈ `manual_plan_count`; rollout effort và component reuse đo ở giai đoạn mở rộng (MVP chỉ một nước) |
+| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; slide đề cập các chỉ số mở rộng | **10 KPI vận hành** theo FR-KPI-01 (bao gồm giờ công và km tách riêng, giao thất bại, sử dụng công suất, manual_plan_count); **2 diagnostics chưa có nguồn = null**; rollout effort/shared component reuse để mở rộng | 30 ngày mặc định, tối đa 366, market rõ; không hiển thị cost/SEK như một giá trị tài chính |
 | Chuyển kho | Không nhắc | Gợi ý chuyển kho bằng quy tắc (vẫn một kho xử lý trọn đơn) |
 | Giờ công | Theo đơn vị chuẩn bị | Quy về đơn vị cơ sở nhỏ nhất; hàng không chia nhỏ được thì làm tròn lên |
 | Dữ liệu cho AI | Học từ thực tế | Giờ nhân công/đơn vị cơ sở theo nhóm, thu qua bắt đầu/tạm dừng/tiếp tục/xong |
