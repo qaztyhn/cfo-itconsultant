@@ -34,6 +34,36 @@ Every status below refers to a specific surface and evidence type:
 | Driver dispatch/POD, GPS, customer notification | NOT VERIFIED / DISABLED | Beyond this smoke's safe scope; no real GPS, live customer messaging or WMS production write. | Dev 1 / Dev 3 / privacy |
 | Disposable environment reset | **PASS (isolated CI Compose project only)** | [Run #42605883212](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883212) logs show all `cfo-demo-ci-*` containers removed, named `pgdata` volume removed, and no unrelated project targeted. Reproduction on a different developer workstation remains NOT VERIFIED. | Dev 2 |
 
+## Incremental evidence contract — database proof slice (2026-11-09)
+
+**Code added, new exact-head Compose run not yet verified at the time of this
+change.** `tools/demo_db_verify.py` reads the real Source versions and CFO
+PostgreSQL rows *after* an actually accepted Sales Sync & Check event, with
+no extra database writes. Its two independently reported results are:
+
+- `postgres_once`: exactly one CFO order and one `cfo` routing decision
+  matching Source version for Swedish store candidate `SE-2026-000149`.
+- `postgres_legacy_negative`: zero CFO orders and exactly one `legacy`
+  routing decision matching source version for unmapped `SE-2026-000156`.
+
+If the mutating Source/CFO HTTP smoke reports `sales_sync_write=BLOCKED`,
+the tool does **not** query an imagined CFO order: it emits `BLOCKED` and
+`NOT VERIFIED`. A source-version mismatch, duplicate row, missing routing,
+malformed prior smoke report or inaccessible PostgreSQL is **FAIL**. The
+preflight CI enforces the proof whenever the HTTP route actually succeeds,
+and uploads a separate non-PII JSON report.
+
+**Current ownership and prerequisites:** Dev 1 Source-order acceptance is
+in [PR #202](https://github.com/qaztyhn/cfo-itconsultant/pull/202);
+Dev 2 HTTP adapter is in stacked
+[PR #204](https://github.com/qaztyhn/cfo-itconsultant/pull/204).
+Neither was merged into `main` when this slice was authored.
+Do not upgrade Source→CFO sync, database uniqueness, actual five-gate plan,
+standard-plan approval or full E2E to PASS based on this code or the older
+preflight. Regulatory D7 data remain unverified and WMS reservation ACK
+remains a separate Dev 1/2 prerequisite. No production scheduling,
+real GPS, notification sending or physical WMS write is enabled.
+
 ## Executed disposable CI evidence — 2026-11-09
 
 - Commit: `c2171fa6a1daafe4212ba243ae652294fd48a934`
