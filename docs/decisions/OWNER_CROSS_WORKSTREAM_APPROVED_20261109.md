@@ -49,6 +49,18 @@
 - **KPI-1:** Keep **10 published KPI keys**: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`. Correct text saying eight. The two currently unsupported diagnostics `hard_constraint_violations` and `event_to_alert_latency_s_median` must be `null`, not invented zeros or guesses.
 - **KPI-2:** Use **approval date** for planning cohorts, **delivery/completion date** for delivery cohorts and **warehouse work_date** for capacity, in each market's IANA timezone. Any other ambiguous metric cohort needs reviewed definition rather than guessing.
 
+## Further clarification — WMS-only physical stock ledger (2026-11-09)
+
+[DEC-WMS-READONLY-20261109](DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) supersedes the **separate CFO WMS movement-reconciliation workflow** contemplated below: **WMS itself performs physical issue/receipt/transfer and reconciles inventory; CFO only GETs complete, fresh WMS stock snapshots**, tracks its own held/committed plan reservations and never creates duplicate physical stock adjustments or approval queues for WMS proofs. No 24-hour CFO reconciliation alarm is required. T18-1 no-double-count, stock freshness and scope remain important. The previously documented proposed WMS proof/reviewer approach is retained as historical context only and **not a task to implement**; PR #127 needs product/contract review for its confirm/receive behavior.
+
+## Additional owner approvals — stock grant bootstrap and WMS transfer reconciliation (2026-11-09)
+
+The earlier S1/S2 and T18-1 rules are supplemented by [DEC-STOCK-GRANT-BOOTSTRAP-20261109 and DEC-T18-WMS-RECON-20261109](DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). An **owner-authorized System Admin** may issue the first explicit, market-specific Stock Admin grant with audit; **no self-grant**, no implicit superuser stock permissions. The owner allows assuming that warehouse managers record transfer outbound/inbound in the legacy WMS, **but not assuming WMS API exposes movement IDs or transfer-linked snapshot acknowledgments**. Reconcile using verified WMS movement/receipt evidence for source and destination; otherwise Warehouse Manager submits proof and an independent appropriately market-authorized reviewer approves/audits it. Never infer reconciliation from timestamps/quantity changes, never double-subtract outgoing or double-add incoming. The suggested 24-hour escalation has **not** been approved.
+
+## Amendment to G4 — approved later on 2026-11-09
+
+**The original G4 immediate raw GPS deletion instruction above is superseded in retention timing ONLY** by [DEC-GPS-RET-20261109](DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md): stop collection/live read at trip/shift end immediately, retain already lawfully captured history for at most **seven days** with approved investigation scope/audit and legal/privacy controls, then erase. The 30-minute device cadence, 100-point cap, absence of out-of-duty collection, individual notices and legal sign-off remain unchanged. The owner separately approved operational reviews at **07:00 and 13:00 Europe/Stockholm**, not all D8 jobs.
+
 ## Handoff and safeguards
 
 **Dev 1:** stock-grant/version/evidence schema and APIs with Dev 2; T18 reconciliation, D7 eligibility loader and T16 recheck, M6 per-trip-stop POD migration and event/RiskService integration; backend DTO/contract harmonization and M8 KPI contracts.
@@ -58,3 +70,7 @@
 **Dev 3:** independent hotfix PR for merged #136, using the actual backend `passed` and flat rejected candidate fields and correct plan approval guards.
 
 **Required acceptance:** Reviewed migration/API updates where needed, actor + market RBAC, valid/invalid history/stock paths, concurrency, rollback, cross-market privacy, actual PostgreSQL E2E and exact-head CI. Keep fail-closed behavior until fully validated; **do not auto-merge PR code**. This record does not substitute for legal, DPIA or compliance sign-off.
+
+## Latest exception to WMS read-only contract (2026-11-09)
+
+[DEC-WMS-RESERVE-SYNC-20261109](DEC_WMS_RESERVE_SYNC_20261109.md) selects the **narrow reserve-on-authorized-approval business workflow**: CFO checks fresh WMS available, submits a request using confirmed reverse-mapped original WMS SKU, WMS atomically reserves and reduces available, CFO immediately refreshes stock, and no WMS-reflected reservation can be subtracted twice. WMS alone controls physical on_hand. This exception does not authorize CFO WMS transfer reconciliation or on_hand writes, and is not evidence a real WMS API/credential/production write is ready. Review Dev 1/2 contract/implementation before activation.
