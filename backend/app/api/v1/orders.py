@@ -10,14 +10,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
+from app.core.security import LoginRateLimiter
 from app.deps import AuthUser, DbSession
 from app.services import order_read_service
 
 router = APIRouter(tags=["orders"])
+# Process-local admission control for the documented single-instance MVP.
+# Gateway/proxy limits and access-log redaction remain deployment prerequisites.
+phone_search_rate_limiter = LoginRateLimiter()
 
 
 class Ref(BaseModel):
@@ -196,6 +200,7 @@ _ERRORS: dict[int | str, dict[str, object]] = {
 async def list_orders(
     user: AuthUser,
     db: DbSession,
+    response: Response,
     status: Annotated[str | None, Query(description="One or more statuses, comma separated")] = None,
     risk_color: str | None = None,
     committed_date_from: date | None = None,
@@ -211,6 +216,10 @@ async def list_orders(
 ) -> Page[OrderListItem]:
     """GET /orders — phạm vi 06 mục 5.2; mặc định sắp theo thứ tự đặt `submitted_at, id` (mục 5.4)."""
     scope = await order_read_service.resolve_order_scope(db, user)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if q and order_read_service.is_phone_query(q):
+        phone_search_rate_limiter.hit(f"{user.id}:{scope.market_id}")
     items, total = await order_read_service.list_orders(
         db,
         scope,
