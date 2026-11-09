@@ -209,7 +209,7 @@ def scenarios() -> dict[str, object]:
          "unknown_fail_closed", ["DRIVER_LICENCE_MISSING"],
          {"driver_override": {"licence_class": None}}),
         ("dst_overnight_history", "D09", "MLM-18-01", "2026-10-25T00:30+02:00", "2026-10-25T04:30+01:00", 120,
-         "historical_evidence_only", [], {"history_reference": "history_week_06.json"}),
+         "historical_evidence_only", [], {"history_reference": "history_week_07.json"}),
     )
     records = []
     for key, driver, vehicle, start, end, drive_min, outcome, reasons, overrides in data:
