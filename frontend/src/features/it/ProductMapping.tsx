@@ -219,6 +219,12 @@ function MappingWorkspace() {
     }, signal),
     retry: false,
   });
+  const visibleRelations = new Map<string, string[]>();
+  for (const product of locals.data?.items ?? []) {
+    if (product.mapping_status !== "confirmed" || product.global_product_id === null) continue;
+    const key = `${product.market}:${product.global_product_id}`;
+    visibleRelations.set(key, [...(visibleRelations.get(key) ?? []), product.local_sku]);
+  }
   function finish(message: string) {
     setSuccess(message);
     setSelected(null);
@@ -291,7 +297,8 @@ function MappingWorkspace() {
     </div>
     <section className={panel + " space-y-4"} aria-label="Local product catalogue">
       <div><h2 className="text-h2 font-semibold">Local products</h2>
-        <p className="text-caption text-inkMuted">Server-scoped search and mapping-status filter; this table does not modify mappings.</p></div>
+        <p className="text-caption text-inkMuted">Server-scoped search and mapping-status filter; this table does not modify mappings.</p>
+        <p className="mt-2 text-caption text-inkMuted">Results are paginated. A global product may have other original SKUs on another page or in another market; this view cannot prove the complete reverse mapping or select a WMS SKU.</p></div>
       <div className="flex flex-col gap-3 sm:flex-row">
         <label className="flex-1 space-y-1 text-caption">Search local products
           <input className={field} aria-label="Search local products" value={localSearch} onChange={event => {
@@ -319,6 +326,13 @@ function MappingWorkspace() {
             <td className="p-3">{product.mapping_status}</td>
           </tr>)}</tbody>
         </table></div>}
+      {visibleRelations.size > 0 && <section aria-label="Confirmed relationships on this page" className="rounded-control border bg-stone p-4">
+        <h3 className="text-body font-semibold">Confirmed relationships on this page only</h3>
+        <ul className="mt-2 space-y-1 text-caption text-inkMuted">
+          {[...visibleRelations].map(([key, skus]) => <li key={key}><span className="font-mono">{key}</span> → {skus.join(", ")}</li>)}
+        </ul>
+        <p className="mt-2 text-caption text-inkMuted">These are original source SKUs, not verified WMS reservation identifiers. The backend must resolve market, warehouse, mapping version and stock unit.</p>
+      </section>}
       <div className="flex justify-between gap-2 text-body">
         <button className={button} type="button" disabled={localPage <= 1} onClick={() => setLocalPage(n => n - 1)}>Previous</button>
         <span>Page {localPage}</span>

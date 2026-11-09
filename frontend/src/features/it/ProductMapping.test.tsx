@@ -167,4 +167,21 @@ describe("US-PRD-02/03 — explicit confirm, reject and conflict flows", () => {
     expect(within(screen.getByRole("region", { name: "Local product catalogue" }))
       .getByRole("table").parentElement?.className).toContain("overflow-x-auto");
   });
+  it("test_US_PRD_05_AC1_preserves_multiple_original_skus_without_claiming_complete_reverse_mapping", async () => {
+    mocks.locals.mockResolvedValue({ items: [
+      { market: "SE", local_sku: "SE-CEM-01", name: "Cement bag", category: "Cement",
+        gtin: null, sale_unit: "bag", units_to_base: "1", unit_price: "10", currency: "SEK",
+        global_product_id: 123, mapping_status: "confirmed" },
+      { market: "SE", local_sku: "SE-CEM-02", name: "Cement pallet", category: "Cement",
+        gtin: null, sale_unit: "pallet", units_to_base: "40", unit_price: "400", currency: "SEK",
+        global_product_id: 123, mapping_status: "confirmed" },
+    ], total: 42, page: 1, page_size: 20 });
+    mount();
+    fireEvent.change(screen.getByRole("combobox", { name: "Local mapping status" }), { target: { value: "confirmed" } });
+    const relation = await screen.findByRole("region", { name: "Confirmed relationships on this page" });
+    expect(relation).toHaveTextContent("SE:123 → SE-CEM-01, SE-CEM-02");
+    expect(screen.getByText(/other original SKUs on another page/)).toBeInTheDocument();
+    expect(relation).toHaveTextContent("not verified WMS reservation identifiers");
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
 });
