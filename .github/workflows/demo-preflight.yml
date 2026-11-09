@@ -6,9 +6,14 @@ on:
   pull_request:
     paths:
       - "tools/demo*"
+      - "tools/d7_driver_fixtures/**"
       - "tools/tests/test_demo_smoke.py"
       - "tools/tests/test_demo_db_verify.py"
       - "backend/app/demo_*.py"
+      - "backend/app/api/v1/source_sync.py"
+      - "backend/tests/integration/test_source_sync_http_pg.py"
+      - "source_system/app/seed_demo.py"
+      - "source_system/tests/integration/test_demo_seed.py"
       - "docs/DEMO_SETUP.md"
       - "docs/DEMO_TEST_RESULTS.md"
       - ".github/workflows/demo-preflight.yml"
@@ -25,6 +30,11 @@ jobs:
           python-version: "3.12"
       - name: Guarded smoke controls (stdlib, no network)
         run: python -m unittest discover -s tools/tests -p 'test_demo*.py' -v
+      - name: D7 56-day synthetic fixture integrity and negative regressions
+        run: |
+          python tools/d7_driver_fixtures/generate.py --check
+          python tools/d7_driver_fixtures/validate.py
+          python -m unittest discover -s tools/d7_driver_fixtures -p "test_*.py" -v
       - name: Docker Compose real Source/CFO/frontend synthetic preflight
         run: python tools/demo_ci.py
       - name: Upload non-PII smoke status ledger

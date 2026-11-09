@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+from io import BytesIO
+from urllib.error import HTTPError
 from pathlib import Path
 from runpy import run_path
 
@@ -77,6 +79,36 @@ class DemoSmokeTests(unittest.TestCase):
         client = Http()
         client.opener = HtmlOpener()
         self.assertEqual(client.send("http://127.0.0.1:5173/"), (200, None))
+
+    def test_planning_409_reports_only_allowlisted_error_code(self):
+        class PlanErrorOpener:
+            def __init__(self, code):
+                self.code = code
+
+            def open(self, *_args, **_kwargs):
+                body = (
+                    '{"error":{"code":"' + self.code
+                    + '","message":"SECRET CUSTOMER PII","details":{"token":"SECRET"}}}'
+                ).encode()
+                raise HTTPError(
+                    "http://127.0.0.1:8000/api/v1/orders/9/plan",
+                    409, "Conflict", {"Content-Type": "application/json"},
+                    BytesIO(body),
+                )
+
+        client = Http()
+        client.opener = PlanErrorOpener("RESOURCE_CONFLICT")
+        status, body = client.send(
+            "http://127.0.0.1:8000/api/v1/orders/9/plan", method="POST", body={}
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(body, {"error": {"code": "RESOURCE_CONFLICT"}})
+        self.assertNotIn("SECRET", str(body))
+        client.opener = PlanErrorOpener("SECRET_CUSTOM_CODE")
+        self.assertEqual(
+            client.send("http://127.0.0.1:8000/api/v1/orders/9/plan", method="POST", body={}),
+            (409, None),
+        )
 
     def test_US_SRC_01_AC1_read_only_no_mutations_and_source_auth_negative(self):
         http = FakeHttp()

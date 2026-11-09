@@ -43,6 +43,21 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+# Only approved CFO error codes may appear in the synthetic demo report.
+# Never persist response messages, details, credentials, contact fields or source rows.
+_PLANNING_ERROR_CODES = frozenset({
+    "RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE", "ILLEGAL_TRANSITION",
+    "HOLD_EXPIRED", "DATE_AGREEMENT_REQUIRED", "VALIDATION_ERROR",
+})
+
+
+def _planning_error_code(payload: Any) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("error"), dict):
+        return None
+    code = payload["error"].get("code")
+    return code if isinstance(code, str) and code in _PLANNING_ERROR_CODES else None
+
+
 class Http:
     """Intentionally do not follow redirects with private credentials."""
 
@@ -67,7 +82,16 @@ class Http:
                 parsed = json.loads(payload) if payload and "json" in media_type else None
                 return response.status, parsed
         except HTTPError as error:
-            # Do not print or persist error bodies (which might contain PII).
+            # For planning only, extract a bounded, allowlisted error CODE. Do
+            # not persist response messages, details, tokens or PII.
+            if error.code == 409 and urlsplit(url).path.endswith("/plan"):
+                try:
+                    if "json" in error.headers.get("Content-Type", "").lower():
+                        code = _planning_error_code(json.loads(error.read(4096)))
+                        if code is not None:
+                            return error.code, {"error": {"code": code}}
+                except (OSError, ValueError, TypeError, AttributeError):
+                    pass
             return error.code, None
         except (URLError, TimeoutError, OSError, ValueError):
             return 0, None
@@ -228,9 +252,11 @@ def run(
     plan_status, plan = http.send(f"{cfo}/orders/{order_id}/plan", method="POST",
                                   headers={"Authorization": "Bearer " + tokens["sales"]}, body={})
     plan_ok = plan_status == 200 and isinstance(plan, dict)
+    plan_error_code = _planning_error_code(plan)
     add("planning_run", "PASS" if plan_ok else "BLOCKED",
         "Server returned a genuine planning run." if plan_ok else
-        f"Planner HTTP {plan_status}; missing source/stock/official-duty proof cannot be bypassed.")
+        f"Planner HTTP {plan_status}; code={plan_error_code or 'NOT_VERIFIED'}; "
+        "required planning gates cannot be bypassed.")
     if not approval or not plan_ok:
         add("planning_approval", "NOT VERIFIED" if plan_ok else "BLOCKED",
             "Approval not attempted (requires --exercise-approval) or plan not verified.")
