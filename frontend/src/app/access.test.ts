@@ -106,9 +106,9 @@ describe("sidebar menu by role (docs/03 mục 3.2)", () => {
     expect(labels("owner@cfo.demo")).toEqual(["Revenue"]);
   });
 
-  it("sales sees New order (external POS) and My store orders", () => {
+  it("sales sees POS, My store orders and Sync & confirm delivery", () => {
     const items = buildMenu(userByEmail("sales@cfo.demo")).flatMap((g) => g.items);
-    expect(items.map((i) => i.label)).toEqual(["New order", "My store orders"]);
+    expect(items.map((i) => i.label)).toEqual(["New order", "My store orders", "Sync & confirm delivery"]);
     expect(items[0]).toMatchObject({ external: "pos" });
     expect(items[0].to).toBeUndefined();
   });
