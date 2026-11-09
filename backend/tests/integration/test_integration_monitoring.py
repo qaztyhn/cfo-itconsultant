@@ -225,3 +225,34 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_US_ADM_01_AC1_large_history_latest_rows_stay_market_scoped(
+    monitoring: Api,
+) -> None:
+    execute(
+        monitoring.dsn,
+        "INSERT INTO stg.sync_run "
+        "(market_id,entity,status,started_at,finished_at,rows_in,rows_ok) "
+        "SELECT 1,'customers','ok', "
+        "'2026-10-01T00:00Z'::timestamptz + n * interval '1 minute', "
+        "'2026-10-01T00:01Z'::timestamptz + n * interval '1 minute', "
+        "n,n FROM generate_series(1,3000) AS n",
+        "INSERT INTO stg.sync_run "
+        "(market_id,entity,status,started_at,finished_at,rows_in,rows_ok) "
+        "VALUES (1,'customers','running','2026-11-08T14:00Z',NULL,0,0),"
+        "(2,'customers','ok','2026-11-08T15:00Z',"
+        "'2026-11-08T15:01Z',9999,9999)",
+    )
+    se = monitoring.get("/integration/overview", 3)
+    assert se.status_code == 200, se.text
+    feed = next(row for row in se.json()["sources"] if row["entity"] == "customers")
+    assert feed["status"] == "running"
+    assert feed["last_successful_run_id"] is not None
+    assert feed["last_successful_at"] is not None
+    assert feed["rows"] == 0
+    zz = monitoring.get("/integration/overview", 2, market="ZZ")
+    assert zz.status_code == 200, zz.text
+    other = next(row for row in zz.json()["sources"] if row["entity"] == "customers")
+    assert other["rows"] == 9999
+    assert other["last_successful_run_id"] != feed["last_successful_run_id"]
