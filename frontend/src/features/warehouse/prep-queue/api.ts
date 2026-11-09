@@ -84,7 +84,11 @@ function parseOrder(value: unknown, field: string): PrepQueueOrder {
       return { code: str(group.code, `${field}.handling_mix[${index}].code`), name: str(group.name, `${field}.handling_mix[${index}].name`) };
     }),
     work_min: num(order.work_min, `${field}.work_min`),
-    prep_window: { start: str(prepWindow.start, `${field}.prep_window.start`), end: str(prepWindow.end, `${field}.prep_window.end`) },
+    // Q7: `start` is the ACTUAL START_PREP instant or null before preparation starts (never synthesized).
+    prep_window: {
+      start: prepWindow.start === null ? null : str(prepWindow.start, `${field}.prep_window.start`),
+      end: str(prepWindow.end, `${field}.prep_window.end`),
+    },
     loading: arr(order.loading, `${field}.loading`).map((item, index) => parseLoading(item, `${field}.loading[${index}]`)),
     prep_state: state,
     // Unknown status strings are kept: StatusChip still renders them instead of breaking.

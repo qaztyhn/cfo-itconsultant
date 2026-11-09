@@ -35,8 +35,8 @@ export interface HandlingMixItem {
  */
 export interface CapacityShift {
   name: string;
-  /** `hh:mm` or ISO 8601 with offset. */
-  start: string;
+  /** Actual START_PREP instant (ISO 8601 with offset) or `null` before preparation starts (Q7). */
+  start: string | null;
   end: string;
   present: number;
   useful_hours: number;
@@ -61,8 +61,8 @@ export interface Capacity {
 }
 
 export interface PrepWindow {
-  /** `hh:mm` or ISO 8601 with offset. */
-  start: string;
+  /** Actual START_PREP instant (ISO 8601 with offset) or `null` before preparation starts (Q7). */
+  start: string | null;
   end: string;
 }
 

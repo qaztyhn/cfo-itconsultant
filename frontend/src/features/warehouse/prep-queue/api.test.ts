@@ -95,3 +95,13 @@ describe("parsePrepQueueResponse", () => {
     expect(parsed.orders[0].next_action).toBeNull();
   });
 });
+describe("Q7 prep_window.start", () => {
+  it("accepts null before preparation starts and still requires `end`", () => {
+    const base = buildPrepQueueFixture("verified");
+    const order = { ...base.orders[0], prep_window: { start: null, end: "2026-11-10T09:00:00+01:00" } };
+    const parsed = parsePrepQueueResponse({ ...base, orders: [order] });
+    expect(parsed.orders[0].prep_window.start).toBeNull();
+    const broken = { ...base.orders[0], prep_window: { start: null } };
+    expect(() => parsePrepQueueResponse({ ...base, orders: [broken] })).toThrow();
+  });
+});
