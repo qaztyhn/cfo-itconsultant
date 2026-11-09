@@ -193,7 +193,7 @@ def test_store_tier_for_sales_and_cs(od: Api) -> None:
     assert "handling_group" not in body["lines"][0] and "flags" not in body["lines"][0]
     assert body["sales"] == {"id": 6, "name": "Sam Sales"} and body["origin_store"]["id"] == 2
     cs = od.get("/orders/3", CS).json()
-    assert cs["risk"] == {"status": "AT_RISK", "color": "orange", "forecast_eta": "2026-11-13T11:30:00Z"}
+    assert cs["risk"] == {"status": "AT_RISK", "forecast_eta": "2026-11-13T11:30:00Z"}
 
 
 def test_driver_tier(od: Api) -> None:
@@ -273,3 +273,105 @@ def test_counts_follow_scope(od: Api) -> None:
     assert sales["nav"] == {"order_queue": 0, "exceptions": 0, "tracking_risk": 0}
     driver = od.get("/orders/counts", DRIVER).json()
     assert (driver["all"], driver["in_execution"], driver["nav"]["exceptions"]) == (1, 1, 1)
+
+
+# --- CS-01 / CS-02: PostgreSQL-backed phone search and allowlisted detail -------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_phone_search_limiter() -> None:
+    # Process-local limiter must not leak quota between PostgreSQL test cases.
+    from app.api.v1.orders import phone_search_rate_limiter
+
+    phone_search_rate_limiter.reset()
+
+
+def test_US_CS_01_AC1_phone_search_normalized_and_paginated(od: Api) -> None:
+    execute(
+        od.dsn,
+        "UPDATE ops.customer_order SET contact_phone = '+46 (70) 123-45-67' WHERE id = 1",
+        "UPDATE ops.customer_order SET contact_phone = '+46 (70) 123-45-68' WHERE id = 6",
+    )
+    assert ids(od.get("/orders", CS, q="0046 70 123 45 67")) == [1]
+    assert ids(od.get("/orders", CS, q="+46-70-123-45-67", page_size=1)) == [1]
+    assert ids(od.get("/orders", SALES, q="+46-70-123-45-67")) == [1]
+    assert ids(od.get("/orders", DISPATCHER, q="+46-70-123-45-68")) == []
+    assert ids(od.get("/orders", SYSTEM_ADMIN, q="+46-70-123-45-68")) == [6]
+    assert "contact_phone" not in od.get("/orders", CS, q="+46-70-123-45-67").text
+
+
+def test_US_CS_01_AC1_reject_short_phone_queries_without_reflection(od: Api) -> None:
+    for q in ("+46", "+46 70", "+46 70 123", "12345678"):
+        response = od.get("/orders", CS, q=q)
+        assert_error(response, 422, "VALIDATION_ERROR")
+        assert q not in response.text
+    assert ids(od.get("/orders", CS, q="POS-1")) == [1]
+
+
+def test_US_CS_02_AC1_cs_detail_is_server_allowlisted_and_masked(od: Api) -> None:
+    execute(
+        od.dsn,
+        "UPDATE ops.customer_order SET contact_phone = '+46 70 123 45 67', "
+        "contact_email = 'private.person@customer.example', "
+        "receiving_restrictions = 'Gate code 9876', "
+        "special_requirements = 'Private operational note' WHERE id = 3",
+    )
+    response = od.get("/orders/3", CS)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contact"]["phone"] == "******67"
+    assert body["contact"]["email"] == "***@***"
+    assert body["committed"]["date"] == "2026-11-13"
+    assert body["risk"] == {"status": "AT_RISK", "forecast_eta": "2026-11-13T11:30:00Z"}
+    assert set(body) == {
+        "id",
+        "order_no",
+        "status",
+        "market",
+        "customer",
+        "contact",
+        "delivery",
+        "date_request",
+        "committed",
+        "risk",
+        "version",
+        "submitted_at",
+    }
+    assert set(body["delivery"]) == {"address"}
+    assert set(body["contact"]) == {"name", "phone", "email"}
+    for secret in (
+        "private.person",
+        "customer.example",
+        "9876",
+        "Private operational note",
+        "receiving_restrictions",
+        "special_requirements",
+        "latest_run_id",
+        "approved_plan_id",
+        "score",
+        "gps",
+        "slack_min",
+        "risk_color",
+    ):
+        assert secret not in response.text
+
+
+def test_US_CS_02_AC1_cross_market_and_role_boundaries_preserved(od: Api) -> None:
+    assert_error(od.get("/orders/6", CS), 404, "NOT_FOUND")
+    assert_error(od.get("/orders/1", VIEWER), 403, "FORBIDDEN")
+    assert_error(od.get("/orders", VIEWER, q="+46-70-123-45-67"), 403, "FORBIDDEN")
+    # This change does not mask full-access Dispatcher/other authorized roles.
+    dispatcher = od.get("/orders/1", DISPATCHER)
+    assert dispatcher.status_code == 200
+    assert "lat" in dispatcher.json()["delivery"]
+
+
+def test_US_CS_01_AC1_phone_search_is_throttled_without_echoing_query(od: Api) -> None:
+    from app.api.v1.orders import phone_search_rate_limiter
+
+    phone_search_rate_limiter.reset()
+    for _ in range(5):
+        assert od.get("/orders", CS, q="+46701234567").status_code == 200
+    response = od.get("/orders", CS, q="+46701234567")
+    assert response.status_code == 429
+    assert "+46701234567" not in response.text
