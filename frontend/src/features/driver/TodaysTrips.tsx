@@ -250,7 +250,7 @@ export function TodaysTrips() {
           </p>
           <div className="mt-3 flex gap-2">
             <button type="button" className={secondary} onClick={() => void refreshTrips()} disabled={!online || busy}>Refresh trips</button>
-            <button type="button" className={secondary} onClick={() => void retryPending()} disabled={!online || busy || !pending.some((item) => item.state === "pending")}>Retry pending</button>
+            <button type="button" className={secondary} onClick={() => void retryPending()} disabled={!online || busy || !safePending.some((item) => item.state === "pending")}>Retry pending</button>
           </div>
         </div>
         {notice && <p role="status" className="rounded-control bg-surface p-3 text-body">{notice}</p>}
