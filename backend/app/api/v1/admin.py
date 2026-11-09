@@ -44,7 +44,13 @@ async def list_sync_runs(
 ) -> dict[str, object]:
     """GET /sync-runs — admin, constrained by authenticated market."""
     return await monitor.list_runs(
-        db, user, market=market, entity=entity, status=status, page=page, page_size=page_size
+        db,
+        user,
+        market=market,
+        entity=entity,
+        status=status,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -63,7 +69,7 @@ async def sync_rejects(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> dict[str, object]:
-    """GET /sync-runs/{run_id}/rejects — reason codes only, never raw source payloads."""
+    """GET rejects: safe reason codes only, never raw source payloads."""
     return await monitor.list_rejects(
         db, user, run_id=run_id, market=market, page=page, page_size=page_size
     )
@@ -75,8 +81,8 @@ async def integration_overview(
     user: Admin,
     market: str | None = Query(None, min_length=2, max_length=2),
 ) -> dict[str, object]:
-    """GET /integration/overview — persisted source, route and scheduler evidence only."""
+    """GET overview: persisted source, route and scheduler evidence only."""
     return await monitor.overview(db, user, market)
 
 
-# GET /health: chuyển sang app/api/v1/health.py (Dev 1, M0) theo bàn giao trong tools/M0_INFRA_REPORT.md.
+# GET /health is owned by app/api/v1/health.py (Dev 1, M0).
