@@ -2,6 +2,7 @@
 
 No fake HTTP endpoint success: orders.py route remains a stub until #189 lands.
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -68,20 +69,17 @@ def test_be03_cs_create_atomic_audit_and_privacy_safe_read(seeded: Api) -> None:
 
     for reader in (CS_ACTOR, DISPATCHER_ACTOR):
         page = transact(
-            seeded.dsn, lambda session, reader=reader: customer_contact_service.list_logs(session, reader, 1)
+            seeded.dsn,
+            lambda session, reader=reader: customer_contact_service.list_logs(session, reader, 1),
         )
         assert page["total"] == 1 and len(page["items"]) == 1
-        assert set(page["items"][0]) == {
-            "id", "order_id", "channel", "reason_code", "contacted_at"
-        }
+        assert set(page["items"][0]) == {"id", "order_id", "channel", "reason_code", "contacted_at"}
         assert "Private number" not in str(page)
 
 
 def test_be03_rollback_removes_log_and_audit(seeded: Api) -> None:
     async def fail_after_write(session):
-        await customer_contact_service.create(
-            session, CS_ACTOR, 1, channel="email", reason_code="complaint"
-        )
+        await customer_contact_service.create(session, CS_ACTOR, 1, channel="email", reason_code="complaint")
         raise RuntimeError("force rollback")
 
     with pytest.raises(RuntimeError, match="force rollback"):
