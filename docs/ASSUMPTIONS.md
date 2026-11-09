@@ -47,7 +47,8 @@
 
 | [DEC-STOCK-GRANT-BOOTSTRAP-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Owner ủy quyền System Admin tin cậy tạo **grant Stock Admin đầu tiên theo market**, có lý do/audit; **cấm tự cấp quyền cho mình** và không tự bootstrap | 09/11 | Owner đồng ý Q1 sau giải thích cấp quyền ban đầu | Quyết định đã chốt; schema/runbook/code cần review |
 | [ASM-WMS-MOVEMENT-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Giả định nghiệp vụ**: WMS cũ ghi nhận xuất kho A và nhập kho B khi chuyển kho; **chưa chứng minh API WMS trả movement ID hay liên kết snapshot** | 09/11 | Owner: “assume là có đi” | Giả định chốt; Dev 2 phải xác minh nguồn thật |
-| [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Đối soát chuyển kho ưu tiên chứng cứ movement/receipt từ WMS; thiếu thì Warehouse Manager nộp chứng cứ, người có quyền độc lập duyệt; **không tự suy từ timestamp/lượng tồn, không đếm trùng** | 09/11 | Owner: “đồng ý” với Q2 | Quyết định đã chốt; cần contract/migration/tests |
+| [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) | **WMS là nguồn sự thật duy nhất về xuất/nhập/chuyển kho và tồn thực tế**; CFO chỉ đọc batch tồn kho đầy đủ/mới, quản lý hold/committed reservations của riêng CFO, không đối soát chứng từ vật lý hay có hàng đợi đối soát WMS riêng | 09/11 | Owner: “cfo chỉ lấy dữ liệu từ wms nhé. sao phải quản lý mấy cái này” | Đã chốt ranh giới; Dev 1/2 phải sửa contract/PR #127 trước khi merge |
+| [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Đã thay thế**: trước đó đề xuất CFO tự đối soát chứng từ WMS; Owner làm rõ chỉ WMS quản lý chuyển kho, CFO đọc snapshot và không đếm trùng | 09/11 | Owner: “đồng ý” với Q2 | **Superseded** bởi DEC-WMS-READONLY-20261109 |
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -538,8 +539,18 @@
 
 - Owner cho phép **assume** quản lý kho đã ghi nhận **xuất kho nguồn và nhập kho đích trên WMS cũ**. CFO vẫn chỉ GET/đọc, không sửa WMS. **Giả định này không có nghĩa API WMS đang trả mã movement, transfer ID, acknowledgment hoặc snapshot linkage**; Dev 2 phải kiểm tra dữ liệu có thể lấy thật.
 
-## DEC-T18-WMS-RECON-20261109 — Đối soát chuyển kho theo chứng cứ WMS
+## DEC-T18-WMS-RECON-20261109 — Đối soát chuyển kho theo chứng cứ WMS (ĐÃ ĐƯỢC THAY THẾ)
+
+**ĐÍNH CHÍNH:** Nội dung cũ bên dưới chỉ là lịch sử đề xuất và đã bị Owner thay thế bởi [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). CFO chỉ đọc tồn kho WMS; không tạo luồng đối soát chứng từ hoặc buộc Warehouse Manager xác minh bằng chứng trong CFO. Đừng triển khai quy trình này.
 
 - Ưu tiên đối chiếu chứng từ movement/receipt WMS cho **cả kho nguồn và kho đích**, đúng transfer, kho, SKU, số lượng, trạng thái và batch/version. Thiếu API/cặp chứng cứ thì Warehouse Manager cung cấp bằng chứng WMS và **người có thẩm quyền độc lập, theo market** phê duyệt với audit; thiếu thẩm quyền/chứng cứ ⇒ pending/fail closed.
 - Không giải phóng điều chỉnh xuất kho hoặc cộng nhập vào hàng khả dụng chỉ vì snapshot mới hơn hoặc lượng tăng/giảm tình cờ; tránh double-subtract kho nguồn, double-add kho đích. Giữ chốt nghiệp vụ receipt của Warehouse Manager, không coi receipt là chứng cứ stock snapshot đã phản ánh lượng hàng.
 - **Mốc escalation 24 giờ vẫn là đề xuất Q3 chưa được Owner phê duyệt.** Chi tiết [decision record](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). Code/Source API/migration chưa nghiệm thu.
+
+## DEC-WMS-READONLY-20261109 — WMS quản lý kho, CFO chỉ đọc
+
+- **Owner đã làm rõ:** WMS là nguồn sự thật của hàng xuất/nhập/chuyển và số tồn thực tế. CFO không phải hệ quản lý kho, **không đối soát chứng từ chuyển kho trong CFO**, không ghi ngược WMS và không lập các trạng thái/hàng đợi đối soát chuyển kho. WMS cập nhật stock, CFO đọc snapshot mới hợp lệ để lập kế hoạch.
+- CFO vẫn kiểm tra tính đầy đủ, độ mới batch và quản lý held/committed reservation **của các đơn CFO** để không cam kết trùng hàng. Không tự cộng inbound CFO hoặc trừ lại physical outbound bên ngoài WMS snapshot. Stock unknown/stale không giả là số 0.
+- Quy trình transfer do CFO đề xuất trong #127 cần review lại: chỉ có thể giữ phần gợi ý/yêu cầu không mang thẩm quyền WMS; các xác nhận xuất/nhập hoặc reconciliation CFO không được triển khai như nguồn sự thật tồn kho khi chưa đổi hợp đồng.
+- **Không còn cần Owner duyệt Q3 cảnh báo 24 giờ cho 'chuyển kho chưa đối soát' trong CFO**; việc WMS có lệch chứng từ thuộc WMS. Giữ cảnh báo stale stock / failed sync ở tích hợp.
+- [Biên bản chi tiết](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). Q1 về Stock Admin chỉ quản trị scope/chứng cứ cấu hình CFO, không điều hành tồn kho vật lý WMS.
