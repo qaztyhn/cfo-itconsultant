@@ -44,12 +44,25 @@ export type DriverEvent = {
 
 export type EventAck = { event_id: number; order_status: string };
 
-export function assignedTrips(): Promise<DriverTrip[]> {
-  return apiGet<TripList>("/driver/trips").then((response) => response.items);
+function isAssignedTrip(value: unknown): value is DriverTrip {
+  if (!value || typeof value !== "object") return false;
+  const trip = value as Partial<DriverTrip>;
+  return typeof trip.trip_id === "number" && typeof trip.vehicle_code === "string" &&
+    typeof trip.status === "string" && Array.isArray(trip.stops) &&
+    trip.stops.every((stop) => stop && typeof stop.order_id === "number" &&
+      typeof stop.trip_stop_id === "number" && typeof stop.order_no === "string");
 }
 
-export function assignedTrip(tripId: number): Promise<DriverTrip> {
-  return apiGet<DriverTrip>(`/driver/trips/${tripId}`);
+export function assignedTrips(): Promise<DriverTrip[]> {
+  return apiGet<TripList>("/driver/trips").then((response) =>
+    Array.isArray(response?.items) ? response.items.filter(isAssignedTrip) : [],
+  );
+}
+
+export async function assignedTrip(tripId: number): Promise<DriverTrip> {
+  const trip = await apiGet<DriverTrip>(`/driver/trips/${tripId}`);
+  if (!isAssignedTrip(trip)) throw new Error("Unverified trip contract.");
+  return trip;
 }
 
 export function submitDriverEvent(orderId: number, event: DriverEvent, key: string): Promise<EventAck> {
