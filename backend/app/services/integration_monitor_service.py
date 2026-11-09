@@ -43,11 +43,7 @@ def _run(run: SyncRun) -> dict[str, Any]:
         "rows_ok": run.rows_ok,
         "rows_rejected": run.rows_rejected,
         "complete_success": run.status == "ok",
-        "error_code": (
-            run.error
-            if run.error in {"INTERRUPTED_RUN", "SOURCE_SYNC_FAILED"}
-            else None
-        ),
+        "error_code": (run.error if run.error in {"INTERRUPTED_RUN", "SOURCE_SYNC_FAILED"} else None),
     }
 
 
@@ -69,9 +65,7 @@ def _safe_reason(value: str) -> str:
     return value if value in allowed else "UNVERIFIED"
 
 
-async def _markets(
-    session: AsyncSession, user: CurrentUser, market: str | None
-) -> list[Market]:
+async def _markets(session: AsyncSession, user: CurrentUser, market: str | None) -> list[Market]:
     if "admin" not in user.roles:
         raise DomainError("FORBIDDEN", "Admin access required.")
     query = select(Market).order_by(Market.code)
@@ -106,9 +100,7 @@ async def list_runs(
         predicate.append(SyncRun.entity == entity)
     if status:
         predicate.append(SyncRun.status == status)
-    total = await session.scalar(
-        select(func.count()).select_from(SyncRun).where(*predicate)
-    )
+    total = await session.scalar(select(func.count()).select_from(SyncRun).where(*predicate))
     runs = (
         await session.scalars(
             select(SyncRun)
@@ -140,9 +132,7 @@ async def list_rejects(
     if run is None or run.market_id not in {item.id for item in markets}:
         raise DomainError("NOT_FOUND", "Sync run not found.")
     predicate = SyncReject.run_id == run.id
-    total = await session.scalar(
-        select(func.count()).select_from(SyncReject).where(predicate)
-    )
+    total = await session.scalar(select(func.count()).select_from(SyncReject).where(predicate))
     rejects = (
         await session.scalars(
             select(SyncReject)
@@ -160,10 +150,7 @@ async def list_rejects(
         "page": page,
         "page_size": page_size,
         "total": total or 0,
-        "items": [
-            {"id": row.id, "reason_code": _safe_reason(row.reason_code)}
-            for row in rejects
-        ],
+        "items": [{"id": row.id, "reason_code": _safe_reason(row.reason_code)} for row in rejects],
         "privacy": "Raw values, external keys and free-text reasons withheld",
     }
 
@@ -184,13 +171,9 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
         if run.status == "ok":
             successful.setdefault(run.entity, run)
     checkpoints = (
-        await session.scalars(
-            select(SyncCheckpoint).where(SyncCheckpoint.market_id == market.id)
-        )
+        await session.scalars(select(SyncCheckpoint).where(SyncCheckpoint.market_id == market.id))
     ).all()
-    checkpoint_by_entity = {
-        cp.entity: _time(cp.last_updated_since) for cp in checkpoints
-    }
+    checkpoint_by_entity = {cp.entity: _time(cp.last_updated_since) for cp in checkpoints}
     # The cross-market view is maintained by add_market.py. Pending SKU
     # count is not an ingestion rejection or proof of stock readiness.
     unmapped = await session.scalar(
@@ -204,9 +187,7 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
         await session.execute(
             select(
                 func.count().label("pairs"),
-                func.count()
-                .filter(RouteMatrix.provider == "fallback")
-                .label("fallback_pairs"),
+                func.count().filter(RouteMatrix.provider == "fallback").label("fallback_pairs"),
                 func.max(RouteMatrix.computed_at).label("fetched_at"),
             )
             .select_from(RouteMatrix)
@@ -223,11 +204,7 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
             {
                 "entity": entity,
                 "availability": "supported" if supported else "unconfigured",
-                "status": (
-                    (current.status if current else "never_run")
-                    if supported
-                    else "unconfigured"
-                ),
+                "status": ((current.status if current else "never_run") if supported else "unconfigured"),
                 "rows": current.rows_in if current else None,
                 "rows_ok": current.rows_ok if current else None,
                 "rejected": current.rows_rejected if current else None,
@@ -266,16 +243,13 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
                 for feed in sorted(SUPPORTED)
             ],
             "explanation": (
-                "No persisted scheduler heartbeat; configured cadence "
-                "is not proof of execution."
+                "No persisted scheduler heartbeat; configured cadence " "is not proof of execution."
             ),
         },
     }
 
 
-async def overview(
-    session: AsyncSession, user: CurrentUser, market: str | None
-) -> dict[str, Any]:
+async def overview(session: AsyncSession, user: CurrentUser, market: str | None) -> dict[str, Any]:
     markets = await _markets(session, user, market)
     results = [await _market_overview(session, row) for row in markets]
     return results[0] if len(results) == 1 else {"markets": results}
