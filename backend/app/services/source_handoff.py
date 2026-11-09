@@ -48,15 +48,11 @@ def _role(actor: RoutingActor) -> str:
         return "sales"
     if "dispatcher" in actor.roles:
         return "dispatcher"
-    raise DomainError(
-        "FORBIDDEN", "Only authorised Sales or Dispatcher can check routing."
-    )
+    raise DomainError("FORBIDDEN", "Only authorised Sales or Dispatcher can check routing.")
 
 
 def _hash(external_ref: str) -> str:
-    raw = json.dumps(
-        {"external_ref": external_ref}, sort_keys=True, separators=(",", ":")
-    ).encode()
+    raw = json.dumps({"external_ref": external_ref}, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -77,15 +73,11 @@ async def _claim(
         .with_for_update()
     )
     if saved is None or saved.endpoint != _ENDPOINT or saved.request_hash != digest:
-        raise DomainError(
-            "IDEMPOTENCY_CONFLICT", "Idempotency key conflicts with another request."
-        )
+        raise DomainError("IDEMPOTENCY_CONFLICT", "Idempotency key conflicts with another request.")
     if saved.response_status == 200 and saved.response_body is not None:
         return saved, dict(saved.response_body)
     if saved.response_status is not None:
-        raise DomainError(
-            "IDEMPOTENCY_CONFLICT", "The prior request cannot be replayed."
-        )
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The prior request cannot be replayed.")
     return saved, None
 
 
@@ -146,9 +138,7 @@ async def accept_source_order(
     if replay is not None:
         return replay
 
-    routing = await session.get(
-        OrderRouting, (market.id, source.id), with_for_update=True
-    )
+    routing = await session.get(OrderRouting, (market.id, source.id), with_for_update=True)
     existing = await session.scalar(
         select(CustomerOrder)
         .where(
@@ -165,9 +155,7 @@ async def accept_source_order(
             )
         if routing.route == "legacy":
             if existing is not None:
-                raise DomainError(
-                    "RESOURCE_CONFLICT", "Legacy route has an unexpected CFO order."
-                )
+                raise DomainError("RESOURCE_CONFLICT", "Legacy route has an unexpected CFO order.")
             answer = _result(
                 source,
                 "legacy",
@@ -184,9 +172,7 @@ async def accept_source_order(
             if source.version > existing.source_version:
                 outcome = await ingest_orders.apply(session, market, source)
                 if outcome.reject_code is not None:
-                    raise DomainError(
-                        "RESOURCE_CONFLICT", "Newer Source version needs review."
-                    )
+                    raise DomainError("RESOURCE_CONFLICT", "Newer Source version needs review.")
             if existing.source_version < source.version:
                 # Protected orders are alert-only; never claim that changed Source data was applied.
                 answer = _result(
@@ -210,27 +196,19 @@ async def accept_source_order(
             claimed.response_status, claimed.response_body = 200, answer
         return answer
     if existing is not None:
-        raise DomainError(
-            "RESOURCE_CONFLICT", "Order exists without a routing decision."
-        )
+        raise DomainError("RESOURCE_CONFLICT", "Order exists without a routing decision.")
 
     if len({ln.sku for ln in source.lines}) != len(source.lines) or any(
         ln.line_no > 32767 for ln in source.lines
     ):
-        raise DomainError(
-            "VALIDATION_ERROR", "Source order lines have invalid identities."
-        )
+        raise DomainError("VALIDATION_ERROR", "Source order lines have invalid identities.")
     skus = [ln.sku for ln in source.lines]
     rows = (await session.execute(_MAPPING, {"market": market.id, "skus": skus})).all()
     mapping = {r.local_sku: r for r in rows}
     # Missing reference data is *unresolved*, not a permanent legacy decision.
     if any(sku not in mapping for sku in skus):
-        return _result(
-            source, "unresolved", None, already_decided=False, sync_status="unresolved"
-        )
-    unmapped = sorted(
-        sku for sku in skus if mapping[sku].mapping_status != "confirmed"
-    )
+        return _result(source, "unresolved", None, already_decided=False, sync_status="unresolved")
+    unmapped = sorted(sku for sku in skus if mapping[sku].mapping_status != "confirmed")
     if not unmapped and any(
         mapping[sku].global_product_id is None
         or mapping[sku].units_to_base is None
@@ -238,9 +216,7 @@ async def accept_source_order(
         or mapping[sku].units_to_base <= 0
         for sku in skus
     ):
-        return _result(
-            source, "unresolved", None, already_decided=False, sync_status="unresolved"
-        )
+        return _result(source, "unresolved", None, already_decided=False, sync_status="unresolved")
 
     customer_id: int | None = None
     sales_employee_id: int | None = None
@@ -297,14 +273,10 @@ async def accept_source_order(
                     14,
                     2,
                 )
-                lines.append(
-                    (ln, qty, price, exact(qty * factor, 12, 3, positive=True), amount)
-                )
+                lines.append((ln, qty, price, exact(qty * factor, 12, 3, positive=True), amount))
             total = exact(sum((item[4] for item in lines), Decimal("0")), 14, 2)
         except RowRejected as exc:
-            raise DomainError(
-                "VALIDATION_ERROR", "Invalid Source quantity or units."
-            ) from exc
+            raise DomainError("VALIDATION_ERROR", "Invalid Source quantity or units.") from exc
         date_to = source.date_to or source.date_from
         if date_to is None:
             raise DomainError("VALIDATION_ERROR", "Invalid Source delivery date.")
@@ -326,12 +298,8 @@ async def accept_source_order(
             date_mode=source.date_mode,
             date_from=source.date_from,
             date_to=date_to,
-            window_start=(
-                time.fromisoformat(source.window_start) if source.window_start else None
-            ),
-            window_end=(
-                time.fromisoformat(source.window_end) if source.window_end else None
-            ),
+            window_start=(time.fromisoformat(source.window_start) if source.window_start else None),
+            window_end=(time.fromisoformat(source.window_end) if source.window_end else None),
             # Source D1 has updated_at but no original submitted_at; this is the best
             # available Source event timestamp, NOT certified original POS FIFO evidence.
             order_date=source.updated_at,
@@ -375,8 +343,6 @@ async def accept_source_order(
             "unmapped_sku_count": len(unmapped),
         },
     )
-    answer = _result(
-        source, route, order_id, already_decided=False, sync_status="synced"
-    )
+    answer = _result(source, route, order_id, already_decided=False, sync_status="synced")
     claimed.response_status, claimed.response_body = 200, answer
     return answer
