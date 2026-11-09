@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
+
+- `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) Owner đã chốt phương án A (`DEC-MANUAL-PLAN-20261109`); proposal còn mang tính tài liệu về bộ kiểm tra engine, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
+
 ## [D7 — xác minh lịch sử 56 ngày dùng chung cho planning/approval/dispatch] — 2026-11-09 — Dev 1
 
 - Thêm `services/driver_history.py`: kiểm chứng thuần túy 56 ngày lịch địa phương (kết thúc ngày hôm trước), phân biệt `off_duty` có cửa sổ nghỉ xác minh với `unknown`/thiếu/trùng; từ chối bằng chứng thiếu, bị thu hồi, hết hạn, chưa có người xác minh, mâu thuẫn (chồng duty, lái ngoài duty, duty trong ngày nghỉ, thời gian không múi giờ). `synthetic_demo` chỉ được chấp nhận ngoài `production` và không bao giờ là xác minh pháp lý.
