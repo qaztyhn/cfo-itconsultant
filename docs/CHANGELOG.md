@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [ASM-WMS-RESERVATION-20261109] — 2026-11-09 — owner assumption, docs-only
+
+- Owner cho phép **giả định WMS có chức năng reservation**. Reserve làm giảm **available** nhưng không trừ `on_hand` vật lý trước khi thực sự xuất kho. CFO không được double-subtract WMS-reserved quantity.
+- Việc CFO chủ động gửi lệnh reserve/release tới WMS là **ngoại lệ write** với quyết định WMS read-only hiện hành; Owner mới hỏi cách hoạt động, **chưa phê duyệt write API**. Dev 1/2 phải đề xuất và kiểm chứng interface WMS, ACK, idempotency và failure recovery trước khi code. [Biên bản](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md).
+
+
 
 ## [DEC-WMS-READONLY-20261109] — 2026-11-09 — owner scope clarification, docs only
 
