@@ -270,5 +270,3 @@ async def create_contact_log(order_id: int) -> dict[str, object]:
 async def list_contact_logs(order_id: int) -> dict[str, object]:
     """GET /orders/{order_id}/contact-logs — dispatcher, CS."""
     raise NotImplementedError
-
-
