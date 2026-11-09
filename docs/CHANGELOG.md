@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
+
+- `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.
+- Đọc lịch sử (`read_history`) không trả điểm quá 7 ngày kể cả khi job retention chưa chạy; mặc định từ chối (chưa có cơ chế reviewer privacy/compliance được ủy quyền). Không mở quyền cho Dispatcher. Không bật GPS người thật hay cron production.
+
 ## [GPS — lưu raw tối đa 7 ngày thay cho xóa ngay (DEC-GPS-RET-20261109)] — 2026-11-09 — Dev 2 (#137)
 
 - `gps_service.close_trip_collection()` thay `purge_trip_on_terminal`: hook cuối chuyến (Dev 1 gọi trong transaction hoàn tất) khóa chuyến, chặn upload muộn, **chỉ xóa điểm không hợp lệ** (ngoài ca chính thức/ngoài khoảng chuyến); điểm hợp lệ được giữ để tra soát tối đa 7 ngày. **Dev 1 cần bỏ lệnh `DELETE vehicle_position` trực tiếp ở `execution_service` (#129) và gọi hook này.**
