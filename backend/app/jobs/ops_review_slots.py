@@ -1,7 +1,8 @@
 """D8 operational-review slots: 07:00 and 13:00 market-local (DEC-D8-OPS-20261109). Pure, NOT scheduled.
 
 Only the owner-approved clock times are encoded. No cron/worker is activated here (hosting, SLA, tick
-auth and the other D8 jobs are unapproved). Order polling (5 min) and event-driven processing are
+auth and other D8 jobs require separate production approval; other proposed cadences are
+staging/demo-only under DEC-D8-STAGING-SCHEDULE-20261109). Order polling and event-driven processing are
 separate flows. Each slot has a stable key per market/local date/time so a catch-up or a DST day never
 runs a slot twice.
 """
