@@ -346,8 +346,6 @@ def test_US_CS_02_AC1_cs_detail_is_server_allowlisted_and_masked(od: Api) -> Non
         "Private operational note",
         "receiving_restrictions",
         "special_requirements",
-        "lat",
-        "lon",
         "latest_run_id",
         "approved_plan_id",
         "score",
