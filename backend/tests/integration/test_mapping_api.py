@@ -131,6 +131,31 @@ def test_other_market_cannot_see_task(mp: Api) -> None:
     assert mp.get("/products/local", ZZ_WAREHOUSE).json()["total"] == 0
 
 
+@pytest.mark.parametrize("user_id", [ADMIN, SYSTEM_ADMIN, DISPATCHER, WAREHOUSE, ZZ_WAREHOUSE])
+def test_US_PRD_04_handling_groups_read_server_norms(mp: Api, user_id: int) -> None:
+    response = mp.get("/handling-groups", user_id)
+    assert response.status_code == 200, response.text
+    groups = response.json()
+    assert [group["code"] for group in groups] == [f"N{n}" for n in range(1, 7)]
+    rows = fetch(
+        mp.dsn,
+        "SELECT code, prep_unit::text AS prep_unit, fixed_hours, labour_hours_per_unit, "
+        "min_crew, vehicle_requirement FROM ref.handling_group ORDER BY code",
+    )
+    for group, row in zip(groups, rows, strict=True):
+        assert group["code"] == row["code"]
+        assert group["prep_unit"] == row["prep_unit"]
+        assert group["fixed_hours"] == str(row["fixed_hours"])
+        assert group["labour_hours_per_unit"] == str(row["labour_hours_per_unit"])
+        assert group["min_crew"] == row["min_crew"]
+        assert group["vehicle_requirement"] == row["vehicle_requirement"]
+
+
+@pytest.mark.parametrize("user_id", [SALES, DRIVER, CS, VIEWER])
+def test_US_PRD_04_handling_groups_forbidden_roles(mp: Api, user_id: int) -> None:
+    assert_error(mp.get("/handling-groups", user_id), 403, "FORBIDDEN")
+
+
 def test_US_PRD_02_AC1_confirm_does_not_move_orders(mp: Api) -> None:
     r = mp.send("POST", "/mapping/tasks/1/confirm", ADMIN, {"global_product_id": 1, "units_to_base": 1})
     assert r.status_code == 200, r.text

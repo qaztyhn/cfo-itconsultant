@@ -17,7 +17,7 @@ from sqlalchemy import select
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.domain.models.ref import MappingTask
+from app.domain.models.ref import HandlingGroup, MappingTask
 from app.services import mapping_read_service, mapping_service
 from app.services.hr_scope import resolve_hr_scope
 
@@ -102,6 +102,18 @@ class LocalProductOut(BaseModel):
     currency: str
     global_product_id: int | None
     mapping_status: str
+
+
+class HandlingGroupOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    description: str | None
+    prep_unit: str
+    fixed_hours: Decimal
+    labour_hours_per_unit: Decimal
+    min_crew: int
+    vehicle_requirement: list[str]
 
 
 _ERRORS: dict[int | str, dict[str, object]] = {
@@ -227,10 +239,12 @@ async def update_global_product(product_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/handling-groups")
-async def list_handling_groups() -> dict[str, object]:
-    """GET /handling-groups — N1–N6, một bộ chung."""
-    raise NotImplementedError
+@router.get("/handling-groups", response_model=list[HandlingGroupOut], responses=_ERRORS)
+async def list_handling_groups(user: AuthUser, db: DbSession) -> list[HandlingGroupOut]:
+    """GET /handling-groups — server-authoritative, shared reference norms (06 §12)."""
+    await resolve_hr_scope(db, user)
+    groups = (await db.scalars(select(HandlingGroup).order_by(HandlingGroup.code))).all()
+    return [HandlingGroupOut.model_validate(group, from_attributes=True) for group in groups]
 
 
 @router.patch("/handling-groups/{group_id}")
