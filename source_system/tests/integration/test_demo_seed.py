@@ -33,7 +33,9 @@ def _fixture() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback() -> None:
+async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback() -> (
+    None
+):
     url = os.environ.get("SOURCE_TEST_DATABASE_URL")
     if not url:
         pytest.skip("SOURCE_TEST_DATABASE_URL not set: PostgreSQL NOT VERIFIED")
@@ -49,8 +51,10 @@ async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback()
             assert await load(session, fixture, source_instance=schema) == 0
             orders = (await session.scalars(select(Order))).all()
             assert len(orders) == 66
-            assert all(o.date_mode == "exact" and o.date_from is not None
-                       and o.date_to is None for o in orders)
+            assert all(
+                o.date_mode == "exact" and o.date_from is not None and o.date_to is None
+                for o in orders
+            )
             # The approved D1 payload for exact date *cannot* expose both bounds.
             assert any(o.id == "SE-2026-000149" for o in orders)
             assert (await session.scalars(select(Inbound))).all().__len__() == 1
@@ -60,7 +64,9 @@ async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback()
         assert snapshot.batch_id >= 1
         async with AsyncSession(engine) as session, session.begin():
             await session.execute(
-                update(Order).where(Order.id == "SE-2026-000123").values(date_to=date(2026, 11, 11))
+                update(Order)
+                .where(Order.id == "SE-2026-000123")
+                .values(date_to=date(2026, 11, 11))
             )
         with pytest.raises(ValueError, match="Conflicting source order identity"):
             async with AsyncSession(engine) as session, session.begin():
