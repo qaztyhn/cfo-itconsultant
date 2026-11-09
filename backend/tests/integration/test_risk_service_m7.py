@@ -208,7 +208,9 @@ def test_US_NOT_02_AC1_risk_requires_reviewed_actor_and_caller_transaction(
     calls: list[int] = []
     reviewer = SimpleNamespace(id=2, employee_id=2, roles=("dispatcher",), market="SE")
 
-    async def draft(order_id: int, payload: dict[str, object], *, session: AsyncSession, actor: object) -> int:
+    async def draft(
+        order_id: int, payload: dict[str, object], *, session: AsyncSession, actor: object
+    ) -> int:
         assert order_id == 1
         assert payload["version"] == 1
         assert session.in_transaction()
