@@ -3,6 +3,7 @@
 Never bootstraps scope, grants, stock, reservations or approval. The absence of
 a governed accepted write is BLOCKED, not zero stock and not a planned order.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,11 +22,7 @@ FROZEN = "2026-11-04T10:05:00+01:00"
 
 async def report() -> dict[str, object]:
     settings = get_settings()
-    if (
-        settings.app_env != "test"
-        or settings.app_now != FROZEN
-        or os.environ.get("DEMO_DISPOSABLE") != "1"
-    ):
+    if settings.app_env != "test" or settings.app_now != FROZEN or os.environ.get("DEMO_DISPOSABLE") != "1":
         raise ValueError("Disposable-only stock diagnostics")
     try:
         async with get_sessionmaker()() as session:
@@ -58,9 +55,7 @@ async def report() -> dict[str, object]:
                 "accepted_write_runs": int(accepted or 0),
                 "approved_scope_versions": int(approved or 0),
                 "status": (
-                    "PRESENT_NOT_APPROVAL_PROOF"
-                    if rows and accepted and approved
-                    else "BLOCKED_STOCK_NOT_GOVERNED"
+                    "PRESENT_NOT_APPROVAL_PROOF" if rows and accepted and approved else "BLOCKED_STOCK_NOT_GOVERNED"
                 ),
             }
     finally:
