@@ -285,11 +285,9 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     messages: list[str] = []
     triggers: list[str] = []
 
-    async def test_enqueue(
-        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
-    ) -> int:
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
         assert order_id == 1 and plan_id == 1
-        assert session is not None  # Outbox shares milestone transaction.
+        assert kw.get("session") is not None  # Outbox shares milestone transaction.
         messages.append(template)
         return len(messages)
 
@@ -443,10 +441,8 @@ def test_M6_1_two_vehicles_deliver_same_order_one_pod_per_trip_stop(
     async def test_driver_gate(*_args: object) -> None:
         return None
 
-    async def test_enqueue(
-        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
-    ) -> int:
-        assert session is not None
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
+        assert kw.get("session") is not None
         return 1
 
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
@@ -478,10 +474,8 @@ def _dispatch_both_vehicles(client: Api, monkeypatch: pytest.MonkeyPatch, notice
     async def test_driver_gate(*_args: object) -> None:
         return None
 
-    async def test_enqueue(
-        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
-    ) -> int:
-        assert session is not None
+    async def test_enqueue(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
+        assert kw.get("session") is not None
         notices.append(template)
         return len(notices)
 
@@ -603,11 +597,9 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
 
     original_enqueue = notify_service.enqueue
 
-    async def enqueue_then_abort(
-        order_id: int, template: str, plan_id: int | None = None, *, session: object | None = None
-    ) -> int:
-        assert session is not None
-        await original_enqueue(order_id, template, plan_id, session=session)
+    async def enqueue_then_abort(order_id: int, template: str, plan_id: int | None = None, **kw: object) -> int:
+        assert kw.get("session") is not None
+        await original_enqueue(order_id, template, plan_id, session=kw["session"])
         raise DomainError("PLAN_NOT_APPROVABLE", "Synthetic transaction rollback test.")
 
     monkeypatch.setattr(notify_service, "enqueue", enqueue_then_abort)
@@ -615,10 +607,8 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     assert_error(failed, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.notification")[0][0] == 0
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.milestone_event")[0][0] == 4
-    assert (
-        fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0]
-        == "LOADED"
-    )
+    order_status = fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0]
+    assert order_status == "LOADED"
 
     monkeypatch.setattr(notify_service, "enqueue", original_enqueue)
     first = send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1})
