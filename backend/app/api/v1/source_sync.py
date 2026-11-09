@@ -4,6 +4,7 @@ Requires Dev 1 source_handoff (#202). Never lets polling choose routing and
 never writes POS/WMS, plans or approvals. Source list API has no by-ID GET,
 so both complete status feeds are checked conservatively before acceptance.
 """
+
 from typing import Annotated
 from uuid import UUID
 
@@ -108,6 +109,9 @@ async def sync_now(
     if source is None:
         raise DomainError("NOT_FOUND", "Submitted Source order is unavailable.")
     answer = await source_handoff.accept_source_order(
-        session, user, source, str(idempotency_key),
+        session,
+        user,
+        source,
+        str(idempotency_key),
     )
     return SyncNowOutput.model_validate(answer)
