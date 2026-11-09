@@ -148,8 +148,8 @@ def test_drift_check_detects_a_missing_column(empty_db: str) -> None:
     assert any(d[0] == "add_column" and d[3].name == "efficiency_factor" for d in diff), diff
 
 
-def test_all_64_tables_are_modelled() -> None:
-    assert len(_model_tables()) == 64
+def test_all_65_tables_are_modelled() -> None:
+    assert len(_model_tables()) == 65
 
 
 def test_read_only_views_match_database(head_db: str) -> None:
