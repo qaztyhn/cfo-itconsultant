@@ -57,8 +57,7 @@ class SyntheticWmsPort:
             reservation_id=f"SYNTHETIC-{self.reserve_count}",
             status="accepted",
             lines=tuple(
-                AckLine(sku, warehouse, quantity)
-                for (warehouse, sku), quantity in sorted(needed.items())
+                AckLine(sku, warehouse, quantity) for (warehouse, sku), quantity in sorted(needed.items())
             ),
             revision=f"synthetic-revision-{self._batch}",
             reflected_in_batch_id=self._batch,
