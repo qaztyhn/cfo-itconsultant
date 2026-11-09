@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+
+## [DEC-GPS-RET-20261109 / DEC-D8-OPS-20261109] — 2026-11-09 — owner-approved amendment, docs-only
+
+- Owner chốt **lưu lịch sử GPS đã thu hợp lệ tối đa 7 ngày** sau khi trip/ca kết thúc thay cho yêu cầu G4 trước đó xóa toàn bộ raw GPS ngay. **Ngừng thu và thu hồi quyền xem live ngay** lúc trip/ca kết thúc, không thu ngoài ca; chỉ cho phép tra soát lịch sử trong phạm vi/chứng cứ hợp lệ, có lý do và audit, yêu cầu privacy/legal/DPIA trước dữ liệu nhân viên thật, xóa khi hết hạn. Không tự mở endpoint historical/read mới hoặc kéo dài retention nếu chưa có quyết định riêng.
+- Owner chốt **hai lượt rà soát vận hành tổng thể 07:00 và 13:00 giờ Thụy Điển** (Europe/Stockholm). Đây không phải lịch đồng bộ đơn 2 lần/ngày; **chưa duyệt toàn bộ D8**, tick API, chi phí hạ tầng hoặc lịch các Job còn lại.
+- Thêm [decision record](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md), cập nhật sổ `ASSUMPTIONS.md`, G4 amendment trong quyết định 27 mã, 02/03/04/05/06/09 và D8 proposal. Thay đổi **chỉ tài liệu**, code migration/runtime GPS cleanup hiện vẫn theo mô hình cũ cho đến khi được sửa, test và nghiệm thu trên PR khác. Không tự merge PR code.
+
+
 ## [DEC-OWNER-20261109 — 27 approved cross-workstream decisions] — 2026-11-09 — docs/contract only
 
 - Chủ dự án phê duyệt **S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2**; xem [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) và mục mới trong `ASSUMPTIONS.md`.
