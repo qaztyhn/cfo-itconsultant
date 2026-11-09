@@ -1,6 +1,7 @@
 """Disposable WMS HTTP + persistent SQLite acceptance: never an approval E2E."""
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -179,6 +180,42 @@ def test_stock_capacity_idempotency_collision_partial_and_tamper_denied(database
             no_include, KEY, expected_reservation_id=changed["included_reservation_ids"][0]
         )
         assert client.get("/v1/status/SE/wrong", headers=HEADERS).status_code == 404
+
+
+def test_pinned_source_version_and_reference_rejected_without_key_reuse(database: Path):
+    with _client(database) as client:
+        for field, wrong in [("source_version", 3), ("source_ref", "SYN-POS-OTHER"),
+                             ("plan_id", 81)]:
+            invalid = copy.deepcopy(REQUEST)
+            invalid["idempotency_key"] = "new-key-" + field
+            invalid[field] = wrong
+            assert client.post("/v1/reserve", json=invalid, headers=HEADERS).status_code == 409
+        current = client.get("/v1/stock", headers=HEADERS).json()
+        assert current["batch_id"] == 1 and current["items"][0]["reserved"] == "0.000"
+
+
+def test_concurrent_distinct_orders_do_not_overallocate(database: Path):
+    first = copy.deepcopy(REQUEST)
+    second = copy.deepcopy(REQUEST)
+    second.update({
+        "idempotency_key": "race-second", "order_id": 51, "plan_id": 81,
+        "source_ref": "SYN-POS-51",
+    })
+    second["lines"][0].update({"order_line_id": 100, "quantity": "50.000"})
+
+    def submit(payload):
+        with _client(database) as local:
+            response = local.post("/v1/reserve", json=payload, headers=HEADERS)
+            return response.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(submit, (first, second)))
+    assert sorted(responses) == [200, 409]
+    with _client(database) as client:
+        stock = client.get("/v1/stock", headers=HEADERS).json()
+        assert stock["batch_id"] == 2
+        assert stock["items"][0]["reserved"] in ("50.000", "60.000")
+        assert len(stock["included_reservation_ids"]) == 1
 
 
 def test_disposable_security_and_immutable_fixture(database: Path, monkeypatch: pytest.MonkeyPatch):
