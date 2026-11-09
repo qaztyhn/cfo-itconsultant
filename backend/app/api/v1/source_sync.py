@@ -102,7 +102,9 @@ async def sync_now(
         source = await _read_submitted(reader, body.external_ref)
     except (AdapterConfigurationError, SourceReadError, ValueError):
         # Never echo a remote URL, key, Source record or personal contact info.
-        raise DomainError("INTERNAL_ERROR", "Source order check is temporarily unavailable.", http_status=503) from None
+        raise DomainError(
+            "INTERNAL_ERROR", "Source order check is temporarily unavailable.", http_status=503
+        ) from None
     if source is None:
         raise DomainError("NOT_FOUND", "Submitted Source order is unavailable.")
     answer = await source_handoff.accept_source_order(
