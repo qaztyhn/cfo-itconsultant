@@ -8,7 +8,6 @@ passes their transaction in a separate integration PR.
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
