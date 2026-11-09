@@ -282,6 +282,8 @@ async def approve_scope(session: AsyncSession, actor: object, scope_id: int) -> 
     if previous is not None:
         previous.status, previous.superseded_at = "superseded", now
         await session.flush()
+        # S5: a scope change invalidates evidence bound to the superseded version (renewal = new approval).
+        await _revoke_evidence_of_scope(session, previous.id, "Scope version superseded", actor)
     row.status, row.approved_by, row.approved_at, row.effective_from = "approved", _user_id(actor), now, now
     await session.flush()
     await record_decision(
@@ -513,6 +515,36 @@ async def revoke_evidence(
         actor_role="admin",
     )
     return row
+
+
+async def _revoke_evidence_of_scope(
+    session: AsyncSession, scope_version_id: int, reason: str, actor: object
+) -> None:
+    rows = (
+        await session.scalars(
+            select(StockIndependenceEvidence)
+            .where(
+                StockIndependenceEvidence.scope_version_id == scope_version_id,
+                StockIndependenceEvidence.status == "approved",
+            )
+            .with_for_update()
+        )
+    ).all()
+    for row in rows:
+        row.status, row.revoked_at, row.revoke_reason = "revoked", clock.now(), reason
+        await record_decision(
+            session,
+            Action.STOCK_EVIDENCE_REVOKED,
+            "stock_independence_evidence",
+            str(row.id),
+            reason_text=reason,
+            before={"status": "approved"},
+            after={"status": "revoked"},
+            actor_user_id=_user_id(actor),
+            actor_employee_id=_employee_id(actor),
+            actor_role="admin",
+        )
+    await session.flush()
 
 
 async def invalidate_evidence_for_skus(

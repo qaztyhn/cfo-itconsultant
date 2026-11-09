@@ -416,6 +416,9 @@ def test_scope_change_makes_old_scope_evidence_unusable(db: str) -> None:
     _scope(db, author=ADMIN_B, approver=ADMIN_A)  # new scope version => old evidence is bound to old version
     ctx = run(db, lambda s: svc.resolve_stock_context(s, 1, NOW + timedelta(days=1, hours=1)))
     assert ctx.evidence_ids == () and ctx.scope_version == 2
+    # the old evidence is permanently revoked and audited, and cannot be silently reactivated
+    assert fetch(db, "SELECT status FROM ops.stock_independence_evidence")[0]["status"] == "revoked"
+    assert audit(db, "STOCK_EVIDENCE_REVOKED") == 1
 
 
 # --- S4 / write-run binding ---------------------------------------------------------------------------
