@@ -184,8 +184,7 @@ def test_stock_capacity_idempotency_collision_partial_and_tamper_denied(database
 
 def test_pinned_source_version_and_reference_rejected_without_key_reuse(database: Path):
     with _client(database) as client:
-        for field, wrong in [("source_version", 3), ("source_ref", "SYN-POS-OTHER"),
-                             ("plan_id", 81)]:
+        for field, wrong in [("source_version", 3), ("source_ref", "SYN-POS-OTHER"), ("plan_id", 81)]:
             invalid = copy.deepcopy(REQUEST)
             invalid["idempotency_key"] = "new-key-" + field
             invalid[field] = wrong
@@ -197,10 +196,14 @@ def test_pinned_source_version_and_reference_rejected_without_key_reuse(database
 def test_concurrent_distinct_orders_do_not_overallocate(database: Path):
     first = copy.deepcopy(REQUEST)
     second = copy.deepcopy(REQUEST)
-    second.update({
-        "idempotency_key": "race-second", "order_id": 51, "plan_id": 81,
-        "source_ref": "SYN-POS-51",
-    })
+    second.update(
+        {
+            "idempotency_key": "race-second",
+            "order_id": 51,
+            "plan_id": 81,
+            "source_ref": "SYN-POS-51",
+        }
+    )
     second["lines"][0].update({"order_line_id": 100, "quantity": "50.000"})
 
     def submit(payload):
