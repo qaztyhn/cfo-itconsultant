@@ -65,7 +65,7 @@ def test_BE_03_cs_creates_real_contact_log_with_actor_timestamp_and_safe_audit(c
 
 
 def test_BE_03_contact_history_has_pagination_and_correct_market_scope(contact_api: Api) -> None:
-    for reason in ("first_call", "second_call", "third_call"):
+    for reason in ("where_is_my_order", "change_request", "complaint"):
         response = contact_api.send("POST", "/orders/3/contact-logs", CS, {**BODY, "reason_code": reason})
         assert response.status_code == 201, response.text
     page = contact_api.get("/orders/3/contact-logs", CS, page=1, page_size=2)
@@ -74,10 +74,16 @@ def test_BE_03_contact_history_has_pagination_and_correct_market_scope(contact_a
     assert body["total"] == 3 and len(body["items"]) == 2
     assert body["page"] == 1 and body["page_size"] == 2
     assert body["items"][0]["id"] > body["items"][1]["id"]
+    assert all(item["note"] == BODY["note"] for item in body["items"])
+    assert all(item["employee_id"] == 11 for item in body["items"])
     dispatcher = contact_api.get("/orders/3/contact-logs", DISPATCHER, page=2, page_size=2)
     assert dispatcher.status_code == 200
     assert dispatcher.json()["total"] == 3
     assert len(dispatcher.json()["items"]) == 1
+    dispatcher_item = dispatcher.json()["items"][0]
+    assert set(dispatcher_item) == {"id", "order_id", "channel", "reason_code", "contacted_at"}
+    assert "note" not in dispatcher_item and "employee_id" not in dispatcher_item
+    assert BODY["note"] not in dispatcher.text
     for secret in ("delivery_lat", "contact_phone", "approved_plan_id", "GPS"):
         assert secret not in page.text
     assert_error(contact_api.get("/orders/6/contact-logs", CS), 404, "NOT_FOUND")
@@ -108,6 +114,7 @@ def test_BE_03_dispatcher_cannot_write_even_with_read_access(contact_api: Api) -
 def test_BE_03_invalid_input_never_creates_log_or_audit(contact_api: Api) -> None:
     for payload in (
         {**BODY, "reason_code": ""},
+        {**BODY, "reason_code": "first_call"},
         {**BODY, "channel": "phone;DROP TABLE"},
         {**BODY, "note": "s" * 1001},
         {**BODY, "phone": "+460001"},

@@ -11,8 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core.errors import DomainError
+from app.domain.models.hr import Employee
 from app.domain.models.ops import CustomerContactLog, CustomerOrder
 from app.services import order_read_service
+
+
+CHANNELS = frozenset({"phone", "email", "chat"})
+REASONS = frozenset({"where_is_my_order", "change_request", "complaint", "delay_inquiry", "other"})
 
 
 def _roles(actor: object) -> tuple[str, ...]:
@@ -42,17 +47,19 @@ async def _scoped_order(session: AsyncSession, actor: object, order_id: int, *, 
     return order
 
 
-def _view(log: CustomerContactLog) -> dict[str, object]:
-    """Explicit response allowlist, never ORM serialization."""
-    return {
+def _view(log: CustomerContactLog, *, can_read_note: bool) -> dict[str, object]:
+    """Server-selected response allowlist: Dispatcher never receives a note or employee id."""
+    item: dict[str, object] = {
         "id": log.id,
         "order_id": log.order_id,
         "channel": log.channel,
         "reason_code": log.reason_code,
-        "note": log.note,
-        "employee_id": log.employee_id,
         "contacted_at": log.contacted_at,
     }
+    if can_read_note:
+        item["note"] = log.note
+        item["employee_id"] = log.employee_id
+    return item
 
 
 async def create(
@@ -69,6 +76,13 @@ async def create(
     actor_id = getattr(actor, "id", None)
     if type(employee_id) is not int or type(actor_id) is not int:
         raise DomainError("FORBIDDEN", "Verified CS employee and account required.")
+    employee = await session.get(Employee, employee_id)
+    if employee is None or employee.status != "active" or employee.market_id != order.market_id:
+        raise DomainError("FORBIDDEN", "Active in-market CS employee required.")
+    if channel not in CHANNELS or reason_code not in REASONS:
+        raise DomainError("VALIDATION_ERROR", "Invalid contact channel or reason code.")
+    if note is not None and (not isinstance(note, str) or len(note) > 1000):
+        raise DomainError("VALIDATION_ERROR", "Invalid contact note.")
     log = CustomerContactLog(
         order_id=order.id,
         customer_id=order.customer_id,
@@ -91,7 +105,7 @@ async def create(
         actor_role="customer_service",
         snapshot={"channel": channel, "reason_code": reason_code},
     )
-    return _view(log)
+    return _view(log, can_read_note=True)
 
 
 async def list_logs(
@@ -114,8 +128,9 @@ async def list_logs(
             .limit(page_size)
         )
     ).all()
+    can_read_note = "customer_service" in _roles(actor)
     return {
-        "items": [_view(log) for log in logs],
+        "items": [_view(log, can_read_note=can_read_note) for log in logs],
         "page": page,
         "page_size": page_size,
         "total": int(total or 0),

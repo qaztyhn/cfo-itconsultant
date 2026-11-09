@@ -322,8 +322,8 @@ class ContactLogOut(BaseModel):
     order_id: int
     channel: str
     reason_code: str
-    note: str | None
-    employee_id: int
+    note: str | None = None
+    employee_id: int | None = None
     contacted_at: datetime
 
 
@@ -361,6 +361,7 @@ async def create_contact_log(
 @router.get(
     "/orders/{order_id}/contact-logs",
     response_model=ContactLogPage,
+    response_model_exclude_unset=True,
     responses=_ERRORS,
 )
 async def list_contact_logs(
