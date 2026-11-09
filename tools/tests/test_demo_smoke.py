@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from runpy import run_path
 
-from tools.demo_smoke import APP_NOW, GOOD_REF, UNMAPPED_REF, Result, allow_mutation, run, verdict
+from tools.demo_smoke import APP_NOW, GOOD_REF, UNMAPPED_REF, Http, Result, allow_mutation, run, verdict
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = run_path(str(ROOT / "backend" / "app" / "seed" / "scenarios.py"))["generate"]()
@@ -56,6 +56,28 @@ URLS = ("http://127.0.0.1:8100/api/v1", "http://127.0.0.1:8000/api/v1", "http://
 
 
 class DemoSmokeTests(unittest.TestCase):
+    def test_US_SRC_01_AC1_http_probe_accepts_real_html_frontend_response(self):
+        class HtmlResponse:
+            status = 200
+            headers = {"Content-Type": "text/html; charset=UTF-8"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self, _max_size):
+                return b"<!doctype html><html><body>CFO demo</body></html>"
+
+        class HtmlOpener:
+            def open(self, *_args, **_kwargs):
+                return HtmlResponse()
+
+        client = Http()
+        client.opener = HtmlOpener()
+        self.assertEqual(client.send("http://127.0.0.1:5173/"), (200, None))
+
     def test_US_SRC_01_AC1_read_only_no_mutations_and_source_auth_negative(self):
         http = FakeHttp()
         result = run(http, *URLS, environ=ENV)
