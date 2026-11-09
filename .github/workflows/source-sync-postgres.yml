@@ -1,0 +1,24 @@
+# P0 Source Sync route: real PostgreSQL, no fake acceptance service.
+name: source-sync-postgres
+on:
+  pull_request:
+    paths:
+      - "backend/app/api/v1/source_sync.py"
+      - "backend/tests/integration/test_source_sync_http_pg.py"
+      - ".github/workflows/source-sync-postgres.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance-pg:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: ./.github/actions/postgres
+      - run: pip install -e ".[dev]"
+      - run: ruff check tests/integration/test_source_sync_http_pg.py
+      - run: black --check tests/integration/test_source_sync_http_pg.py
+      - run: pytest tests/integration/test_source_sync_http_pg.py -v
