@@ -135,7 +135,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     signInAs(userByEmail("driver1@cfo.demo"));
     renderAt("/driver");
     await screen.findAllByText("SE-44 · Gothenburg demo site");
-    await userEvent.click(screen.getByRole("button", { name: "View trip" }));
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
     expect(screen.getByText(/Multiple stops need an explicit stop identity/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
   });
