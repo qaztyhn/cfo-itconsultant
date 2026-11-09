@@ -171,7 +171,7 @@ Trường/khối không được phép bị **bỏ hẳn** khỏi phản hồi (
 | `id`, `order_no`, `status`, `market`, `version`, `submitted_at` | ✓ | ✓ | ✓ |
 | `external_ref` | ✓ | ✓ | — |
 | `customer` | ✓ | ✓ | chỉ `name` |
-| `contact`, `delivery` | ✓ | ✓ | ✓ |
+| `contact`, `delivery` | ✓ | **CS projection riêng: contact chỉ masked, delivery không có vị trí tọa độ/restrictions** (sales giữ hợp đồng trước) | ✓ |
 | `date_request` | ✓ | ✓ | chỉ `window` |
 | `committed` | ✓ | ✓ | ✓ |
 | `origin_store`, `sales` | ✓ | ✓ | — |
@@ -182,9 +182,9 @@ Trường/khối không được phép bị **bỏ hẳn** khỏi phản hồi (
 | `approved_plan_id`, `latest_run_id` | ✓ | — | — |
 | `risk` | đầy đủ | `{status, color, forecast_eta}` | — |
 
-   > **Đề xuất chờ duyệt (`ASM-CS-PROJECTION-20261109`):** với `customer_service`, server chỉ trả `contact` đã che hoặc bỏ, và bỏ hẳn `delivery.lat/lon`, `receiving_restrictions`, mã cổng. Bảng trên chưa đổi cho đến khi owner duyệt.
-
 `risk` = bản `ops.eta_forecast` mới nhất: `{status, color, forecast_eta, planned_eta, commitment_deadline, slack_min, consumption_pct}`; `null` nếu chưa có.
+
+**Owner-approved CS-02 (DEC-CS-PRIVACY-20261109):** Backend phải xuất allowlisted DTO **dành riêng cho `customer_service`**, không được chỉ ẩn dữ liệu ở frontend. `contact` giữ tên nhưng chỉ có phone/email **đã mask** (không chứa số/email gốc trong payload); loại `delivery.lat`, `delivery.lon`, `delivery.receiving_restrictions` và mọi gate/access code, GPS/điểm số/quyết định nội bộ khỏi response CS. Trường/kiểu masked cụ thể trong generated DTO cần Dev 1/3 thống nhất và kiểm thử trước triển khai, không tự dùng lại schema `ContactOut`/`DeliveryOut` đầy đủ cho CS. Sales và các vai trò khác không được tự nới quyền từ thay đổi này. CS không được approve/dispatch/replan/change promise/DELAY send; backend kiểm 403 ở các mutation. API ETA/notifications/contact-logs còn stub phải thông báo chưa khả dụng, không giả E2E. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
 
 ### 5.4 `GET /orders` và `GET /orders/counts` (v1.4, Q7)
 
@@ -199,8 +199,7 @@ Phần tử danh sách (trường bị cấm theo mục 5.3 thì bỏ):
 - `site` = phần sau dấu phẩy cuối cùng của `delivery_address` (cột CUSTOMER · SITE của `03`).
 - `warehouse` = kho của kế hoạch đã duyệt; nếu chưa có thì kho của kế hoạch `proposed` rank 1; nếu không có thì `null`.
 - `blocked=true` ⇔ `status = BLOCKED_UNMAPPED_SKU` (bản ghi legacy, chỉ để tra cứu; ASM-005). Các đơn này **không** nằm trong hàng đợi Dispatcher.
-- `q` khớp `order_no`, `external_ref` hoặc tên khách, không phân biệt hoa thường.
-   > **Đề xuất chờ duyệt (`ASM-CS-PHONE-SEARCH-20261109`):** `q` mở rộng khớp số điện thoại liên hệ đã chuẩn hóa (khớp đủ số, không khớp vài số cuối), trong phạm vi market, chống tra cứu hàng loạt, không ghi số thô vào log. Hành vi hiện tại vẫn là ba trường nêu trên.
+- **Owner-approved CS-01 (DEC-CS-SEARCH-20261109):** giữ nguyên tham số `q`, khớp `order_no`, `external_ref`, tên khách hoặc **số điện thoại liên hệ trên đơn**; mã/tên không phân biệt hoa thường. Khi `q` là điện thoại, backend chuẩn hóa cách ghi quốc tế/dấu cách/ký tự phân cách; từ chối truy vấn quá ngắn/dễ dò và áp dụng kiểm soát tần suất/chống enumeration, không ghi raw phone trong URL/access/analytics/error logs. Thực thi role+market scope như §5.2, phân trang và không trả phone thô trong danh sách. Không tự tạo tham số mới; Dev 1 phải cập nhật index/query và regression tests. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
 - **Sắp xếp mặc định: thứ tự đặt hàng** `submitted_at ASC, id ASC` (đơn đặt trước hiện trước; BR-ORD-05, `09` bất biến 27). Có thể chọn `?sort=` theo `submitted_at`, `date_to` (ngày yêu cầu), `promise_end` (`NULL` xếp cuối), `committed_date`, `order_no`, `status`. Thứ tự hiển thị **không** ép thứ tự thực thi: đơn đặt sau cần giao sớm vẫn có thể được chuẩn bị/giao trước nếu không lấn nguồn lực `committed` của đơn trước (mục 6.3a).
 
 Bucket của `/orders/counts` (Phụ lục A), theo phạm vi mục 5.2; "hôm nay" theo múi giờ market:
@@ -489,8 +488,6 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 ```
 `GET /orders/{id}/contact-logs`: dispatcher và CS.
 
-   > **Trạng thái triển khai:** `POST/GET /orders/{id}/contact-logs` hiện là stub. Giao diện CS chạy mock-only, ghi nhãn demo, cho tới khi Dev 1 triển khai (`ASM-CS-CONTACT-MOCK-20261109`).
-
 ## 12. Sản phẩm, ánh xạ, nhóm xử lý (IT)
 
 **ASM-005 — Chính sách phạm vi CFO:** Khoảng 100 SKU mapping confirmed ban đầu (pilot) và mở rộng dần. CFO chỉ điều phối đơn có toàn bộ SKU đã xác nhận. Đơn thiếu SKU đi theo quy trình cũ; API đồng bộ đơn của CFO phải đánh giá điều kiện trước khi tạo planning run/hold, trả kết quả **không đủ điều kiện CFO / tiếp tục quy trình cũ**, không gọi Dispatcher để giữ đơn chờ IT. Không được tự chuyển đơn cũ vào CFO sau mapping. Mã phản hồi, dữ liệu định danh luồng, cách ngăn hai luồng cùng xử lý và xử lý đơn đã nhập ở CFO trước thay đổi là **thiết kế cần chốt khi triển khai**, không tự coi API hiện tại đã hỗ trợ.
@@ -724,7 +721,7 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
 | POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
 
-**D8 chưa được owner phê duyệt:** danh sách job, market scope, giờ chạy Europe/Stockholm và lỗi/response chưa là hợp đồng cuối. Đề xuất tách riêng tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md`: 5 phút ingest/stock/gps-lost/stale/milestone, 1 phút hold expiry/outbox, morning 07:00 và nightly 04:00/04:15 giờ Thụy Điển; bảo vệ DB lock/mỗi job/market, không tác động đến ca/GPS ngoài giờ, không tự approve hay gửi DELAY, D6 hosting chờ owner. Chưa thay route/code trong tài liệu này.
+**D8 được owner phê duyệt chỉ để triển khai và kiểm thử staging/demo (DEC-D8-STAGING-SCHEDULE-20261109):** danh sách job/tần suất trong proposal là baseline staging, chưa bật production; tick endpoint/auth/response và mã lỗi vẫn phải review kỹ thuật. Đề xuất tách riêng tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md`: 5 phút ingest/stock/gps-lost/stale/milestone, 1 phút hold expiry/outbox, morning 07:00 và nightly 04:00/04:15 giờ Thụy Điển; bảo vệ DB lock/mỗi job/market, không tác động đến ca/GPS ngoài giờ, không tự approve hay gửi DELAY, D6 hosting chờ owner. Chưa thay route/code trong tài liệu này.
 
 **Cách B:** Hệ thống nguồn giữ nguyên thao tác POS create/validate/submit và database riêng. CFO đọc API nguồn theo yêu cầu Sales bằng các GET sẵn có, không thay POS. Nếu API nguồn thực tế không thể truy vấn đơn vừa nộp nhanh, trả Retry/Wait; không mặc định mọi POS có khả năng real-time.
 
@@ -854,7 +851,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 | GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ template, channel, status, recipient_masked, subject, body_html, body_text, eta_window, suppressed_reason }` (người nhận đã che) |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
 
-### A.1 M6 Prep queue contract alignment (đề xuất kỹ thuật 09/11/2026 — chờ owner xác nhận)
+### A.1 M6 Prep queue contract alignment (OWNER APPROVED 09/11/2026 — DEC-M6-PREP-QUEUE-20261109; code/E2E pending)
 
 - **Một nguồn contract:** `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD`; `date` là ngày nghiệp vụ theo `ref.market.timezone` của kho (nếu bỏ qua: ngày hiện tại theo market). Dùng cùng RBAC và warehouse/market scope như §8.2. Đường dẫn `GET /prep-queue?warehouse_id=&date=` trong Phụ lục A cũ không còn canonical; nếu giữ tương thích, phải delegate cùng implementation và cùng shape, không triển khai một endpoint thứ hai với nghiệp vụ khác.
 - **Đơn vị:** `share` là JSON number từ 0 đến 1 (`delivery_share`); `present` và `lines` là integer. `booked_min`, `total_min`, `free_min`, `shifts[].minutes`, `shifts[].booked`, `orders[].work_min` là số nguyên JSON theo phút; `useful_hours`, `weight_kg` là JSON number có thể có phần thập phân. **Không** serialize các trường capacity/weight dưới dạng Decimal string (chuỗi decimal chỉ dành cho tiền theo §1). Tất cả các tổng và phần tử ca phải dùng cùng quy tắc làm tròn để đối chiếu được.
@@ -910,7 +907,7 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 
 ### 17.1 GPS retention amendment and D8 clock times — 2026-11-09
 
-**Owner-approved specific amendments:** [DEC-GPS-RET-20261109 and DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md). Stop collecting/revoke live read at trip/duty end; keep only previously lawfully captured GPS **up to seven days**, for case-restricted review with reason/access audit, then erase. This does **not** authorize adding unreviewed historical read APIs or showing a closed trip's GPS to an ordinary Dispatcher. The existing `trip_end_delete`/zero-day config and terminal purge assumptions require reviewed new DB/API/service contracts and privacy/legal/DPIA signoff for real employee data. **Operational review at 07:00 and 13:00 Europe/Stockholm only** is approved; full D8 scheduler/job frequency and D6 hosting remain unapproved.
+**Owner-approved specific amendments:** [DEC-GPS-RET-20261109 and DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md). Stop collecting/revoke live read at trip/duty end; keep only previously lawfully captured GPS **up to seven days**, for case-restricted review with reason/access audit, then erase. This does **not** authorize adding unreviewed historical read APIs or showing a closed trip's GPS to an ordinary Dispatcher. The existing `trip_end_delete`/zero-day config and terminal purge assumptions require reviewed new DB/API/service contracts and privacy/legal/DPIA signoff for real employee data. **Operational review 07:00 and 13:00 Europe/Stockholm** is approved; **job cadences are also approved for staging/demo only** by DEC-D8-STAGING-SCHEDULE-20261109. Production job activation, D6 hosting/SLA/cost and internal tick DTO remain unapproved.
 
 **ASM-WMS-RESERVATION-20261109 (approved assumption only):** Owner assumes legacy WMS supports stock reservation; WMS reservation reduces **available-to-promise**, not physical on-hand until actual WMS issue. CFO must not double-subtract WMS-reflected reservations. CFO→WMS reserve/release writes would be a **new explicit exception to DEC-WMS-READONLY-20261109**, *not yet owner-approved*: do not expose or call such write endpoints until the real WMS read/write contract, ACK/idempotency, cross-system failure recovery and owner authorization are reviewed. [Decision assumption](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md).
 
@@ -922,3 +919,13 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) **overrides the general WMS GET-only policy for one narrow, as-yet-unimplemented business action**. CFO reads complete fresh WMS stock before plan; on authorized Sales/Dispatcher plan confirmation it proposes a WMS **reserve** in original verified WMS SKU and stock units (not CFO global ID), with order-line, market/warehouse, external idempotency and mapping/source versions. WMS must atomically reject insufficient stock across systems or acknowledge accepted reservation ID/SKU/qty/version. Until positive ACK, do not return or display final guaranteed approval. After ACK CFO must **immediately refresh/re-read WMS inventory** and update its stock view/order state; periodic 5-minute polling is follow-up only. WMS decreases available by reservation but does not change physical on_hand until warehouse issues goods. Never subtract a WMS-included reservation twice. Missing/stale refresh, partial ACK, timeout or uncertain WMS state ⇒ conservative pending protection/status lookup or fail closed, not fabricated success.
 
 **OpenAPI endpoint/path/DTO, external auth, release/adjust/consume lifecycle, cross-service ACK compensation and transactional patterns require Dev 1/2 contract review and deployment approval.** No actual WMS reserve endpoint, CFO API or code is declared live by this docs update; no WMS physical stock write, POS mutation or CFO transfer reconciliation. Existing Sales approval 5-gate/hold restrictions remain binding.
+
+
+### 17.2 Additional owner-approved contracts — CS, Prep Queue, Stock Admin and D8 staging (2026-11-09)
+
+[Decision record](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) and [ASSUMPTIONS entries](ASSUMPTIONS.md): DEC-CS-SEARCH, DEC-CS-PRIVACY, DEC-M6-PREP-QUEUE, DEC-STOCK-GRANT-CONTROL, DEC-D8-STAGING-SCHEDULE (all 20261109). **Only** these five proposals are newly approved.
+
+- **CS search/privacy:** §5.3–5.4 above now require `q` matching contact phone and a CS-specific masked/allowlisted server DTO, no private delivery/access information. Dev 1/3 must test actual API and not label mock-only contact logging as production.
+- **Prep Queue:** Appendix A.1 is now an **approved target contract**; backend #129/#159 and UI #154/#160 still require harmonization/real-DB tests before merge.
+- **Stock Admin:** only **Owner-delegated System Admin** may issue and revoke market-specific Stock Admin grants (first and future), no self-grant; Dev 1/2 must review delegation record, audit and migration. Does not grant physical WMS access.
+- **D8:** stage/test approved proposal job cadence on synthetic data only. `attendance_gen` disabled; no prod cron/worker/hosting, no real notifications or GPS. Internal tick security/DTO, new codes and job runtime remain subject to review.
