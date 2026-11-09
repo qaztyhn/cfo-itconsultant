@@ -26,11 +26,7 @@ FILES = ("manifest.json", "drivers.json", *WEEKS)
 
 def _demo_enabled() -> bool:
     s = get_settings()
-    return (
-        s.app_env == "test"
-        and s.app_now == DEMO_NOW
-        and os.environ.get("DEMO_DISPOSABLE") == "1"
-    )
+    return s.app_env == "test" and s.app_now == DEMO_NOW and os.environ.get("DEMO_DISPOSABLE") == "1"
 
 
 def _document(path: Path) -> dict:
@@ -94,7 +90,8 @@ class DisposableD7Reader:
         expires_at = _instant(proof["expires_at"])
         drivers = _document(self.root / "drivers.json")
         matches = [
-            row["driver_code"] for row in drivers.get("records", [])
+            row["driver_code"]
+            for row in drivers.get("records", [])
             if row.get("employee_no") == employee_no and row.get("market") == DEMO_MARKET
         ]
         if len(matches) != 1:
@@ -118,7 +115,9 @@ class DisposableD7Reader:
                     if not isinstance(rest, dict):
                         return None
                     days.append(
-                        DayEvidence(day, "off_duty", rest=(_instant(rest["start"]), _instant(rest["end"])))
+                        DayEvidence(
+                            day, "off_duty", rest=(_instant(rest["start"]), _instant(rest["end"]))
+                        )
                     )
                 else:
                     driving = tuple(
@@ -127,7 +126,8 @@ class DisposableD7Reader:
                     )
                     days.append(
                         DayEvidence(
-                            day, "duty",
+                            day,
+                            "duty",
                             duty=(_instant(row["duty_start"]), _instant(row["duty_end"])),
                             driving=driving,
                         )
