@@ -350,7 +350,7 @@
 **US-RSK-01 — Tính lại ETA đúng lúc** · FR-RSK-01
 - AC1. *Given* không có sự kiện/GPS/thay đổi nguồn, *Then* không có dòng `eta_forecast` mới (không tính vô ích).
 - AC2. *Given* mốc `GOODS_READY` kế hoạch 11:00 và đến 11:31 chưa có sự kiện, *When* `milestone_overdue_check` chạy, *Then* ETA được tính lại với trigger `overdue_milestone`.
-- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các Job D8 khác chưa được owner phê duyệt (DEC-D8-OPS-20261109).
+- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các job/tần suất D8 khác **chỉ được Owner duyệt để triển khai/kiểm thử staging**, không bật production (DEC-D8-STAGING-SCHEDULE-20261109).
 - AC4. *Given* chậm chuẩn bị nhưng `depart_at` kế hoạch còn dư thời gian hấp thụ, *Then* `forecast_eta = planned_eta`, tiêu hao 0%.
 
 **US-RSK-02 — Trạng thái rủi ro** · BR-RSK-01
