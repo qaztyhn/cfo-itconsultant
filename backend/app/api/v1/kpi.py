@@ -67,9 +67,7 @@ async def kpi_daily(
 
 
 @router.get("/kpi/diagnostics")
-async def kpi_diagnostics(
-    user: AuthUser, db: DbSession, market: MarketCode = None
-) -> dict[str, object]:
+async def kpi_diagnostics(user: AuthUser, db: DbSession, market: MarketCode = None) -> dict[str, object]:
     """Existing diagnostic keys; unavailable until source definitions approved."""
     return await kpi_service.diagnostics(db, user, requested_market=market)
 
