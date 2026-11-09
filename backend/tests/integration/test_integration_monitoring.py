@@ -25,7 +25,8 @@ def monitoring(api: Api) -> Api:
         *rows.REF_HR,
         "INSERT INTO ref.app_user (email,password_hash,roles) "
         "VALUES ('admin.integration@test.invalid','synthetic-not-usable','{admin}')",
-        "INSERT INTO hr.employee (market_id,employee_no,first_name,last_name,position_code,hire_date) "
+        "INSERT INTO hr.employee "
+        "(market_id,employee_no,first_name,last_name,position_code,hire_date) "
         "VALUES (1,'E3','Synthetic','Three','TEST_POS','2026-01-01')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
         "VALUES (3,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
