@@ -40,12 +40,12 @@ describe("AppShell", () => {
     expect(screen.getByRole("note")).toHaveTextContent(demoContextFor("/notifications"));
   });
 
-  it("sales lands in the shell with only their two items", () => {
+  it("sales lands in the shell with the new sync-check entry", () => {
     signInAs(userByEmail("sales@cfo.demo"));
     const { container } = renderAt("/store/orders");
 
     expect(screenName(container)).toBe("MyStoreOrders");
-    expect(screen.getAllByRole("link").map((a) => a.textContent).filter((t) => t !== "Skip to content")).toEqual(["New order", "My store orders"]);
+    expect(screen.getAllByRole("link").map((a) => a.textContent).filter((t) => t !== "Skip to content")).toEqual(["New order", "My store orders", "Sync & confirm delivery"]);
   });
 
   it("Business owner sees only Revenue and cannot open dispatcher screens", () => {

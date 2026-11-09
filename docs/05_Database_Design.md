@@ -706,6 +706,55 @@ Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt
 
 **Handoff Dev 1/2:** thiết kế DDL/migration/chi tiết quyền server-side, lưu trữ version + audit, ràng buộc market/pilot/warehouse/SKU, effective version theo `batch_id/as_of`, thu hồi bằng chứng khi Source/mapping đổi, atomic persistence và PostgreSQL tests. Các tên bảng/cột/route mới **chưa được owner phê duyệt**; đoạn này không cho phép tự invent schema hay coi T07 stock writer đã xong. Xem `ASSUMPTIONS.md` và `decisions/DEV1_D1_01_04_APPROVED_20261108.md`.
 
+**DDL đề xuất theo `DEC-OWNER-20261109` S1–S5 (migration `0013`, chờ review Dev 1/Dev 2 trước khi bật writer T07).** Tên bảng/cột là đề xuất kỹ thuật; hành vi nghiệp vụ do chủ dự án duyệt. Cột chung `created_at/updated_at` theo mục 1.
+
+```sql
+CREATE TABLE ref.stock_admin_grant (             -- S1: grant Admin tường minh, theo market, thu hồi được
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), user_id bigint NOT NULL REFERENCES ref.app_user(id),
+  capability text NOT NULL CHECK (capability IN ('scope','evidence')),
+  valid_from timestamptz NOT NULL, valid_to timestamptz,
+  granted_by bigint NOT NULL REFERENCES ref.app_user(id), reason_text text NOT NULL,
+  revoked_at timestamptz, revoked_by bigint REFERENCES ref.app_user(id), revoke_reason text,
+  CONSTRAINT ck_grant_not_self CHECK (granted_by <> user_id)
+);
+CREATE TABLE ops.stock_scope_version (           -- S2/S3: scope SKU toàn market, bất biến sau duyệt
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), version int NOT NULL,
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved','rejected','superseded')),
+  skus text[] NOT NULL, warehouse_ids bigint[] NOT NULL, reason_text text NOT NULL,
+  created_by bigint NOT NULL REFERENCES ref.app_user(id),
+  approved_by bigint REFERENCES ref.app_user(id), approved_at timestamptz,
+  effective_from timestamptz, superseded_at timestamptz,
+  UNIQUE (market_id, version),
+  CONSTRAINT ck_scope_author_not_approver CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
+CREATE UNIQUE INDEX ux_stock_scope_one_approved ON ops.stock_scope_version (market_id) WHERE status = 'approved';
+CREATE TABLE ops.stock_independence_evidence (   -- S2/S5: Warehouse Manager nộp, Admin khác duyệt, tối đa 30 ngày
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), warehouse_id bigint NOT NULL REFERENCES ref.location(id),
+  version int NOT NULL, scope_version_id bigint NOT NULL REFERENCES ops.stock_scope_version(id),
+  local_skus text[] NOT NULL, mapping_fingerprint text NOT NULL, evidence_ref text NOT NULL,
+  status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','approved','rejected','revoked')),
+  submitted_by bigint NOT NULL REFERENCES ref.app_user(id),
+  approved_by bigint REFERENCES ref.app_user(id), approved_at timestamptz,
+  valid_from timestamptz, valid_to timestamptz, revoked_at timestamptz, revoke_reason text,
+  UNIQUE (market_id, warehouse_id, version),
+  CONSTRAINT ck_evidence_submitter_not_approver CHECK (approved_by IS NULL OR approved_by <> submitted_by),
+  CONSTRAINT ck_evidence_max_30_days CHECK (valid_from IS NULL OR (valid_to > valid_from AND valid_to <= valid_from + interval '30 days'))
+);
+CREATE TABLE ops.stock_write_run (               -- S3/S4: ràng buộc lần ghi tồn với scope/evidence version (chỉ thêm)
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), source_batch_id bigint NOT NULL, as_of timestamptz NOT NULL,
+  scope_version_id bigint REFERENCES ops.stock_scope_version(id), evidence_ids bigint[] NOT NULL DEFAULT '{}',
+  expected_rows int NOT NULL, recorded_rows int NOT NULL,
+  status text NOT NULL CHECK (status IN ('accepted','rejected')), reject_code text,
+  UNIQUE (market_id, source_batch_id)
+);
+```
+
+Quy tắc không biểu diễn được bằng ràng buộc DB (thực thi trong `stock_scope_service`, có test): phiên bản scope hiệu lực tại `as_of` = bản `approved/superseded` có `effective_from <= as_of < superseded_at`; evidence chỉ hợp lệ khi `approved`, chưa revoke, `valid_from <= as_of < valid_to`, `mapping_fingerprint` khớp ánh xạ/đơn vị/quy đổi hiện tại và không chồng hiệu lực (khóa advisory theo market+kho); cặp kho×SKU thiếu trong batch đầy đủ = unknown ⇒ từ chối cả lần ghi.
+
 ## 7. Schema `plan` — kế hoạch và giữ chỗ
 
 ```sql

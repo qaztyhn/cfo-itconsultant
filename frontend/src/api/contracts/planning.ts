@@ -9,7 +9,7 @@ export const GATE_KEYS = ["stock", "preparation", "truck", "site_date", "safety"
 export type GateKey = (typeof GATE_KEYS)[number];
 
 export interface GateResult {
-  pass: boolean;
+  passed: boolean;
   code: string;
   detail?: { message?: string; [key: string]: unknown };
 }
@@ -25,15 +25,17 @@ export interface PlanVehicleRef {
 
 export interface PlanVehicle {
   seq: number;
-  vehicle: PlanVehicleRef;
-  /** Chỉ Dispatcher nhận được; vai trò khác bị backend lược bỏ. */
-  driver?: { employee_id: number; name: string } | null;
-  load_kg: DecimalLike;
-  load_m3: DecimalLike;
+  /** Compact Sales DTO contains only seq and eta_at. */
+  vehicle_id?: number;
+  driver_employee_id?: number | null;
+  vehicle?: PlanVehicleRef;
+  load_kg?: DecimalLike;
+  load_m3?: DecimalLike;
   load_lines?: { line_no: number; qty_base: DecimalLike }[];
-  loading_start_at: string;
-  depart_at: string;
+  loading_start_at?: string;
+  depart_at?: string;
   eta_at: string;
+  trip_end_at?: string;
 }
 
 export interface Plan {
@@ -52,7 +54,6 @@ export interface Plan {
   loading_start_at?: string;
   depart_at?: string;
   trip_end_at?: string;
-  promise_window_preview?: { start: string; end: string };
   distance_km?: DecimalLike;
   drive_min?: number;
   prep_hours?: DecimalLike;
@@ -68,11 +69,20 @@ export interface Plan {
 }
 
 export interface RejectedCandidate {
-  warehouse?: { id: number; name: string } | null;
-  vehicle?: { code: string } | null;
+  warehouse_id?: number | null;
+  vehicle_code?: string | null;
   failed_check?: GateKey | string;
   code?: string;
   detail?: { message?: string; [key: string]: unknown };
+}
+
+export interface DateNegotiation {
+  id: number;
+  proposed_date: string;
+  outcome: string;
+  channel: string;
+  contacted_at: string;
+  remind_at: string | null;
 }
 
 export interface PlanningRun {

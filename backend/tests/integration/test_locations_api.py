@@ -47,6 +47,7 @@ def test_location_schema_owner_and_effective_managers(hr: Api) -> None:
     assert wh1 == {
         "id": 1,
         "market": "SE",
+        "timezone": "Europe/Stockholm",
         "type": "warehouse",
         "code": "WH-1",
         "name": "Warehouse One",

@@ -1,21 +1,23 @@
-"""T07 read-only source polling. Stock persistence/freshness is a separate T07 delivery."""
+"""T07 read-only source polling; stock writes await the reviewed CFO scope/evidence contract."""
 
 import argparse
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.rest_adapter import RestMarketAdapter
 from app.core import clock
 from app.core.config import get_settings
+from app.core.correlation import correlation_id_var, normalize_correlation_id
 from app.core.db import get_engine, get_sessionmaker
 from app.core.errors import DomainError
-from app.core.logging import log_event
+from app.core.logging import configure_logging, log_event
 from app.domain.models.ref import Market
-from app.services.ingest_service import ENTITIES, sync_entity
+from app.services.ingest_service import ENTITIES, SUPPORTED_ENTITIES, sync_entity
 from app.services.ingest_types import IngestResult, ReplanSource, SourceRisk
 
 
@@ -46,6 +48,35 @@ async def run_market(
     now: datetime | None = None,
     replan: ReplanSource | None = None,
     risk: SourceRisk | None = None,
+) -> BatchResult:
+    token = correlation_id_var.set(normalize_correlation_id(None))
+    try:
+        factory = maker or get_sessionmaker()
+        async with factory() as lease, lease.begin():
+            market_id = await lease.scalar(select(Market.id).where(Market.code == market_code))
+            if market_id is None:
+                raise DomainError("NOT_FOUND", "Source market not found.")
+            acquired = await lease.scalar(
+                text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key,0))"),
+                {"key": f"ingest-batch:{market_id}"},
+            )
+            if not acquired:
+                raise DomainError("SYNC_IN_PROGRESS", "Market synchronization is already running.")
+            return await _run_market(
+                market_code, maker=factory, adapter=adapter, now=now, replan=replan, risk=risk
+            )
+    finally:
+        correlation_id_var.reset(token)
+
+
+async def _run_market(
+    market_code: str,
+    *,
+    maker: async_sessionmaker[AsyncSession] | None,
+    adapter: RestMarketAdapter | None,
+    now: datetime | None,
+    replan: ReplanSource | None,
+    risk: SourceRisk | None,
 ) -> BatchResult:
     factory = maker or get_sessionmaker()
     results: list[IngestResult] = []
@@ -96,11 +127,26 @@ async def run(market_code: str | None = None) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market")
+    parser.add_argument("--entity", choices=SUPPORTED_ENTITIES)
+    parser.add_argument("--retry-run-id", type=int)
     args = parser.parse_args()
+    if args.entity and not args.market:
+        parser.error("--entity requires --market")
+    if args.retry_run_id is not None and (not args.entity or args.retry_run_id <= 0):
+        parser.error("--retry-run-id requires --market, --entity and a positive run ID")
 
     async def execute() -> int:
-        clock.init_from_settings(get_settings().app_now)
+        settings = get_settings()
+        clock.init_from_settings(settings.app_now)
+        configure_logging(Path("logs") if settings.app_env == "local" else None)
         try:
+            if args.entity:
+                result = await sync_entity(args.market, args.entity, retry_run_id=args.retry_run_id)
+                if result.status != "ok":
+                    raise IngestBatchError(
+                        "Source retry incomplete; inspect the persisted synchronization run"
+                    )
+                return result.rows_ok
             return await run(args.market)
         finally:
             await get_engine().dispose()
@@ -110,7 +156,7 @@ def main() -> int:
     except Exception:
         log_event("integration", "ingestion_cli_failed", level="error")
         return 1
-    print(f"Ingestion completed: {count} accepted records. Stock is not integrated.")
+    print(f"Ingestion completed: {count} accepted records.")
     return 0
 
 

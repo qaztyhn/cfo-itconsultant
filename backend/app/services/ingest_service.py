@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.adapters.ingestion_feed import FeedRecord, read_feed
+from app.adapters.ingestion_feed import FeedRecord, StockFeedValue, read_feed
 from app.adapters.registry import AdapterRegistry
 from app.adapters.rest_adapter import RestMarketAdapter
 from app.core import clock
@@ -26,11 +26,21 @@ from app.domain.models.ref import Market
 from app.domain.models.stg import SyncCheckpoint, SyncReject, SyncRun
 from app.services import ingest_orders as order_writer
 from app.services import ingest_references
+from app.services import ingest_stock as stock_writer
 from app.services.alert_service import raise_alert, resolve
-from app.services.ingest_types import IngestResult, ReplanSource, RowOutcome, RowRejected, SourceRisk, aware
+from app.services.ingest_types import (
+    BatchRejected,
+    IngestResult,
+    ReplanSource,
+    RowOutcome,
+    RowRejected,
+    SourceRisk,
+    aware,
+)
 
 type RowWriter = Callable[[AsyncSession, Market, FeedRecord, int, datetime], Awaitable[RowOutcome]]
 ENTITIES = ("customers", "products", "orders", "inbound", "fleet")
+SUPPORTED_ENTITIES = (*ENTITIES, "stock")  # Explicit stock diagnostics fail closed pending the scope handoff.
 INITIAL_CHECKPOINT = datetime.min.replace(tzinfo=UTC)
 
 
@@ -50,7 +60,7 @@ async def synchronize(
     Complete partial runs may checkpoint per 04 §5.2; invalid times and blocked downstream
     work pin the affected feed for retry. Transport failure never checkpoints.
     """
-    if entity not in ENTITIES:
+    if entity not in SUPPORTED_ENTITIES:
         raise ValueError("Unsupported or unintegrated ingestion entity")
     started = aware(now or clock.now())
     cancelled: asyncio.CancelledError | None = None
@@ -130,9 +140,11 @@ async def synchronize(
                     reader = adapter
                 for feed in feeds:
                     async for record in read_feed(reader, feed, bounds[feed]):
-                        count_in += 1
+                        count_in += record.weight
                         code = record.reject_code
                         if record.updated_at is None or record.updated_at > started:
+                            if entity == "stock":
+                                raise BatchRejected("BAD_DATE")
                             code = code or "BAD_DATE"
                             pinned.add(feed)
                         else:
@@ -144,11 +156,15 @@ async def synchronize(
                                     await session.flush()
                                     code = outcome.reject_code
                             except RowRejected as error:
+                                if entity == "stock":
+                                    raise BatchRejected(str(error)) from None
                                 code = str(error)
                             except IntegrityError:
+                                if entity == "stock":
+                                    raise BatchRejected("STOCK_BATCH_REJECTED") from None
                                 code = "INVALID_SOURCE_ROW"
                         if code:
-                            count_rejected += 1
+                            count_rejected += record.weight
                             session.add(
                                 SyncReject(
                                     run_id=run_id,
@@ -168,7 +184,7 @@ async def synchronize(
                             }:
                                 pinned.add(feed)
                         else:
-                            count_ok += 1
+                            count_ok += record.weight
                     if feed in greatest and feed not in pinned:
                         old = checkpoints[feed]
                         target = max(greatest[feed], old.last_updated_since if old else INITIAL_CHECKPOINT)
@@ -185,6 +201,18 @@ async def synchronize(
         except (Exception, asyncio.CancelledError) as error:
             failure = "SOURCE_SYNC_FAILED"
             count_ok = count_rejected = 0
+            if isinstance(error, BatchRejected):
+                failure = str(error)
+                count_rejected = count_in
+                session.add(
+                    SyncReject(
+                        run_id=run_id,
+                        external_key="stock_batch",
+                        reason_code=failure,
+                        reason=failure,
+                        raw=None,
+                    )
+                )
             if isinstance(error, asyncio.CancelledError):
                 cancelled = error
         status = "failed" if failure else "partial" if count_rejected else "ok"
@@ -229,7 +257,7 @@ async def sync_entity(
     replan: ReplanSource | None = None,
 ) -> IngestResult:
     """Reference transport/persistence entry point; trusted dependency callbacks are server-only."""
-    if entity not in ENTITIES:
+    if entity not in SUPPORTED_ENTITIES:
         raise ValueError("Entity persistence is not integrated")
     changed_references = False
 
@@ -261,7 +289,9 @@ async def sync_entity(
             return await ingest_references.customer(session, market, value)
         if isinstance(value, SourceProduct):
             return await ingest_references.product(session, market, value, started)
-        if isinstance(value, SourceInbound):
+        if isinstance(value, StockFeedValue):
+            outcome = await stock_writer.apply(session, market, value, run_id, started)
+        elif isinstance(value, SourceInbound):
             outcome = await ingest_references.inbound(session, market, value, run_id)
         elif isinstance(value, SourceFleet):
             outcome = await ingest_references.fleet(session, market, value)
@@ -270,6 +300,8 @@ async def sync_entity(
         if outcome.changed:
             affected = await affected_orders(session, market)
             if affected and risk is None:
+                if entity == "stock":
+                    raise BatchRejected("RISK_DEPENDENCY_UNAVAILABLE")
                 raise RowRejected("RISK_DEPENDENCY_UNAVAILABLE")
             await session.flush()
             changed_references = True
@@ -320,4 +352,4 @@ async def ingest_fleet(market_code: str) -> int:
 
 
 async def ingest_stock(market_code: str) -> int:
-    raise RuntimeError("Stock ingestion awaits merged Q9/Q10 adapter and persistence review")
+    return await run_entity(market_code, "stock")

@@ -25,6 +25,7 @@ import { KpiDashboard } from "../features/kpi/KpiDashboard";
 import { NotificationInbox } from "../features/notifications/NotificationInbox";
 import { Revenue } from "../features/revenue/Revenue";
 import { MyStoreOrders } from "../features/store/MyStoreOrders";
+import { SalesSyncCheck } from "../features/sales/SalesSyncCheck";
 import { Attendance } from "../features/warehouse/Attendance";
 import { PrepQueue } from "../features/warehouse/PrepQueue";
 import { NoAccess } from "./NoAccess";
@@ -67,6 +68,7 @@ export const appRoutes: RouteObject[] = [
           guarded(PATHS.warehouseAttendance, <Attendance />),
           guarded(PATHS.warehouseTransfers, <Transfers />),
           guarded(PATHS.storeOrders, <MyStoreOrders />),
+          guarded(PATHS.salesSyncCheck, <SalesSyncCheck />),
           guarded(PATHS.csOrders, <OrderLookup />),
           guarded(PATHS.csContacts, ContactLogPlaceholder),
           guarded(PATHS.itIntegration, <DataIntegration />),
