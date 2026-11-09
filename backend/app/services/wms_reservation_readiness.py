@@ -111,7 +111,14 @@ def prepare_intent(
         if line.line_no < 1 or line.line_no in seen or line.global_product_id <= 0:
             _reject("Duplicate or invalid source order line.")
         seen.add(line.line_no)
-        if not all((line.pos_sku.strip(), line.wms_sku.strip(), line.wms_unit.strip(), line.mapping_version.strip())):
+        if not all(
+            (
+                line.pos_sku.strip(),
+                line.wms_sku.strip(),
+                line.wms_unit.strip(),
+                line.mapping_version.strip(),
+            )
+        ):
             _reject("WMS SKU, fixed unit and mapping provenance are required.")
         if not all(
             (
