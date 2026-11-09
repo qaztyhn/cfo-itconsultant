@@ -45,7 +45,7 @@ def monitoring(api: Api) -> Api:
         "INSERT INTO stg.sync_reject (run_id,external_key,reason_code,reason,raw) "
         "VALUES (2,'private@example.test','BAD_DATE',"
         "'Sensitive address email token',"
-        "'{\"customer\":\"private@example.test\",\"secret\":\"token\"}'::jsonb),"
+        '\'{"customer":"private@example.test","secret":"token"}\'::jsonb),'
         "(2,'private@example.test','UNEXPECTED private@example.test',"
         "'PII','{}'::jsonb)",
         "INSERT INTO stg.sync_checkpoint(market_id,entity,last_updated_since) VALUES "
@@ -73,26 +73,20 @@ def test_US_ADM_01_AC1_pagination_status_filter_latest_success(monitoring: Api) 
     assert partial.json()["items"][0]["rows_rejected"] == 1
     overview = monitoring.get("/integration/overview", 2, market="ZZ")
     assert overview.status_code == 200, overview.text
-    feed = next(
-        item for item in overview.json()["sources"] if item["entity"] == "orders"
-    )
+    feed = next(item for item in overview.json()["sources"] if item["entity"] == "orders")
     assert feed["status"] == "failed"
     assert feed["last_successful_run_id"] == 1
     assert feed["checkpoint"] == "2026-11-08T09:59:00+00:00"
 
 
 def test_US_ADM_01_AC1_rejects_are_redacted_and_paginated(monitoring: Api) -> None:
-    first = monitoring.get(
-        "/sync-runs/2/rejects", 2, market="ZZ", page_size=1
-    )
+    first = monitoring.get("/sync-runs/2/rejects", 2, market="ZZ", page_size=1)
     assert first.status_code == 200, first.text
     result = first.json()
     assert result["total"] == 2
     assert result["items"] == [{"id": 1, "reason_code": "BAD_DATE"}]
     assert "private" not in first.text.lower()
-    second = monitoring.get(
-        "/sync-runs/2/rejects", 2, market="ZZ", page=2, page_size=1
-    )
+    second = monitoring.get("/sync-runs/2/rejects", 2, market="ZZ", page=2, page_size=1)
     assert second.json()["items"] == [{"id": 2, "reason_code": "UNVERIFIED"}]
     assert "token" not in second.text.lower()
 
@@ -105,32 +99,22 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
     assert data["scheduler"]["last_tick_at"] is None
     assert data["scheduler"]["last_tick_status"] == "unknown"
     assert data["route_matrix"]["pairs"] == 0
-    stock = next(
-        item for item in data["sources"] if item["entity"] == "stock"
-    )
+    stock = next(item for item in data["sources"] if item["entity"] == "stock")
     assert (
         stock["availability"],
         stock["status"],
         stock["stock_scope"],
     ) == ("unconfigured", "unconfigured", "unconfigured")
-    products = next(
-        item for item in data["sources"] if item["entity"] == "products"
-    )
+    products = next(item for item in data["sources"] if item["entity"] == "products")
     assert products["unmapped"] == 1
     assert products["rejected"] is None
     assert products["status"] == "never_run"
 
 
 def test_US_ADM_01_AC1_market_scope_cannot_be_bypassed(monitoring: Api) -> None:
-    assert_error(
-        monitoring.get("/integration/overview", 3, market="YY"), 404, "NOT_FOUND"
-    )
-    assert_error(
-        monitoring.get("/sync-runs", 3, market="YY"), 404, "NOT_FOUND"
-    )
-    assert_error(
-        monitoring.get("/sync-runs/4/rejects", 3), 404, "NOT_FOUND"
-    )
+    assert_error(monitoring.get("/integration/overview", 3, market="YY"), 404, "NOT_FOUND")
+    assert_error(monitoring.get("/sync-runs", 3, market="YY"), 404, "NOT_FOUND")
+    assert_error(monitoring.get("/sync-runs/4/rejects", 3), 404, "NOT_FOUND")
     result = monitoring.get("/sync-runs", 3)
     assert result.status_code == 200
     assert result.json()["total"] == 3
@@ -157,12 +141,8 @@ def test_US_ADM_01_AC1_role_gate_and_query_validation(monitoring: Api) -> None:
         {"entity": "unsupported"},
         {"status": "healthy"},
     ):
-        assert_error(
-            monitoring.get("/sync-runs", 2, **params), 422, "VALIDATION_ERROR"
-        )
-    assert_error(
-        monitoring.get("/sync-runs/999/rejects", 2), 404, "NOT_FOUND"
-    )
+        assert_error(monitoring.get("/sync-runs", 2, **params), 422, "VALIDATION_ERROR")
+    assert_error(monitoring.get("/sync-runs/999/rejects", 2), 404, "NOT_FOUND")
 
 
 def test_US_INT_01_AC4_empty_and_failed_only_runs(monitoring: Api) -> None:
@@ -176,11 +156,7 @@ def test_US_INT_01_AC4_empty_and_failed_only_runs(monitoring: Api) -> None:
     failed = monitoring.get("/sync-runs", 2, market="ZZ", status="failed")
     assert failed.json()["items"][0]["complete_success"] is False
     overview = monitoring.get("/integration/overview", 2, market="YY")
-    empty_feed = next(
-        item
-        for item in overview.json()["sources"]
-        if item["entity"] == "customers"
-    )
+    empty_feed = next(item for item in overview.json()["sources"] if item["entity"] == "customers")
     assert empty_feed["last_successful_run_id"] is None
     assert empty_feed["status"] == "never_run"
 
@@ -191,9 +167,7 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
     async def scenario() -> None:
         engine = create_async_engine(async_url(monitoring.dsn), poolclass=NullPool)
         maker = async_sessionmaker(engine, expire_on_commit=False)
-        user = CurrentUser(
-            id=3, employee_id=1, roles=("admin",), market="ZZ"
-        )
+        user = CurrentUser(id=3, employee_id=1, roles=("admin",), market="ZZ")
 
         async def reader() -> list[int]:
             totals: list[int] = []
@@ -215,8 +189,7 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
             conn = await asyncpg.connect(monitoring.dsn)
             try:
                 await conn.execute(
-                    "INSERT INTO stg.sync_run(market_id,entity,status) "
-                    "VALUES (1,'orders','running')"
+                    "INSERT INTO stg.sync_run(market_id,entity,status) " "VALUES (1,'orders','running')"
                 )
             finally:
                 await conn.close()
