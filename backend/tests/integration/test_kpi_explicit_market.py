@@ -7,7 +7,7 @@ import pytest
 from app.core.security import issue_token
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import execute
-from tests.integration.hr_fixture import ADMIN, CS, DISPATCHER, SETUP, SYSTEM_ADMIN
+from tests.integration.hr_fixture import ADMIN, CS, DISPATCHER, SYSTEM_ADMIN
 from tests.integration.test_m8_kpi_api import SEED
 
 pytestmark = pytest.mark.integration
