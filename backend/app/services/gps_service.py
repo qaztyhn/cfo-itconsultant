@@ -215,7 +215,7 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
 RETENTION = timedelta(days=7)  # DEC-GPS-RET-20261109: absolute 7 x 24 h, never wall-clock/DST based
 
 
-def _valid_points(windows: Mapping[int, tuple[datetime, datetime]]) -> ColumnElement[bool]:
+def _valid_points(windows: Mapping[int, tuple[datetime, datetime]], when: datetime) -> ColumnElement[bool]:
     return or_(
         False,
         *(
@@ -223,6 +223,7 @@ def _valid_points(windows: Mapping[int, tuple[datetime, datetime]]) -> ColumnEle
                 VehiclePosition.trip_id == trip_id,
                 VehiclePosition.recorded_at >= start,
                 VehiclePosition.recorded_at < end,
+                VehiclePosition.recorded_at <= when,  # a point from the future is never valid
             )
             for trip_id, (start, end) in windows.items()
         ),
@@ -245,7 +246,7 @@ async def close_trip_collection(session: AsyncSession, trip_id: int, *, now: dat
     windows = await trip_collection_windows(session, [trip_id])
     removed = await session.scalars(
         delete(VehiclePosition)
-        .where(VehiclePosition.trip_id == trip_id, ~_valid_points(windows))
+        .where(VehiclePosition.trip_id == trip_id, ~_valid_points(windows, when))
         .returning(VehiclePosition.id)
     )
     return len(removed.all())
@@ -270,7 +271,7 @@ async def purge_expired(*, session: AsyncSession | None = None, now: datetime | 
     trip_ids = [t for (t,) in (await session.execute(select(VehiclePosition.trip_id).distinct())).all()]
     windows = await trip_collection_windows(session, trip_ids)
     invalid = await session.scalars(
-        delete(VehiclePosition).where(~_valid_points(windows)).returning(VehiclePosition.id)
+        delete(VehiclePosition).where(~_valid_points(windows, when)).returning(VehiclePosition.id)
     )
     return count + len(invalid.all())
 

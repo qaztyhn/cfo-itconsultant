@@ -102,7 +102,7 @@ async def trip_collection_windows(
             .join(Location, Location.market_id == Market.id)
             .where(Location.id == trip.warehouse_id)
         )
-        if market is None:
+        if market is None or not market.gps_enabled:  # GPS switched off: earlier points stay invalid
             continue
         zone = ZoneInfo(market.timezone)
         depart_day = trip.depart_actual_at.astimezone(zone).date()
