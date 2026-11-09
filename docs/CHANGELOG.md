@@ -1,6 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
 
+## [DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109] — 2026-11-09 — owner-approved, docs-only
+
+- Owner đồng ý **System Admin được ủy quyền cấp grant Stock Admin đầu tiên theo market**, bắt buộc audit và cấm tự cấp quyền cho mình; giữ S1/S2. Không có bootstrap/role mặc định được tạo bởi PR docs.
+- Owner cho phép **giả định WMS cũ có ghi nhận xuất kho nguồn và nhập kho đích** cho luồng chuyển kho; **chưa xác minh** WMS API/CSV trả movement ID, transfer mapping hay acknowledgment. Đối soát ưu tiên chứng cứ WMS, thiếu thì Warehouse Manager nộp bằng chứng và reviewer độc lập có quyền duyệt; không suy theo batch time hoặc lượng tồn, không double-subtract/double-add; CFO read-only WMS.
+- Biên bản [DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md); cập nhật ASSUMPTIONS, owner prior record, 02/04/05/06/09. **Q3 24h escalation chưa được duyệt; chưa có code/migration/Source E2E; không auto-merge code.**
+
 ## [DEC-GPS-RET-20261109 / DEC-D8-OPS-20261109] — 2026-11-09 — owner-approved amendment, docs-only
 
 - Owner chốt **lưu lịch sử GPS đã thu hợp lệ tối đa 7 ngày** sau khi trip/ca kết thúc thay cho yêu cầu G4 trước đó xóa toàn bộ raw GPS ngay. **Ngừng thu và thu hồi quyền xem live ngay** lúc trip/ca kết thúc, không thu ngoài ca; chỉ cho phép tra soát lịch sử trong phạm vi/chứng cứ hợp lệ, có lý do và audit, yêu cầu privacy/legal/DPIA trước dữ liệu nhân viên thật, xóa khi hết hạn. Không tự mở endpoint historical/read mới hoặc kéo dài retention nếu chưa có quyết định riêng.
