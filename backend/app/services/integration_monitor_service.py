@@ -234,14 +234,8 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
             "last_tick_at": None,
             "last_tick_status": "unknown",
             "runtime_health": "unverified",
-            "jobs": [
-                {
-                    "entity": feed,
-                    "configured_interval_min": config.sync.interval_min,
-                    "running": None,
-                }
-                for feed in sorted(SUPPORTED)
-            ],
+            "jobs": [],
+            "supported_feed_types": sorted(SUPPORTED),
             "explanation": (
                 "No persisted scheduler heartbeat; configured cadence " "is not proof of execution."
             ),
