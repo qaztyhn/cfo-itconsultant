@@ -136,7 +136,7 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
     </div>
     {!fullAccess && <p className="text-caption text-inkMuted">Your revenue view and location scope are restricted by ownership. The server independently verifies every request.</p>}
     {!periodValid && <p role="alert" className="text-risk-predictedLate-fg">Select both dates with From ≤ To, for a period of at most 366 days.</p>}
-    {exportError && <ErrorState error={exportError} title="CSV export failed" />}
+    {exportError !== null && <ErrorState error={exportError} title="CSV export failed" />}
     {configured && forbidden && <p role="alert" className="rounded-card border p-5">You do not have access to revenue.</p>}
     {configured && !forbidden && missing && <p role="alert" className="rounded-card border p-5">Location not found or outside your access scope (404).</p>}
     {configured && !forbidden && !missing && failures.length > 0 &&
@@ -203,7 +203,7 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
                   <td className="p-3">{record.delivered_at ? new Date(record.delivered_at).toLocaleString() : "—"}</td>
                   <td className="p-3 font-mono">{money(record.amount, record.currency)}</td>
                   <td className="p-3">{record.status}</td>
-                  {!hideCustomers && <td className="p-3">{"customer_name" in record ? record.customer_name ?? "—" : "—"}</td>}
+                  {!hideCustomers && <td className="p-3">{"customer_name" in record && typeof record.customer_name === "string" ? record.customer_name : "—"}</td>}
                 </tr>)}</tbody></table></div>}
           <div className="mt-4 flex items-center gap-4">
             <button className={button} type="button" disabled={page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button>
