@@ -6,12 +6,13 @@ import copy
 import hashlib
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+from datetime import timedelta
 from unittest.mock import patch
 
 import generate as fixture_generator
-from generate import FIXTURES, build, encoded, generate
+from generate import FIRST_DAY, FIXTURES, build, encoded, generate
 from validate import FixtureError, instant, read_payloads, validate
 
 
@@ -20,6 +21,37 @@ class D7FixtureTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.payloads = read_payloads()
         cls.by_id = {row["scenario_id"]: row for row in cls.payloads["scenarios.json"]["records"]}
+
+    def test_D7_frozen_clock_ends_history_on_november_3(self) -> None:
+        self.assertEqual(FIRST_DAY, date(2026, 9, 9))
+        self.assertEqual(FIRST_DAY + timedelta(days=55), date(2026, 11, 3))
+        manifest = self.payloads["manifest.json"]
+        self.assertEqual((manifest["history_start"], manifest["history_end"]),
+                         ("2026-09-09", "2026-11-03"))
+        self.assertIn("verification.json", manifest["files"])
+
+    def test_D7_synthetic_attestation_integrity_and_expiry(self) -> None:
+        import hashlib
+        attestation = self.payloads["verification.json"]
+        self.assertEqual(attestation["source_kind"], "synthetic_demo")
+        self.assertIs(attestation["legal_verified"], False)
+        self.assertIs(attestation["revoked"], False)
+        self.assertLess(instant(attestation["verified_at"]),
+                        instant("2026-11-04T10:05:00+01:00"))
+        self.assertGreater(instant(attestation["expires_at"]),
+                           instant("2026-11-04T10:05:00+01:00"))
+        expected = {"manifest.json", "drivers.json"} | {
+            f"history_week_{week:02d}.json" for week in range(1, 9)
+        }
+        self.assertEqual(set(attestation["sha256"]), expected)
+        for name, digest in attestation["sha256"].items():
+            self.assertEqual(hashlib.sha256((FIXTURES / name).read_bytes()).hexdigest(), digest)
+
+    def test_D7_attestation_rejects_tampered_history(self) -> None:
+        corrupted = copy.deepcopy(self.payloads)
+        corrupted["history_week_01.json"]["records"][0]["driving_min"] = 999
+        with self.assertRaises(FixtureError):
+            validate(corrupted)
 
     def test_D7_approved_population_and_56_day_coverage(self) -> None:
         count = validate(self.payloads)
@@ -105,7 +137,7 @@ class D7FixtureTests(unittest.TestCase):
                          "candidate_for_planner_review")
 
     def test_D7_stockholm_dst_fall_is_5_elapsed_hours(self) -> None:
-        rows = self.payloads["history_week_06.json"]["records"]
+        rows = self.payloads["history_week_07.json"]["records"]
         night = next(x for x in rows if x["driver_code"] == "D09"
                      and x["work_date"] == "2026-10-25")
         self.assertEqual((instant(night["duty_end"]) - instant(night["duty_start"])).total_seconds(),
@@ -142,7 +174,7 @@ class D7FixtureTests(unittest.TestCase):
 
     def test_D7_validator_rejects_missing_as_verified_off_duty(self) -> None:
         corrupted = copy.deepcopy(self.payloads)
-        row = next(x for x in corrupted["history_week_07.json"]["records"]
+        row = next(x for x in corrupted["history_week_08.json"]["records"]
                    if x["driver_code"] == "D07" and x["work_date"] == "2026-10-30")
         row["verified_off_duty"] = True
         with self.assertRaises(FixtureError):
