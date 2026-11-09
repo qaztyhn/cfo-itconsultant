@@ -122,7 +122,7 @@ export function SalesSyncCheck() {
           onChange={e => setReference(e.target.value)} autoComplete="off"
           maxLength={100} placeholder="Enter the reference from POS" required />
       </label>
-      {reference.trim() && !ref && <p role="alert" className="text-caption">Enter a valid order reference (letters, digits, '.', '_', '/', or '-').</p>}
+      {reference.trim() && !ref && <p role="alert" className="text-caption">Enter a valid order reference using letters, digits, dots, underscores, slashes or hyphens.</p>}
       <button type="submit" className={button} disabled={!ref || sync.isPending}>
         {sync.isPending ? "Syncing and checking…" : "Sync & check routing"}</button>
       {sync.isPending && <LoadingState rows={2} />}
