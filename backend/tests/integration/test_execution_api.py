@@ -614,7 +614,10 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     assert_error(failed, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.notification")[0][0] == 0
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.milestone_event")[0][0] == 4
-    assert fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0] == "LOADED"
+    assert (
+        fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0]
+        == "LOADED"
+    )
 
     monkeypatch.setattr(notify_service, "enqueue", original_enqueue)
     first = send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1})
