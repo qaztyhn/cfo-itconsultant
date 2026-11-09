@@ -508,3 +508,9 @@
 - **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
 - **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
 
+
+## ASM-009 — Kỳ mặc định và giới hạn truy vấn KPI/audit (Dev 1; đề xuất chưa duyệt, #143)
+
+- `/kpi/summary`, `/kpi/daily`, `/audit/decisions` dùng **cùng quy tắc kỳ với `/revenue/*` (06 §14.1)** vì mục 14 chưa nêu riêng: mặc định 30 ngày gần nhất theo múi giờ market, tối đa 366 ngày, `from ≤ to`. Đây là giả định kỹ thuật, không phải chính sách KPI đã duyệt; chủ dự án có thể thay (kể cả bắt buộc nhập `from/to`) mà không đổi công thức.
+- `plan_acceptance_rate` trả `null` khi chưa đủ bằng chứng `accepted_unchanged` cho **mọi** đơn đã duyệt trong kỳ (không coi thiếu là 0). Định nghĩa "không đổi" theo thời điểm (trước/sau giao) cần chủ dự án duyệt riêng; chưa đoán.
+- `GET /kpi/baseline` có trong bảng 06 §14 nhưng chưa có schema phản hồi; chưa triển khai (PUT đã có). Cần chốt DTO trước khi thêm.

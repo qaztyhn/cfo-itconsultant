@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M8 — prep_error không đếm trùng đơn nhiều xe] — 2026-11-09 — Dev 1 (#143)
+
+- `prep_error_min` lấy **một giá trị cho mỗi đơn** (trung bình các dòng `improvement_log` theo `trip_stop` của đơn đó) tại ngày giao cuối của đơn; `eta_error_min` vẫn tính theo từng lần giao. Thêm test nhiều xe. Ghi ASM-009 (kỳ mặc định, `plan_acceptance_rate`, `GET /kpi/baseline`).
+
 ## [M8 KPI-1 — sửa chữ "8 KPI" thành 10] — 2026-11-09 — Dev 1 (#143)
 
 - docs/01 FR-KPI-02/bảng KPI và docs/05 ghi **10** KPI đã duyệt (KPI-1); backend giữ đủ 10 key, hai chẩn đoán chưa hỗ trợ trả `null`. Cohort theo KPI-2: ngày duyệt (kế hoạch), ngày giao (giao hàng), `work_date` kho (công suất), theo múi giờ IANA của market. Định nghĩa các metric còn mơ hồ cần review riêng, không đoán.

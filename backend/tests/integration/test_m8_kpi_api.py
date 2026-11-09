@@ -247,3 +247,20 @@ def test_US_LOG_01_AC2_decisions_and_milestones_remain_immutable(kpi: Api) -> No
         execute(kpi.dsn, "DELETE FROM audit.decision_log WHERE id=1")
     with pytest.raises(asyncpg.RaiseError):
         execute(kpi.dsn, "DELETE FROM ops.milestone_event WHERE order_id=1")
+
+
+def test_US_KPI_01_multi_vehicle_order_prep_error_is_counted_once_per_order(kpi: Api) -> None:
+    """Improvement rows are per trip_stop; one order with two vehicles must not weigh twice."""
+    execute(
+        kpi.dsn,
+        "INSERT INTO audit.improvement_log (order_id, warehouse_id, handling_groups, prep_error_min, "
+        "eta_error_min, accepted_unchanged, delivered_at) VALUES "
+        "(4, 1, '{N1}', 10, 4, true, '2026-11-12T10:00Z'), "
+        "(4, 1, '{N1}', 10, 8, true, '2026-11-12T11:00Z'), "
+        "(3, 1, '{N1}', 40, 6, true, '2026-11-12T12:00Z')",
+    )
+    response = kpi.get("/kpi/summary", DISPATCHER, **{"from": "2026-11-12", "to": "2026-11-12"})
+    assert response.status_code == 200, response.text
+    metrics = response.json()["metrics"]
+    assert metrics["prep_error_min"]["value"] == 25  # (10 + 40) / 2 orders, not (10 + 10 + 40) / 3
+    assert metrics["eta_error_min"]["value"] == 6  # eta error is per delivery (3 deliveries): (4 + 8 + 6) / 3

@@ -249,18 +249,33 @@ async def _collect(
             .where(*imp_filters)
         )
     ).all()
+    # prep_error is an ORDER-level measurement repeated on every trip_stop row of a multi-vehicle
+    # order: count it once per order (mean of that order's rows) on the order's last delivery day.
+    prep_by_order: dict[int, list[Decimal | None]] = defaultdict(list)
+    last_delivery: dict[int, object] = {}
     for oid, delivered, prep_err, eta_err, unchanged in imp_rows:
         accepted[oid].append(unchanged)
+        prep_by_order[oid].append(abs(Decimal(prep_err)) if prep_err is not None else None)
+        if _day(delivered, zone) is not None and (
+            oid not in last_delivery or delivered > last_delivery[oid]  # type: ignore[operator]
+        ):
+            last_delivery[oid] = delivered
         day = _day(delivered, zone)
         if day is not None and day in all_days:
-            bucket = all_days[day]
-            bucket["prep_error_min"].add(abs(Decimal(prep_err)) if prep_err is not None else None)
-            bucket["eta_error_min"].add(abs(Decimal(eta_err)) if eta_err is not None else None)
+            all_days[day]["eta_error_min"].add(abs(Decimal(eta_err)) if eta_err is not None else None)
         elif day is None:
             # Cannot assign a missing delivered timestamp to an arbitrary day.
             for bucket in all_days.values():
-                bucket["prep_error_min"].missing = True
                 bucket["eta_error_min"].missing = True
+                bucket["prep_error_min"].missing = True
+    for oid, errors in prep_by_order.items():
+        day = _day(last_delivery.get(oid), zone)
+        if day is None or day not in all_days:
+            continue
+        known = [e for e in errors if e is not None]
+        all_days[day]["prep_error_min"].add(
+            sum(known, Decimal(0)) / len(known) if len(known) == len(errors) else None
+        )
 
     for row in orders:
         approved_day = _day(row.approved_at, zone)
