@@ -37,6 +37,7 @@ build-backend = "setuptools.build_meta"
 include = ["app*"]
 
 [tool.black]
+diff = true
 line-length = 110
 target-version = ["py312"]
 
