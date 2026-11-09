@@ -77,11 +77,11 @@ function NegotiationForm({ orderId, suggestedDate, onRecorded }: {
     },
   });
   const contactTime = contacted ? new Date(contacted) : null;
-  const hasValidContact = !!contactTime && Number.isFinite(contactTime.getTime()) && contactTime.getTime() <= Date.now();
+  const hasValidContact = !!contactTime && Number.isFinite(contactTime.getTime());
   const canSubmit = validIsoDate(date) && hasValidContact && note.trim().length > 0 && !mutation.isPending;
   function save(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || !contactTime) return;
+    if (!canSubmit || !contactTime || contactTime.getTime() > Date.now()) return;
     mutation.mutate({
       proposed_date: date, outcome, channel,
       contacted_at: contactTime.toISOString(), note: note.trim(),
