@@ -1,7 +1,7 @@
 /** Exact M6 execution POST contract (docs/06 §8; merged backend #129).
  * No automatic confirmation, schedule edit, or inferred capacity occurs here.
  */
-import { apiPost, newIdempotencyKey } from "../../../api/client";
+import { apiPost, isApiError, newIdempotencyKey } from "../../../api/client";
 import type { PrepQueueOrder } from "./types";
 
 export type PrepEventType =
@@ -119,4 +119,16 @@ export function nowLocal(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
+}
+
+/** No raw upstream message or PII is reflected to warehouse staff. */
+export function safeActionError(cause: unknown): string {
+  if (!isApiError(cause)) return "Confirmation could not be verified. The server may already have recorded it; retry the exact same event.";
+  if (cause.status === 401) return "Session expired. Sign in again; the event is not confirmed.";
+  if (cause.status === 403) return "Not authorized for this warehouse or event. No completion was confirmed.";
+  if (cause.status === 404) return "Order, trip or warehouse not available in your scope. Refresh the queue.";
+  if (cause.status === 409) return "Conflict or stale transition. Refresh the queue; retry with the same key only after checking.";
+  if (cause.status === 422) return "The server rejected the event. Review the crew, time and report fields.";
+  if (cause.status === 503 || cause.status === 0) return "Connection or mandatory service unavailable. Completion is unconfirmed; retry the same operation.";
+  return "Event not confirmed. Check the queue and retry the same operation if needed.";
 }
