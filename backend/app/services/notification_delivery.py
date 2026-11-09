@@ -27,6 +27,7 @@ from app.domain.models.ops import CustomerOrder, Notification
 from app.domain.models.ref import Market
 from app.providers.email_smtp import EmailDeliveryError, EmailRecipientNotAllowed, SmtpEmailProvider
 from app.providers.sms_sim import SimulatedSmsProvider
+from app.services.notification_snapshot import read_snapshot
 from app.services.notification_templates import (
     EtaWindow,
     MessageVariables,
@@ -112,18 +113,26 @@ async def deliver_queued(
             notification.status = "failed"
             continue
         try:
-            window = (
-                EtaWindow.model_validate(notification.eta_window)
-                if notification.template == "DELAY"
-                else approved_window(order.promise_start, order.promise_end)
-            )
-            rendered = render_message(
-                cast(Template, notification.template),
-                MessageVariables(public_order_ref=order.order_no, eta_window=window),
-                locale=market.locale,
-                timezone=market.timezone,
+            rendered = read_snapshot(
+                notification.eta_window,
                 channel=notification.channel,
+                template=notification.template,
+                subject=notification.subject,
+                body=notification.body,
             )
+            if rendered is None:  # pre-snapshot legacy rows still use allowlisted canonical rendering
+                window = (
+                    EtaWindow.model_validate(notification.eta_window)
+                    if notification.template == "DELAY"
+                    else approved_window(order.promise_start, order.promise_end)
+                )
+                rendered = render_message(
+                    cast(Template, notification.template),
+                    MessageVariables(public_order_ref=order.order_no, eta_window=window),
+                    locale=market.locale,
+                    timezone=market.timezone,
+                    channel=notification.channel,
+                )
         except (ValueError, KeyError):
             notification.status = "failed"
             notification.last_error = "Notification template data is invalid."

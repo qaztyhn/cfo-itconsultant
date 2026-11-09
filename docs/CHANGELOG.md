@@ -1,5 +1,15 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
+
+- `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) Owner đã chốt phương án A (`DEC-MANUAL-PLAN-20261109`); proposal còn mang tính tài liệu về bộ kiểm tra engine, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
+
+## [D7 — xác minh lịch sử 56 ngày dùng chung cho planning/approval/dispatch] — 2026-11-09 — Dev 1
+
+- Thêm `services/driver_history.py`: kiểm chứng thuần túy 56 ngày lịch địa phương (kết thúc ngày hôm trước), phân biệt `off_duty` có cửa sổ nghỉ xác minh với `unknown`/thiếu/trùng; từ chối bằng chứng thiếu, bị thu hồi, hết hạn, chưa có người xác minh, mâu thuẫn (chồng duty, lái ngoài duty, duty trong ngày nghỉ, thời gian không múi giờ). `synthetic_demo` chỉ được chấp nhận ngoài `production` và không bao giờ là xác minh pháp lý.
+- `planning_inputs.official_driver_context` (và qua đó planning + T16 five-gate) cùng `execution_service._driver_gate` (dispatch/giao) dùng **cùng một proof** rồi chạy cùng quy tắc engine (`driver_problem`: ca chính thức, nghỉ 11 giờ liên tục, giờ làm, giới hạn lái, bằng lái, xe ngoài/trong phạm vi 561). Không thêm quy tắc pháp lý mới, không đổi DB/API/migration.
+- **Nguồn bằng chứng production chưa được phê duyệt** (lưu trữ/người xác nhận — xem proposal D7): reader mặc định `None` ⇒ vẫn fail closed (`EVIDENCE_MISSING`). Hành vi "cho phép" chỉ được chứng minh qua reader test; cần quyết định Owner về phương án lưu trữ A/B và người attest trước khi bật cho tài xế thật.
+
 ## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
 
 - `execution_service` (DELIVERED/FAILED của từng chuyến) không còn `DELETE vehicle_position` toàn bộ; gọi `gps_service.close_trip_collection()` **trong cùng transaction** (không commit riêng). Điểm hợp lệ giữ tới 7 ngày; chỉ điểm không hợp lệ (ngoài ca/khoảng chuyến đã xác minh, tương lai, thiếu ca xác minh hoặc market tắt GPS) bị xóa; chuyến xe khác của cùng đơn không bị ảnh hưởng. Rollback hoàn tác cả POD lẫn dọn GPS. Upload muộn sau khi chuyến kết thúc bị từ chối `NOT_ON_TRIP`.
