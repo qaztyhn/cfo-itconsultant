@@ -5,7 +5,7 @@
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { API_BASE_URL } from "../../api/config";
@@ -164,6 +164,117 @@ describe("Plan Again", () => {
 });
 
 describe("Approval", () => {
+  async function backendRun() {
+    return fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
+      headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}1` },
+    }).then((response) => response.json());
+  }
+
+  it("test_US_APR_01_AC1_blocks_approval_when_a_stored_gate_fails_or_is_missing", async () => {
+    const run = await backendRun();
+    run.plans[0].checks.safety = { passed: false, code: "SAFETY_UNKNOWN" };
+    delete run.plans[1].checks.stock;
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(run)));
+    const calls = recordApprovals();
+    await openPlan(MOCK_RUN_IDS.normal);
+    expect(approveButton(1)).toBeDisabled();
+    expect(screen.getByText(/All five planning gates/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Select plan #2" }));
+    expect(approveButton(2)).toBeDisabled();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("test_US_APR_01_AC1_blocks_unheld_replan_suggestion", async () => {
+    const run = await backendRun();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, kind: "replan_suggestion", hold_expires_at: null })));
+    await openPlan(MOCK_RUN_IDS.normal);
+    expect(approveButton(1)).toBeDisabled();
+    expect(screen.getByText(/separate dispatcher decision/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["missing hold", (run: Record<string, unknown>) => ({ ...run, hold_expires_at: null })],
+    ["non-proposed plan", (run: Record<string, unknown>) => ({ ...run, plans: [{ ...(run.plans as Record<string, unknown>[])[0], status: "approved" }] })],
+  ])("test_US_APR_01_AC1_blocks_%s_before_sending_approval", async (_label, change) => {
+    const run = await backendRun();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(change(run))));
+    const calls = recordApprovals();
+    await openPlan(MOCK_RUN_IDS.normal);
+    expect(approveButton(1)).toBeDisabled();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("test_US_APR_01_AC1_requires_explicit_tight_reserve_acceptance", async () => {
+    const run = await backendRun();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, reserve_class: "tight" })));
+    await openPlan(MOCK_RUN_IDS.normal);
+    expect(approveButton(1)).toBeDisabled();
+    await userEvent.setup().click(screen.getByLabelText("I accept the tight schedule"));
+    expect(approveButton(1)).toBeEnabled();
+  });
+
+  it("resets tight reserve acceptance when the selected plan changes", async () => {
+    const run = await backendRun();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, reserve_class: "tight" })));
+    await openPlan(MOCK_RUN_IDS.normal);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("I accept the tight schedule"));
+    expect(approveButton(1)).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Select plan #2" }));
+    expect(screen.getByLabelText("I accept the tight schedule")).not.toBeChecked();
+    expect(approveButton(2)).toBeDisabled();
+  });
+
+  it("test_US_PLN_07_AC3_sends_only_matching_agreed_date", async () => {
+    const run = await backendRun();
+    run.plans[0].target_date = "2026-11-11";
+    server.use(
+      http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(run)),
+      http.get(`${API_BASE_URL}/orders/:id/date-negotiations`, () => HttpResponse.json({ items: [
+        { id: 17, proposed_date: "2026-11-12", outcome: "agreed", channel: "phone", contacted_at: "2026-11-09T10:00:00Z", remind_at: null },
+        { id: 18, proposed_date: "2026-11-11", outcome: "pending", channel: "phone", contacted_at: "2026-11-09T11:00:00Z", remind_at: null },
+        { id: 19, proposed_date: "2026-11-11", outcome: "agreed", channel: "phone", contacted_at: "2026-11-09T12:00:00Z", remind_at: null },
+      ] })),
+    );
+    const calls = recordApprovals();
+    await openPlan(MOCK_RUN_IDS.normal);
+    expect(approveButton(1)).toBeDisabled();
+    expect(screen.queryByRole("option", { name: /Agreement #17/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Agreement #18/ })).not.toBeInTheDocument();
+    await screen.findByRole("option", { name: /Agreement #19/ });
+    await userEvent.setup().selectOptions(screen.getByLabelText(/Customer agreement for/), "19");
+    await userEvent.setup().click(approveButton(1));
+    await userEvent.setup().click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
+    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
+    expect(calls[0].body).toEqual({ date_negotiation_id: 19 });
+  });
+
+  it("test_US_PLN_07_AC2_shows_DATE_AGREEMENT_REQUIRED_without_approval", async () => {
+    server.use(http.post(approveUrl, () => apiError(409, "DATE_AGREEMENT_REQUIRED", "Customer agreement required.")));
+    await openPlan(MOCK_RUN_IDS.normal);
+    await userEvent.setup().click(approveButton(1));
+    await userEvent.setup().click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
+    expect(await screen.findByText("Customer date agreement required")).toBeInTheDocument();
+    expect(screen.queryByText(/Approved · order status/)).not.toBeInTheDocument();
+  });
+
+  it("test_US_PLN_07_AC3_blocks_when_requested_date_read_is_forbidden", async () => {
+    server.use(http.get(`${API_BASE_URL}/orders/:id`, () => apiError(403, "FORBIDDEN", "Denied")));
+    await openPlan(MOCK_RUN_IDS.normal);
+    await waitFor(() => expect(approveButton(1)).toBeDisabled());
+    expect(screen.getByText("Requested delivery date is unavailable.")).toBeInTheDocument();
+  });
+
+  it("test_US_PLN_07_AC3_blocks_when_agreement_read_fails", async () => {
+    const run = await backendRun();
+    run.plans[0].target_date = "2026-11-11";
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(run)),
+      http.get(`${API_BASE_URL}/orders/:id/date-negotiations`, () => apiError(500, "UNKNOWN_ERROR", "Unavailable")));
+    await openPlan(MOCK_RUN_IDS.normal);
+    await waitFor(() => expect(screen.getByText("Checking customer date agreement…")).toBeInTheDocument());
+    expect(approveButton(1)).toBeDisabled();
+  });
+
   it("does not call approve until the user confirms in the dialog", async () => {
     const calls = recordApprovals();
     await openPlan(MOCK_RUN_IDS.normal);
@@ -180,7 +291,8 @@ describe("Approval", () => {
 
   it("summarises the resources that will be committed (with driver for a dispatcher, no money)", async () => {
     await openPlan(MOCK_RUN_IDS.multiVehicle);
-
+    await screen.findByRole("option", { name: /Agreement #1601/ });
+    await userEvent.setup().selectOptions(screen.getByLabelText(/Customer agreement for/), "1601");
     await userEvent.setup().click(approveButton(1));
 
     const dialog = await screen.findByRole("dialog", { name: "Approve plan #1" });
@@ -189,7 +301,7 @@ describe("Approval", () => {
     expect(dialog.textContent).not.toMatch(/\$|€|\bSEK\b|\bkr\b/);
   });
 
-  it("approves rank 1 with an Idempotency-Key and only reports success when status is APPROVED", async () => {
+  it("approves rank 1 with an Idempotency-Key and does not report WMS success from CFO APPROVED alone", async () => {
     const calls = recordApprovals();
     await openPlan(MOCK_RUN_IDS.normal);
     const user = userEvent.setup();
@@ -197,13 +309,30 @@ describe("Approval", () => {
     await user.click(approveButton(1));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
 
-    expect(await screen.findByText(/Approved · order status APPROVED/)).toBeInTheDocument();
+    expect(await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/)).toBeInTheDocument();
     expect(calls).toHaveLength(1);
     expect(calls[0].planId).toBe("4121");
     expect(calls[0].key).toMatch(/^[\w-]{8,}$/);
     expect(calls[0].body).toEqual({});
     expect(approveButton(1)).toBeDisabled();
-    expect(screen.getByText("Plan approved.")).toBeInTheDocument();
+    expect(screen.getByText("CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.")).toBeInTheDocument();
+  });
+
+  it("test_US_APR_01_AC1_keeps_unknown_WMS_status_during_timeout_and_prevents_double_submit", async () => {
+    const calls: string[] = [];
+    server.use(http.post(approveUrl, async ({ request }) => {
+      calls.push(request.headers.get("Idempotency-Key") ?? "");
+      await delay("infinite");
+      return HttpResponse.json({});
+    }));
+    await openPlan(MOCK_RUN_IDS.normal);
+    await userEvent.setup().click(approveButton(1));
+    const confirm = within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" });
+    await userEvent.setup().click(confirm);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(confirm).toBeDisabled();
+    expect(screen.queryByText(/WMS reservation is unverified/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Plan approved/)).not.toBeInTheDocument();
   });
 
   it("requires a reason code and a note for rank 2 and sends both", async () => {
@@ -223,7 +352,7 @@ describe("Approval", () => {
     expect(confirm).toBeEnabled();
     await user.click(confirm);
 
-    expect(await screen.findByText(/Approved · order status APPROVED/)).toBeInTheDocument();
+    expect(await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/)).toBeInTheDocument();
     expect(calls[0].planId).toBe("4122");
     expect(calls[0].body).toEqual({ reason_code: "closest_to_customer", reason_text: "Customer site is nearer Malmö" });
   });
@@ -253,7 +382,7 @@ describe("Approval", () => {
     expect(await within(dialog).findByText("Temporary failure.")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Approve #1" }));
-    await screen.findByText(/Approved · order status APPROVED/);
+    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
 
     expect(calls).toHaveLength(2);
     expect(calls[0].key).toBeTruthy();
@@ -348,7 +477,7 @@ describe("Approval", () => {
 
     expect(await screen.findByText("Approval not confirmed")).toBeInTheDocument();
     expect(screen.queryByText(/Approved · order status/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Plan approved.")).not.toBeInTheDocument();
+    expect(screen.queryByText("CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.")).not.toBeInTheDocument();
     expect(approveButton(1)).toBeEnabled();
   });
 
@@ -357,7 +486,7 @@ describe("Approval", () => {
     const user = userEvent.setup();
     await user.click(approveButton(1));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
-    await screen.findByText(/Approved · order status APPROVED/);
+    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
 
     const second = await fetch(`${API_BASE_URL}/plans/4122/approve`, {
       method: "POST",

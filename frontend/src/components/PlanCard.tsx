@@ -6,14 +6,12 @@
 import type { ReactNode } from "react";
 import { GATE_KEYS, type Plan } from "../api/contracts/planning";
 import {
-  formatDuration,
   formatFill,
   formatKm,
   formatReserve,
   formatScore,
   formatTime,
   gateLabel,
-  minutesBetween,
 } from "../lib/planFormat";
 import { CheckChip } from "./CheckChip";
 import { VehicleList } from "./VehicleList";
@@ -39,8 +37,6 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 export function PlanCard({ plan, reserveClass, showDriver = false, actions, className }: PlanCardProps) {
   const titleId = `plan-${plan.id}-title`;
-  const siteCloses = plan.promise_window_preview?.end;
-  const slack = siteCloses ? minutesBetween(plan.eta_at, siteCloses) : null;
   const tight = reserveClass === "tight";
 
   return (
@@ -75,20 +71,16 @@ export function PlanCard({ plan, reserveClass, showDriver = false, actions, clas
         <Fact label="ETA" value={formatTime(plan.eta_at)} />
         {plan.goods_ready_at && <Fact label="Goods ready" value={formatTime(plan.goods_ready_at)} />}
         {plan.depart_at && <Fact label="Depart" value={formatTime(plan.depart_at)} />}
-        {siteCloses && <Fact label="Site closes" value={formatTime(siteCloses)} />}
-        {slack !== null && <Fact label="Slack" value={formatDuration(slack)} />}
       </dl>
 
       <VehicleList vehicles={plan.vehicles} showDriver={showDriver} />
 
-      {plan.checks && (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Feasibility gates">
-          {GATE_KEYS.map((key) => {
-            const gate = plan.checks?.[key];
-            return gate ? <CheckChip key={key} name={gateLabel(key)} passed={gate.passed} code={gate.code} /> : null;
-          })}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Feasibility gates">
+        {GATE_KEYS.map((key) => {
+          const gate = plan.checks?.[key];
+          return <CheckChip key={key} name={gateLabel(key)} passed={gate?.passed === true} code={gate?.code ?? "EVIDENCE_MISSING"} />;
+        })}
+      </div>
 
       {plan.planning_reserve_min !== undefined && (
         <p className="flex flex-wrap items-center gap-2 text-body text-ink">

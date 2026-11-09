@@ -9,7 +9,7 @@ export const GATE_KEYS = ["stock", "preparation", "truck", "site_date", "safety"
 export type GateKey = (typeof GATE_KEYS)[number];
 
 export interface GateResult {
-  passed: boolean;            // trước: pass
+  passed: boolean;
   code: string;
   detail?: { message?: string; [key: string]: unknown };
 }
@@ -25,9 +25,8 @@ export interface PlanVehicleRef {
 
 export interface PlanVehicle {
   seq: number;
-  /** Bản compact (Sales) chỉ có seq và eta_at; các trường còn lại chỉ có ở bản đầy đủ. */
+  /** Compact Sales DTO contains only seq and eta_at. */
   vehicle_id?: number;
-  /** Chỉ Dispatcher nhận được. Backend chỉ trả id, không trả tên tài xế. */
   driver_employee_id?: number | null;
   vehicle?: PlanVehicleRef;
   load_kg?: DecimalLike;
@@ -55,7 +54,6 @@ export interface Plan {
   loading_start_at?: string;
   depart_at?: string;
   trip_end_at?: string;
-  promise_window_preview?: { start: string; end: string };
   distance_km?: DecimalLike;
   drive_min?: number;
   prep_hours?: DecimalLike;
@@ -71,11 +69,20 @@ export interface Plan {
 }
 
 export interface RejectedCandidate {
-  warehouse_id?: number | null;   // trước: warehouse?: {id, name}
-  vehicle_code?: string | null;   // trước: vehicle?: {code}
+  warehouse_id?: number | null;
+  vehicle_code?: string | null;
   failed_check?: GateKey | string;
   code?: string;
   detail?: { message?: string; [key: string]: unknown };
+}
+
+export interface DateNegotiation {
+  id: number;
+  proposed_date: string;
+  outcome: string;
+  channel: string;
+  contacted_at: string;
+  remind_at: string | null;
 }
 
 export interface PlanningRun {
@@ -122,20 +129,4 @@ export interface ApprovePlanResponse {
   plan: { id: number; status: string };
   trip_ids: number[];
   notifications: { id: number; template: string; status: string }[];
-}
-
-export type DateNegotiationOutcome = "agreed" | "declined" | "unreachable";
-
-/** GET /orders/{id}/date-negotiations (docs/06 mục 6.5): chỉ dispatcher đọc được. */
-export interface DateNegotiation {
-  id: number;
-  proposed_date: string;
-  outcome: DateNegotiationOutcome;
-  channel: string;
-  contacted_at: string;
-  remind_at: string | null;
-}
-
-export interface DateNegotiationList {
-  items: DateNegotiation[];
 }

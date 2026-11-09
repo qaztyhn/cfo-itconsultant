@@ -6,7 +6,7 @@ import { apiGet, apiPost } from "./client";
 import type {
   ApprovePlanInput,
   ApprovePlanResponse,
-  DateNegotiationList,
+  DateNegotiation,
   PlanAgainInput,
   PlanningRun,
 } from "./contracts/planning";
@@ -14,7 +14,6 @@ import type {
 export const planningKeys = {
   run: (runId: number) => ["planning-run", runId] as const,
   runs: (orderId: number) => ["planning-runs", orderId] as const,
-  dateNegotiations: (orderId: number) => ["date-negotiations", orderId] as const,
 };
 
 export function fetchPlanningRun(runId: number, signal?: AbortSignal): Promise<PlanningRun> {
@@ -26,6 +25,14 @@ export function fetchPlanningRuns(
   signal?: AbortSignal,
 ): Promise<{ items: Pick<PlanningRun, "id" | "order_id" | "run_no" | "result" | "hold_expires_at">[] }> {
   return apiGet(`/orders/${orderId}/planning-runs`, undefined, signal);
+}
+
+export function fetchOrderRequestedDate(orderId: number, signal?: AbortSignal): Promise<{ date_request: { date_to: string | null } }> {
+  return apiGet(`/orders/${orderId}`, undefined, signal);
+}
+
+export function fetchDateNegotiations(orderId: number, signal?: AbortSignal): Promise<{ items: DateNegotiation[] }> {
+  return apiGet(`/orders/${orderId}/date-negotiations`, undefined, signal);
 }
 
 /** Gia hạn hold +15 phút; tối đa 2 lần do server quyết định (409 HOLD_EXTENSION_LIMIT / HOLD_EXPIRED). */
@@ -44,9 +51,4 @@ export function approvePlan(
   idempotencyKey: string,
 ): Promise<ApprovePlanResponse> {
   return apiPost<ApprovePlanResponse>(`/plans/${planId}/approve`, input, idempotencyKey);
-}
-
-/** Lịch sử thương lượng ngày giao của đơn (chỉ dispatcher). */
-export function fetchDateNegotiations(orderId: number, signal?: AbortSignal): Promise<DateNegotiationList> {
-  return apiGet<DateNegotiationList>(`/orders/${orderId}/date-negotiations`, undefined, signal);
 }

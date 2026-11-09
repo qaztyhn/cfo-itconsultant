@@ -12,12 +12,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.v1.common import Page, PageNo, PageSize, SortParam
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.domain.models.ref import MappingTask
+from app.domain.models.ref import HandlingGroup, HandlingGroupRule, MappingTask, SpecialFlag
 from app.services import mapping_read_service, mapping_service
 from app.services.hr_scope import resolve_hr_scope
 
@@ -102,6 +102,34 @@ class LocalProductOut(BaseModel):
     currency: str
     global_product_id: int | None
     mapping_status: str
+
+
+class HandlingGroupOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    description: str | None
+    prep_unit: str
+    fixed_hours: Decimal
+    labour_hours_per_unit: Decimal
+    min_crew: int
+    vehicle_requirement: list[str]
+
+
+class HandlingGroupRuleOut(BaseModel):
+    id: int
+    priority: int
+    category_like: str
+    min_weight_kg: Decimal | None
+    max_weight_kg: Decimal | None
+    handling_group_id: int
+    flags: list[str]
+
+
+class SpecialFlagOut(BaseModel):
+    code: str
+    name: str
+    multiplier: Decimal
 
 
 _ERRORS: dict[int | str, dict[str, object]] = {
@@ -227,10 +255,12 @@ async def update_global_product(product_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/handling-groups")
-async def list_handling_groups() -> dict[str, object]:
-    """GET /handling-groups — N1–N6, một bộ chung."""
-    raise NotImplementedError
+@router.get("/handling-groups", response_model=list[HandlingGroupOut], responses=_ERRORS)
+async def list_handling_groups(user: AuthUser, db: DbSession) -> list[HandlingGroupOut]:
+    """GET /handling-groups — server-authoritative, shared reference norms (06 §12)."""
+    await resolve_hr_scope(db, user)
+    groups = (await db.scalars(select(HandlingGroup).order_by(HandlingGroup.code))).all()
+    return [HandlingGroupOut.model_validate(group, from_attributes=True) for group in groups]
 
 
 @router.patch("/handling-groups/{group_id}")
@@ -239,13 +269,32 @@ async def update_handling_group(group_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-@router.get("/handling-group-rules")
-async def list_group_rules() -> dict[str, object]:
-    """GET /handling-group-rules — Quy tắc gán nhóm."""
-    raise NotImplementedError
+@router.get("/handling-group-rules", response_model=Page[HandlingGroupRuleOut], responses=_ERRORS)
+async def list_group_rules(
+    user: AuthUser, db: DbSession, page: PageNo = 1, page_size: PageSize = 50
+) -> Page[HandlingGroupRuleOut]:
+    """GET /handling-group-rules — persisted matching rules, bounded and stably ordered."""
+    await resolve_hr_scope(db, user)
+    total = int(await db.scalar(select(func.count()).select_from(HandlingGroupRule)) or 0)
+    rules = (
+        await db.scalars(
+            select(HandlingGroupRule)
+            .order_by(HandlingGroupRule.priority, HandlingGroupRule.id)
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+    ).all()
+    return Page[HandlingGroupRuleOut](
+        items=[HandlingGroupRuleOut.model_validate(rule, from_attributes=True) for rule in rules],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
 
 
-@router.get("/special-flags")
-async def list_special_flags() -> dict[str, object]:
-    """GET /special-flags — Hệ số cờ."""
-    raise NotImplementedError
+@router.get("/special-flags", response_model=list[SpecialFlagOut], responses=_ERRORS)
+async def list_special_flags(user: AuthUser, db: DbSession) -> list[SpecialFlagOut]:
+    """GET /special-flags — persisted coefficient catalog; no inferred factors."""
+    await resolve_hr_scope(db, user)
+    flags = (await db.scalars(select(SpecialFlag).order_by(SpecialFlag.code))).all()
+    return [SpecialFlagOut.model_validate(flag, from_attributes=True) for flag in flags]

@@ -131,6 +131,56 @@ def test_other_market_cannot_see_task(mp: Api) -> None:
     assert mp.get("/products/local", ZZ_WAREHOUSE).json()["total"] == 0
 
 
+@pytest.mark.parametrize("user_id", [ADMIN, SYSTEM_ADMIN, DISPATCHER, WAREHOUSE, ZZ_WAREHOUSE])
+def test_US_PRD_04_handling_groups_read_server_norms(mp: Api, user_id: int) -> None:
+    response = mp.get("/handling-groups", user_id)
+    assert response.status_code == 200, response.text
+    groups = response.json()
+    assert [group["code"] for group in groups] == [f"N{n}" for n in range(1, 7)]
+    rows = fetch(
+        mp.dsn,
+        "SELECT code, prep_unit::text AS prep_unit, fixed_hours, labour_hours_per_unit, "
+        "min_crew, vehicle_requirement FROM ref.handling_group ORDER BY code",
+    )
+    for group, row in zip(groups, rows, strict=True):
+        assert group["code"] == row["code"]
+        assert group["prep_unit"] == row["prep_unit"]
+        assert group["fixed_hours"] == str(row["fixed_hours"])
+        assert group["labour_hours_per_unit"] == str(row["labour_hours_per_unit"])
+        assert group["min_crew"] == row["min_crew"]
+        assert group["vehicle_requirement"] == row["vehicle_requirement"]
+
+
+@pytest.mark.parametrize("user_id", [SALES, DRIVER, CS, VIEWER])
+def test_US_PRD_04_handling_groups_forbidden_roles(mp: Api, user_id: int) -> None:
+    assert_error(mp.get("/handling-groups", user_id), 403, "FORBIDDEN")
+
+
+def test_US_PRD_04_reference_rules_and_coefficients_are_persisted_and_bounded(mp: Api) -> None:
+    flags = mp.get("/special-flags", WAREHOUSE)
+    assert flags.status_code == 200, flags.text
+    persisted_flags = fetch(mp.dsn, "SELECT code, name, multiplier FROM ref.special_flag ORDER BY code")
+    assert flags.json() == [
+        {"code": row["code"], "name": row["name"], "multiplier": str(row["multiplier"])}
+        for row in persisted_flags
+    ]
+
+    first = mp.get("/handling-group-rules", DISPATCHER, page_size=1)
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["total"] == 1 and body["page_size"] == 1 and len(body["items"]) == 1
+    [rule] = body["items"]
+    assert rule["category_like"] == "Cement%" and rule["handling_group_id"] == 3
+    assert mp.get("/handling-group-rules", ADMIN, page_size=1, page=2).json()["items"] == []
+    assert_error(mp.get("/handling-group-rules", ADMIN, page_size=201), 422, "VALIDATION_ERROR")
+
+
+@pytest.mark.parametrize("user_id", [SALES, DRIVER, CS, VIEWER])
+def test_US_PRD_04_reference_rules_and_flags_forbidden_roles(mp: Api, user_id: int) -> None:
+    assert_error(mp.get("/handling-group-rules", user_id), 403, "FORBIDDEN")
+    assert_error(mp.get("/special-flags", user_id), 403, "FORBIDDEN")
+
+
 def test_US_PRD_02_AC1_confirm_does_not_move_orders(mp: Api) -> None:
     r = mp.send("POST", "/mapping/tasks/1/confirm", ADMIN, {"global_product_id": 1, "units_to_base": 1})
     assert r.status_code == 200, r.text

@@ -441,7 +441,7 @@ CREATE TABLE ops.inbound_shipment (
   UNIQUE (inbound_ref, global_product_id)
 );
 
-CREATE TABLE ops.stock_transfer (                -- gợi ý bằng quy tắc, dispatcher duyệt, kho nguồn xác nhận [C]
+CREATE TABLE ops.stock_transfer (                -- legacy schema includes physical-stage columns; Q3: CFO request only; WMS records physical movement
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id bigint, from_warehouse_id bigint NOT NULL REFERENCES ref.location(id),
   to_warehouse_id bigint NOT NULL REFERENCES ref.location(id),
@@ -453,10 +453,10 @@ CREATE TABLE ops.stock_transfer (                -- gợi ý bằng quy tắc, d
   received_at timestamptz,
   CHECK (from_warehouse_id <> to_warehouse_id)
 );
--- D1-01/02: ops.transfer_status đã gồm 'cancelled'/'received'; audit action là
--- TRANSFER_CANCELLED khi hủy (actor, reason, ts, before, after), TRANSFER_RECEIVED
--- khi kho đích nhận; TRANSFER_CONFIRMED chỉ dành cho kho nguồn xác nhận xuất.
--- Ghi audit trong cùng transaction với trạng thái; không dùng TRANSFER_APPROVED cho hủy.
+-- D1-01/02 historical action catalog (superseded by 09/11 Q3 for CFO physical stages):
+-- `TRANSFER_CANCELLED` still records request cancellation with actor/reason/ts/before/after;
+-- `TRANSFER_CONFIRMED` / `TRANSFER_RECEIVED` are legacy-only and MUST NOT be emitted by CFO `confirm-source`/`receive` clicks.
+-- API returns 409 `ILLEGAL_TRANSITION` for physical-stage clicks after auth; do not create inbound or mutate WMS stock. Keep existing DDL for history, change only via reviewed forward migration.
 CREATE TABLE ops.stock_transfer_line (
   transfer_id bigint NOT NULL REFERENCES ops.stock_transfer(id),
   global_product_id bigint NOT NULL REFERENCES ref.product_global(id),
@@ -706,6 +706,55 @@ Nhờ bước 1, chỉ mục `ux_one_approved_plan` không chặn việc duyệt
 
 **Handoff Dev 1/2:** thiết kế DDL/migration/chi tiết quyền server-side, lưu trữ version + audit, ràng buộc market/pilot/warehouse/SKU, effective version theo `batch_id/as_of`, thu hồi bằng chứng khi Source/mapping đổi, atomic persistence và PostgreSQL tests. Các tên bảng/cột/route mới **chưa được owner phê duyệt**; đoạn này không cho phép tự invent schema hay coi T07 stock writer đã xong. Xem `ASSUMPTIONS.md` và `decisions/DEV1_D1_01_04_APPROVED_20261108.md`.
 
+**DDL đề xuất theo `DEC-OWNER-20261109` S1–S5 (migration `0013`, chờ review Dev 1/Dev 2 trước khi bật writer T07).** Tên bảng/cột là đề xuất kỹ thuật; hành vi nghiệp vụ do chủ dự án duyệt. Cột chung `created_at/updated_at` theo mục 1.
+
+```sql
+CREATE TABLE ref.stock_admin_grant (             -- S1: grant Admin tường minh, theo market, thu hồi được
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), user_id bigint NOT NULL REFERENCES ref.app_user(id),
+  capability text NOT NULL CHECK (capability IN ('scope','evidence')),
+  valid_from timestamptz NOT NULL, valid_to timestamptz,
+  granted_by bigint NOT NULL REFERENCES ref.app_user(id), reason_text text NOT NULL,
+  revoked_at timestamptz, revoked_by bigint REFERENCES ref.app_user(id), revoke_reason text,
+  CONSTRAINT ck_grant_not_self CHECK (granted_by <> user_id)
+);
+CREATE TABLE ops.stock_scope_version (           -- S2/S3: scope SKU toàn market, bất biến sau duyệt
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), version int NOT NULL,
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved','rejected','superseded')),
+  skus text[] NOT NULL, warehouse_ids bigint[] NOT NULL, reason_text text NOT NULL,
+  created_by bigint NOT NULL REFERENCES ref.app_user(id),
+  approved_by bigint REFERENCES ref.app_user(id), approved_at timestamptz,
+  effective_from timestamptz, superseded_at timestamptz,
+  UNIQUE (market_id, version),
+  CONSTRAINT ck_scope_author_not_approver CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
+CREATE UNIQUE INDEX ux_stock_scope_one_approved ON ops.stock_scope_version (market_id) WHERE status = 'approved';
+CREATE TABLE ops.stock_independence_evidence (   -- S2/S5: Warehouse Manager nộp, Admin khác duyệt, tối đa 30 ngày
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), warehouse_id bigint NOT NULL REFERENCES ref.location(id),
+  version int NOT NULL, scope_version_id bigint NOT NULL REFERENCES ops.stock_scope_version(id),
+  local_skus text[] NOT NULL, mapping_fingerprint text NOT NULL, evidence_ref text NOT NULL,
+  status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','approved','rejected','revoked')),
+  submitted_by bigint NOT NULL REFERENCES ref.app_user(id),
+  approved_by bigint REFERENCES ref.app_user(id), approved_at timestamptz,
+  valid_from timestamptz, valid_to timestamptz, revoked_at timestamptz, revoke_reason text,
+  UNIQUE (market_id, warehouse_id, version),
+  CONSTRAINT ck_evidence_submitter_not_approver CHECK (approved_by IS NULL OR approved_by <> submitted_by),
+  CONSTRAINT ck_evidence_max_30_days CHECK (valid_from IS NULL OR (valid_to > valid_from AND valid_to <= valid_from + interval '30 days'))
+);
+CREATE TABLE ops.stock_write_run (               -- S3/S4: ràng buộc lần ghi tồn với scope/evidence version (chỉ thêm)
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id), source_batch_id bigint NOT NULL, as_of timestamptz NOT NULL,
+  scope_version_id bigint REFERENCES ops.stock_scope_version(id), evidence_ids bigint[] NOT NULL DEFAULT '{}',
+  expected_rows int NOT NULL, recorded_rows int NOT NULL,
+  status text NOT NULL CHECK (status IN ('accepted','rejected')), reject_code text,
+  UNIQUE (market_id, source_batch_id)
+);
+```
+
+Quy tắc không biểu diễn được bằng ràng buộc DB (thực thi trong `stock_scope_service`, có test): phiên bản scope hiệu lực tại `as_of` = bản `approved/superseded` có `effective_from <= as_of < superseded_at`; evidence chỉ hợp lệ khi `approved`, chưa revoke, `valid_from <= as_of < valid_to`, `mapping_fingerprint` khớp ánh xạ/đơn vị/quy đổi hiện tại và không chồng hiệu lực (khóa advisory theo market+kho); cặp kho×SKU thiếu trong batch đầy đủ = unknown ⇒ từ chối cả lần ghi.
+
 ## 7. Schema `plan` — kế hoạch và giữ chỗ
 
 ```sql
@@ -867,7 +916,7 @@ CREATE TABLE audit.kpi_baseline (               -- baseline thủ công trước
 
 **Quyền xem KPI vận hành:** `admin` và người có `'ops'` trong `kpi_scopes` (dispatcher, quản lý/phó kho, Project Lead). Business owner (`revenue_all`) **không** xem KPI vận hành. CS không xem KPI.
 
-**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc 8 KPI vận hành).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
+**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc **10 KPI vận hành**).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
 
 | Chỉ số | Định nghĩa |
 |---|---|
@@ -1017,7 +1066,7 @@ Quy tắc và hạn chế đã biết [A]:
 **Source:** [owner decision record](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md). This section defines **future migration requirements**, not already applied DDL. Never edit applied migrations. Preserve old historic migration files and implement forward migration/tests.
 
 - **S1–5:** effective, versioned **market-wide** SKU scope (pilot SE), explicit revocable market-specific Admin grants; author cannot approve own scope and warehouse-evidence submitter cannot approve own evidence. Warehouse Manager submits verifiable WMS proof; immutable audit records actor/approver/version/before/after. Bind stock run to scope/evidence versions effective at its trusted batch `as_of` (not sync time). Persist expected warehouse × in-scope SKU coverage: missing row rejects complete CFO write; explicit reported zero is zero. Independent evidence expires within **30 days maximum** in pilot; mapping/unit/conversion/scope change auto-revokes and never silently reactivates it. No partial stock writes or implicit independence.
-- **T18-1–3:** track transfer-to-WMS snapshot content inclusion (batch/reference/warehouse/SKU/quantity), not merely snapshot `as_of`; if lacking proof, do not add pending inbound to available stock. Manager receipt closes operational transfer. Store source of approved market-default lead; reversal after `source_confirmed` blocked until a separately reviewed contract.
+- **T18-1–3 (historical design; Q3 overrides CFO reconciliation):** WMS owns transfer receipt/issue, physical movements and reconciliation. CFO holds only a transfer suggestion/request, may cancel with audit, and reads WMS stock with batch/provenance checks; no separate manager physical receipt action, CFO evidence reviewer queue, synthesized inbound, or reversal of WMS movement. Legacy `source_confirmed/received` schema entries remain for compatibility, **not authorized CFO transitions**.
 - **D7-1–4:** versioned and verified 56-day *daily* driver coverage (including explicit off-duty vs missing), qualified reviewer and source hash/version, separate duty/driving/rest/break segments, immutable correction/revocation and rolling revalidation. Manager-approved future shifts remain independent of past evidence. A real driver with unknown licence/permissible vehicle mass/Regulation 561 context fails the safety gate. Synthetic demo proof cannot qualify as real-worker verification.
 - **M6-1:** One successful POD per **`trip_stop_id`**, not `order_id`. Existing deployed `ux_pod_one_delivered(order_id)` must be dropped by a **new forward migration**, with multi-vehicle regression tests; target partial per-stop unique index can be used alongside the current `UNIQUE(trip_stop_id)`. Do not claim multi-vehicle POD supported before the installed DB index is removed.
 - **G1–5:** a versioned, auditable **one active primary Dispatcher per trip** assignment with market-scoped authorizer and revocation/handover; separate per-driver, per-notice-version delivery+ack proof and privacy/legal pilot authorization. GPS point batch ≤100, event-coupled terminal/duty purge, simulator origin from authenticated separate producer. No raw 30-day GPS retention.
@@ -1028,7 +1077,7 @@ Quy tắc và hạn chế đã biết [A]:
 
 ### 12.0b Owner clarification: WMS owns physical stock, CFO read-only (DEC-WMS-READONLY-20261109)
 
-**This newer decision supersedes the CFO-side transfer-to-WMS proof/reconciliation design in §12.0a below.** WMS owns physical outbound/inbound, transfer movement records, stock corrections and reconciliation. CFO only consumes complete/fresh WMS stock snapshots, validates scope/quality and maintains **its own order held/committed reservation accounting**; no synthesized physical transfer balances, duplicate reconciliation approvals or 24-hour reconciliation queue. Historical transfer/inbound table designs must be reviewed for compatibility with #127; no schema or migration is implicitly changed by this docs note. [Decision](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md).
+**This owner decision supersedes the CFO-side transfer-to-WMS proof/reconciliation design in §12.0a.** WMS owns physical outbound/inbound, transfer movement records, stock corrections and reconciliation. CFO GETs complete/fresh WMS stock snapshots and records only CFO planning holds/commitments not already reflected in WMS `reserved`; no double-subtraction, synthetic physical transfer balances or 24-hour reconciliation queue. Later [DEC-WMS-RESERVE-SYNC](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) conditionally approves a narrow **reservation API business flow**, but does not permit enabling live WMS writes without tested/approved API/permissions. Historical schema requires a separate forward migration if behavior changes. [Q3](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
 
 ### 12.0a Stock Admin first grant and transfer/WMS reconciliation (owner-approved policy) (transfer reconciliation proposal superseded)
 
@@ -1053,3 +1102,14 @@ Owner approved **max seven days of valid GPS history** after trip/approved-duty 
 - CFO temporary held reservations (prior to approval) and confirmed WMS reservations require distinct identity and inclusion/version semantics. A proposed migration should link CFO order/line, target warehouse, WMS SKU/units and mapping version, external idempotency key, WMS reservation ID/state/version, acknowledgement, source snapshot inclusion and pending refresh protection; actual DDL and migration remain Dev 1/2 review items.
 - On authoritative WMS ACK, refresh relevant WMS stock immediately, update CFO read model with provenance and prevent duplicate assignment during publication delay. Avoid treating a newer batch timestamp as proof that the specific WMS reservation is included. Handle partial ACK, WMS timeout/status lookup, failed CFO commit, cancellation, replan and WMS issue with idempotency/compensation, no cross-DB atomicity fiction.
 - Scope is a **limited prospective WMS reservation write**, not physical on_hand issue/receipt, transfer reconciliation or POS mutation. Actual interface/security/integration tests required before enabling. [Decision](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
+
+
+## Owner-approved integration boundaries — Q2–Q10, 2026-11-09 (contract review required)
+
+[Decision record](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) is a **policy clarification, not a completed migration**. The existing CFO transfer workflow must not be interpreted as authoritative WMS physical outbound/inbound or as permission for a CFO `confirm-source/receive` click to create stock-authoritative inbound; WMS remains owner of physical movement. Dev 1/2 must review #127 data model and API to remove or disable conflicting effects, preserving allowed transfer requests and audit.
+
+Historical GPS (validly collected, maximum seven days) requires separately scoped privacy/compliance reviewer + case reference, reason, assignment and immutable read audit; live Dispatcher RBAC is insufficient. An individual notice/DPIA/legal basis and reviewed schema are prerequisites for real-worker data, not created by this paragraph.
+
+Agreed customer date requires persisted agreement evidence, version and explicit Dispatcher `Apply agreed date` transaction plus replan, without mutating source POS or auto-approving; actual implementation/DDL still need a reviewed change. `prep_window.start` is a nullable `START_PREP` actual event (no extra planned timestamp stored by inference). KPI admin reads require an explicit market selection and use a 30-day default/366-day maximum reporting window.
+
+Synthetic WMS reservation and fixtures are permitted in staging **only**; no physical WMS write, fake legal driver eligibility or golden assertion changes. No new DB columns/tables are approved by this note alone.

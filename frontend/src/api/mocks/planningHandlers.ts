@@ -89,7 +89,6 @@ interface VehicleSeed {
   capKg: string;
   capM3: string;
   driverId: number;
-  driver: string;
   loadKg: string;
   loadM3: string;
   departAt: string;
@@ -108,6 +107,7 @@ function vehicle(v: VehicleSeed): PlanVehicle {
     loading_start_at: "2026-11-10T09:30:00+01:00",
     depart_at: v.departAt,
     eta_at: v.etaAt,
+    trip_end_at: "2026-11-10T13:40:00+01:00",
   };
 }
 
@@ -135,13 +135,12 @@ function fullPlan(runId: number, s: PlanSeed): Plan {
     vehicle_count: s.vehicles.length,
     vehicles: s.vehicles,
     warehouse: s.warehouse,
-    total_capacity_kg: sum((v) => Number(v.vehicle?.capacity_kg ?? 0)),
-    total_capacity_m3: sum((v) => Number(v.vehicle?.capacity_m3 ?? 0)),
+    total_capacity_kg: sum((v) => Number(v.vehicle?.capacity_kg)),
+    total_capacity_m3: sum((v) => Number(v.vehicle?.capacity_m3)),
     goods_ready_at: "2026-11-10T09:30:00+01:00",
     loading_start_at: "2026-11-10T09:30:00+01:00",
     depart_at: s.vehicles[0].depart_at,
     trip_end_at: "2026-11-10T13:40:00+01:00",
-    promise_window_preview: { start: "2026-11-10T08:00:00+01:00", end: "2026-11-10T14:30:00+01:00" },
     distance_km: s.km,
     drive_min: 110,
     prep_hours: "10.15",
@@ -179,19 +178,19 @@ function normalPlans(runId: number): Plan[] {
       rank: 1, warehouse: GBG, km: "48", fill: "0.60", score: "0.26", reserveMin: 5220,
       reasons: ["LOWEST_SCORE_OF_3", "STOCK_OK", "TRUCK_OK", "RESERVE_SAFE"],
       explanation: "Lowest score of 3 feasible plans. Göteborg DC has stock, capacity fill 60%, 48 km, reserve 3.6 days (safe).",
-      vehicles: [vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, driver: "Björn Eriksson", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" })],
     }),
     fullPlan(runId, {
       rank: 2, warehouse: MLM, km: "262", fill: "0.50", score: "0.50", reserveMin: 2400,
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Malmö DC has full stock but a 262 km drive increases the distance score. Reserve 1.7 days.",
-      vehicles: [vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, driver: "Per Magnusson", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" })],
     }),
     fullPlan(runId, {
       rank: 3, warehouse: GBG, km: "48", fill: "0.60", score: "0.50", reserveMin: 3800,
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Same Göteborg DC with the larger truck GBG-18-01. Same distance score; tie-break on total capacity.",
-      vehicles: [vehicle({ seq: 1, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, driver: "Anders Pettersen", loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T11:30:00+01:00", etaAt: "2026-11-10T13:20:00+01:00" })],
+      vehicles: [vehicle({ seq: 1, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, loadKg: "4120", loadM3: "9.6", departAt: "2026-11-10T11:30:00+01:00", etaAt: "2026-11-10T13:20:00+01:00" })],
     }),
   ];
 }
@@ -203,8 +202,8 @@ function multiVehiclePlans(runId: number): Plan[] {
       reasons: ["FEWEST_VEHICLES", "STOCK_OK", "TRUCK_OK"],
       explanation: "Order of 20 000 kg needs two vehicles; both leave Göteborg DC and arrive together.",
       vehicles: [
-        vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, driver: "Björn Eriksson", loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" }),
-        vehicle({ seq: 2, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, driver: "Anders Pettersen", loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T12:45:00+01:00" }),
+        vehicle({ seq: 1, id: 15, code: "GBG-12-03", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 71, loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T12:38:00+01:00" }),
+        vehicle({ seq: 2, id: 16, code: "GBG-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 73, loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T12:45:00+01:00" }),
       ],
     }),
     fullPlan(runId, {
@@ -212,8 +211,8 @@ function multiVehiclePlans(runId: number): Plan[] {
       reasons: ["STOCK_OK", "TRUCK_OK"],
       explanation: "Malmö DC can also serve the order with two trucks but the route is much longer.",
       vehicles: [
-        vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, driver: "Per Magnusson", loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" }),
-        vehicle({ seq: 2, id: 22, code: "MLM-12-02", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 74, driver: "Nils Holm", loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T14:45:00+01:00" }),
+        vehicle({ seq: 1, id: 21, code: "MLM-18-01", name: "Truck 18 t", capKg: "18000", capM3: "60", driverId: 72, loadKg: "12000", loadM3: "20.0", departAt: "2026-11-10T10:48:00+01:00", etaAt: "2026-11-10T14:38:00+01:00" }),
+        vehicle({ seq: 2, id: 22, code: "MLM-12-02", name: "Truck 12 t", capKg: "12000", capM3: "40", driverId: 74, loadKg: "8000", loadM3: "18.5", departAt: "2026-11-10T10:55:00+01:00", etaAt: "2026-11-10T14:45:00+01:00" }),
       ],
     }),
   ];
@@ -259,30 +258,36 @@ function buildRun(runId: number, full: boolean): PlanningRun | undefined {
     earliest_feasible_date: infeasible ? "2026-11-12" : null,
     planning_reserve_min: allPlans[0]?.planning_reserve_min ?? null,
     workload: { labour_hours: 10.15 },
-    rejected_candidates: REJECTED,
+    rejected_candidates: infeasible ? [] : REJECTED,
     transfer_suggestions: [],
   };
 }
 
-const isFullView = (roles: readonly UserRole[]) => roles.includes("dispatcher") || roles.includes("admin");
+const isFullView = (roles: readonly UserRole[]) => roles.includes("dispatcher");
 
 export const planningHandlers = [
-  http.get(`${BASE}/planning-runs/:id`, ({ params, request }) => {
+  http.get(`${BASE}/orders/:id`, ({ params, request }) => {
+    const id = Number(params.id);
+    if (id !== 161) return undefined;
     const auth = authorize(request, PLANNING_ROLES);
     if (!auth.ok) return auth.response;
-    const run = buildRun(Number(params.id), isFullView(auth.account.user.roles));
-    return run ? HttpResponse.json(run) : errorResponse(request, 404, "NOT_FOUND", "Planning run not found.");
+    return HttpResponse.json({ id, date_request: { date_to: "2026-11-10" } });
   }),
 
   http.get(`${BASE}/orders/:id/date-negotiations`, ({ params, request }) => {
     const auth = authorize(request, ["dispatcher"]);
     if (!auth.ok) return auth.response;
-    // Đơn 160 (run 413) khách yêu cầu 05/11 nhưng phương án giao 10/11: cần thỏa thuận `agreed` đúng ngày đó.
-    const items =
-      Number(params.id) === 160
-        ? [{ id: 55, proposed_date: "2026-11-10", outcome: "agreed", channel: "phone", contacted_at: "2026-11-04T09:40:00Z", remind_at: null }]
-        : [];
+    const items = Number(params.id) === 160
+      ? [{ id: 1601, proposed_date: "2026-11-10", outcome: "agreed", channel: "phone", contacted_at: "2026-11-04T12:00:00Z", remind_at: null }]
+      : [];
     return HttpResponse.json({ items });
+  }),
+
+  http.get(`${BASE}/planning-runs/:id`, ({ params, request }) => {
+    const auth = authorize(request, PLANNING_ROLES);
+    if (!auth.ok) return auth.response;
+    const run = buildRun(Number(params.id), isFullView(auth.account.user.roles));
+    return run ? HttpResponse.json(run) : errorResponse(request, 404, "NOT_FOUND", "Planning run not found.");
   }),
 
   http.get(`${BASE}/orders/:id/planning-runs`, ({ params, request }) => {

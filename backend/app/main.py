@@ -17,6 +17,7 @@ from app.api.v1 import router as api_v1_router
 from app.core import clock
 from app.core.config import get_settings
 from app.core.correlation import CorrelationIdMiddleware
+from app.core.cs_phone_gate import CsPhoneProductionGate
 from app.core.errors import install_error_handlers
 from app.core.logging import configure_logging
 
@@ -24,6 +25,10 @@ from app.core.logging import configure_logging
 def create_app() -> FastAPI:
     """Tạo ứng dụng FastAPI với middleware, lỗi chuẩn và router v1."""
     settings = get_settings()
+    # Explicit opt-in. No production driver-history reader is configured by default.
+    from app.adapters.demo_d7_reader import configure_disposable_reader
+
+    configure_disposable_reader()
     if settings.app_now:  # chỉ cố định đồng hồ khi APP_NOW được đặt (08 mục 1.6)
         clock.init_from_settings(settings.app_now)
     configure_logging(Path("logs") if settings.app_env == "local" else None)
@@ -34,6 +39,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Correlation-ID"],
+    )
+    app.add_middleware(
+        CsPhoneProductionGate,
+        app_env=settings.app_env,
+        live_enabled=settings.cs_phone_search_production_enabled,
     )
     app.add_middleware(CorrelationIdMiddleware)
     install_error_handlers(app)

@@ -266,3 +266,22 @@ class ComplianceRecord(TimestampMixin, Base):
     approved_on: Mapped[date | None] = mapped_column(Date)
     reference: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class StockAdminGrant(TimestampMixin, Base):
+    """S1 (DEC-OWNER-20261109): explicit, market-specific, revocable Admin grant for stock scope/evidence."""
+
+    __tablename__ = "stock_admin_grant"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    market_id: Mapped[int] = mapped_column(SmallInteger, ForeignKey("ref.market.id"))
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("ref.app_user.id"))
+    capability: Mapped[str] = mapped_column(Text)  # scope | evidence
+    valid_from: Mapped[datetime] = mapped_column(TSTZ)
+    valid_to: Mapped[datetime | None] = mapped_column(TSTZ)
+    granted_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("ref.app_user.id"))
+    reason_text: Mapped[str] = mapped_column(Text)
+    revoked_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    revoked_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ref.app_user.id"))
+    revoke_reason: Mapped[str | None] = mapped_column(Text)

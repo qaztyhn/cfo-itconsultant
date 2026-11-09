@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.services import approval_service, planning_service, reservation_service
+from app.services import approval_service, planning_service, reservation_service, transfer_service
 from app.services.approval_recheck import five_gate_recheck
 
 router = APIRouter(tags=["planning"])
@@ -64,13 +64,13 @@ async def extend_hold(run_id: int, user: AuthUser, db: DbSession) -> dict[str, o
 
 @router.post("/planning-runs/{run_id}/keep-current")
 async def keep_current(
-    run_id: int, user: AuthUser, body: Annotated[dict[str, object], Body()]
+    run_id: int, user: AuthUser, db: DbSession, body: Annotated[dict[str, object], Body()]
 ) -> dict[str, object]:
-    """Replan-suggestion keep-current requires T16/T07 adapter, no silent success."""
+    """Dispatcher keeps the current approved plan (mandatory reason, audited, same transaction)."""
     reason = body.get("reason_text")
     if not isinstance(reason, str) or not reason.strip():
         raise DomainError("REASON_REQUIRED", "Keep-current requires an auditable reason.")
-    await approval_service.keep_current(run_id, user, reason)
+    await approval_service.keep_current(run_id, user, reason, session=db)
     return {"run_id": run_id, "status": "kept"}
 
 
@@ -131,6 +131,5 @@ async def list_date_negotiations(order_id: int, user: AuthUser, db: DbSession) -
 
 @router.get("/orders/{order_id}/transfer-suggestions")
 async def transfer_suggestions(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """No synthetic warehouse-to-warehouse distances; T18 owns real suggestions."""
-    await planning_service.list_runs(order_id, user, session=db)
-    return {"items": []}
+    """Only verified market stock/route data; T18 owns the suggestion lifecycle."""
+    return await transfer_service.suggestions(db, user, order_id)

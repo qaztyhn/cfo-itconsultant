@@ -1,18 +1,18 @@
 /**
  * Luồng duyệt phương án (docs/06 mục 6.3). Owner: Dev 3 (luồng C) — M5.
  * - Idempotency-Key gắn với (plan, nội dung gửi): thử lại cùng nội dung dùng lại key, đổi nội dung thì tạo key mới.
- * - Chỉ báo thành công khi backend trả order.status === "APPROVED". Không bypass 409 nào.
+ * - CFO APPROVED không chứng minh WMS đã reserve. Không báo thành công WMS khi thiếu ACK DTO.
  * - T16 backend hiện fail-closed khi chưa có recheck adapter: lỗi PLAN_NOT_APPROVABLE được hiển thị nguyên văn, không giả thành công.
  */
-import { useQuery, useQueryClient } from "@tanstack/react-query";import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { ApiError, isApiError, newIdempotencyKey } from "../../api/client";
 import { USE_MOCKS } from "../../api/config";
-import type { ApprovePlanInput, ApprovePlanResponse, Plan, PlanningRun } from "../../api/contracts/planning";
-import { approvePlan, fetchDateNegotiations, planningKeys } from "../../api/planning";
-import { fetchOrderDateRequest } from "../../api/orders";
-import { DecisionBar, type ApproveBlockReason } from "../../components/DecisionBar";
+import { GATE_KEYS, type ApprovePlanInput, type ApprovePlanResponse, type Plan, type PlanningRun } from "../../api/contracts/planning";
+import { approvePlan, fetchDateNegotiations, fetchOrderRequestedDate, planningKeys } from "../../api/planning";
+import { DecisionBar } from "../../components/DecisionBar";
 import { ReasonModal, type ReasonOption, type ReasonResult } from "../../components/ReasonModal";
-import { describeCommit, formatDayTime, formatTime } from "../../lib/planFormat";
+import { describeCommit } from "../../lib/planFormat";
 
 // docs/06 chưa định nghĩa danh mục mã lý do chọn phương án khác (ví dụ mẫu: closest_to_customer).
 const ALT_REASONS: ReasonOption[] = [
@@ -38,52 +38,58 @@ export interface ApprovalFlowProps {
   plan: Plan | null;
   showDriver: boolean;
   expired: boolean;
-  blockReason?: ApproveBlockReason | null;
-  onApproved: () => void;
+  onSubmitted: () => void;
   /** Mặc định theo chế độ chạy; tách ra để test. */
   mock?: boolean;
 }
 
-export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serverBlockReason = null, onApproved, mock = USE_MOCKS }: ApprovalFlowProps) {
+export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock = USE_MOCKS }: ApprovalFlowProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [result, setResult] = useState<ApprovePlanResponse | null>(null);
+  const [tightAccepted, setTightAccepted] = useState(false);
+  const [agreementId, setAgreementId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
-  
-  const requireTight = run.reserve_class === "tight";
-  const [tightAcceptedPlanId, setTightAcceptedPlanId] = useState<number | null>(null);
-  const tightAccepted = plan !== null && tightAcceptedPlanId === plan.id;
 
-    // showDriver chính là "là dispatcher": chỉ dispatcher đọc được ngày khách yêu cầu và lịch sử thương lượng (docs/06 mục 6.5).
   const orderQuery = useQuery({
-    queryKey: ["orders", "date-request", run.order_id],
-    queryFn: ({ signal }) => fetchOrderDateRequest(run.order_id, signal),
-    enabled: showDriver,
+    queryKey: ["order-requested-date", run.order_id],
+    queryFn: ({ signal }) => fetchOrderRequestedDate(run.order_id, signal),
   });
+  const requestedDate = orderQuery.data?.date_request?.date_to;
+  const dateChanged = Boolean(plan && requestedDate && plan.target_date !== requestedDate);
   const negotiationsQuery = useQuery({
-    queryKey: planningKeys.dateNegotiations(run.order_id),
+    queryKey: ["date-negotiations", run.order_id],
     queryFn: ({ signal }) => fetchDateNegotiations(run.order_id, signal),
-    enabled: showDriver,
+    enabled: dateChanged,
   });
-
-  const requestedDate = orderQuery.data?.date_request.date_to;
-  const dateDiffers = Boolean(plan) && requestedDate !== undefined && plan?.target_date !== requestedDate;
-  const agreement = dateDiffers
-    ? negotiationsQuery.data?.items.find((n) => n.outcome === "agreed" && n.proposed_date === plan?.target_date)
-    : undefined;
-  const negotiationsLoaded = negotiationsQuery.isSuccess;
-  const blockReason: ApproveBlockReason | null =
-    serverBlockReason ?? (dateDiffers && negotiationsLoaded && !agreement ? "date_agreement" : null);
+  const agreements = (negotiationsQuery.data?.items ?? []).filter((item) => item.outcome === "agreed" && item.proposed_date === plan?.target_date);
+  const selectedAgreement = agreements.find((item) => item.id === agreementId);
+  const allGatesPassed = Boolean(plan?.checks && GATE_KEYS.every((key) => plan.checks?.[key]?.passed === true));
+  let blockedReason: string | null = null;
+  if (run.kind === "replan_suggestion") blockedReason = "Replan suggestions need a separate dispatcher decision.";
+  else if (run.result !== "feasible") blockedReason = "This run has no feasible plan.";
+  else if (!plan || plan.status !== "proposed") blockedReason = "Only a proposed plan can be approved.";
+  else if (!run.hold_expires_at || !Number.isFinite(Date.parse(run.hold_expires_at))) blockedReason = "No live planning hold is available.";
+  else if (!allGatesPassed) blockedReason = "All five planning gates must have verified passing evidence.";
+  else if (orderQuery.isPending) blockedReason = "Checking the requested delivery date…";
+  else if (orderQuery.isError || !requestedDate) blockedReason = "Requested delivery date is unavailable.";
+  else if (dateChanged && (negotiationsQuery.isPending || negotiationsQuery.isError)) blockedReason = "Checking customer date agreement…";
+  else if (dateChanged && !selectedAgreement) blockedReason = "Select an agreed customer date for this plan.";
+  else if (result) blockedReason = "CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.";
+  else if (run.reserve_class === "tight" && !tightAccepted) blockedReason = "Accept the tight schedule before approving.";
+  else if (submitting) blockedReason = "Approval is being submitted…";
 
   async function handleConfirm({ reasonCode, reasonText }: ReasonResult) {
-    if (!plan || expired || blockReason || (requireTight && !tightAccepted)) return;
-    const base: ApprovePlanInput = plan.rank > 1 ? { reason_code: reasonCode, reason_text: reasonText } : reasonText ? { note: reasonText } : {};
-    const body: ApprovePlanInput = agreement ? { ...base, date_negotiation_id: agreement.id } : base;
+    if (!plan || expired || blockedReason || result || submitting) return;
+    const body: ApprovePlanInput = plan.rank > 1 ? { reason_code: reasonCode, reason_text: reasonText } : reasonText ? { note: reasonText } : {};
+    if (selectedAgreement) body.date_negotiation_id = selectedAgreement.id;
     const fingerprint = `${plan.id}:${JSON.stringify(body)}`;
     if (keyRef.current?.fingerprint !== fingerprint) keyRef.current = { fingerprint, key: newIdempotencyKey() };
 
     try {
+      setSubmitting(true);
       const response = await approvePlan(plan.id, body, keyRef.current.key);
       if (response.order?.status !== "APPROVED") {
         throw new ApiError("APPROVAL_NOT_CONFIRMED", "The backend did not return APPROVED, so the plan was not approved.");
@@ -91,7 +97,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serv
       setResult(response);
       setProblem(null);
       setOpen(false);
-      onApproved();
+      onSubmitted();
       void queryClient.invalidateQueries({ queryKey: planningKeys.run(run.id) });
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (error) {
@@ -102,21 +108,30 @@ export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serv
         return;
       }
       throw error;
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
     <>
-      {result && <SuccessPanel result={result} mock={mock} />}
+      {result && <UnverifiedPanel result={result} mock={mock} />}
       {problem && <ProblemPanel error={problem} />}
+      {dateChanged && (
+        <label className="flex flex-col gap-1 text-body text-ink">
+          Customer agreement for {plan?.target_date}
+          <select value={agreementId ?? ""} onChange={(event) => setAgreementId(event.target.value ? Number(event.target.value) : null)} className="rounded-control border bg-surface px-3 py-2">
+            <option value="">Select an agreed date</option>
+            {agreements.map((item) => <option key={item.id} value={item.id}>Agreement #{item.id} · {item.channel} · {item.contacted_at}</option>)}
+          </select>
+        </label>
+      )}
+      {run.reserve_class === "tight" && <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={tightAccepted} onChange={(event) => setTightAccepted(event.target.checked)} />I accept the tight schedule</label>}
       <DecisionBar
         plan={plan}
         expired={expired}
-        approved={result !== null}
-        blockReason={blockReason}
-        requireTightAccept={requireTight}
-        tightAccepted={tightAccepted}
-        onTightAcceptChange={(accepted) => setTightAcceptedPlanId(accepted && plan ? plan.id : null)}
+        approved={false}
+        blockedReason={blockedReason}
         onApprove={() => {
           setProblem(null);
           setOpen(true);
@@ -124,7 +139,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serv
       />
       {plan && (
         <ReasonModal
-          open={open && !expired && !blockReason && result === null}
+          open={open && !expired && (submitting || !blockedReason) && result === null}
           title={`Approve plan #${plan.rank}`}
           description={describeCommit(plan, showDriver)}
           reasons={plan.rank > 1 ? ALT_REASONS : undefined}
@@ -139,19 +154,13 @@ export function ApprovalFlow({ run, plan, showDriver, expired, blockReason: serv
   );
 }
 
-function SuccessPanel({ result, mock }: { result: ApprovePlanResponse; mock: boolean }) {
-  const committed = result.order.committed;
+function UnverifiedPanel({ result, mock }: { result: ApprovePlanResponse; mock: boolean }) {
   return (
-    <div role="status" className="flex flex-col gap-1 rounded-card border border-risk-onTrack-bg bg-risk-onTrack-bg p-4 text-risk-onTrack-fg">
+    <div role="alert" className="flex flex-col gap-1 rounded-card border border-risk-atRisk-bg bg-risk-atRisk-bg p-4 text-risk-atRisk-fg">
       <p className="text-h3">
-        <span aria-hidden="true">✓ </span>Approved · order status {result.order.status}
+        CFO reports {result.order.status}; WMS reservation is unverified.
       </p>
-      {committed && (
-        <p className="text-body">
-          Committed delivery {formatDayTime(committed.promise_start)}–{formatTime(committed.promise_end)}.
-        </p>
-      )}
-      {result.trip_ids.length > 0 && <p className="font-mono text-caption">Trips {result.trip_ids.join(", ")}</p>}
+      <p className="text-body">The current response has no WMS reservation acknowledgment or refreshed stock version. Do not dispatch or repeat the request without checking backend state.</p>
       {mock && <p className="font-mono text-caption">MOCK API · simulated approval, nothing was committed to a real backend.</p>}
     </div>
   );
@@ -184,6 +193,10 @@ function ProblemPanel({ error }: { error: ApiError }) {
     case "APPROVAL_NOT_CONFIRMED":
       title = "Approval not confirmed";
       guidance = "The order was not approved. Check the order status before trying again.";
+      break;
+    case "DATE_AGREEMENT_REQUIRED":
+      title = "Customer date agreement required";
+      guidance = "Record and select an agreed date matching this plan before approving.";
       break;
   }
 

@@ -10,6 +10,21 @@
 >
 > Hợp đồng REST giữa frontend/driver PWA và backend, kèm hợp đồng của hệ thống nguồn giả lập. Backend FastAPI sinh OpenAPI từ model Pydantic đúng theo tài liệu này; frontend sinh client bằng `openapi-typescript`. Tên bảng và cột tham chiếu `05_Database_Design.md`. Quy tắc nghiệp vụ tham chiếu `01_PRD.md` (mã BR-xxx).
 
+### BE-02 — Production safety gate for GET phone lookup (2026-11-09)
+
+The canonical `GET /api/v1/orders?q=` contract is unchanged for authorized synthetic
+local/staging use. In a non-synthetic `APP_ENV` (for example `production`),
+phone-shaped search is **403 FORBIDDEN** by default unless
+`CS_PHONE_SEARCH_PRODUCTION_ENABLED=true` is explicitly configured after
+security sign-off. The gate does not relax market/RBAC scope, min-query-length or
+the application limiter. The error body and CFO JSONL logs do not echo the phone.
+
+**Not a production privacy certification:** application middleware cannot redact
+upstream reverse-proxy/WAF/APM/hosting access logs or browser history. Issue #181
+requires independent log/telemetry redaction, a reviewed distributed abuse limit,
+HTTPS, individual production approval and regression evidence *before* the opt-in.
+Real customer phone lookup stays disabled pending those controls.
+
 ## 1. Quy ước chung
 
 | Mục | Quy ước |
@@ -106,7 +121,7 @@ Sai thông tin → `401 AUTH_INVALID`; quá 5 lần/phút → `429`.
 
 ## 5. Đơn hàng
 
-**Cách B:** POS/WMS/ERP giữ DB riêng; CFO chỉ GET nguồn. Sales có thể yêu cầu đồng bộ theo mã đơn từ giao diện CFO, không cần chờ polling 5 phút; polling vẫn dự phòng.
+**Cách B (phân biệt source read và WMS reserve):** POS/WMS/ERP giữ database riêng; CFO **chỉ GET POS/ERP và authoritative WMS stock**, không sửa POS/ERP hoặc WMS physical on_hand/transfer. Sales có thể yêu cầu CFO GET đơn qua `Sync now`, polling 5 phút dự phòng. **Ngoại lệ nghiệp vụ có điều kiện đã được Owner duyệt:** CFO→WMS reserve/release hẹp khi authorized plan confirmation, có verify original WMS SKU/quantity, ACK và refresh ngay; **real WMS outbound write vẫn disabled** tới khi Dev 1/2 xác minh live API/permissions/contracts, test và được phê duyệt rollout. Adapter giả chỉ staging/demo, có nhãn simulated. [DEC-WMS-RESERVE-SYNC](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
 
 ### 5.0.1 Sales sync-now — endpoint mới
 
@@ -368,7 +383,8 @@ Dùng cho đơn `PLANNED` hoặc `NO_FEASIBLE_DATE` (v1.2). Engine vẫn kiểm 
 // POST /orders/{id}/date-negotiations
 { "proposed_date": "2026-11-20", "outcome": "agreed", "channel": "phone",
   "contacted_at": "2026-11-05T09:40:00Z", "note": "Customer OK with 20 Nov" }
-// 201 → nếu outcome = "agreed": đơn có thể chạy lại với date_mode/date_to mới (service cập nhật version + 1) khi dispatcher gọi /plan
+// 201 chỉ lưu date_negotiation/DATE_NEGOTIATION_RECORDED; "agreed" KHÔNG tự đổi date_to/version hoặc replan.
+// Sau đó Dispatcher chủ động gọi hành động Apply agreed date (API/DTO kỹ thuật cần review), server xác minh agreement/version/audit trước khi đổi ngày và chạy planning mới; không auto approve, không sửa POS.
 // outcome = "declined": đơn có thể bị hủy; outcome = "unreachable": remind_at = now + 24h, tạo nhắc
 ```
 
@@ -390,15 +406,15 @@ Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn 
 | GET | `/orders/{id}/transfer-suggestions` | dispatcher | Danh sách gợi ý theo quy tắc (kho nguồn, lead days, khoảng cách) |
 | POST | `/orders/{id}/transfers` | dispatcher | Duyệt một gợi ý: `{ "from_warehouse_id": 2, "to_warehouse_id": 3, "lines": [{ "global_product_id": 12, "qty": 40 }], "lead_days": 1 }` → `stock_transfer(approved)` |
 | GET | `/transfers` | dispatcher, warehouse | Lọc `status`, `warehouse_id` |
-| POST | `/transfers/{id}/confirm-source` | warehouse (kho nguồn, `can_approve`) | Tạo `inbound_shipment(source=transfer, confirmed=true)`, đơn có thể chạy lại |
-| POST | `/transfers/{id}/receive` | warehouse (kho đích) | Đánh dấu `received` |
+| POST | `/transfers/{id}/confirm-source` | warehouse (kho nguồn, `can_approve`) | **Không khả dụng theo DEC-INT-TRANSFER-BOUNDARY/Q3:** 409 `ILLEGAL_TRANSITION` sau RBAC, không tạo inbound hoặc thay đổi WMS |
+| POST | `/transfers/{id}/receive` | warehouse (kho đích) | **Không khả dụng theo Q3:** 409 `ILLEGAL_TRANSITION` sau RBAC, không ghi nhận nhập hàng trên CFO |
 | POST | `/transfers/{id}/cancel` | dispatcher | Lý do bắt buộc; audit `TRANSFER_CANCELLED` (actor/ts/before/after), không dùng `TRANSFER_APPROVED` |
 
-**D1-01/02 — owner-approved audit semantics (08/11/2026):** `POST /transfers/{id}/confirm-source` ghi `TRANSFER_CONFIRMED` **chỉ khi kho nguồn xác nhận xuất**; `POST /transfers/{id}/receive` ghi **`TRANSFER_RECEIVED`** khi kho đích nhận (không reuse CONFIRMED dưới `snapshot.stage` khác); `POST /transfers/{id}/cancel` bắt buộc lý do, ghi **`TRANSFER_CANCELLED`**, không dùng `TRANSFER_APPROVED`. Cả ba phải kiểm quyền/market/warehouse, state transition và idempotency; audit append-only gồm actor, ts, before/after trong **cùng transaction** với state change. Hủy sau `received` hoặc tác động hoàn nguyên WMS chưa có contract an toàn phải fail closed; không ghi ngược Source. Route/payload hiện tại chưa đổi; Dev 1/2 cần code/contract tests.
+**D1-01/02 — owner-approved audit semantics (08/11/2026):** `POST /transfers/{id}/confirm-source` ghi `TRANSFER_CONFIRMED` **chỉ khi kho nguồn xác nhận xuất**; `POST /transfers/{id}/receive` ghi **`TRANSFER_RECEIVED`** khi kho đích nhận (không reuse CONFIRMED dưới `snapshot.stage` khác); `POST /transfers/{id}/cancel` bắt buộc lý do, ghi **`TRANSFER_CANCELLED`**, không dùng `TRANSFER_APPROVED`. Cả ba phải kiểm quyền/market/warehouse, state transition và idempotency; audit append-only gồm actor, ts, before/after trong **cùng transaction** với state change. Hủy sau `received` hoặc tác động hoàn nguyên WMS chưa có contract an toàn phải fail closed; không ghi ngược Source. Các semantics `TRANSFER_CONFIRMED`/`TRANSFER_RECEIVED` bên trên là lịch sử/hợp đồng cũ; hai thao tác xác nhận xuất/nhận hiện **không cho thực thi trên CFO theo DEC-INT-TRANSFER-BOUNDARY/Q3**. PR #127 chỉ triển khai gợi ý/yêu cầu/hủy trước khi xuất, và các đường xác nhận xuất/nhận từ chối 409 sau kiểm quyền. `TRANSFER_CANCELLED` yêu cầu lý do, dispatcher, audit và idempotency. Việc thực thi vật lý và chứng cứ thuộc WMS; không ghi tồn kho trên CFO từ một lần bấm. Dev 1/2 vẫn phải đối soát contract và test thật trước khi bật luồng chuyển kho.
 
-**Chốt mới nhất — [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) (ưu tiên áp dụng):** WMS quản lý vật lý nhập/xuất/chuyển kho và đối soát; CFO **chỉ GET tồn kho WMS** phục vụ kiểm tra khả dụng và ghi reservation/commit nội bộ cho đơn CFO. Không có API/luồng đối soát chứng từ chuyển kho riêng của CFO, không bắt người quản lý kho nộp bằng chứng để CFO duyệt, không tự cộng/trừ physical stock theo chuyển kho, không có cảnh báo đối soát Q3 24 giờ. Các endpoint `/transfers/*` hiện mô tả trong §7 thuộc **hợp đồng cũ cần review (#127)**; xác nhận xuất/nhận trên CFO không được xem là cập nhật tồn WMS. Chỉ gợi ý/yêu cầu chuyển kho (nếu giữ lại sau review) có tính thông tin, WMS vẫn là nguồn số liệu tồn thực tế. Đọc batch WMS còn phải kiểm độ tươi/đầy đủ/SKU scope và giữ CFO reservations.
+**Chốt mới nhất — [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) và ngoại lệ reserve có điều kiện [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md):** WMS quản lý physical stock, xuất/nhập/chuyển kho và đối soát. CFO chỉ GET stock batch có freshness/coverage/provenance và quản lý pending CFO holds; **ngoại lệ reserve/release tại confirmation là hợp đồng nghiệp vụ được duyệt nhưng chưa có quyền kích hoạt real WMS write**. Không tạo luồng CFO reconciliation/evidence review, không tự cộng physical inbound, không trừ đôi WMS ACK phản ánh trong batch; transfer CFO chỉ gợi ý/yêu cầu/hủy, các route `confirm-source`/`receive` từ chối 409 sau RBAC. [Q3](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
 
-**Chốt 09/11 — First Stock Admin grant và WMS transfer reconciliation:** [DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). Owner ủy quyền System Admin cấp grant Stock Admin **đầu tiên theo market**, **không tự grant**, có audit và phải tuân tách author/approver S1/S2. Giả định **có thao tác xuất/nhập chuyển kho được ghi trong WMS cũ**, không giả định WMS API đang cung cấp mã movement/ACK. Dev 1/2 review evidence DTO/route **trước code**: transfer ID/provenance, market, from/to warehouse, SKU, quantity, WMS outbound/inbound reference, snapshot batch/version inclusion, submitted/approved actors, timestamp, audit và reconciliation outcome. Thiếu chứng cứ API thì Warehouse Manager nộp chứng cứ WMS cho người phê duyệt **độc lập có quyền theo market**; không tự suy từ batch `as_of` hay biến động tồn. Không viết ngược WMS, không double-count, không bỏ fail-closed; **không có endpoint mới mặc nhiên được duyệt**, Q3 escalation 24h chưa chốt.
+**LƯU Ý LỊCH SỬ — quyết định first-grant và đề xuất CFO WMS transfer reconciliation [DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md):** Phần **first grant** đã được mở rộng bởi [DEC-STOCK-GRANT-CONTROL-20261109](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md): chỉ System Admin có ủy quyền Owner được cấp **và thu hồi mọi grant**, không chỉ lần đầu. Phần **CFO chứng từ/chờ reviewer/đối soát chuyển kho thủ công** đã bị [DEC-WMS-READONLY](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) và [Q3](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) thay thế; **không implement** queue nhận/chấp thuận chứng cứ vật lý trong CFO. Vẫn phải xác minh khi nào authoritative WMS snapshot đã phản ánh hàng chuyển, không dựa vào `as_of` hay chênh lệch qty đơn lẻ; thiếu dữ liệu thì fail closed. **Không có production WMS write permission** từ ghi chú này.
 
 ## 8. Thực thi
 
@@ -858,6 +874,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 - **Thời gian:** `cutoff` là `HH:mm` theo market; `shifts[].start/end`, `prep_window.start/end`, `loading[].at` là ISO 8601 **có offset** vì biểu thị thời điểm/ca cụ thể (hỗ trợ ca qua ngày và DST). UI luôn hiển thị thành giờ 24h theo `location.timezone`, không theo browser; schema `/warehouses/{id}/capacity` tại §13.2 vẫn dùng giờ ca `HH:mm` cho mục đích riêng.
 - **Dữ liệu tin cậy:** `capacity.schedule_verified` **bắt buộc boolean**; chỉ `true` khi roster ca chính thức do Warehouse Manager/quản lý có thẩm quyền xác nhận và dữ liệu cần thiết để xác minh công suất của ngày đó đã đủ; không suy từ `expected_staff`, seed hoặc ca tự tạo. Khi `false`, server có thể trả **200 read-only** với `total_min=0`, `free_min=0`, `shifts=[]` (hoặc chỉ ca có provenance rõ, không tính capacity), trong khi `booked_min` vẫn phản ánh đặt chỗ thực đã có nếu xác minh được; UI phải hiện `Capacity not verified` và không trình bày 0 như một kết luận rằng có đủ công suất. Quy tắc không phê duyệt kế hoạch khi thiếu lịch, ca tài xế hoặc duty history **vẫn fail closed**.
 - **Tính toán:** `shifts[].minutes` là phút công suất khả dụng ca theo `present × useful_hours × share × 60`, có làm tròn nhất quán; `shifts[].booked` và `capacity.booked_min` là phút đã giữ/đặt thực theo `committed` và `held` trong `/capacity`, không cộng trùng; `free_min=max(0,total_min-booked_min)`. Booked có thể lớn hơn total sau thay đổi lịch; khi đó hiện cảnh báo thiếu công suất, không tạo free âm.
+- **Triển khai (backend):** `schedule_verified=true` chỉ khi mọi dòng `hr.employee_shift_schedule` `scheduled` của kho/ngày do quản lý `can_approve` hiệu lực lúc nhập (`assigned_at` theo ngày market) và dùng được; chia `shifts[].booked` theo tỷ lệ phút ca (largest remainder, tổng khớp `booked_min`); `prep_window.start` là `START_PREP` thực tế hoặc `null` (giờ bắt đầu kế hoạch chưa được lưu), `end` là `GOODS_READY` thực tế hoặc `goods_ready_at` kế hoạch; `next_action` ∈ `START_PREP | PREP_RESUMED | GOODS_READY | LOADED | null`.
 - **Orders:** chỉ các đơn với plan đã duyệt và thuộc kho/ngày phù hợp; mỗi xe có một phần tử `loading[]`, giữ `loaded` riêng từng trip; `next_action` lấy từ trạng thái/quyền kiểm tra ở server (nullable khi không có hành động), không suy đoán từ UI. Nếu backend **chưa tính được shape đáng tin cậy**, trả lỗi API chuẩn (không đổi stub `409 PLAN_NOT_APPROVABLE` thành `200` có số giả); `200` thiếu roster là trường hợp hợp lệ khác với service chưa tích hợp.
 - **Tích hợp:** cập nhật OpenAPI/DTO, UI `resolveTimeZone`, test API contract/role-scope, đa xe, ca qua nửa đêm/DST và thiếu lịch xác minh. PR #129 vẫn Draft cho đến khi phụ thuộc execution/risk/notification và các blocker an toàn được giải quyết; riêng API read-only không được coi là chứng minh toàn bộ M6 đã xong.
 
@@ -929,3 +946,18 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 - **Prep Queue:** Appendix A.1 is now an **approved target contract**; backend #129/#159 and UI #154/#160 still require harmonization/real-DB tests before merge.
 - **Stock Admin:** only **Owner-delegated System Admin** may issue and revoke market-specific Stock Admin grants (first and future), no self-grant; Dev 1/2 must review delegation record, audit and migration. Does not grant physical WMS access.
 - **D8:** stage/test approved proposal job cadence on synthetic data only. `attendance_gen` disabled; no prod cron/worker/hosting, no real notifications or GPS. Internal tick security/DTO, new codes and job runtime remain subject to review.
+
+
+## 18. Owner-approved integration decisions Q2–Q10 — 09/11/2026
+
+[DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) and `ASSUMPTIONS.md` establish the **target behavior** below; changing existing routes, DTOs or migrations still requires Dev 1/2/3 contract review, implementation and tests. **The Owner alone merges code PRs after they are Ready, reviewed, mergeable and checks pass.**
+
+- **Q2 WMS demo:** simulated reserve/status/release permitted in staging only, explicit `simulated` provenance/indicator; real port remains disabled. No WMS physical stock write.
+- **Q3 T18:** CFO may request or suggest transfer; existing `/transfers/{id}/confirm-source` and `/receive` descriptions are **superseded for physical confirmation/stock authority**. Dev 1/2 must reconcile or disable such effects in #127; real WMS alone records outbound/inbound/receipt.
+- **Q4 Date negotiation:** contact `agreed` is **not** date mutation. An authorized Dispatcher explicitly applies a verified agreement with version/concurrency/audit, then starts a new plan (all five gates). Exact endpoint/DTO and POS read-only boundary need reviewed update, **not an invented endpoint implemented from this note**.
+- **Q5 GPS history:** only explicitly case-authorized privacy/compliance reviewer may see retained points (max 7 days), with case ID/reason/trip/market access audit and legal/privacy clearance. Regular Dispatcher live role is not historical authorization.
+- **Q6 KPI:** default reporting window **30 days**, maximum **366 days**; multi-market System Admin selects a concrete market; use local market timezone/cohort rules. Preserve 10 KPI keys and unknown diagnostics `null`. Review request parameter/date boundary specification before coding.
+- **Q7 M6:** `prep_window.start` is actual persisted `START_PREP` aware ISO instant, or **`null`** before START_PREP. Not a planned start. Implement in backend/frontend DTO with nullable schema/tests.
+- **Q8 Demo seeds:** expected golden scenario outputs stay; synthetic input corrections need independent tests, never override fail-closed.
+- **Q9 CS phone search:** existing GET `q` requires TLS, scoped/rate-limited backend, raw query/phone suppression in server/proxy/APM/access/analytics/error logs and `Referrer-Policy: no-referrer`. **A GET URL may still remain in browser history/network/proxy traces**; stronger URL privacy would require an independently approved POST search contract.
+- **Q10 D8:** staging/manual triggers only using existing resources; no real customer notifications, actual worker GPS, production cron/hosting or paid worker. D8 cadence proposals approved only for staging.

@@ -634,14 +634,11 @@ export const handlers = [
     if (!order || !record || !orderInScope(auth.account.user, record)) {
       return errorResponse(request, 404, "NOT_FOUND", "Order not found."); // ngoài phạm vi cũng 404, không lộ sự tồn tại
     }
-    
     const detail = projectOrderDetail(auth.account.user, order);
-    // docs/06 mục 5.1: ngày khách yêu cầu nằm trong date_request. Chỉ thêm khi vai trò còn thấy date_to (driver thì không).
-    return HttpResponse.json(
-      detail.date_to === undefined
-        ? detail
-        : { ...detail, date_request: { mode: order.date_mode, date_from: order.date_from, date_to: order.date_to } },
-    );
+    const dateRequest = auth.account.user.roles.includes("driver")
+      ? { window: { start: order.window_start, end: order.window_end } }
+      : { mode: order.date_mode, date_from: order.date_from, date_to: order.date_to };
+    return HttpResponse.json({ ...detail, date_request: dateRequest });
   }),
 
   // Alerts
@@ -715,25 +712,43 @@ export const handlers = [
     return HttpResponse.json({ positions });
   }),
 
-  // Revenue
+  // Revenue — use the current US-REV-01 read DTOs. Legacy demo responses lacked period/points/rows
+  // and could crash the Revenue screen after Business owner signed in (push CI).
   http.get(`${BASE}/revenue/summary`, () => {
-    return HttpResponse.json(REVENUE_SUMMARY);
+    return HttpResponse.json({
+      period: { from: REVENUE_SUMMARY.period_start, to: REVENUE_SUMMARY.period_end },
+      view: "store",
+      location_id: null,
+      currency: REVENUE_SUMMARY.currency,
+      recognised: REVENUE_SUMMARY.recognised_sek,
+      booked_not_delivered: REVENUE_SUMMARY.booked_sek,
+      orders_delivered: REVENUE_SUMMARY.orders_delivered,
+      avg_order_value: REVENUE_SUMMARY.avg_order_value_sek,
+      share_of_market_pct: Number(REVENUE_SUMMARY.share_of_market_pct),
+    });
   }),
 
   http.get(`${BASE}/revenue/daily`, () => {
-    return HttpResponse.json({ items: REVENUE_DAILY });
+    return HttpResponse.json({
+      currency: REVENUE_SUMMARY.currency,
+      points: REVENUE_DAILY.map((point) => ({
+        day: point.date,
+        recognised: point.recognised_sek,
+        booked: point.booked_sek,
+      })),
+    });
   }),
 
   http.get(`${BASE}/revenue/by-location`, () => {
     return HttpResponse.json({
       view: "store",
-      items: [
-        { location_id: 101, location_name: "Store Göteborg Väst", orders: 8, recognised_sek: "248000", booked_sek: "0", share_pct: "19.3" },
-        { location_id: 102, location_name: "Store Uppsala", orders: 6, recognised_sek: "187500", booked_sek: "52000", share_pct: "14.6" },
-        { location_id: 103, location_name: "Store Malmö City", orders: 5, recognised_sek: "156000", booked_sek: "31200", share_pct: "12.1" },
-        { location_id: null, location_name: "Unassigned store", orders: 2, recognised_sek: "48000", booked_sek: "0", share_pct: "3.7" },
+      currency: REVENUE_SUMMARY.currency,
+      rows: [
+        { location_id: 101, code: "GBG-V", name: "Store Göteborg Väst", orders_delivered: 8, recognised: "248000", booked_not_delivered: "0", share_pct: 19.3 },
+        { location_id: 102, code: "STO-V", name: "Store Uppsala", orders_delivered: 6, recognised: "187500", booked_not_delivered: "52000", share_pct: 14.6 },
+        { location_id: 103, code: "MLM-V", name: "Store Malmö City", orders_delivered: 5, recognised: "156000", booked_not_delivered: "31200", share_pct: 12.1 },
+        { location_id: null, code: null, name: "Unassigned store", orders_delivered: 2, recognised: "48000", booked_not_delivered: "0", share_pct: 3.7 },
       ],
-      total_recognised_sek: "1284500",
     });
   }),
 

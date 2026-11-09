@@ -6,15 +6,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { fetchIntegrationOverview, summariseFreshness } from "../../api/integration";
 import type { PlanningRun } from "../../api/contracts/planning";
 import { fetchPlanningRun, planningKeys } from "../../api/planning";
 import { PATHS } from "../../app/access";
 import { useAuthStore } from "../../app/store";
 import { DataFreshness } from "../../components/DataFreshness";
-
-import type { ApproveBlockReason } from "../../components/DecisionBar";
-
 import { HoldCountdown } from "../../components/HoldCountdown";
 import { PageHeader } from "../../components/PageHeader";
 import { PlanCard } from "../../components/PlanCard";
@@ -38,14 +34,7 @@ export function PlanReview() {
     queryFn: ({ signal }) => fetchPlanningRun(id, signal),
     enabled: validId,
   });
-  const freshnessQuery = useQuery({
-    queryKey: ["integration", "overview"],
-    queryFn: ({ signal }) => fetchIntegrationOverview(signal),
-    retry: false,
-  });
-
   const run = runQuery.data;
-  const freshness = freshnessQuery.data ? summariseFreshness(freshnessQuery.data) : { asOf: null, nextSyncAt: null, stale: true };
 
   return (
     <section data-screen="PlanReview" className="flex flex-col gap-6">
@@ -64,9 +53,6 @@ export function PlanReview() {
           key={run.id}
           run={run}
           showDriver={isDispatcher}
-          canPlanAgain={isDispatcher}
-          freshness={freshness}
-          freshnessSettled={!freshnessQuery.isPending}
           onHoldExpire={() => void runQuery.refetch()}
         />
       )}
@@ -77,49 +63,27 @@ export function PlanReview() {
 interface RunBodyProps {
   run: PlanningRun;
   showDriver: boolean;
-  freshness: { asOf: string | null; nextSyncAt: string | null; stale: boolean };
-  freshnessSettled: boolean;
-  canPlanAgain: boolean;
   onHoldExpire: () => void;
 }
 
-function RunBody({ run, showDriver, freshness, freshnessSettled, canPlanAgain, onHoldExpire }: RunBodyProps) {
+function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
-  const [approved, setApproved] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const expired = useHoldExpired(run.hold_expires_at);
 
   const plans = run.plans.slice(0, MAX_PLANS);
-    const selected = plans.find((p) => p.rank === selectedRank) ?? plans[0] ?? null;
-
-  const blockReason: ApproveBlockReason | null =
-    run.kind === "replan_suggestion"
-      ? "replan"
-      : run.hold_expires_at === null
-        ? "no_hold"
-        : selected && selected.status !== "proposed"
-          ? "not_proposed"
-          : null;
+  const selected = plans.find((p) => p.rank === selectedRank) ?? plans[0] ?? null;
 
   if (run.result === "infeasible" || plans.length === 0) {
     const gate = run.failed_check ? `Failed gate: ${gateLabel(run.failed_check)}.` : "";
     const earliest = run.earliest_feasible_date ? ` Earliest feasible date ${run.earliest_feasible_date}.` : "";
-    return (
-      <>
-        <EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />
-        <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />
-        {canPlanAgain && (
-          <div className="flex flex-wrap items-center gap-3">
-            <HoldActions run={run} expired={false} planAgainOnly />
-          </div>
-        )}
-      </>
-    );
+    return <><EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />{run.kind !== "replan_suggestion" && <HoldActions run={run} expired />}</>;
   }
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        {freshnessSettled && <DataFreshness asOf={freshness.asOf} nextSyncAt={freshness.nextSyncAt} stale={freshness.stale} />}
+        <DataFreshness stale />
         {run.hold_expires_at && (
           <HoldCountdown
             expiresAt={run.hold_expires_at}
@@ -144,7 +108,7 @@ function RunBody({ run, showDriver, freshness, freshnessSettled, canPlanAgain, o
                 <button
                   type="button"
                   aria-pressed={isSelected}
-                  disabled={approved}
+                  disabled={submitted}
                   onClick={() => setSelectedRank(plan.rank)}
                   className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
                 >
@@ -158,7 +122,7 @@ function RunBody({ run, showDriver, freshness, freshnessSettled, canPlanAgain, o
 
       <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />
 
-      <ApprovalFlow run={run} plan={selected} showDriver={showDriver} expired={expired} blockReason={blockReason} onApproved={() => setApproved(true)} />
+      <ApprovalFlow key={selected?.id ?? "none"} run={run} plan={selected} showDriver={showDriver} expired={expired} onSubmitted={() => setSubmitted(true)} />
     </>
   );
 }

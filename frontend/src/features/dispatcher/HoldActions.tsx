@@ -32,10 +32,9 @@ function extendErrorMessage(error: unknown): string {
 export interface HoldActionsProps {
   run: PlanningRun;
   expired: boolean;
-  planAgainOnly?: boolean; // chỉ hiện nút Plan Again, không hiện nút gia hạn
 }
 
-export function HoldActions({ run, expired, planAgainOnly = false }: HoldActionsProps) {
+export function HoldActions({ run, expired }: HoldActionsProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
@@ -52,7 +51,7 @@ export function HoldActions({ run, expired, planAgainOnly = false }: HoldActions
   });
 
   const left = Math.max(0, MAX_HOLD_EXTENSIONS - run.hold_extensions);
-  const canExtend = !expired && left > 0 && !extension.isPending;
+  const canExtend = Boolean(run.hold_expires_at) && run.kind !== "replan_suggestion" && !expired && left > 0 && !extension.isPending;
 
   async function handlePlanAgain(result: ReasonResult) {
     // Lỗi (409/422…) được ném lại để ReasonModal hiện trong modal và giữ modal mở.
@@ -65,22 +64,20 @@ export function HoldActions({ run, expired, planAgainOnly = false }: HoldActions
 
   return (
     <>
-      {!planAgainOnly && (
-        <button
-          type="button"
-          onClick={() => extension.mutate()}
-          disabled={!canExtend}
-          className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
-        >
-          {extension.isPending ? "Extending…" : "Extend hold +15 min"}
-          {!expired && <span className="ml-2 font-mono text-caption text-inkMuted">{left > 0 ? `${left} left` : "No extensions left"}</span>}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => extension.mutate()}
+        disabled={!canExtend}
+        className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
+      >
+        {extension.isPending ? "Extending…" : "Extend hold +15 min"}
+        {!expired && <span className="ml-2 font-mono text-caption text-inkMuted">{left > 0 ? `${left} left` : "No extensions left"}</span>}
+      </button>
       <button
         type="button"
         onClick={() => setModalOpen(true)}
         className={
-          expired || planAgainOnly
+          expired
             ? "rounded-control bg-apricot px-3 py-1.5 text-body font-semibold text-deepPine"
             : "rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink"
         }

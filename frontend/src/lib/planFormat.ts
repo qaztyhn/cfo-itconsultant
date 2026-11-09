@@ -105,8 +105,7 @@ export function describeCommit(plan: Plan, showDriver: boolean): string {
   const vehicles = plan.vehicles
     .map((v) => {
       const driver = showDriver && v.driver_employee_id != null ? `, driver #${v.driver_employee_id}` : "";
-      const code = v.vehicle?.code ?? (v.vehicle_id != null ? `#${v.vehicle_id}` : "vehicle");
-      return `${code} (${formatKg(v.load_kg)}${driver})`;
+      return `${v.vehicle?.code ?? `vehicle ${v.seq}`} (${formatKg(v.load_kg)}${driver})`;
     })
     .join("; ");
   const prep = toNumber(plan.prep_hours) !== null ? ` Preparation ${toNumber(plan.prep_hours)} h.` : "";

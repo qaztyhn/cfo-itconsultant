@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     source_se_api_key: str = ""
     internal_tick_key: str = ""
     app_env: str = "local"
+    # Production opt-in ONLY after Dev 2 verifies ingress/APM/access-log redaction,
+    # browser URL exposure and an effective distributed abuse-control policy (#181).
+    cs_phone_search_production_enabled: bool = False
     app_now: str | None = None  # ví dụ "2026-11-04T10:05:00+01:00" (08 mục 1.6)
     cors_origins: list[str] = ["http://localhost:5173"]
 
