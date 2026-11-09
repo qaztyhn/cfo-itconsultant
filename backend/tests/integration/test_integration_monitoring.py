@@ -33,6 +33,8 @@ def monitoring(api: Api) -> Api:
         "VALUES (3,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
         "INSERT INTO ref.market (code,name,timezone,currency) "
         "VALUES ('ZZ','Second synthetic market','UTC','EUR')",
+        "INSERT INTO ref.market (code,name,timezone,currency) "
+        "VALUES ('YY','Third synthetic market','UTC','EUR')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
         "VALUES (2,'other.integration@test.invalid','synthetic-not-usable','{sales}')",
         "INSERT INTO stg.sync_run "
@@ -96,7 +98,7 @@ def test_US_ADM_01_AC1_rejects_are_redacted_and_paginated(monitoring: Api) -> No
 
 
 def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> None:
-    result = monitoring.get("/integration/overview", 2, market="SE")
+    result = monitoring.get("/integration/overview", 2, market="ZZ")
     assert result.status_code == 200, result.text
     data = result.json()
     assert data["scheduler"]["runtime_health"] == "unverified"
