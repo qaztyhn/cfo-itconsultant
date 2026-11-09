@@ -60,7 +60,7 @@ export function CapacityCard({ capacity, timeZone, className }: CapacityCardProp
           </div>
 
           <ul className="mt-4 flex flex-col gap-3">
-            {capacity.shifts.map((shift) => (
+            {shifts.map((shift) => (
               <li key={shift.name} className="flex flex-col gap-0.5">
                 <p className="text-body font-semibold text-ink">
                   {shift.name} <span className="font-mono font-normal text-inkMuted">{shift.start}–{shift.end}</span>
