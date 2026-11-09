@@ -144,15 +144,15 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
 async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: datetime) -> None:
     for spec in data["inbound"]:
         key = (spec["inbound_ref"], spec["warehouse_code"], spec["sku"])
-        existing = await session.get(Inbound, key)
+        inbound_existing = await session.get(Inbound, key)
         values = {
             "qty": Decimal(str(spec["qty"])),
             "eta_date": date.fromisoformat(str(spec["eta_date"])),
             "confirmed": bool(spec["confirmed"]),
             "received": bool(spec["received"]),
         }
-        if existing is not None:
-            if any(getattr(existing, k) != v for k, v in values.items()):
+        if inbound_existing is not None:
+            if any(getattr(inbound_existing, k) != v for k, v in values.items()):
                 raise ValueError("Conflicting inbound shipment; refusing source overwrite")
             continue
         session.add(
@@ -171,9 +171,9 @@ async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: d
         if start.tzinfo is None or end.tzinfo is None or start >= end:
             raise ValueError("Invalid demo fleet time range")
         key = (spec["vehicle_code"], start, end)
-        existing = await session.get(VehicleCalendar, key)
-        if existing is not None:
-            if existing.kind != spec["kind"]:
+        fleet_existing = await session.get(VehicleCalendar, key)
+        if fleet_existing is not None:
+            if fleet_existing.kind != spec["kind"]:
                 raise ValueError("Conflicting fleet calendar; refusing overwrite")
             continue
         session.add(
