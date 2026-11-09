@@ -381,3 +381,16 @@ Reference: [27 approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_202
 ### 13.2 WMS reservation acknowledgment and updated CFO inventory — business flow approved 09/11/2026
 
 [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md): When an authorized Sales/Dispatcher confirms a feasible plan, do not show it as stock-guaranteed until an authoritative WMS reservation ACK has been persisted. UI must distinguish **temporary CFO hold → requesting WMS reservation → WMS confirmed / WMS rejected / WMS uncertain**; on WMS confirmation show the updated CFO stock state based on an **immediate** WMS read/refresh, with source freshness. WMS reserves reduce availability, not physical on_hand; never display double-subtracted stock. If WMS is unavailable or a response is uncertain, show a retry/status-check explanation, not a fabricated successful approval. Actual WMS integration endpoint and app flow require Dev 1/2/3 contracts and E2E tests before enabling.
+
+
+### Owner-approved integration UI clarifications — Q2–Q10, 2026-11-09
+
+[Decision record](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) supersedes earlier UI assumptions where conflicting:
+
+- **Transfer:** CFO may show a transfer suggestion/request, but must never display `confirmed outbound/inbound in WMS` solely because a CFO-side control was clicked. WMS is authoritative for physical movements; #127 must be reconciled.
+- **Date negotiation:** after verified customer agreement, an authorized Dispatcher explicitly selects **Apply agreed date**, sees refreshed safety/stock evidence and new planning run; saving `agreed` alone must not auto-update the delivery promise or approve the new plan.
+- **GPS historical:** a closed-trip GPS view is not available to regular Dispatchers. Only case-authorized privacy/compliance reviewers with reason and access audit (and legal/privacy approval for real employees) may view restricted history within the approved seven-day retention window.
+- **M6:** before START_PREP the actual `prep_window.start` is `null` and UI shows not started, never displays planned as actual.
+- **KPI:** default 30-day date range, max 366 days; System Admin selects market before cross-market views; unimplemented diagnostics are `null`/unavailable, not 0.
+- **CS:** `GET /orders?q=` phone search must not persist raw phone to navigation/telemetry; `Referrer-Policy: no-referrer` and server-side log redaction are required, but GET URL/browser history remains a documented privacy risk. Contact response still masked by backend under DEC-CS-PRIVACY.
+- **Staging demos:** fake WMS ACK and other synthetic responses must show `simulated` clearly and never promise physical reservation; no live email, GPS employee tracking or scheduled production jobs.
