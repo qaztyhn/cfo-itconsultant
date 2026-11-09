@@ -69,12 +69,12 @@ def test_US_ADM_01_AC1_pagination_status_filter_latest_success(monitoring: Api) 
     assert body["items"][1]["complete_success"] is False
     assert body["items"][0]["error_code"] is None
     assert "private" not in result.text.lower()
-    second = monitoring.get("/sync-runs", 2, market="ZZ", page=2, page_size=2)
+    second = monitoring.get("/sync-runs", 2, market="SE", page=2, page_size=2)
     assert [row["status"] for row in second.json()["items"]] == ["ok"]
-    partial = monitoring.get("/sync-runs", 2, market="ZZ", status="partial")
+    partial = monitoring.get("/sync-runs", 2, market="SE", status="partial")
     assert partial.json()["total"] == 1
     assert partial.json()["items"][0]["rows_rejected"] == 1
-    overview = monitoring.get("/integration/overview", 2, market="ZZ")
+    overview = monitoring.get("/integration/overview", 2, market="SE")
     assert overview.status_code == 200, overview.text
     feed = next(item for item in overview.json()["sources"] if item["entity"] == "orders")
     assert feed["status"] == "failed"
@@ -83,19 +83,19 @@ def test_US_ADM_01_AC1_pagination_status_filter_latest_success(monitoring: Api) 
 
 
 def test_US_ADM_01_AC1_rejects_are_redacted_and_paginated(monitoring: Api) -> None:
-    first = monitoring.get("/sync-runs/2/rejects", 2, market="ZZ", page_size=1)
+    first = monitoring.get("/sync-runs/2/rejects", 2, market="SE", page_size=1)
     assert first.status_code == 200, first.text
     result = first.json()
     assert result["total"] == 2
     assert result["items"] == [{"id": 1, "reason_code": "BAD_DATE"}]
     assert "private" not in first.text.lower()
-    second = monitoring.get("/sync-runs/2/rejects", 2, market="ZZ", page=2, page_size=1)
+    second = monitoring.get("/sync-runs/2/rejects", 2, market="SE", page=2, page_size=1)
     assert second.json()["items"] == [{"id": 2, "reason_code": "UNVERIFIED"}]
     assert "token" not in second.text.lower()
 
 
 def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> None:
-    result = monitoring.get("/integration/overview", 2, market="ZZ")
+    result = monitoring.get("/integration/overview", 2, market="SE")
     assert result.status_code == 200, result.text
     data = result.json()
     assert data["scheduler"]["runtime_health"] == "unverified"
@@ -125,7 +125,7 @@ def test_US_ADM_01_AC1_market_scope_cannot_be_bypassed(monitoring: Api) -> None:
     assert result.json()["total"] == 3
     assert all(row["market_id"] == 1 for row in result.json()["items"])
     assert_error(
-        monitoring.get("/sync-runs/4/rejects", 2, market="ZZ"),
+        monitoring.get("/sync-runs/4/rejects", 2, market="SE"),
         404,
         "NOT_FOUND",
     )
@@ -158,7 +158,7 @@ def test_US_INT_01_AC4_empty_and_failed_only_runs(monitoring: Api) -> None:
         "page": 1,
         "page_size": 50,
     }
-    failed = monitoring.get("/sync-runs", 2, market="ZZ", status="failed")
+    failed = monitoring.get("/sync-runs", 2, market="SE", status="failed")
     assert failed.json()["items"][0]["complete_success"] is False
     overview = monitoring.get("/integration/overview", 2, market="YY")
     empty_feed = next(item for item in overview.json()["sources"] if item["entity"] == "customers")
@@ -181,7 +181,7 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
                     result = await monitor.list_runs(
                         session,
                         user,
-                        market="ZZ",
+                        market="SE",
                         entity="orders",
                         status=None,
                         page=1,
@@ -206,7 +206,7 @@ def test_US_ADM_01_AC1_concurrent_read_and_persisted_insert(
                 result = await monitor.list_runs(
                     session,
                     user,
-                    market="ZZ",
+                    market="SE",
                     entity="orders",
                     status=None,
                     page=1,
