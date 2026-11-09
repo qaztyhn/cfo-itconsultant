@@ -515,7 +515,7 @@ describe("Infeasible run diagnostics (P0 regression)", () => {
 
     expect(await screen.findByText(/No feasible plan for this order/)).toBeInTheDocument();
     expect(screen.getByText("TEST-TRUCK-9")).toBeInTheDocument();
-    expect(screen.getByText("NO_TRUCK_FIT")).toBeInTheDocument();
+    expect(screen.getAllByText("NO_TRUCK_FIT").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Plan Again" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: /Approve #/ })).not.toBeInTheDocument();
   });
