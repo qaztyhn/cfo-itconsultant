@@ -7,6 +7,7 @@ on:
     paths:
       - "tools/demo*"
       - "tools/tests/test_demo_smoke.py"
+      - "tools/tests/test_demo_db_verify.py"
       - "backend/app/demo_*.py"
       - "docs/DEMO_SETUP.md"
       - "docs/DEMO_TEST_RESULTS.md"
@@ -23,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Guarded smoke controls (stdlib, no network)
-        run: python -m unittest discover -s tools/tests -p test_demo_smoke.py -v
+        run: python -m unittest discover -s tools/tests -p 'test_demo*.py' -v
       - name: Docker Compose real Source/CFO/frontend synthetic preflight
         run: python tools/demo_ci.py
       - name: Upload non-PII smoke status ledger
@@ -34,5 +35,6 @@ jobs:
           path: |
             demo-ci-read-results.json
             demo-ci-sync-results.json
+            demo-ci-db-results.json
           if-no-files-found: ignore
           retention-days: 7

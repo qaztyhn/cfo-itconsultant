@@ -82,6 +82,24 @@ def check_report(path: Path, *, mutating: bool) -> bool:
     )) and checks.get("planning_run") in ("PASS", "BLOCKED")
 
 
+def check_db_report(sync_path: Path, db_path: Path) -> bool:
+    """A blocked preflight remains blocked; a routed order MUST have DB proof."""
+    try:
+        sync = json.loads(sync_path.read_text(encoding="utf-8"))
+        proof = json.loads(db_path.read_text(encoding="utf-8"))
+        if sync.get("schema") != "demo-smoke-v1" or proof.get("schema") != "demo-db-proof-v1":
+            return False
+        statuses = {item["check"]: item["status"] for item in sync["checks"]}
+        db_statuses = {item["check"]: item["status"] for item in proof["checks"]}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+    if statuses.get("sales_sync_write") == "BLOCKED":
+        return db_statuses.get("postgres_once") == "BLOCKED" and db_statuses.get("postgres_legacy_negative") == "NOT VERIFIED"
+    if statuses.get("sales_sync_write") == "PASS":
+        return all(db_statuses.get(key) == "PASS" for key in ("postgres_once", "postgres_legacy_negative"))
+    return False
+
+
 def cli() -> int:
     if not shutil_which("docker") or not shutil_which("bash"):
         print("BLOCKED: this harness requires Docker Compose and bash.")
@@ -135,7 +153,18 @@ def cli() -> int:
         if not check_report(sync_report, mutating=True):
             print("FAIL: Source->CFO smoke has an unexpected error, do not report E2E PASS.")
             return 1
+        db_report = ROOT / "demo-ci-db-results.json"
+        db_rc = call([
+            sys.executable, "tools/demo_db_verify.py",
+            "--source-url", f"http://127.0.0.1:{env['SOURCE_PORT']}/api/v1",
+            "--sync-report", str(sync_report),
+            "--report", str(db_report),
+        ])
+        if db_rc not in (0, 2) or not check_db_report(sync_report, db_report):
+            print("FAIL: Source->CFO PostgreSQL exact-once/legacy evidence failed or was bypassed.")
+            return 1
         print("PASS: disposable Source/CFO/frontend preflight and negative authentication checks.")
+        print("DATABASE RESULT: see demo-ci-db-results.json; blocked routing is NOT verified uniqueness.")
         print("INTEGRATION RESULT: see safe demo-ci-sync-results.json; BLOCKED != E2E PASS.")
         return 0
     finally:

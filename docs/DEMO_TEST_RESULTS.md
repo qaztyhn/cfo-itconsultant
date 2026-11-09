@@ -34,6 +34,62 @@ Every status below refers to a specific surface and evidence type:
 | Driver dispatch/POD, GPS, customer notification | NOT VERIFIED / DISABLED | Beyond this smoke's safe scope; no real GPS, live customer messaging or WMS production write. | Dev 1 / Dev 3 / privacy |
 | Disposable environment reset | **PASS (isolated CI Compose project only)** | [Run #42605883212](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42605883212) logs show all `cfo-demo-ci-*` containers removed, named `pgdata` volume removed, and no unrelated project targeted. Reproduction on a different developer workstation remains NOT VERIFIED. | Dev 2 |
 
+## Incremental evidence contract — database proof slice (2026-11-09)
+
+**Code added, new exact-head Compose run not yet verified at the time of this
+change.** `tools/demo_db_verify.py` reads the real Source versions and CFO
+PostgreSQL rows *after* an actually accepted Sales Sync & Check event, with
+no extra database writes. Its two independently reported results are:
+
+- `postgres_once`: exactly one CFO order and one `cfo` routing decision
+  matching Source version for Swedish store candidate `SE-2026-000149`.
+- `postgres_legacy_negative`: zero CFO orders and exactly one `legacy`
+  routing decision matching source version for unmapped `SE-2026-000156`.
+
+If the mutating Source/CFO HTTP smoke reports `sales_sync_write=BLOCKED`,
+the tool does **not** query an imagined CFO order: it emits `BLOCKED` and
+`NOT VERIFIED`. A source-version mismatch, duplicate row, missing routing,
+malformed prior smoke report or inaccessible PostgreSQL is **FAIL**. The
+preflight CI enforces the proof whenever the HTTP route actually succeeds,
+and uploads a separate non-PII JSON report.
+
+**Current ownership and prerequisites:** Dev 1 Source-order acceptance is
+in [PR #202](https://github.com/qaztyhn/cfo-itconsultant/pull/202);
+Dev 2 HTTP adapter is in stacked
+[PR #204](https://github.com/qaztyhn/cfo-itconsultant/pull/204).
+Neither was merged into `main` when this slice was authored.
+Do not upgrade Source→CFO sync, database uniqueness, actual five-gate plan,
+standard-plan approval or full E2E to PASS based on this code or the older
+preflight. Regulatory D7 data remain unverified and WMS reservation ACK
+remains a separate Dev 1/2 prerequisite. No production scheduling,
+real GPS, notification sending or physical WMS write is enabled.
+
+## Executed database-proof preflight — PR #205 (2026-11-09)
+
+- Commit `806eb75d554e182c854b964dedaae2048063db81`:
+  [real Compose demo-preflight #42612481389](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42612481389)
+  **PASS**. The workflow ran **20 demo control tests** successfully, booted
+  disposable PostgreSQL 16, Source, CFO and frontend; reran authenticated
+  Source and four-role CFO real HTTP probes; removed its dedicated
+  `cfo-demo-ci-*` volume on completion.
+- The Source acceptance route was still **absent on this `main` snapshot**:
+  `sales_sync_write=BLOCKED`, `planning_approval=BLOCKED`. The new database
+  verifier explicitly returned `postgres_once=BLOCKED` and
+  `postgres_legacy_negative=NOT VERIFIED`; it **did not** claim a
+  successfully inserted CFO order. No approved delivery or regulatory
+  qualification was created.
+- The isolated run's `demo-preflight-status` artifact includes
+  `demo-ci-read-results.json`, `demo-ci-sync-results.json` and the
+  additional `demo-ci-db-results.json`. Previous preflight
+  [#42612389822](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42612389822)
+  also passed with the same accurate blocked classifications.
+- Dev 2's exact-once database proof is implemented and executed in the
+  **blocked branch**; its success branch (real Source accepted, one CFO
+  order, one routing decision, matching versions) remains **NOT VERIFIED
+  E2E** until Dev 1 #202 and stacked Dev 2 #204 are integrated and this
+  workflow reruns. PR #203's Source exact lookup has since merged; that
+  does **not** itself activate Sync & Check.
+
 ## Executed disposable CI evidence — 2026-11-09
 
 - Commit: `c2171fa6a1daafe4212ba243ae652294fd48a934`
