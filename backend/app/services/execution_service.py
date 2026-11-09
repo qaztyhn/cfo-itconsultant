@@ -677,43 +677,7 @@ async def driver_trips(
 async def prep_queue(
     session: AsyncSession, warehouse_id: int, day: date | None, actor: object
 ) -> dict[str, object]:
-    """Market and manager scoped warehouse queue; never guesses staffing or attendance."""
-    market = await _market(session, actor)
-    await _warehouse(session, actor, warehouse_id, market)
-    day = day or clock.now().astimezone(ZoneInfo(market.timezone)).date()
-    stmt = (
-        select(CustomerOrder, FulfilmentPlan)
-        .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
-        .where(
-            FulfilmentPlan.warehouse_id == warehouse_id,
-            FulfilmentPlan.target_date == day,
-            CustomerOrder.market_id == market.id,
-            CustomerOrder.status.in_(("APPROVED", "PREPARING", "GOODS_READY", "LOADED")),
-        )
-        .order_by(CustomerOrder.submitted_at, CustomerOrder.id)
-    )
-    items: list[dict[str, object]] = []
-    for order, plan in (await session.execute(stmt)).all():
-        milestones = (
-            await session.scalars(
-                select(MilestoneEvent)
-                .where(MilestoneEvent.order_id == order.id)
-                .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id)
-            )
-        ).all()
-        items.append(
-            {
-                "order_id": order.id,
-                "order_no": order.order_no,
-                "status": order.status,
-                "planned_prep_hours": str(plan.prep_hours),
-                "workload": plan.workload,
-                "goods_ready_planned_at": plan.goods_ready_at.isoformat(),
-                "events": [
-                    {"event_type": m.event_type, "occurred_at": m.occurred_at.isoformat()}
-                    for m in milestones
-                    if m.event_type in WAREHOUSE_EVENTS
-                ],
-            }
-        )
-    return {"warehouse_id": warehouse_id, "date": day.isoformat(), "items": items}
+    """Compatibility wrapper: the single implementation lives in `prep_queue_service` (06 Appendix A.1)."""
+    from app.services import prep_queue_service
+
+    return await prep_queue_service.build(session, actor, warehouse_id, day)

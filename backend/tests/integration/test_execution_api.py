@@ -214,11 +214,12 @@ def test_US_WH_04_AC2_AC5_RBAC_and_timestamp_guards(execution_api: Api) -> None:
 def test_US_WH_04_AC1_prep_queue_scoped(execution_api: Api) -> None:
     response = execution_api.get("/warehouses/1/prep-queue", WAREHOUSE, date="2026-11-10")
     assert response.status_code == 200, response.text
-    assert response.json()["items"][0]["order_no"] == "SE-M6"
+    assert response.json()["orders"][0]["order_no"] == "SE-M6"
     assert "contact_name" not in response.text
     assert_error(execution_api.get("/warehouses/3/prep-queue", WAREHOUSE), 404, "NOT_FOUND")
     assert_error(execution_api.get("/warehouses/1/prep-queue", DRIVER), 403, "FORBIDDEN")
-    assert_error(execution_api.get("/prep-queue", WAREHOUSE, warehouse_id=1), 409, "PLAN_NOT_APPROVABLE")
+    legacy = execution_api.get("/prep-queue", WAREHOUSE, warehouse_id=1, date="2026-11-10")
+    assert legacy.status_code == 200 and legacy.json() == response.json()  # alias, same contract
 
 
 def test_US_EXE_02_AC4_outside_shift_and_incomplete_history_denied(

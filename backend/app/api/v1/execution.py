@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Header, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
 from app.domain.enums import EventType
 from app.services import execution_service
@@ -61,13 +60,8 @@ async def prep_queue_v2(
     warehouse_id: Annotated[int, Query(gt=0)],
     date_value: RequestedDate = None,
 ) -> dict[str, object]:
-    # Appendix A requires official shift capacity and per-vehicle loading.
-    # A reduced queue must not be presented as a complete verified capacity.
-    await execution_service.prep_queue(db, warehouse_id, date_value, user)
-    raise DomainError(
-        "PLAN_NOT_APPROVABLE",
-        "Verified per-shift capacity and loading adapter is not yet integrated.",
-    )
+    """Legacy alias (06 A.1): same service and same response as `/warehouses/{id}/prep-queue`."""
+    return await execution_service.prep_queue(db, warehouse_id, date_value, user)
 
 
 @router.get("/driver/trips")

@@ -13,7 +13,7 @@ Owner: Dev 1 (A) — M1.
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal, Protocol
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +63,10 @@ async def resolve_hr_scope(session: AsyncSession, user: HrReader) -> HrReadScope
         ).scalar_one_or_none()
     if market is None and role != "admin":
         raise _forbidden()
-    tz = ZoneInfo(market.timezone) if market is not None else ZoneInfo("UTC")
+    try:
+        tz = ZoneInfo(market.timezone) if market is not None else ZoneInfo("UTC")
+    except (ValueError, OSError, ZoneInfoNotFoundError):
+        raise DomainError("INTERNAL_ERROR", "Market time zone configuration is invalid.") from None
     return HrReadScope(
         role=role,
         market_id=market.id if market is not None else None,
