@@ -69,7 +69,7 @@ function MappingEditor({ task, onFinished }: { task: MappingTask; onFinished: (m
   const busy = confirm.isPending || reject.isPending;
   const candidate = task.candidates.find(c => c.global_product_id === chosen);
   const newErrors = mode === "new" ? validateGlobal(newGlobal) : [];
-  const targetId = mode === "suggested" ? chosen : Number(otherId);
+  const targetId = mode === "suggested" ? (chosen ?? 0) : Number(otherId);
   const validTarget = Number.isSafeInteger(targetId) && targetId > 0;
   const validConfirm = validPositiveDecimal(units) && acknowledge &&
     (mode === "new" ? newErrors.length === 0 : validTarget);
