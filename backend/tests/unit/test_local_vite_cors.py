@@ -38,7 +38,9 @@ def test_US_INT_06_AC1_local_vite_fallback_preflight(monkeypatch, origin: str) -
 
 
 @pytest.mark.parametrize("environment", ["demo", "staging", "production"])
-def test_US_INT_06_AC1_no_local_5174_cors_expansion_outside_local(monkeypatch, environment: str) -> None:
+def test_US_INT_06_AC1_no_local_5174_cors_expansion_outside_local(
+    monkeypatch, environment: str
+) -> None:
     settings = Settings(
         app_env=environment,
         cors_origins=["https://cfo.example.test"],
