@@ -205,22 +205,22 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
         complete = successful.get(entity)
         supported = entity in SUPPORTED
         sources[entity] = {
-                "entity": entity,
-                "availability": "supported" if supported else "unconfigured",
-                "status": ((current.status if current else "never_run") if supported else "unconfigured"),
-                "rows": current.rows_in if current else None,
-                "rows_ok": current.rows_ok if current else None,
-                "rejected": current.rows_rejected if current else None,
-                "unmapped": int(unmapped or 0) if entity == "products" else None,
-                "last_run_at": _time(current.started_at) if current else None,
-                "last_run_status": current.status if current else None,
-                "last_successful_run_id": complete.id if complete else None,
-                "last_successful_at": _time(complete.finished_at) if complete else None,
-                "data_as_of": _time(current.data_as_of) if current else None,
-                "checkpoint": checkpoint_by_entity.get(entity),
-                "interval_min": config.sync.interval_min if supported else None,
-                "stock_scope": "unconfigured" if entity == "stock" else None,
-            }
+            "entity": entity,
+            "availability": "supported" if supported else "unconfigured",
+            "status": ((current.status if current else "never_run") if supported else "unconfigured"),
+            "rows": current.rows_in if current else None,
+            "rows_ok": current.rows_ok if current else None,
+            "rejected": current.rows_rejected if current else None,
+            "unmapped": int(unmapped or 0) if entity == "products" else None,
+            "last_run_at": _time(current.started_at) if current else None,
+            "last_run_status": current.status if current else None,
+            "last_successful_run_id": complete.id if complete else None,
+            "last_successful_at": _time(complete.finished_at) if complete else None,
+            "data_as_of": _time(current.data_as_of) if current else None,
+            "checkpoint": checkpoint_by_entity.get(entity),
+            "interval_min": config.sync.interval_min if supported else None,
+            "stock_scope": "unconfigured" if entity == "stock" else None,
+        }
     return {
         "market": market.code,
         "market_id": market.id,
