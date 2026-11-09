@@ -400,13 +400,14 @@ async def get_order(session: AsyncSession, scope: OrderScope, order_id: int) -> 
         return {
             "id": order.id,
             "order_no": order.order_no,
+            "external_ref": order.external_ref,
             "status": order.status,
             "market": market_code.strip(),
             "customer": {"name": customer.name},
             "contact": {
                 "name": order.contact_name,
-                "phone": _mask_phone(order.contact_phone),
-                "email": _mask_email(order.contact_email),
+                "phone_masked": _mask_phone(order.contact_phone),
+                "email_masked": _mask_email(order.contact_email),
             },
             "delivery": {"address": order.delivery_address},
             "date_request": {
@@ -425,7 +426,13 @@ async def get_order(session: AsyncSession, scope: OrderScope, order_id: int) -> 
                 "promise_end": order.promise_end,
             },
             "risk": (
-                None if risk is None else {"status": risk.risk_status, "forecast_eta": risk.forecast_eta}
+                None
+                if risk is None
+                else {
+                    "status": risk.risk_status,
+                    "color": risk.risk_color,
+                    "forecast_eta": risk.forecast_eta,
+                }
             ),
             "version": order.version,
             "submitted_at": order.submitted_at,
