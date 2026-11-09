@@ -114,9 +114,16 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
         stock["stock_scope"],
     ) == ("unconfigured", "unconfigured", "unconfigured")
     products = next(item for item in data["sources"] if item["entity"] == "products")
-    assert products["unmapped"] == 1
+    assert products["unmapped"] == 0  # ZZ has no local product catalog.
     assert products["rejected"] is None
     assert products["status"] == "never_run"
+    se_result = monitoring.get("/integration/overview", 2, market="SE")
+    assert se_result.status_code == 200, se_result.text
+    se_products = next(
+        item for item in se_result.json()["sources"] if item["entity"] == "products"
+    )
+    assert se_products["unmapped"] == 1  # Synthetic pending SKU in ref.product_se.
+    assert se_products["rejected"] is None
 
 
 def test_US_ADM_01_AC1_market_scope_cannot_be_bypassed(monitoring: Api) -> None:
