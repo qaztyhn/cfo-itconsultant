@@ -130,6 +130,12 @@
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
 
+**Stock Admin bootstrap & WMS transfer reconciliation — acceptance supplement (09/11/2026):**
+- AC-BOOT-01. Chỉ **System Admin được Owner ủy quyền** mới bootstrap grant Stock Admin đầu tiên cho market; không tự cấp cho chính mình, không seed quyền mặc định; audit người cấp/nhận, market, quyền, hiệu lực, lý do và before/after.
+- AC-WMS-01. Giả định WMS cũ ghi nhận **xuất và nhập chuyển kho**; adapter phải chứng minh dữ liệu đó thật sự đọc được, không tự giả mã giao dịch/ACK. CFO không ghi ngược WMS.
+- AC-WMS-02. WMS đối soát đúng source/destination/transfer/SKU/qty và batch/version hoặc bằng chứng thủ công do Warehouse Manager nộp, **người phê duyệt có quyền độc lập** chấp nhận với audit. Không tự suy snapshot.as_of hoặc lượng tồn tăng/giảm.
+- AC-WMS-03. Khi chưa chứng minh WMS đã phản ánh outbound/inbound, không tính lặp phần điều chỉnh nguồn/đích, không đánh dấu hàng sẵn có nhờ inbound CFO chưa xác minh; chặn quyết định ATP liên quan nếu chứng cứ thiếu. Replay idempotent; xung đột/partial/503 ⇒ fail closed.
+
 **US-ATP-03 — Quản lý kho nguồn xác nhận chuyển kho** · Là *quản lý kho nguồn*, tôi xác nhận có thể xuất. · BR-EMP-03
 - AC1. *Given* tôi là quản lý có `can_approve` của kho nguồn, *When* `confirm-source`, *Then* tạo `inbound_shipment(source=transfer, confirmed=true, eta_date=…)` và đơn có thể chạy lại kế hoạch.
 - AC2. *Given* tôi là quản lý kho khác, *Then* `403`.
