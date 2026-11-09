@@ -32,7 +32,7 @@ function StatusError({ error, retry }: { error: unknown; retry?: () => void }) {
   return <section aria-label="Sync error" className="space-y-2">
     <ErrorState title={label} error={safeError} onRetry={status === 403 || status === 404 ? undefined : retry} />
     {(status === 409 || status === 503) && <p className="text-caption">{status === 503 ?
-      "Nothing has been routed by this failed response. Retry only after the source is available." :
+      "No routing result was verified. The server may have recorded a decision; retry the same operation before proceeding." :
       "The server may have recorded a decision. Retry the same operation; do not start manual fulfilment without resolving the routing status."}</p>}
   </section>;
 }
@@ -73,7 +73,10 @@ export function SalesSyncCheck() {
     },
   });
   const planning = useMutation({ mutationFn: requestDefaultPlan,
-    onSuccess: result => { setRun(result); setApproved(false); confirmKeys.current.clear(); },
+    onSuccess: result => {
+      if (result.order_id !== decision?.order_id || result.kind !== "initial") { setRun(null); return; }
+      setRun(result); setApproved(false); confirmKeys.current.clear();
+    },
   });
   const confirm = useMutation({ mutationFn: ({ id, key }: { id: number; key: string }) => confirmStandardPlan(id, key),
     onSuccess: (result, variables) => {
@@ -120,7 +123,12 @@ export function SalesSyncCheck() {
       <h2 className="text-h2 font-semibold">01 · Find a submitted POS order</h2>
       <label className="block space-y-2">External POS order reference
         <input className={input} aria-label="External POS order reference" value={reference}
-          onChange={e => setReference(e.target.value)} autoComplete="off"
+          onChange={e => {
+            setReference(e.target.value);
+            if (e.target.value.trim() !== activeRef) {
+              setDecision(null); setRun(null); setApproved(false); setActiveRef("");
+            }
+          }} autoComplete="off"
           maxLength={100} placeholder="Enter the reference from POS" required />
       </label>
       {reference.trim() && !ref && <p role="alert" className="text-caption">Enter a valid order reference using letters, digits, dots, underscores, slashes or hyphens.</p>}
