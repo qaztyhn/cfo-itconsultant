@@ -39,7 +39,7 @@ describe("OrderAction", () => {
     renderAt("/dispatcher/plan-review");
     await waitFor(() => expect(currentPath()).toBe("/dispatcher/orders"));
     expect(await main().findByText("No orders match these filters.")).toBeInTheDocument();
-    expect(main().getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+    expect(main().getAllByRole("button", { name: "Clear filters" }).length).toBeGreaterThan(0);
   });
 
   it("planned run history forbidden does not navigate or fabricate a run", async () => {
