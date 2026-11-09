@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [S1–S5 — persistence scope/evidence tồn kho (đề xuất kỹ thuật, Draft)] — 2026-11-09 — Dev 1, cần Dev 2 review
+
+- Migration `0013` + docs/05 §6.1: `ref.stock_admin_grant`, `ops.stock_scope_version`, `ops.stock_independence_evidence`, `ops.stock_write_run` (64 bảng). Scope bất biến sau duyệt (trigger), tác giả ≠ người duyệt (CHECK), evidence tối đa 30 ngày (CHECK), lịch sử chỉ thêm, `stock_write_run` chỉ thêm và duy nhất theo `(market, source_batch_id)`.
+- `app/services/stock_scope_service.py`: grant Admin theo market (S1), tác giả≠người duyệt/người nộp≠người duyệt (S2), scope hiệu lực theo `as_of` của batch Source, không hồi tố (S3), `require_expected_coverage` (hàng thiếu = unknown, từ chối cả lần ghi; số 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua) (S4), evidence tự vô hiệu khi ánh xạ/đơn vị/quy đổi/scope đổi (fingerprint tính lại mỗi lần dùng + hook `invalidate_evidence_for_skus`) (S5). Audit trong cùng transaction.
+- **Chưa làm**: route Admin API, nối vào `mapping_service`/writer T07 (Dev 2), grant đầu tiên là bước runbook. Writer tồn kho production **vẫn tắt**. Tên bảng/cột là đề xuất chờ review (docs/05 §6.1).
+
 ## [M6-1 — POD thành công duy nhất theo `trip_stop` + M7 session-aware] — 2026-11-09 — Dev 1 (#129)
 
 - Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
