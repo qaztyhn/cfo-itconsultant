@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T07 stock writer × S1–S5 (#121 + #148), vẫn tắt trong scheduler] — 2026-11-09 — Dev 2
+
+- `ingest_stock.apply` ghi tồn CFO chỉ khi: có scope đã duyệt hiệu lực tại `as_of` của batch Source (không hồi tố), đủ mọi hàng kho × SKU kỳ vọng (thiếu = unknown ⇒ từ chối cả batch; 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua), `normalize_stock` chấp nhận (ánh xạ đã xác nhận, đơn vị/quy đổi, độc lập có evidence còn hiệu lực). Ghi `ops.stock_write_run` (scope/evidence version); replay cùng batch id là no-op; lỗi không đổi checkpoint, giữ tồn cũ. `usable()` = lần ghi chấp nhận mới nhất còn trong `stale_stock_min` và scope còn hiệu lực.
+- Scheduler vẫn **không** chạy `stock`; chỉ CLI tường minh. Chưa nối: hook vô hiệu evidence khi mapping/đơn vị đổi (Dev 1), đọc lại sau WMS ACK (#163), WMS reserve thật.
+
+
 ## [M6 Prep Queue canonical API + `timezone` của location] — 2026-11-09 — Dev 1 (owner-approved PROPOSAL-M6-PREP-QUEUE-001)
 
 - `GET /warehouses/{id}/prep-queue?date=` trả đủ Phụ lục A (`capacity` + `orders`, `schedule_verified` bắt buộc, số nguyên phút, ISO 8601 có offset theo `ref.market.timezone`, loading theo từng trip, `next_action` từ trạng thái server). `GET /prep-queue?warehouse_id=` là alias dùng chung service, cùng response. Thiếu lịch chính thức ⇒ 200 với `schedule_verified=false`, `total_min=free_min=0`, `shifts=[]`, vẫn trả `booked_min` thật và các đơn đã duyệt; lỗi dữ liệu/dependency ⇒ lỗi chuẩn, không có 200 giả.
@@ -15,6 +21,7 @@
 - Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
 - `execution_service` gọi `risk_service.recalculate(..., session=session)` trong cùng transaction (sự kiện, forecast, alert cùng commit/rollback); đơn `DELIVERED` không có forecast mới (M7 đóng alert rủi ro).
 - Chưa đổi: notification outbox (chờ Dev 2, N4), bằng chứng D7 56 ngày, GPS assignment.
+
 
 ## [Plan Review frontend alignment with merged #134/#139] — 2026-11-09 — Dev 3, review pending
 

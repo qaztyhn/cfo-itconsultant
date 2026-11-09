@@ -17,6 +17,10 @@ class RowRejected(ValueError):
     """Static safe staging code. Never attach raw input/driver/customer data."""
 
 
+class BatchRejected(ValueError):
+    """A complete stock batch must fail atomically; static reason code only."""
+
+
 @dataclass(frozen=True)
 class IngestResult:
     run_id: int
