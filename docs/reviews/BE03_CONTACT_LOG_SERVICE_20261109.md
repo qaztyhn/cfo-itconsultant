@@ -13,10 +13,11 @@ inserts a typed, **PII-free** audit in the same caller transaction. No user
 input may override the actor/time or audit snapshot. Transaction rollback
 removes both log and audit. It never sends a customer notification.
 
-The structured `list_logs` read checks CS/Dispatcher role and market, orders
-by timestamp/id, paginates and **omits free-text notes and any customer
-contact details**. Storage of a CS-authored note is not a grant to return
-unreviewed sensitive notes in an API.
+**Owner approved Option A on 2026-11-09:** `list_logs` checks role and
+market, orders by timestamp/id and paginates. CS-only readers receive `note`;
+Dispatcher-only readers receive `id`, `order_id`, `channel`, `reason_code`,
+`contacted_at` with **no `note` key** (not even null). Permission is based on
+authenticated backend roles, not a client filter; audit/logs never include notes.
 
 ## Pending API integration (next independently reviewed PR)
 - After PR #189 merges, replace the existing two stubs in `orders.py` with
@@ -26,8 +27,8 @@ unreviewed sensitive notes in an API.
   client-provided `employee_id`, `contacted_at`, `customer_id` or market.
 - Add real PostgreSQL API RBAC, cross-market and error-response tests,
   and verify generated OpenAPI + frontend projection in a distinct review.
-- Review free-text note retention and access with Dev 2/privacy under D5; do
-  not echo note in logs, audit, or unapproved CS DTO.
+- Owner approved CS-only note visibility. Review free-text note retention
+  with Dev 2/privacy under D5; never echo note in logs, audit, or unapproved DTOs.
 
 **Tests:** real PostgreSQL service tests cover allowed CS persistence, reader
 roles, cross-market concealment, negative RBAC, invalid codes, pagination,

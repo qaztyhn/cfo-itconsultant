@@ -67,14 +67,26 @@ def test_be03_cs_create_atomic_audit_and_privacy_safe_read(seeded: Api) -> None:
     assert "46701234567" not in audit["snapshot"]
     assert audit["reason_text"] is None
 
-    for reader in (CS_ACTOR, DISPATCHER_ACTOR):
-        page = transact(
-            seeded.dsn,
-            lambda session, reader=reader: customer_contact_service.list_logs(session, reader, 1),
-        )
-        assert page["total"] == 1 and len(page["items"]) == 1
-        assert set(page["items"][0]) == {"id", "order_id", "channel", "reason_code", "contacted_at"}
-        assert "Private number" not in str(page)
+    cs_page = transact(
+        seeded.dsn,
+        lambda session: customer_contact_service.list_logs(session, CS_ACTOR, 1),
+    )
+    dispatcher_page = transact(
+        seeded.dsn,
+        lambda session: customer_contact_service.list_logs(session, DISPATCHER_ACTOR, 1),
+    )
+    assert cs_page["total"] == dispatcher_page["total"] == 1
+    assert len(cs_page["items"]) == len(dispatcher_page["items"]) == 1
+    structured = {"id", "order_id", "channel", "reason_code", "contacted_at"}
+    cs_entry = cs_page["items"][0]
+    dispatcher_entry = dispatcher_page["items"][0]
+    assert set(cs_entry) == structured | {"note"}
+    assert cs_entry["note"] == "Private number +46701234567 and gate code 314159"
+    assert set(dispatcher_entry) == structured
+    assert "note" not in dispatcher_entry
+    assert "Private number" not in str(dispatcher_page)
+    assert "314159" not in str(dispatcher_page)
+    assert "46701234567" not in str(dispatcher_page)
 
 
 def test_be03_rollback_removes_log_and_audit(seeded: Api) -> None:

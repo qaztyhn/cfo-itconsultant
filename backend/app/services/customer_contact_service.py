@@ -105,8 +105,9 @@ async def create(
 async def list_logs(
     session: AsyncSession, actor: object, order_id: int, *, page: int = 1, page_size: int = 50
 ) -> dict[str, object]:
-    """Read market-scoped structured entries; omit unreviewed free-text notes."""
+    """Return CS notes only to CS readers; Dispatcher gets a structural-only DTO."""
     order, _ = await _order(session, actor, order_id, write=False)
+    can_read_note = "customer_service" in _roles(actor)
     if not (1 <= page and 1 <= page_size <= 200):
         raise DomainError("VALIDATION_ERROR", "Invalid pagination.")
     base = select(CustomerContactLog).where(CustomerContactLog.order_id == order.id)
@@ -120,17 +121,20 @@ async def list_logs(
             .limit(page_size)
         )
     ).all()
+    items: list[dict[str, object]] = []
+    for entry in entries:
+        item: dict[str, object] = {
+            "id": entry.id,
+            "order_id": order.id,
+            "channel": entry.channel,
+            "reason_code": entry.reason_code,
+            "contacted_at": entry.contacted_at,
+        }
+        if can_read_note:
+            item["note"] = entry.note
+        items.append(item)
     return {
-        "items": [
-            {
-                "id": entry.id,
-                "order_id": order.id,
-                "channel": entry.channel,
-                "reason_code": entry.reason_code,
-                "contacted_at": entry.contacted_at,
-            }
-            for entry in entries
-        ],
+        "items": items,
         "page": page,
         "page_size": page_size,
         "total": int(total or 0),

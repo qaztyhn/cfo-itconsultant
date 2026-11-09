@@ -489,6 +489,8 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 ```
 `GET /orders/{id}/contact-logs`: dispatcher và CS.
 
+**DEC-BE03-CS-NOTE-VISIBILITY-20261109 (Owner chọn A):** CS đúng quyền/market được đọc trường `note` trong các item lịch sử liên hệ; Dispatcher chỉ nhận `id`, `order_id`, `channel`, `reason_code`, `contacted_at`, **không trả key `note`** (kể cả `null`). Backend xác định projection theo quyền người gọi, không dựa vào client. `POST` chỉ dành cho CS; audit và log kỹ thuật không chứa ghi chú. Retention/D5 vẫn phải được review riêng. #194 chỉ là service, chưa coi API hoàn thiện cho đến khi hợp nhất #191 và kiểm thử REST.
+
 ## 12. Sản phẩm, ánh xạ, nhóm xử lý (IT)
 
 **ASM-005 — Chính sách phạm vi CFO:** Khoảng 100 SKU mapping confirmed ban đầu (pilot) và mở rộng dần. CFO chỉ điều phối đơn có toàn bộ SKU đã xác nhận. Đơn thiếu SKU đi theo quy trình cũ; API đồng bộ đơn của CFO phải đánh giá điều kiện trước khi tạo planning run/hold, trả kết quả **không đủ điều kiện CFO / tiếp tục quy trình cũ**, không gọi Dispatcher để giữ đơn chờ IT. Không được tự chuyển đơn cũ vào CFO sau mapping. Mã phản hồi, dữ liệu định danh luồng, cách ngăn hai luồng cùng xử lý và xử lý đơn đã nhập ở CFO trước thay đổi là **thiết kế cần chốt khi triển khai**, không tự coi API hiện tại đã hỗ trợ.
