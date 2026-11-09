@@ -68,7 +68,7 @@ export function TodaysTrips() {
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
   const [pending, setPending] = useState<PendingEvent[]>([]);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
-  const [permission, setPermission] = useState(() => navigator.permissions?.query ? "not requested" : "unavailable");
+  const [permission, setPermission] = useState(() => "permissions" in navigator ? "not requested" : "unavailable");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
