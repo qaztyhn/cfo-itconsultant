@@ -4,6 +4,7 @@ This test uses only synthetic driver evidence and a persisted stock snapshot. It
 claim WMS reserve ACK, production stock ingestion, or final approval acceptance.
 """
 
+import json
 from datetime import date
 
 import pytest
@@ -78,7 +79,7 @@ def test_US_INT_01_AC2_source_order_uses_real_persisted_five_gate_planner(standa
     )
     assert plans and all(
         all(
-            plan["checks"][gate]["passed"] is True
+            json.loads(plan["checks"])[gate]["passed"] is True
             for gate in ("stock", "preparation", "truck", "site_date", "safety")
         )
         for plan in plans

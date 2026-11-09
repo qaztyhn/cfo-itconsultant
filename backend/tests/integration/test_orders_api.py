@@ -94,9 +94,9 @@ SEED: tuple[str, ...] = (
     ),
     _order(6, "SUBMITTED", "2026-11-01T07:00Z", market=2, customer=2),
     "INSERT INTO ops.order_routing(market_id,external_ref,route,reason_code,decided_at,"
-    "decided_source_version,decided_by_user_id) VALUES "
-    "(1,'POS-1','cfo','all_confirmed','2026-11-01T09:00Z',1,1),"
-    "(1,'POS-2','cfo','all_confirmed','2026-11-01T08:00Z',1,1)",
+    "decided_source_version,decided_by_user_id,decided_by_role) VALUES "
+    "(1,'POS-1','cfo','all_confirmed','2026-11-01T09:00Z',1,1,'dispatcher'),"
+    "(1,'POS-2','cfo','all_confirmed','2026-11-01T08:00Z',1,1,'dispatcher')",
     "INSERT INTO ops.order_line (order_id, line_no, local_sku, global_product_id, qty_sale, qty_base, "
     "unit_price, line_total) VALUES (3, 1, 'SE-CEM', 1, 2, 80, 950, 1900), "
     "(1, 1, 'SE-CEM', 1, 1, 40, 950, 950)",
@@ -285,8 +285,8 @@ def test_demo_queue_excludes_legacy_and_unresolved_routes(od: Api) -> None:
         _order(7, "SUBMITTED", "2026-11-03T13:00Z", store="2"),
         _order(8, "SUBMITTED", "2026-11-03T14:00Z", store="2"),
         "INSERT INTO ops.order_routing(market_id,external_ref,route,reason_code,decided_at,"
-        "decided_source_version,decided_by_user_id) VALUES "
-        "(1,'POS-7','legacy','unmapped_sku','2026-11-03T13:00Z',1,1)",
+        "decided_source_version,decided_by_user_id,decided_by_role) VALUES "
+        "(1,'POS-7','legacy','unmapped_sku','2026-11-03T13:00Z',1,1,'dispatcher')",
     )
     assert ids(od.get("/orders", DISPATCHER, status="SUBMITTED")) == [1]
     assert ids(od.get("/orders", SALES, status="SUBMITTED")) == [1]
