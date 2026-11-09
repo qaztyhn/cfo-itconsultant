@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+
+
+## [DEC-WMS-RESERVE-SYNC-20261109] — 2026-11-09 — owner-approved business workflow, docs-only
+
+- Owner chốt quy trình **CFO so tồn WMS khi nhận đơn → Sales/Dispatcher xác nhận phương án → CFO yêu cầu WMS reserve bằng SKU gốc → WMS atomic ACK và giảm available (không giảm on_hand vật lý) → CFO đọc/cập nhật WMS ngay**, không chờ polling 5 phút. Không double-subtract reservation đã nằm trong WMS stock.
+- Đây là **ngoại lệ reserve nghiệp vụ hẹp** với WMS chỉ đọc trước đó, không cho ghi on_hand/chuyển kho hay sửa POS. API/auth/release/timeout/compensation/production WMS writes vẫn phải qua Dev 1/2 xác minh, PR migration/contract tests và deployment sign-off. [Decision record](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
+
 ## [DEC-WMS-REVERSE-SKU-20261109] — 2026-11-09 — owner conditional mapping rule, docs-only
 
 - Owner yêu cầu **nếu** CFO gửi reserve/release sang WMS, phải ánh xạ ngược global CFO thành **SKU gốc WMS đúng market/kho/dòng đơn và đơn vị tồn**. Local SKU nguồn POS phải được giữ; không mặc định POS SKU trùng WMS SKU. Global→local có thể 1:n, không tự chọn SKU hoặc pool; thiếu mapping confirmed/provenance ⇒ chặn lệnh.
