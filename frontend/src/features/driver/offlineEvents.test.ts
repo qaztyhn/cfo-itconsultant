@@ -59,6 +59,26 @@ describe("Driver assigned-trip revalidation", () => {
     expect(await eligibleForReplay(event)).toBe(false);
   });
 
+  it("rejects old or mismatched stop payloads before offline replay", async () => {
+    vi.mocked(assignedTrip).mockResolvedValue(trip);
+    expect(await eligibleForReplay({
+      ...event, event: { ...event.event, payload: { trip_id: 21, trip_stop_id: 99, recipient_name: "Demo" } },
+    })).toBe(false);
+    expect(await eligibleForReplay({
+      ...event, event: { ...event.event, payload: { trip_id: 99, trip_stop_id: 41, recipient_name: "Demo" } },
+    })).toBe(false);
+    expect(await eligibleForReplay({
+      ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } as never },
+    })).toBe(false);
+  });
+
+  it("rejects a mismatched terminal POD outcome", async () => {
+    vi.mocked(assignedTrip).mockResolvedValue({
+      ...trip, status: "completed", stops: [{ ...trip.stops[0], status: "failed" }],
+    });
+    expect(await eligibleForReplay(event)).toBe(false);
+  });
+
   it("allows exact same-key replay after completion to recover a lost acknowledgment", async () => {
     vi.mocked(assignedTrip).mockResolvedValue({ ...trip, status: "completed", stops: [{ ...trip.stops[0], status: "delivered" }] });
     expect(await eligibleForReplay(event)).toBe(true);
