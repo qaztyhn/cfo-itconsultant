@@ -39,3 +39,8 @@ Dev 2 supplies a validated evidence reader that returns the verified interval, s
 | How long is a verification valid? | Rolling recheck; fixed expiry | Rolling 56-day recheck plus explicit source expiry/revocation. |
 
 Until owner and Dev 1/2 review resolve these choices, the existing `history_complete=False` guard remains in place. Fixture validation is not production driver-compliance evidence.
+
+
+## Implementation status (Dev 1, 2026-11-09)
+
+Implemented without any DB/API change: `app/services/driver_history.py` (pure verifier + `DriverEvidenceReader` seam, default `None`) wired into `planning_inputs.official_driver_context` (planning and T16 re-check) and `execution_service._driver_gate` (dispatch/delivery). Evidence document = the "loader contract" above (daily coverage, separate duty/driving segments, rest window for off-duty days, version, source kind, verifier, expiry, revocation). **Owner decisions still required before any real driver can pass:** (1) persistence option A (coverage + daily + segment tables) or B (versioned document + daily index); (2) who attests completeness (named qualified verifier) and the verified-import source; (3) legal/transport assessment of Regulation 561 scope per vehicle/trailer/operation. Until then production has no reader, so history stays unverified and all operations fail closed.

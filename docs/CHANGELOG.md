@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [D7 — xác minh lịch sử 56 ngày dùng chung cho planning/approval/dispatch] — 2026-11-09 — Dev 1
+
+- Thêm `services/driver_history.py`: kiểm chứng thuần túy 56 ngày lịch địa phương (kết thúc ngày hôm trước), phân biệt `off_duty` có cửa sổ nghỉ xác minh với `unknown`/thiếu/trùng; từ chối bằng chứng thiếu, bị thu hồi, hết hạn, chưa có người xác minh, mâu thuẫn (chồng duty, lái ngoài duty, duty trong ngày nghỉ, thời gian không múi giờ). `synthetic_demo` chỉ được chấp nhận ngoài `production` và không bao giờ là xác minh pháp lý.
+- `planning_inputs.official_driver_context` (và qua đó planning + T16 five-gate) cùng `execution_service._driver_gate` (dispatch/giao) dùng **cùng một proof** rồi chạy cùng quy tắc engine (`driver_problem`: ca chính thức, nghỉ 11 giờ liên tục, giờ làm, giới hạn lái, bằng lái, xe ngoài/trong phạm vi 561). Không thêm quy tắc pháp lý mới, không đổi DB/API/migration.
+- **Nguồn bằng chứng production chưa được phê duyệt** (lưu trữ/người xác nhận — xem proposal D7): reader mặc định `None` ⇒ vẫn fail closed (`EVIDENCE_MISSING`). Hành vi "cho phép" chỉ được chứng minh qua reader test; cần quyết định Owner về phương án lưu trữ A/B và người attest trước khi bật cho tài xế thật.
+
 ## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
 
 - Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
