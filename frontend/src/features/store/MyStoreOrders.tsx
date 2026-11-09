@@ -178,7 +178,8 @@ export function MyStoreOrders() {
     {invalidStore && <div role="alert" className="rounded-card border border-border p-5">Selected store is unavailable or outside your scope. No orders were requested.</div>}
     {mayRequest && listQuery.isPending && <LoadingState rows={4}/>}
     {mayRequest && listQuery.isError && <ErrorNotice error={listQuery.error} onRetry={()=>void listQuery.refetch()}/>}
-    {list && <div className="overflow-x-auto rounded-card border border-border bg-surface">
+    {list?.invalid && <div role="alert" className="rounded-card border border-border bg-surface p-5">Invalid order response. No data is available. Please retry.</div>}
+    {list && !list.invalid && <div className="overflow-x-auto rounded-card border border-border bg-surface">
       {list.items.length===0 ? <EmptyState message="No orders returned for these filters or the selected store."/> :
         <table className="w-full min-w-[740px] text-left text-sm">
           <caption className="sr-only">Orders belonging to authorized stores</caption>
@@ -199,7 +200,7 @@ export function MyStoreOrders() {
           </tr>)}</tbody>
         </table>}
     </div>}
-    {list && <nav aria-label="Order pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+    {list && !list.invalid && <nav aria-label="Order pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <p>Page {page}{list.total !== null ? ` · ${list.total} orders reported` : " · total not reported"}</p>
       <div className="flex gap-2">
         <button type="button" disabled={page===1} onClick={()=>update({page:String(page-1)},false)}
