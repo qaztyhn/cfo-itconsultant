@@ -22,7 +22,8 @@ api = api_fixture
 def monitoring(api: Api) -> Api:
     execute(
         api.dsn,
-        *rows.REF_HR,
+        # Alembic 0008 already seeds SE (market id=1); REF_HR's ZZ insert would shift IDs.
+        *rows.REF_HR[1:],
         "INSERT INTO ref.app_user (email,password_hash,roles) "
         "VALUES ('admin.integration@test.invalid','synthetic-not-usable','{admin}')",
         "INSERT INTO hr.employee "
@@ -31,7 +32,7 @@ def monitoring(api: Api) -> Api:
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
         "VALUES (3,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
         "INSERT INTO ref.market (code,name,timezone,currency) "
-        "VALUES ('YY','Second synthetic market','UTC','EUR')",
+        "VALUES ('ZZ','Second synthetic market','UTC','EUR')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
         "VALUES (2,'other.integration@test.invalid','synthetic-not-usable','{sales}')",
         "INSERT INTO stg.sync_run "
