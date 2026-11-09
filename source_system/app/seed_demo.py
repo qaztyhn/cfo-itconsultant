@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Customer, Inbound, Order, OrderLine, Product, VehicleCalendar
+from app.models import (
+    Address,
+    Customer,
+    Inbound,
+    Order,
+    OrderLine,
+    Product,
+    VehicleCalendar,
+)
 from app.seed_reference import (
     seed_catalog,
     seed_customers,
@@ -45,14 +53,20 @@ def check_manifest(data: dict[str, Any]) -> None:
         raise ValueError("Unsupported/incomplete demo manifest")
     history = data.get("driver_history", [])
     if len(history) != 560 or any(
-        row.get("verified") is not False or row.get("reg_561_scope") != "unknown" for row in history
+        row.get("verified") is not False or row.get("reg_561_scope") != "unknown"
+        for row in history
     ):
         raise ValueError("Synthetic driving history cannot be promoted to verified")
     edge_cases = data.get("driver_edge_cases", [])
-    if len(edge_cases) != 9 or any(row.get("legally_verified") is not False for row in edge_cases):
+    if len(edge_cases) != 9 or any(
+        row.get("legally_verified") is not False for row in edge_cases
+    ):
         raise ValueError("D7 edge cases must remain unverified")
     rows = data.get("stock_snapshot", {}).get("items", [])
-    if len(rows) != 300 or len({(r.get("warehouse_code"), r.get("sku")) for r in rows}) != 300:
+    if (
+        len(rows) != 300
+        or len({(r.get("warehouse_code"), r.get("sku")) for r in rows}) != 300
+    ):
         raise ValueError("Incomplete/duplicate published WMS snapshot")
     order_ids = [o["id"] for o in data["orders"] + data["completed_orders"]]
     if len(set(order_ids)) != len(order_ids):
@@ -64,7 +78,9 @@ def check_manifest(data: dict[str, Any]) -> None:
         and o["status"] == "SUBMITTED_FOR_PLANNING"
         for o in data["orders"] + data["completed_orders"]
     ):
-        raise ValueError("Source order fixture must use synthetic, submitted identities")
+        raise ValueError(
+            "Source order fixture must use synthetic, submitted identities"
+        )
 
 
 async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) -> int:
@@ -87,8 +103,7 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
             # a NULL upper bound. Do not weaken the approved Source validator.
             "date_to": (
                 None
-                if spec["date_mode"] == "exact"
-                and spec["date_from"] == spec["date_to"]
+                if spec["date_mode"] == "exact" and spec["date_from"] == spec["date_to"]
                 else date.fromisoformat(str(spec["date_to"]))
             ),
             "window_start": time.fromisoformat(str(spec["window_start"])),
@@ -124,7 +139,9 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
         # must still match; never rewrite a POS-edited or executed order.
         actual = (
             await session.scalars(
-                select(OrderLine).where(OrderLine.order_id == key).order_by(OrderLine.line_no)
+                select(OrderLine)
+                .where(OrderLine.order_id == key)
+                .order_by(OrderLine.line_no)
             )
         ).all()
         expected = []
@@ -133,7 +150,12 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
             if product is None:
                 raise ValueError(f"Missing SKU for demo order: {key}")
             expected.append(
-                (int(line["line_no"]), product.sku, Decimal(str(line["qty"])), product.unit_price)
+                (
+                    int(line["line_no"]),
+                    product.sku,
+                    Decimal(str(line["qty"])),
+                    product.unit_price,
+                )
             )
         if existing is not None:
             if [(v.line_no, v.sku, v.qty, v.unit_price) for v in actual] != expected:
@@ -154,7 +176,9 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
     return inserted
 
 
-async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: datetime) -> None:
+async def _inbound_and_fleet(
+    session: AsyncSession, data: dict[str, Any], now: datetime
+) -> None:
     for spec in data["inbound"]:
         key = (spec["inbound_ref"], spec["warehouse_code"], spec["sku"])
         inbound_existing = await session.get(Inbound, key)
@@ -166,7 +190,9 @@ async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: d
         }
         if inbound_existing is not None:
             if any(getattr(inbound_existing, k) != v for k, v in values.items()):
-                raise ValueError("Conflicting inbound shipment; refusing source overwrite")
+                raise ValueError(
+                    "Conflicting inbound shipment; refusing source overwrite"
+                )
             continue
         session.add(
             Inbound(
@@ -201,7 +227,9 @@ async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: d
         )
 
 
-async def load(session: AsyncSession, data: dict[str, Any], *, source_instance: str) -> int:
+async def load(
+    session: AsyncSession, data: dict[str, Any], *, source_instance: str
+) -> int:
     """Caller owns one PostgreSQL transaction. No cleanup, UPDATE or privileged grants."""
     check_manifest(data)
     now = datetime.fromisoformat(data["app_now"])
@@ -241,7 +269,9 @@ def main() -> int:
     except Exception:
         print("Source demo input seed failed (no operational records overwritten).")
         return 1
-    print(f"Source demo inputs seeded: {added} new orders; CFO workflow/golden outcomes not asserted.")
+    print(
+        f"Source demo inputs seeded: {added} new orders; CFO workflow/golden outcomes not asserted."
+    )
     return 0
 
 
