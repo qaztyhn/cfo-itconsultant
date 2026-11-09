@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Date, cast, delete, func, or_, select
+from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,14 +35,13 @@ from app.domain.models.ops import (
     MilestoneEvent,
     ProofOfDelivery,
     TripStop,
-    VehiclePosition,
 )
 from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import Location, Market, Vehicle
 from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
 from app.engine.delivery import LICENCE_RANK
-from app.services import alert_service, notify_service, planning_service, risk_service
+from app.services import alert_service, gps_service, notify_service, planning_service, risk_service
 
 WAREHOUSE_EVENTS = frozenset(
     {
@@ -491,9 +490,10 @@ async def record_event(
         outcome = "delivered" if event_type == "DELIVERED" else "failed"
         stop.status, stop.completed_at = outcome, occurred_at
         trip.status, trip.ended_at = "completed", occurred_at
-        # D3: raw trip GPS is deleted when the trip actually becomes terminal.
-        # One completed stop does not purge GPS for the other active vehicles.
-        await session.execute(delete(VehiclePosition).where(VehiclePosition.trip_id == trip.id))
+        # DEC-GPS-RET-20261109: collection and live access stop with the trip. Valid points are kept for
+        # the restricted 7-day retention; only INVALID points are removed here, in THIS transaction
+        # (no commit of its own). Other vehicles' trips are untouched (one trip row lock per call).
+        await gps_service.close_trip_collection(session, trip.id)
         session.add(
             ProofOfDelivery(
                 trip_stop_id=stop.id,
