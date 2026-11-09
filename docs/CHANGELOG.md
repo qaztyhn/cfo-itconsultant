@@ -13,6 +13,14 @@
 - Điểm không hợp lệ gồm: ngoài ca/khoảng chuyến đã xác minh, ở tương lai, chuyến không có ca/xuất phát xác minh, hoặc market tắt GPS ⇒ xóa ngay (kể cả chuyến đã kết thúc). Kết thúc chuyến/ca, hủy chuyến, nhân viên nghỉ việc **không** làm điểm hợp lệ đã thu bị xóa sớm: chúng chờ tới 7 ngày. Các test cũ của `test_dev2_gps_jobs.py` (xóa ngay) đã được cập nhật theo chính sách mới.
 - Chưa làm: xóa hàng đợi offline phía thiết bị, backup/cache/export, privacy/DPIA/legal sign-off cho GPS người thật.
 
+## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
+
+- Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
+- **WMS:** preserve POS/ERP read-only and WMS physical stock authority; document the conditional owner-approved WMS reservation/ACK/refresh business flow (real WMS writes still disabled, fake ACK staging/demo only). Show only CFO transfer suggestions/requests/cancellations; legacy physical `confirm-source/receive` routes deny 409, no invented inbound/reconciliation or double counting.
+- **CS/Stock/GPS/date:** top-level agent rules now distinguish case-based 7-day GPS history from Dispatcher live views, require Owner-delegated System Admin for **all** Stock Admin grants, and record `agreed` separately from explicit Dispatcher **Apply agreed date**. Correct outdated driver privacy copy that said GPS retained 30 days.
+- **KPI/acceptance/demo:** replace stale 8-KPI references with **10 metric keys** and two unavailable diagnostics `null`; correct blocked SKU scenario (legacy, not automatic CFO queue), hold-expiry and WMS reserve gates. Maintain unchanged historical DB migrations/enums; label superseded acceptance prose where needed.
+- GitHub's earlier changelog labels like “Draft”, “review pending” or “#127 đang review” describe **their historical entry time**, not present PR status. No source app/backend/frontend files were modified by this docs reconciliation. Developer E2E, real WMS API, privacy/legal gate and production deployment remain pending.
+
 ## [T18 — Quy trình chuyển kho theo Q3, không ghi vật lý trên CFO] — 2026-11-09 — PR #127 (đang review)
 
 - Bổ sung gợi ý/yêu cầu/hủy chuyển kho với quyền theo market và audit `TRANSFER_CANCELLED` (bắt buộc lý do). `confirm-source` và `receive` giữ route nhưng **từ chối 409** sau kiểm quyền, không tạo inbound hay sửa số liệu WMS; WMS là hệ thống duy nhất ghi nhận di chuyển vật lý. `TRANSFER_CONFIRMED/RECEIVED` chỉ giữ làm nhãn lịch sử/hợp đồng, không phải thao tác đang chạy.
