@@ -6,6 +6,7 @@ import { apiGet, apiPost } from "./client";
 import type {
   ApprovePlanInput,
   ApprovePlanResponse,
+  DateNegotiation,
   PlanAgainInput,
   PlanningRun,
 } from "./contracts/planning";
@@ -24,6 +25,14 @@ export function fetchPlanningRuns(
   signal?: AbortSignal,
 ): Promise<{ items: Pick<PlanningRun, "id" | "order_id" | "run_no" | "result" | "hold_expires_at">[] }> {
   return apiGet(`/orders/${orderId}/planning-runs`, undefined, signal);
+}
+
+export function fetchOrderRequestedDate(orderId: number, signal?: AbortSignal): Promise<{ date_request: { date_to: string | null } }> {
+  return apiGet(`/orders/${orderId}`, undefined, signal);
+}
+
+export function fetchDateNegotiations(orderId: number, signal?: AbortSignal): Promise<{ items: DateNegotiation[] }> {
+  return apiGet(`/orders/${orderId}/date-negotiations`, undefined, signal);
 }
 
 /** Gia hạn hold +15 phút; tối đa 2 lần do server quyết định (409 HOLD_EXTENSION_LIMIT / HOLD_EXPIRED). */
