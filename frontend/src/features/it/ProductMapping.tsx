@@ -1,6 +1,6 @@
 /** IT Product Mapping: explicit server-authorised decisions; no implicit legacy-order re-routing. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { isApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
@@ -219,9 +219,6 @@ function MappingWorkspace() {
     }, signal),
     retry: false,
   });
-  useEffect(() => { if (selected !== null && !tasks.isFetching && tasks.data &&
-    !tasks.data.items.some(t => t.id === selected) && taskStatus === "open") setSelected(null);
-  }, [selected, taskStatus, tasks.isFetching, tasks.data]);
   function finish(message: string) {
     setSuccess(message);
     setSelected(null);
