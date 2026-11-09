@@ -16,9 +16,7 @@ from tests.integration.conftest import alembic_config, execute, fetch
 pytestmark = pytest.mark.integration
 
 
-def seed(
-    dsn: str, password: str, accounts: tuple[tuple[str, str, str, str], ...] | None = None
-) -> None:
+def seed(dsn: str, password: str, accounts: tuple[tuple[str, str, str, str], ...] | None = None) -> None:
     async def go() -> None:
         engine = create_async_engine(to_async_url(dsn), hide_parameters=True)
         try:
@@ -98,10 +96,13 @@ def test_US_STK_01_AC1_disposable_accounts_have_no_implicit_stock_grants(empty_d
     assert len(first) == 2 and first[0]["id"] != first[1]["id"]
     assert fetch(empty_db, "SELECT count(*) AS n FROM ref.stock_admin_grant")[0]["n"] == 0
     seed(empty_db, password, DEMO_ACCOUNTS)
-    assert fetch(
-        empty_db,
-        """SELECT u.id, e.employee_no FROM ref.app_user u
+    assert (
+        fetch(
+            empty_db,
+            """SELECT u.id, e.employee_no FROM ref.app_user u
            JOIN hr.employee e ON e.id=u.employee_id
            WHERE e.employee_no IN ('DEMO-STOCKOPERATOR','DEMO-STOCKAPPROVER')
            ORDER BY e.employee_no""",
-    ) == first
+        )
+        == first
+    )

@@ -172,17 +172,31 @@ def test_US_STK_01_AC1_first_grant_requires_owner_operator_and_audit(
 ) -> None:
     execute(db, "DELETE FROM ref.stock_admin_grant")
     monkeypatch.delenv("STOCK_GRANT_OWNER_AUTHORIZATION_REF")
-    fails(db, lambda s: svc.grant_admin(s, ADMIN_B, user_id=2, capability="scope", reason_text="SE pilot"), "FORBIDDEN")
+    fails(
+        db,
+        lambda s: svc.grant_admin(s, ADMIN_B, user_id=2, capability="scope", reason_text="SE pilot"),
+        "FORBIDDEN",
+    )
     monkeypatch.setenv("STOCK_GRANT_OWNER_AUTHORIZATION_REF", "test-owner-delegation")
     monkeypatch.setenv("STOCK_GRANT_SYSTEM_ADMIN_USER_ID", "4")
-    fails(db, lambda s: svc.grant_admin(s, ADMIN_A, user_id=3, capability="scope", reason_text="SE pilot"), "FORBIDDEN")
-    author_grant = run(db, lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="SE author")))
-    approver_grant = run(db, lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=3, capability="scope", reason_text="SE approver")))
+    fails(
+        db,
+        lambda s: svc.grant_admin(s, ADMIN_A, user_id=3, capability="scope", reason_text="SE pilot"),
+        "FORBIDDEN",
+    )
+    author_grant = run(
+        db, lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="SE author"))
+    )
+    approver_grant = run(
+        db,
+        lambda s: _id(svc.grant_admin(s, ADMIN_C, user_id=3, capability="scope", reason_text="SE approver")),
+    )
     assert author_grant != approver_grant
     assert audit(db, "STOCK_GRANT_CREATED") == 2
     _scope(db)
     fails(
-        db, lambda s: svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="duplicate"),
+        db,
+        lambda s: svc.grant_admin(s, ADMIN_C, user_id=2, capability="scope", reason_text="duplicate"),
         "RESOURCE_CONFLICT",
     )
     monkeypatch.setenv("STOCK_GRANT_AUTHORIZED_MARKET", "YY")

@@ -28,8 +28,11 @@ async def _actor(session: AsyncSession, user_id: int, market: Market) -> Current
     ):
         raise SystemExit("Actor must be an active Admin in the requested market")
     return CurrentUser(
-        id=user.id, employee_id=user.employee_id, roles=tuple(user.roles),
-        market=market.code, location_ids=(),
+        id=user.id,
+        employee_id=user.employee_id,
+        roles=tuple(user.roles),
+        market=market.code,
+        location_ids=(),
     )
 
 
@@ -57,14 +60,8 @@ async def main() -> None:
         if args.action == "create":
             skus = sorted(set(args.sku))
             warehouses = sorted(set(args.warehouse_id))
-            products = (
-                await session.scalars(
-                    select(ProductSE).where(ProductSE.local_sku.in_(skus))
-                )
-            ).all()
-            locations = (
-                await session.scalars(select(Location).where(Location.id.in_(warehouses)))
-            ).all()
+            products = (await session.scalars(select(ProductSE).where(ProductSE.local_sku.in_(skus)))).all()
+            locations = (await session.scalars(select(Location).where(Location.id.in_(warehouses)))).all()
             if len(products) != len(skus) or any(
                 p.mapping_status != "confirmed" or p.global_product_id is None for p in products
             ):
@@ -85,7 +82,9 @@ async def main() -> None:
                 return
             row = await approve_scope(session, actor, args.scope_id)
         await session.commit()
-        print(f"Scope id={row.id} version={row.version} status={row.status} effective_from={row.effective_from}")
+        print(
+            f"Scope id={row.id} version={row.version} status={row.status} effective_from={row.effective_from}"
+        )
     await get_engine().dispose()
 
 

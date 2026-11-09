@@ -29,16 +29,12 @@ async def main() -> None:
         return
     async with get_sessionmaker()() as session, session.begin():
         await seed_accounts(session, password, accounts=DEMO_ACCOUNTS)
-        rows = (
-            await session.execute(
-                text("""SELECT u.id, e.employee_no FROM ref.app_user u
+        rows = (await session.execute(text("""SELECT u.id, e.employee_no FROM ref.app_user u
                          JOIN hr.employee e ON e.id = u.employee_id
                          JOIN ref.market m ON m.id = e.market_id
                          WHERE m.code = 'SE' AND e.employee_no IN
                            ('DEMO-STOCKOPERATOR', 'DEMO-STOCKAPPROVER')
-                         ORDER BY e.employee_no""")
-            )
-        ).all()
+                         ORDER BY e.employee_no"""))).all()
         if len(rows) != 2:
             raise SystemExit("Dedicated identity verification failed; transaction rolled back")
         for row in rows:

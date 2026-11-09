@@ -52,8 +52,11 @@ async def main() -> None:
             print("Preflight passed; no database changes. Re-run with --execute after review.")
             return
         actor = CurrentUser(
-            id=operator.id, employee_id=operator.employee_id, roles=tuple(operator.roles),
-            market=market.code, location_ids=(),
+            id=operator.id,
+            employee_id=operator.employee_id,
+            roles=tuple(operator.roles),
+            market=market.code,
+            location_ids=(),
         )
         grant = await grant_admin(
             session, actor, user_id=recipient.id, capability=args.capability, reason_text=args.reason
