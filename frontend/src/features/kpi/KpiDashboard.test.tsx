@@ -53,7 +53,7 @@ describe("US-KPI-01 AC1 cards, trend and diagnostics",()=>{
     expect(await screen.findByText("4.2 min")).toBeInTheDocument();
     const cards=screen.getByLabelText("Operational KPIs");
     expect(within(cards).getAllByText(/Baseline:/)).toHaveLength(10);
-    expect(within(cards).getAllByText("Unavailable")).toHaveLength(9);
+    expect(within(cards).getAllByText(/Baseline: Unavailable/)).toHaveLength(9);
     expect(within(cards).getByText("15 min",{exact:false})).toBeInTheDocument();
     expect(screen.queryByText(/profit|revenue/i)).not.toBeInTheDocument();
     expect(calls.every(c=>c.method==="GET")).toBe(true);
