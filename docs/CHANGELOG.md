@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T18 — Quy trình chuyển kho theo Q3, không ghi vật lý trên CFO] — 2026-11-09 — PR #127 (đang review)
+
+- Bổ sung gợi ý/yêu cầu/hủy chuyển kho với quyền theo market và audit `TRANSFER_CANCELLED` (bắt buộc lý do). `confirm-source` và `receive` giữ route nhưng **từ chối 409** sau kiểm quyền, không tạo inbound hay sửa số liệu WMS; WMS là hệ thống duy nhất ghi nhận di chuyển vật lý. `TRANSFER_CONFIRMED/RECEIVED` chỉ giữ làm nhãn lịch sử/hợp đồng, không phải thao tác đang chạy.
+- Chưa có bằng chứng tích hợp đối soát WMS hoặc E2E chuyển kho. PR giữ an toàn fail-closed, không cho phép ghi WMS hoặc tự cộng/trừ tồn.
+
 ## [T07 stock writer × S1–S5 (#121 + #148), vẫn tắt trong scheduler] — 2026-11-09 — Dev 2
 
 - `ingest_stock.apply` ghi tồn CFO chỉ khi: có scope đã duyệt hiệu lực tại `as_of` của batch Source (không hồi tố), đủ mọi hàng kho × SKU kỳ vọng (thiếu = unknown ⇒ từ chối cả batch; 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua), `normalize_stock` chấp nhận (ánh xạ đã xác nhận, đơn vị/quy đổi, độc lập có evidence còn hiệu lực). Ghi `ops.stock_write_run` (scope/evidence version); replay cùng batch id là no-op; lỗi không đổi checkpoint, giữ tồn cũ. `usable()` = lần ghi chấp nhận mới nhất còn trong `stale_stock_min` và scope còn hiệu lực.
