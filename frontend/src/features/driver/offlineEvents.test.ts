@@ -84,7 +84,8 @@ describe("Idempotent outbox replay", () => {
     expect(await replayBatch([event], deps)).toEqual({ sent: 1, conflict: 0 });
     expect(deps.send).toHaveBeenNthCalledWith(1, event);
     expect(deps.send).toHaveBeenNthCalledWith(2, event);
-    expect(deps.acknowledge).toHaveBeenCalledExactlyOnceWith(event.key);
+    expect(deps.acknowledge).toHaveBeenCalledTimes(1);
+    expect(deps.acknowledge).toHaveBeenCalledWith(event.key);
   });
 
   it("requires a verified event id, not merely HTTP success", async () => {
