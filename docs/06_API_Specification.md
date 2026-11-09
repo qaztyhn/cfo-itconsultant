@@ -10,6 +10,21 @@
 >
 > Hợp đồng REST giữa frontend/driver PWA và backend, kèm hợp đồng của hệ thống nguồn giả lập. Backend FastAPI sinh OpenAPI từ model Pydantic đúng theo tài liệu này; frontend sinh client bằng `openapi-typescript`. Tên bảng và cột tham chiếu `05_Database_Design.md`. Quy tắc nghiệp vụ tham chiếu `01_PRD.md` (mã BR-xxx).
 
+### BE-02 — Production safety gate for GET phone lookup (2026-11-09)
+
+The canonical `GET /api/v1/orders?q=` contract is unchanged for authorized synthetic
+local/staging use. In a non-synthetic `APP_ENV` (for example `production`),
+phone-shaped search is **403 FORBIDDEN** by default unless
+`CS_PHONE_SEARCH_PRODUCTION_ENABLED=true` is explicitly configured after
+security sign-off. The gate does not relax market/RBAC scope, min-query-length or
+the application limiter. The error body and CFO JSONL logs do not echo the phone.
+
+**Not a production privacy certification:** application middleware cannot redact
+upstream reverse-proxy/WAF/APM/hosting access logs or browser history. Issue #181
+requires independent log/telemetry redaction, a reviewed distributed abuse limit,
+HTTPS, individual production approval and regression evidence *before* the opt-in.
+Real customer phone lookup stays disabled pending those controls.
+
 ## 1. Quy ước chung
 
 | Mục | Quy ước |
