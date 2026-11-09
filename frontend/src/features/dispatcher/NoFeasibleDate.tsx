@@ -216,7 +216,7 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
                     const usable = qty === null ? NaN : Number(qty);
                     return <div key={warehouse} className="rounded-control border border-border p-2">
                       <strong>{warehouse}: {readableNumber(qty)}</strong>
-                      {Number.isFinite(need) && Number.isFinite(usable) && need > usable &&
+                      {Number.isFinite(need) && Number.isFinite(usable) && need >= 0 && usable >= 0 && need > usable &&
                         <span className="block text-caption text-risk-predictedLate-fg">Short {readableNumber(need - usable)}</span>}
                       {(line.inbound?.[warehouse] ?? []).map((inb, n) => <span key={n} className="block text-caption">
                         Inbound {readableNumber(inb.qty)} on {dateLabel(inb.eta)}</span>)}
