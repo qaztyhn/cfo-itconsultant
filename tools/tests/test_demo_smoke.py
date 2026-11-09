@@ -15,12 +15,12 @@ FIXTURE = run_path(str(ROOT / "backend" / "app" / "seed" / "scenarios.py"))["gen
 class FakeHttp:
     def __init__(self, *, routed: bool = False) -> None:
         self.routed = routed
-        self.calls: list[tuple[str, str, object]] = []
+        self.calls: list[tuple[str, str, object, object]] = []
         self.good = next(o for o in FIXTURE["orders"] if o["id"] == GOOD_REF)
         self.bad = next(o for o in FIXTURE["orders"] if o["id"] == UNMAPPED_REF)
 
     def send(self, url: str, *, method: str = "GET", headers=None, body=None):
-        self.calls.append((method, url, body))
+        self.calls.append((method, url, body, headers))
         if url.endswith("/health"):
             return 200, {"status": "ok", "db": "ok"}
         if url.endswith(":5173/"):
@@ -28,7 +28,7 @@ class FakeHttp:
         if "/orders?status=SUBMITTED_FOR_PLANNING" in url:
             return 200, {"items": [self.good, self.bad, next(o for o in FIXTURE["orders"] if o["id"].endswith("000137"))]}
         if url.endswith("/orders?page_size=1"):
-            return 400, None
+            return (400 if ":8100/" in url else 401), None
         if url.endswith("/orders?page_size=2"):
             return 200, {"items": [], "page": 1, "page_size": 2, "total": 0}
         if "/auth/login" in url:
@@ -65,7 +65,7 @@ class DemoSmokeTests(unittest.TestCase):
         self.assertEqual(checks["role_driver"], "PASS")
         self.assertEqual(checks["sales_sync_write"], "NOT VERIFIED")
         self.assertEqual(verdict(result), 2)
-        self.assertFalse(any(method == "POST" and "/auth/login" not in url for method, url, _ in http.calls))
+        self.assertFalse(any(method == "POST" and "/auth/login" not in url for method, url, _, _ in http.calls))
 
     def test_US_INT_01_AC2_sync_endpoint_missing_is_blocked_not_success(self):
         http = FakeHttp()
@@ -92,11 +92,11 @@ class DemoSmokeTests(unittest.TestCase):
         self.assertEqual(checks["unmapped_legacy_negative"], "PASS")
         self.assertEqual(checks["planning_run"], "BLOCKED")
         self.assertEqual(checks["postgres_once"], "NOT VERIFIED")
-        sync_calls = [(body, header) for method, url, body in http.calls
-                      if method == "POST" and url.endswith("/integration/orders/sync-now")
-                      for header in [None]]
+        sync_calls = [(body, headers) for method, url, body, headers in http.calls
+                      if method == "POST" and url.endswith("/integration/orders/sync-now")]
         self.assertEqual(len(sync_calls), 3)
         self.assertEqual(sync_calls[0][0], sync_calls[1][0])
+        self.assertEqual(sync_calls[0][1]["Idempotency-Key"], sync_calls[1][1]["Idempotency-Key"])
 
     def test_US_INT_01_AC4_remote_urls_and_unsafe_write_rejected_without_network(self):
         safe = {**ENV, "APP_ENV": "test", "DEMO_DISPOSABLE": "1", "APP_NOW": APP_NOW}
