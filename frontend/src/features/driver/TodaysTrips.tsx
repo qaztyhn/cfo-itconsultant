@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isApiError, newIdempotencyKey } from "../../api/client";
 import { useAuthStore } from "../../app/store";
-import { assignedTrips, type DriverStop, type DriverTrip, type DriverEventType } from "./driverApi";
+import { assignedTrips, stopScopedPodEnabled, type DriverStop, type DriverTrip, type DriverEventType } from "./driverApi";
 import { discardEvent, enqueueEvent, pendingForUser, replayEvents, type PendingEvent } from "./offlineEvents";
 
 const card = "rounded-card border border-border bg-surface p-5 shadow-card";
@@ -57,7 +57,8 @@ function detailAction(trip: DriverTrip): "DISPATCHED" | "POD" | null {
   const orderIds = new Set(trip.stops.map((stop) => stop.order_id));
   if (trip.stops.length === 0 || orderIds.size !== 1) return null;
   if (trip.status === "loading") return "DISPATCHED";
-  if (trip.status === "on_road" && trip.stops.some((stop) => stop.status === "pending")) return "POD";
+  if (trip.status === "on_road" && trip.stops.some((stop) => stop.status === "pending") &&
+      (trip.stops.length === 1 || stopScopedPodEnabled())) return "POD";
   return null;
 }
 
@@ -193,14 +194,17 @@ export function TodaysTrips() {
     if ((type === "DISPATCHED" && action !== "DISPATCHED") ||
         (type !== "DISPATCHED" && (action !== "POD" || stop.status !== "pending" ||
           stop.trip_stop_id !== selectedStop))) return;
+    if (type !== "DISPATCHED" && trip.stops.length > 1 && !stopScopedPodEnabled()) return;
     if (type === "DELIVERED" && !recipient.trim()) { setError("Recipient name is required for delivery proof."); return; }
     if (type === "FAILED" && !failure) { setError("Select a failure reason."); return; }
     const payload = type === "DISPATCHED"
       ? { trip_id: trip.trip_id }
       : type === "DELIVERED"
-        ? { trip_id: trip.trip_id, trip_stop_id: stop.trip_stop_id, recipient_name: recipient.trim(),
+        ? { trip_id: trip.trip_id, ...(stopScopedPodEnabled() ? { trip_stop_id: stop.trip_stop_id } : {}),
+            recipient_name: recipient.trim(),
             ...(note.trim() ? { note: note.trim() } : {}) }
-        : { trip_id: trip.trip_id, trip_stop_id: stop.trip_stop_id, failure_reason: failure,
+        : { trip_id: trip.trip_id, ...(stopScopedPodEnabled() ? { trip_stop_id: stop.trip_stop_id } : {}),
+            failure_reason: failure,
             ...(note.trim() ? { note: note.trim() } : {}) };
     const event: PendingEvent = {
       key: newIdempotencyKey(),
@@ -301,6 +305,11 @@ export function TodaysTrips() {
             {activeTrip.stops.length > 0 && new Set(activeTrip.stops.map((stop) => stop.order_id)).size > 1 && (
               <p role="alert" className="mt-3 text-body">
                 This trip references multiple orders and cannot be verified. Contact Dispatcher.
+              </p>
+            )}
+            {activeTrip.status === "on_road" && activeTrip.stops.length > 1 && !stopScopedPodEnabled() && (
+              <p role="alert" className="mt-3 text-body">
+                Multi-stop POD requires the verified stop-scoped execution API. Recording is disabled until deployment.
               </p>
             )}
             {detailAction(activeTrip) === "DISPATCHED" && (
