@@ -626,4 +626,3 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     assert second.status_code == 200, second.text
     rows = fetch(execution_api.dsn, "SELECT template FROM ops.notification")
     assert [row["template"] for row in rows] == ["DISPATCHED"]
-
