@@ -123,6 +123,12 @@ def cli() -> int:
         if call(base + ["--report", str(read_report)]) not in (0, 2) or not check_report(read_report, mutating=False):
             print("FAIL: real-HTTP read-only demonstration did not match expected contracts.")
             return 1
+        # The real login limiter allows five attempts/minute per IP. The
+        # read-only smoke already authenticated four roles; wait for the
+        # complete window before the second smoke instead of disabling,
+        # bypassing or resetting the security limiter.
+        print("Respecting the 60-second authentication rate-limit window between probes.")
+        time.sleep(61)
         if call(base + ["--exercise-sync", "--report", str(sync_report)]) not in (0, 2):
             print("FAIL: real-HTTP Sales Sync & Check was not safely classified.")
             return 1
