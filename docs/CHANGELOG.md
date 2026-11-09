@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M6 Prep Queue canonical API + `timezone` của location] — 2026-11-09 — Dev 1 (owner-approved PROPOSAL-M6-PREP-QUEUE-001)
+
+- `GET /warehouses/{id}/prep-queue?date=` trả đủ Phụ lục A (`capacity` + `orders`, `schedule_verified` bắt buộc, số nguyên phút, ISO 8601 có offset theo `ref.market.timezone`, loading theo từng trip, `next_action` từ trạng thái server). `GET /prep-queue?warehouse_id=` là alias dùng chung service, cùng response. Thiếu lịch chính thức ⇒ 200 với `schedule_verified=false`, `total_min=free_min=0`, `shifts=[]`, vẫn trả `booked_min` thật và các đơn đã duyệt; lỗi dữ liệu/dependency ⇒ lỗi chuẩn, không có 200 giả.
+- `GET /locations`, `GET /locations/{id}`: thêm `timezone` (IANA, bắt buộc, từ `ref.market.timezone`, mọi loại location); timezone thiếu/không hợp lệ ⇒ `500 INTERNAL_ERROR`, không mặc định UTC. Không đổi migration. Fail-closed duyệt/dispatch/ca tài xế giữ nguyên (#129).
 ## [S1–S5 — persistence scope/evidence tồn kho (đề xuất kỹ thuật, Draft)] — 2026-11-09 — Dev 1, cần Dev 2 review
 
 - Migration `0013` + docs/05 §6.1: `ref.stock_admin_grant`, `ops.stock_scope_version`, `ops.stock_independence_evidence`, `ops.stock_write_run` (64 bảng). Scope bất biến sau duyệt (trigger), tác giả ≠ người duyệt (CHECK), evidence tối đa 30 ngày (CHECK), lịch sử chỉ thêm, `stock_write_run` chỉ thêm và duy nhất theo `(market, source_batch_id)`.
