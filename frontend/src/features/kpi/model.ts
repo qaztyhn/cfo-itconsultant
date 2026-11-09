@@ -56,7 +56,6 @@ export function dailyPoints(raw:unknown):Point[] {
 }
 export type SafeDecision={id:number;at:string;action:string;subject:string;actor:string;correlationId:string|null};
 const CODE=/^[A-Z][A-Z0-9_]{0,63}$/;
-const REF=/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const TIMESTAMP=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 export function decisions(raw:unknown):{items:SafeDecision[];total:number|null} {
   const data=object(raw),list=Array.isArray(data.items)?data.items:[];
