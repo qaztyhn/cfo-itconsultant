@@ -19,9 +19,7 @@ def inspect(db: str):
         engine = create_async_engine(async_url(db), poolclass=NullPool)
         try:
             async with async_sessionmaker(engine)() as session:
-                return await diagnose(
-                    session, market_code="SE", order_external_ref="EXT-1", now=NOW
-                )
+                return await diagnose(session, market_code="SE", order_external_ref="EXT-1", now=NOW)
         finally:
             await engine.dispose()
 
@@ -65,9 +63,7 @@ def test_stock_preflight_missing_market_order_is_not_success(db: str) -> None:
         engine = create_async_engine(async_url(db), poolclass=NullPool)
         try:
             async with async_sessionmaker(engine)() as session:
-                return await diagnose(
-                    session, market_code="SE", order_external_ref="NOT-IN-CFO", now=NOW
-                )
+                return await diagnose(session, market_code="SE", order_external_ref="NOT-IN-CFO", now=NOW)
         finally:
             await engine.dispose()
 
