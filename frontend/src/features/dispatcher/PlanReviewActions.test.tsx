@@ -497,3 +497,26 @@ describe("Approval", () => {
     expect((await second.json()).error.code).toBe("PLAN_NOT_APPROVABLE");
   });
 });
+
+
+describe("Infeasible run diagnostics (P0 regression)", () => {
+  it("shows backend rejected candidates and offers Plan Again without any Approve action", async () => {
+    const response = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.infeasible}`, {
+      headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}${userByEmail("dispatcher@cfo.demo").id}` },
+    });
+    const run = await response.json();
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({
+      ...run,
+      rejected_candidates: [
+        { warehouse_id: 2, vehicle_code: "TEST-TRUCK-9", failed_check: "truck", code: "NO_TRUCK_FIT" },
+      ],
+    })));
+    renderAt(runUrl(MOCK_RUN_IDS.infeasible));
+
+    expect(await screen.findByText(/No feasible plan for this order/)).toBeInTheDocument();
+    expect(screen.getByText("TEST-TRUCK-9")).toBeInTheDocument();
+    expect(screen.getByText("NO_TRUCK_FIT")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Plan Again" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Approve #/ })).not.toBeInTheDocument();
+  });
+});
