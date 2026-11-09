@@ -10,7 +10,8 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchLocations, type WorkLocation } from "../../../api/locations";
 import { selectableWarehouses, useScopeStore, usesWarehouseScope } from "../../../app/scope";
 import { useAuthStore } from "../../../app/store";
-import { resolveTimeZone, todayInTimeZone, type LocationWithTimeZone } from "./timezone";
+import { resolveTimeZone, type LocationWithTimeZone } from "./timezone";
+import { useToday } from "./useToday";
 
 export type WarehouseChoice =
   | { status: "none" }
@@ -37,7 +38,7 @@ export type PrepQueueScope =
   | { status: "no-timezone"; warehouse: WorkLocation }
   | { status: "ready"; warehouse: WorkLocation; warehouseId: number; date: string; timeZone: string };
 
-export function useWarehouseSelection(now: Date = new Date()): PrepQueueScope {
+export function useWarehouseSelection(): PrepQueueScope {
   const user = useAuthStore((s) => s.user);
   const scopeWarehouseId = useScopeStore((s) => s.warehouseId);
   const wanted = user ? usesWarehouseScope(user) : false;
@@ -49,33 +50,32 @@ export function useWarehouseSelection(now: Date = new Date()): PrepQueueScope {
     staleTime: 5 * 60_000,
   });
 
+  // Hooks must run on every render, so the warehouse and time zone are resolved before any early return.
+  const choice = user && wanted && query.data !== undefined ? chooseWarehouse(selectableWarehouses(user, query.data), scopeWarehouseId) : null;
+  const warehouse = choice?.status === "selected" ? choice.warehouse : null;
+  const timeZone = warehouse ? resolveTimeZone(warehouse as LocationWithTimeZone) : null;
+  const today = useToday(timeZone);
+
   if (!user || !wanted) {
     return { status: "no-warehouse" };
   }
   if (query.isError) {
     return { status: "error", error: query.error, retry: () => void query.refetch() };
   }
-  if (query.data === undefined) {
+  if (query.data === undefined || choice === null) {
     return { status: "loading" };
   }
-
-  const choice = chooseWarehouse(selectableWarehouses(user, query.data), scopeWarehouseId);
   if (choice.status === "none") {
     return { status: "no-warehouse" };
   }
   if (choice.status === "choose") {
     return { status: "choose-warehouse" };
   }
-
-  const timeZone = resolveTimeZone(choice.warehouse as LocationWithTimeZone);
   if (timeZone === null) {
     return { status: "no-timezone", warehouse: choice.warehouse };
   }
-  return {
-    status: "ready",
-    warehouse: choice.warehouse,
-    warehouseId: choice.warehouse.id,
-    date: todayInTimeZone(now, timeZone),
-    timeZone,
-  };
+  if (today === null) {
+    return { status: "loading" };
+  }
+  return { status: "ready", warehouse: choice.warehouse, warehouseId: choice.warehouse.id, date: today, timeZone };
 }

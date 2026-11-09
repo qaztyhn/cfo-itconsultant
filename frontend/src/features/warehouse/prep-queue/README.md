@@ -13,9 +13,9 @@ No state-changing action exists in this PR (no Start prep, Pause, Resume, Goods 
 | File | Purpose |
 |---|---|
 | `types.ts` | Hand-written types for Appendix A (DEPENDENCY, see below) |
-| `api.ts` | `GET /prep-queue?warehouse_id=&date=`, response shape check |
+| `api.ts` | `GET /warehouses/{id}/prep-queue?date=`, strict response parser (a wrong payload becomes an error state) |
 | `usePrepQueue.ts` | TanStack Query hook, 20 s poll, stops on 401/403/404, no placeholder data |
-| `useWarehouseSelection.ts`, `timezone.ts` | Which warehouse and which "today" to show |
+| `useWarehouseSelection.ts`, `timezone.ts`, `useToday.ts` | Which warehouse and which "today" to show. `useToday` keeps the date in state per warehouse time zone and re-checks every minute and when the tab becomes visible, so the queue date rolls over at local midnight and the previous day's data is not shown (no placeholder data). |
 | `format.ts`, `queueDate.ts` | Pure formatting helpers (hh:mm, `Thu 12 Nov`, narrow-space thousands) |
 | `capacityLayout.ts`, `CapacityCard.tsx` | "Capacity today" card, per-shift bar and cut-off marker |
 | `OrdersTable.tsx` | Read-only orders table, one column below 1024 px |
@@ -59,6 +59,6 @@ Click Retry (or wait up to 20 s for the poll). A page reload clears the handlers
 
 ## Not verified
 
-- Request cancellation (`AbortSignal`) is not tested: the hook tests strip the signal because jsdom's `AbortSignal` is rejected by Node's `fetch`. Production code still passes it.
+- Request cancellation is tested at hook level (`usePrepQueue.abort.test.tsx`: `fetchPrepQueue` is mocked and the `AbortSignal` from TanStack Query is asserted to abort on warehouse/date change and on unmount). It is not tested end to end through `fetch`: the MSW-based hook tests in `usePrepQueue.test.tsx` strip the signal because jsdom's `AbortSignal` is rejected by Node's `fetch`. Production code still passes it.
 - Screen reader behaviour of the stacked layout below 1024 px (table semantics) needs a manual check.
 - No integration against the real backend (endpoint path, `timezone`, `schedule_verified` are open dependencies).
