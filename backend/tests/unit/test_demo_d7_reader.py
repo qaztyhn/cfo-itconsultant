@@ -35,12 +35,13 @@ def fixture(root: Path) -> None:
         },
     )
     put(
-        root, "drivers.json",
+        root,
+        "drivers.json",
         {"records": [{"driver_code": "D01", "employee_no": "DEMO-DRIVER-1", "market": "SE"}]},
     )
     for n in range(8):
         records = []
-        for day in days[n * 7:(n + 1) * 7]:
+        for day in days[n * 7 : (n + 1) * 7]:
             stamp = day.isoformat()
             if day.weekday() >= 5:
                 records.append(
@@ -69,7 +70,9 @@ def fixture(root: Path) -> None:
                         ],
                     }
                 )
-        put(root, f"history_week_{n + 1:02d}.json", {"source": "synthetic_demo", "records": records})
+        put(
+            root, f"history_week_{n + 1:02d}.json", {"source": "synthetic_demo", "records": records}
+        )
     attest(root)
 
 
@@ -109,13 +112,19 @@ def test_attested_synthetic_full_56_days_passes_only_demo_verifier(tmp_path, mon
     evidence = read(tmp_path, monkeypatch)
     assert evidence is not None
     proof = verify_history(
-        evidence, target_date=TARGET, zone=ZoneInfo("Europe/Stockholm"),
-        now=NOW, allow_synthetic=True,
+        evidence,
+        target_date=TARGET,
+        zone=ZoneInfo("Europe/Stockholm"),
+        now=NOW,
+        allow_synthetic=True,
     )
     assert proof.complete is True and proof.legal_verified is False
     assert not verify_history(
-        evidence, target_date=TARGET, zone=ZoneInfo("Europe/Stockholm"),
-        now=NOW, allow_synthetic=False,
+        evidence,
+        target_date=TARGET,
+        zone=ZoneInfo("Europe/Stockholm"),
+        now=NOW,
+        allow_synthetic=False,
     ).complete
 
 
@@ -138,8 +147,11 @@ def test_missing_day_cannot_be_covered_by_a_valid_hash(tmp_path, monkeypatch):
     evidence = read(tmp_path, monkeypatch)
     assert evidence is not None
     proof = verify_history(
-        evidence, target_date=TARGET, zone=ZoneInfo("Europe/Stockholm"),
-        now=NOW, allow_synthetic=True,
+        evidence,
+        target_date=TARGET,
+        zone=ZoneInfo("Europe/Stockholm"),
+        now=NOW,
+        allow_synthetic=True,
     )
     assert not proof.complete and "DAY_MISSING" in proof.reasons
 
@@ -161,7 +173,10 @@ def test_expired_attestation_does_not_prove_eligibility(tmp_path, monkeypatch):
     evidence = read(tmp_path, monkeypatch)
     assert evidence is not None
     proof = verify_history(
-        evidence, target_date=TARGET, zone=ZoneInfo("Europe/Stockholm"),
-        now=NOW, allow_synthetic=True,
+        evidence,
+        target_date=TARGET,
+        zone=ZoneInfo("Europe/Stockholm"),
+        now=NOW,
+        allow_synthetic=True,
     )
     assert not proof.complete and "EVIDENCE_EXPIRED" in proof.reasons
