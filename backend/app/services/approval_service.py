@@ -25,6 +25,7 @@ from app.core.config import MarketConfig
 from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
+from app.domain.models.audit import DecisionLog
 from app.domain.models.hr import Attendance, DriverStaff, EmployeeShiftSchedule, ShiftTemplate, WarehouseStaff
 from app.domain.models.ops import (
     CustomerOrder,
@@ -46,7 +47,7 @@ from app.domain.models.plan import (
 )
 from app.domain.models.ref import Market, Vehicle
 from app.domain.transitions import transition
-from app.services import reservation_service
+from app.services import alert_service, reservation_service
 
 
 @dataclass(frozen=True)
@@ -625,9 +626,76 @@ async def manual_plan(
     raise _fail("PLAN_NOT_APPROVABLE", "Manual plan creation needs a verified five-gate engine adapter.")
 
 
-async def keep_current(run_id: int, actor: object, reason_text: str) -> None:
-    """T14 wires suggestion alerts; refuse unaudited keep-current requests meanwhile."""
-    raise _fail("PLAN_NOT_APPROVABLE", "Replan suggestion lifecycle is not yet connected.")
+_PRE_DISPATCH = ("APPROVED", "PREPARING", "GOODS_READY", "LOADED")
+
+
+async def keep_current(
+    run_id: int, actor: object, reason_text: str, *, session: AsyncSession | None = None
+) -> None:
+    """Dispatcher keeps the CURRENT approved plan against a replan suggestion (06 §6.6, DEC-HOLD-001).
+
+    Mandatory reason; audit `REPLAN_KEPT`; the suggestion's alert is closed. Nothing else changes: the
+    approved plan, its reservations, trips and the order state are untouched; never approved.
+    Only the order's latest suggestion can be decided, once (decided suggestions are final: `409`).
+    """
+    if "dispatcher" not in _roles(actor):
+        raise _fail("FORBIDDEN", "Only Dispatcher may keep the current plan.")
+    reason = reason_text.strip() if isinstance(reason_text, str) else ""
+    if not reason:
+        raise _fail("REASON_REQUIRED", "Keep-current requires an auditable reason.")
+    if session is None:
+        async with get_sessionmaker()() as db, db.begin():
+            return await keep_current(run_id, actor, reason, session=db)
+    run = await session.get(PlanningRun, run_id)
+    # Lock order first, then run: the same order as plan approval (no lock inversion/deadlock).
+    order = (
+        await session.scalar(select(CustomerOrder).where(CustomerOrder.id == run.order_id).with_for_update())
+        if run is not None
+        else None
+    )
+    market = await session.get(Market, order.market_id) if order is not None else None
+    if (
+        run is None
+        or order is None
+        or market is None
+        or getattr(actor, "market", None) != market.code.strip()
+    ):
+        raise _fail("NOT_FOUND", "Planning run not found.")
+    if run.kind != "replan_suggestion":
+        raise _fail("ILLEGAL_TRANSITION", "Only a replan suggestion can be kept or declined.")
+    await session.scalar(select(PlanningRun.id).where(PlanningRun.id == run.id).with_for_update())
+    if order.approved_plan_id is None or order.status not in _PRE_DISPATCH:
+        raise _fail("ILLEGAL_TRANSITION", "The order has no active pre-dispatch plan to keep.")
+    latest = await session.scalar(
+        select(func.max(PlanningRun.run_no)).where(
+            PlanningRun.order_id == order.id, PlanningRun.kind == "replan_suggestion"
+        )
+    )
+    if latest != run.run_no:
+        raise _fail("ILLEGAL_TRANSITION", "A newer replan suggestion exists; this one is stale.")
+    already = await session.scalar(
+        select(DecisionLog.id).where(
+            DecisionLog.action == Action.REPLAN_KEPT.value,
+            DecisionLog.entity == "planning_run",
+            DecisionLog.entity_id == str(run.id),
+        )
+    )
+    if already is not None:
+        raise _fail("ILLEGAL_TRANSITION", "This suggestion was already decided.")
+    await alert_service.resolve(session, f"replan:{order.id}:{run.id}", now=clock.now())
+    await record_decision(
+        session,
+        Action.REPLAN_KEPT,
+        "planning_run",
+        str(run.id),
+        order_id=order.id,
+        plan_id=order.approved_plan_id,
+        reason_text=reason,
+        snapshot={"trigger": run.params.get("trigger"), "kept_plan_id": order.approved_plan_id},
+        actor_user_id=_actor_id(actor),
+        actor_employee_id=getattr(actor, "employee_id", None),
+        actor_role="dispatcher",
+    )
 
 
 async def record_date_negotiation(order_id: int, actor: object, payload: dict[str, object]) -> int:

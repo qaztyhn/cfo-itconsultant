@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Keep Current cho gợi ý lập lại (06 §6.6)] — 2026-11-09 — Dev 1
+
+- `POST /planning-runs/{id}/keep-current` thực thi thật (trước đây luôn từ chối): chỉ Dispatcher cùng market, `reason_text` bắt buộc (`422 REASON_REQUIRED`), chỉ áp dụng cho `planning_run.kind='replan_suggestion'` mới nhất của đơn còn kế hoạch đã duyệt trước dispatch; một lần duy nhất (quyết định lại/stale ⇒ `409 ILLEGAL_TRANSITION`). Cùng transaction: đóng alert `replan:{order}:{run}` và ghi `REPLAN_KEPT` (lý do, plan giữ lại, actor). Kế hoạch đã duyệt, giữ chỗ, chuyến và trạng thái đơn **không đổi**; không bao giờ tự duyệt gợi ý. Khóa theo thứ tự đơn → run (như approve). Chưa làm: duyệt kế hoạch thay thế từ gợi ý (cần quyết định/triển khai riêng).
+
 ## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
 
 - Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
