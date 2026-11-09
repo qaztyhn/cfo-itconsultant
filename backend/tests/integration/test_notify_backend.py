@@ -289,3 +289,97 @@ def test_US_NOT_01_AC4_shadow_mode_suppresses_and_audits(empty_db: str) -> None:
         "shadow_mode",
     )
     assert fetch(empty_db, "SELECT action FROM audit.decision_log")[0][0] == "NOTIFICATION_SUPPRESSED"
+
+
+@pytest.mark.parametrize("template", ["DISPATCHED", "DELIVERED", "FAILED"])
+def test_US_NOT_01_AC1_status_queues_are_idempotent(
+    empty_db: str, template: str
+) -> None:
+    prepare(empty_db, status=template)
+    with patch("app.services.notify_service.clock.now", return_value=NOW):
+        first = run(
+            empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session)
+        )
+        second = run(
+            empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session)
+        )
+    assert first == second
+    assert fetch(empty_db, "SELECT template,status FROM ops.notification")[0] == (template, "queued")
+
+
+def test_US_NOT_02_AC5_cached_send_never_bypasses_current_market_scope(empty_db: str) -> None:
+    prepare(empty_db)
+    with patch("app.services.notify_service.clock.now", return_value=NOW):
+        draft = run(empty_db, _draft)
+        assert draft is not None
+        key = str(uuid4())
+        payload = {"eta_window": WINDOW, "version": 1}
+        run(
+            empty_db,
+            lambda session: notify_service.send_draft(
+                draft, actor(), payload, key, session=session
+            ),
+        )
+    with pytest.raises(DomainError) as error:
+        run(
+            empty_db,
+            lambda session: notify_service.send_draft(
+                draft, actor(market="NO"), payload, key, session=session
+            ),
+        )
+    assert error.value.code == "NOT_FOUND"
+
+
+def test_US_NOT_01_AC2_recipient_with_display_name_never_leaks_into_queue(empty_db: str) -> None:
+    prepare(empty_db)
+    execute(
+        empty_db,
+        "UPDATE ref.customer SET email='Customer Name <demo@cfo.test>'",
+    )
+    with patch("app.services.notify_service.clock.now", return_value=NOW):
+        run(empty_db, lambda session: notify_service.enqueue(1, "CONFIRMED", 1, session=session))
+    result = fetch(
+        empty_db, "SELECT status,recipient,suppressed_reason FROM ops.notification"
+    )[0]
+    assert result == ("suppressed", "suppressed@cfo.test", "recipient_not_allowed")
+
+
+def test_US_NOT_02_AC4_delay_draft_threshold_uses_market_configuration(empty_db: str) -> None:
+    prepare(empty_db)
+    with patch("app.services.notify_service.clock.now", return_value=NOW):
+        first = run(empty_db, _draft)
+        assert first is not None
+        run(
+            empty_db,
+            lambda session: notify_service.send_draft(
+                first, actor(), {"eta_window": WINDOW, "version": 1}, str(uuid4()), session=session
+            ),
+        )
+        too_small = run(
+            empty_db,
+            lambda session: notify_service.create_delay_draft(
+                1,
+                {
+                    "start": "2026-11-10T09:15:00+01:00",
+                    "end": "2026-11-10T11:15:00+01:00",
+                    "version": 2,
+                },
+                session=session,
+                actor=actor(),
+            ),
+        )
+        assert too_small is None
+        enough = run(
+            empty_db,
+            lambda session: notify_service.create_delay_draft(
+                1,
+                {
+                    "start": "2026-11-10T09:30:00+01:00",
+                    "end": "2026-11-10T11:30:00+01:00",
+                    "version": 2,
+                },
+                session=session,
+                actor=actor(),
+            ),
+        )
+        assert enough is not None and enough != first
