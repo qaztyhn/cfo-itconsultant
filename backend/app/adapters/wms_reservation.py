@@ -74,7 +74,8 @@ class ReservationAck:
     status: str  # "accepted" | "partial" | "rejected" | "released"
     lines: tuple[AckLine, ...]
     revision: str
-    reflected_in_batch_id: int | None = None  # stock batch known to include this reservation, if WMS says so
+    reflected_in_batch_id: int | None = None  # unverified until authenticated WMS evidence
+    idempotency_key: str | None = None  # must exactly echo request key; real WMS API unverified
 
 
 class WmsReservationPort(Protocol):
@@ -142,7 +143,12 @@ def _totals(items: Collection[tuple[str, str, Decimal]]) -> dict[tuple[str, str]
 
 def verify_ack(request: ReservationRequest, ack: ReservationAck) -> ReservationAck:
     """The ACK must be an accepted reservation of EXACTLY the requested SKU/warehouse/quantity."""
-    if ack.status != "accepted" or not ack.reservation_id.strip() or not ack.revision.strip():
+    if (
+        ack.status != "accepted"
+        or ack.idempotency_key != request.idempotency_key
+        or not ack.reservation_id.strip()
+        or not ack.revision.strip()
+    ):
         raise ReservationMismatch()
     wanted = _totals([(line.wms_sku, line.warehouse_code, line.quantity) for line in request.lines])
     got = _totals([(a.wms_sku, a.warehouse_code, a.quantity) for a in ack.lines])
