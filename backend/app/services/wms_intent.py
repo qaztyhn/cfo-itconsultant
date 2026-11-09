@@ -133,9 +133,7 @@ async def begin_intent(
     )
     warehouse = await session.get(Location, plan.warehouse_id)
     originals = (
-        await session.scalars(
-            select(OrderLine).where(OrderLine.order_id == order.id).order_by(OrderLine.id)
-        )
+        await session.scalars(select(OrderLine).where(OrderLine.order_id == order.id).order_by(OrderLine.id))
     ).all()
     expected = {(line.id, line.local_sku) for line in originals}
     requested = {(line.order_line_id, line.pos_sku) for line in request.lines}
