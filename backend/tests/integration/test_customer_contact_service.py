@@ -68,7 +68,7 @@ def test_be03_cs_create_atomic_audit_and_privacy_safe_read(seeded: Api) -> None:
 
     for reader in (CS_ACTOR, DISPATCHER_ACTOR):
         page = transact(
-            seeded.dsn, lambda session: customer_contact_service.list_logs(session, reader, 1)
+            seeded.dsn, lambda session, reader=reader: customer_contact_service.list_logs(session, reader, 1)
         )
         assert page["total"] == 1 and len(page["items"]) == 1
         assert set(page["items"][0]) == {
@@ -147,7 +147,7 @@ def test_be03_contact_read_negative_rbac_and_market(seeded: Api) -> None:
         with pytest.raises(DomainError) as caught:
             transact(
                 seeded.dsn,
-                lambda session: customer_contact_service.list_logs(session, person, 1),
+                lambda session, person=person: customer_contact_service.list_logs(session, person, 1),
             )
         assert caught.value.code == code
     page = transact(
