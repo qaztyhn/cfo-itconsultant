@@ -221,6 +221,16 @@ def test_concurrent_distinct_orders_do_not_overallocate(database: Path):
         assert len(stock["included_reservation_ids"]) == 1
 
 
+def test_explicit_zero_stock_is_valid_complete_but_cannot_be_reserved(database: Path):
+    fixture = copy.deepcopy(FIXTURE)
+    fixture["stock"][0]["on_hand"] = "0.000"
+    with _client(database, fixture) as client:
+        snapshot = client.get("/v1/stock", headers=HEADERS).json()
+        assert snapshot["item_count"] == 1 and snapshot["complete"] is True
+        assert snapshot["items"][0]["on_hand"] == "0.000"
+        assert client.post("/v1/reserve", json=REQUEST, headers=HEADERS).status_code == 409
+
+
 def test_disposable_security_and_immutable_fixture(database: Path, monkeypatch: pytest.MonkeyPatch):
     with _client(database) as client:
         bad_fixture = copy.deepcopy(FIXTURE)

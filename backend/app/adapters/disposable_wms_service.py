@@ -112,7 +112,7 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
         if key in seen_rows:
             raise ValueError("Duplicate synthetic stock key")
         seen_rows.add(key)
-        qty = decimal(item.get("on_hand"), positive=True)
+        qty = decimal(item.get("on_hand"))
         conn.execute(
             "INSERT INTO stock(warehouse,sku,unit,on_hand,reserved) VALUES(?,?,?,?,?)",
             (wh, sku, unit, number(qty), number(Decimal(0))),
