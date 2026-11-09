@@ -604,7 +604,11 @@ def test_BE_05_explicit_stop_pod_preserves_other_stops_and_trip_lifecycle(
 def test_BE_05_multi_stop_fail_closed_for_wrong_driver_and_stop(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    original_driver_gate = execution_service._driver_gate
     _dispatch_both_vehicles(execution_api, monkeypatch, [])
+    # Dispatch helper bypasses regulatory D7 in synthetic tests only. Restore the
+    # real backend assignment/compliance gate for these denial assertions.
+    monkeypatch.setattr(execution_service, "_driver_gate", original_driver_gate)
     execute(
         execution_api.dsn,
         "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) "
