@@ -64,6 +64,32 @@ preflight. Regulatory D7 data remain unverified and WMS reservation ACK
 remains a separate Dev 1/2 prerequisite. No production scheduling,
 real GPS, notification sending or physical WMS write is enabled.
 
+## Executed database-proof preflight — PR #205 (2026-11-09)
+
+- Commit `806eb75d554e182c854b964dedaae2048063db81`:
+  [real Compose demo-preflight #42612481389](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42612481389)
+  **PASS**. The workflow ran **20 demo control tests** successfully, booted
+  disposable PostgreSQL 16, Source, CFO and frontend; reran authenticated
+  Source and four-role CFO real HTTP probes; removed its dedicated
+  `cfo-demo-ci-*` volume on completion.
+- The Source acceptance route was still **absent on this `main` snapshot**:
+  `sales_sync_write=BLOCKED`, `planning_approval=BLOCKED`. The new database
+  verifier explicitly returned `postgres_once=BLOCKED` and
+  `postgres_legacy_negative=NOT VERIFIED`; it **did not** claim a
+  successfully inserted CFO order. No approved delivery or regulatory
+  qualification was created.
+- The isolated run's `demo-preflight-status` artifact includes
+  `demo-ci-read-results.json`, `demo-ci-sync-results.json` and the
+  additional `demo-ci-db-results.json`. Previous preflight
+  [#42612389822](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/42612389822)
+  also passed with the same accurate blocked classifications.
+- Dev 2's exact-once database proof is implemented and executed in the
+  **blocked branch**; its success branch (real Source accepted, one CFO
+  order, one routing decision, matching versions) remains **NOT VERIFIED
+  E2E** until Dev 1 #202 and stacked Dev 2 #204 are integrated and this
+  workflow reruns. PR #203's Source exact lookup has since merged; that
+  does **not** itself activate Sync & Check.
+
 ## Executed disposable CI evidence — 2026-11-09
 
 - Commit: `c2171fa6a1daafe4212ba243ae652294fd48a934`
