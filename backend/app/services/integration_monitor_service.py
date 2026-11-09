@@ -167,9 +167,7 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
         )
         order = (SyncRun.started_at.desc(), SyncRun.id.desc())
         current = await session.scalar(base.order_by(*order).limit(1))
-        complete = await session.scalar(
-            base.where(SyncRun.status == "ok").order_by(*order).limit(1)
-        )
+        complete = await session.scalar(base.where(SyncRun.status == "ok").order_by(*order).limit(1))
         if current is not None:
             by_entity[entity] = current
         if complete is not None:
