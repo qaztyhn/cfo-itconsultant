@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
+
+- `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) cần Owner chọn phương án A/B, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
+
 ## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
 
 - Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
