@@ -98,44 +98,63 @@ async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
   return trip.status === "on_road" || trip.status === "completed";
 }
 
+/** Injectable replay core for deterministic offline/RBAC/conflict tests.
+ * Does not forge an ACK from a trip status or a successful HTTP status with no event_id.
+ */
+export async function replayBatch(
+  items: PendingEvent[],
+  dependencies: {
+    eligible: (item: PendingEvent) => Promise<boolean>;
+    send: (item: PendingEvent) => Promise<{ event_id: number }>;
+    acknowledge: (key: string) => Promise<void>;
+    reject: (item: PendingEvent, code: string) => Promise<void>;
+  },
+): Promise<{ sent: number; conflict: number }> {
+  let sent = 0;
+  let conflict = 0;
+  for (const item of items) {
+    if (item.state === "conflict") { conflict++; continue; }
+    try {
+      if (!(await dependencies.eligible(item))) {
+        await dependencies.reject(item, "NOT_ON_TRIP");
+        conflict++;
+        // Never skip an unacknowledged predecessor.
+        break;
+      }
+      const ack = await dependencies.send(item);
+      if (!Number.isInteger(ack.event_id) || ack.event_id <= 0) {
+        throw new Error("Unverified server acknowledgment.");
+      }
+      await dependencies.acknowledge(item.key);
+      sent++;
+    } catch (error) {
+      if (isApiError(error) && [403, 404, 409, 422].includes(error.status ?? 0)) {
+        await dependencies.reject(item, error.code);
+        conflict++;
+      }
+      // Only a definitive server ACK can remove a queued record.
+      break;
+    }
+  }
+  return { sent, conflict };
+}
+
 export async function replayEvents(userId: number): Promise<ReplayResult> {
   if (replaying || (typeof navigator !== "undefined" && !navigator.onLine)) {
     return { sent: 0, conflict: 0, waiting: (await pendingForUser(userId)).length };
   }
   replaying = true;
-  let sent = 0;
-  let conflict = 0;
   try {
-    for (const item of await pendingForUser(userId)) {
-      if (item.state === "conflict") { conflict++; continue; }
-      try {
-        if (!(await eligibleForReplay(item))) {
-          await markConflict(item, "NOT_ON_TRIP");
-          conflict++;
-          continue;
-        }
-        const ack = await submitDriverEvent(item.orderId, item.event, item.key);
-        if (!Number.isInteger(ack.event_id) || ack.event_id <= 0) {
-          // Malformed success response is never treated as an acknowledged save.
-          throw new Error("Unverified server acknowledgment.");
-        }
-        await removeEvent(item.key);
-        sent++;
-      } catch (error) {
-        if (isApiError(error) && [403, 404, 409, 422].includes(error.status ?? 0)) {
-          await markConflict(item, error.code);
-          conflict++;
-          // A queued prior step cannot be skipped, even when a later step exists.
-          break;
-        }
-        // Connectivity, 5xx, incomplete ACK and uncertain outcomes retain the exact key/body.
-        break;
-      }
-    }
+    const result = await replayBatch(await pendingForUser(userId), {
+      eligible: eligibleForReplay,
+      send: (item) => submitDriverEvent(item.orderId, item.event, item.key),
+      acknowledge: removeEvent,
+      reject: markConflict,
+    });
+    return { ...result, waiting: (await pendingForUser(userId)).length };
   } finally {
     replaying = false;
   }
-  return { sent, conflict, waiting: (await pendingForUser(userId)).length };
 }
 
 /** Explicit user action only: discard a conflicting event with no success claim. */
