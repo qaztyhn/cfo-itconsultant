@@ -85,9 +85,13 @@ def test_be03_rollback_removes_log_and_audit(seeded: Api) -> None:
     with pytest.raises(RuntimeError, match="force rollback"):
         transact(seeded.dsn, fail_after_write)
     assert fetch(seeded.dsn, "SELECT count(*) AS n FROM ops.customer_contact_log")[0]["n"] == 0
-    assert fetch(
-        seeded.dsn, "SELECT count(*) AS n FROM audit.decision_log WHERE action='CUSTOMER_CONTACT_RECORDED'"
-    )[0]["n"] == 0
+    assert (
+        fetch(
+            seeded.dsn,
+            "SELECT count(*) AS n FROM audit.decision_log WHERE action='CUSTOMER_CONTACT_RECORDED'",
+        )[0]["n"]
+        == 0
+    )
 
 
 @pytest.mark.parametrize(
