@@ -5,7 +5,6 @@ import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { isApiError } from "../../api/client";
-import type { ApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { ErrorState, LoadingState } from "../../components/StateViews";
 import {
@@ -51,6 +50,7 @@ function MissingSkus({ result }: { result: SyncResult }) {
 export function SalesSyncCheck() {
   const authorized = useAuthStore(s => s.user?.roles.includes("sales") ?? false);
   const [reference, setReference] = useState("");
+  const [eligibilityCheckedAt] = useState(() => Date.now());
   const [decision, setDecision] = useState<SyncResult | null>(null);
   const [activeRef, setActiveRef] = useState("");
   const [run, setRun] = useState<SalesRun | null>(null);
@@ -92,7 +92,7 @@ export function SalesSyncCheck() {
   });
   const ref = safeExternalRef(reference);
   const selectedPlan = run?.plans[0];
-  const eligible = isCfoRouting(decision) && eligibleStandardPlan(run, Date.now()) && !approved;
+  const eligible = isCfoRouting(decision) && eligibleStandardPlan(run, eligibilityCheckedAt) && !approved;
   function startSync(event: React.FormEvent) {
     event.preventDefault();
     if (!authorized || !ref || sync.isPending) return;
@@ -103,7 +103,7 @@ export function SalesSyncCheck() {
     sync.mutate({ ref, key });
   }
   function confirmClick() {
-    if (!authorized || !eligible || !selectedPlan || confirm.isPending) return;
+    if (!authorized || !eligible || !eligibleStandardPlan(run, Date.now()) || !selectedPlan || confirm.isPending) return;
     const key = confirmKeys.current.get(selectedPlan.id) ?? newRetryKey();
     confirmKeys.current.set(selectedPlan.id, key);
     confirm.mutate({ id: selectedPlan.id, key });
@@ -170,7 +170,7 @@ export function SalesSyncCheck() {
             <div><dt className={code}>Estimated arrival</dt><dd>{selectedPlan.eta_at ?? "Not verified"}</dd></div>
             <div><dt className={code}>Hold expires</dt><dd>{run.hold_expires_at ?? "Not verified"}</dd></div>
           </dl>}
-          {!eligibleStandardPlan(run, Date.now()) && <p role="status" className="rounded-control bg-risk-lateRow p-3">
+          {!eligibleStandardPlan(run, eligibilityCheckedAt) && <p role="status" className="rounded-control bg-risk-lateRow p-3">
             Not eligible for Sales confirmation. {run.sales_block_reason ?? "Eligibility or the five verified checks are incomplete."} {escalation}
           </p>}
           {eligible && <div className="space-y-2">
