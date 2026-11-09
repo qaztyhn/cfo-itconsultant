@@ -22,7 +22,7 @@ export const emptyQueueHandlers: RequestHandler[] = [
 ];
 
 /** Gọi ở top-level của file test. Trả về server để test có thể server.use(...) ghi đè handler. */
-export function useOrderQueueMsw(...extra: RequestHandler[]) {
+export function setupOrderQueueMsw(...extra: RequestHandler[]) {
   const server = setupServer(...emptyQueueHandlers, ...extra);
   let mswFetch: typeof fetch;
 
