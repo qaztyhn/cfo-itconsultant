@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+import re
 from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
@@ -138,6 +139,24 @@ def scope_condition(scope: OrderScope) -> ColumnElement[bool]:
         .exists()
     )
     return and_(market, on_my_trip)
+
+
+def _mask_phone(value: str | None) -> str | None:
+    if not value:
+        return None
+    digits = re.sub(r"[^0-9]", "", value)
+    # Do not expose short phone numbers or retain the original dialling prefix.
+    return ("*" * 6 + digits[-2:]) if len(digits) >= 4 else "********"
+
+
+def _mask_email(value: str | None) -> str | None:
+    if not value or "@" not in value:
+        return None
+    domain = value.rpartition("@")[2]
+    if not domain or "." not in domain:
+        return None
+    # Mask even the domain to avoid exposing private personal/company domains.
+    return "***@***"
 
 
 def _hhmm(value: time | None) -> str | None:
@@ -271,14 +290,29 @@ async def list_orders(
     if warehouse_id is not None:
         query = query.where(warehouse_orders([warehouse_id]))
     if q:
-        like = f"%{q.strip()}%"
-        query = query.where(
-            or_(
-                CustomerOrder.order_no.ilike(like),
-                CustomerOrder.external_ref.ilike(like),
-                Customer.name.ilike(like),
-            )
+        # A phone-looking term is never passed to a short-suffix search (CS-01).
+        # Other text/number lookups retain the existing order-number/name behaviour.
+        raw = q.strip()
+        digits = re.sub(r"[^0-9]", "", raw)
+        phone_like = bool(re.fullmatch(r"[+0-9 ()\\-./]+", raw)) and (
+            raw.startswith("+") or len(digits) >= 8
         )
+        if phone_like and len(digits) < 9:
+            raise DomainError("VALIDATION_ERROR", "Phone search is too broad.", {"field": "q"})
+        escaped = raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        terms = [
+            CustomerOrder.order_no.ilike(like, escape="\\"),
+            CustomerOrder.external_ref.ilike(like, escape="\\"),
+            Customer.name.ilike(like, escape="\\"),
+        ]
+        if phone_like:
+            # Search the normalized number, not any raw contact value in the response.
+            # Trunk/international equivalence is based on a sufficiently specific suffix;
+            # never match a short fragment of a phone number.
+            normalized = func.regexp_replace(CustomerOrder.contact_phone, "[^0-9]", "", "g")
+            terms.append(normalized.endswith(digits[-9:]))
+        query = query.where(or_(*terms))
     if risk_color is not None:
         if risk_color not in RISK_COLORS:
             raise DomainError("VALIDATION_ERROR", "Unknown risk color.", {"field": "risk_color"})
@@ -354,6 +388,43 @@ async def get_order(session: AsyncSession, scope: OrderScope, order_id: int) -> 
         raise _not_found()
     order, customer, market_code = row
     tier = scope.tier
+    if scope.role == "customer_service":
+        # Deliberate allowlist: never materialize internal plan, coordinates,
+        # access instructions or unmasked contact information in the CS DTO.
+        risk = (await _risks(session, [order_id])).get(order_id)
+        return {
+            "id": order.id,
+            "order_no": order.order_no,
+            "status": order.status,
+            "market": market_code.strip(),
+            "customer": {"name": customer.name},
+            "contact": {
+                "name": order.contact_name,
+                "phone": _mask_phone(order.contact_phone),
+                "email": _mask_email(order.contact_email),
+            },
+            "delivery": {"address": order.delivery_address},
+            "date_request": {
+                "mode": order.date_mode,
+                "date_from": order.date_from,
+                "date_to": order.date_to,
+                "window": (
+                    None if order.window_start is None
+                    else {"start": _hhmm(order.window_start), "end": _hhmm(order.window_end)}
+                ),
+            },
+            "committed": {
+                "date": order.committed_date,
+                "promise_start": order.promise_start,
+                "promise_end": order.promise_end,
+            },
+            "risk": (
+                None if risk is None
+                else {"status": risk.risk_status, "forecast_eta": risk.forecast_eta}
+            ),
+            "version": order.version,
+            "submitted_at": order.submitted_at,
+        }
     lines = (
         await session.execute(
             select(OrderLine, ProductGlobal, HandlingGroup.code)
