@@ -179,6 +179,30 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
       useAuthStore.getState().clearAuth();
     }
   });
+  it("test_US_INT_06_AC1_shows local API/CORS diagnostics instead of Request failed", async () => {
+    mock.sync.mockRejectedValueOnce(new ApiError("NETWORK_ERROR", "Cannot reach the server", "net-cid", undefined, 0));
+    mount(); search();
+    expect(await screen.findByRole("heading", { name: "Cannot reach CFO API" })).toBeInTheDocument();
+    expect(screen.getByText(/localhost:5174/)).toBeInTheDocument();
+    expect(screen.getByText(/localhost:5174/)).toHaveTextContent("VITE_API_URL");
+    expect(screen.queryByText("Synced · CFO routing confirmed.")).not.toBeInTheDocument();
+    expect(mock.plan).not.toHaveBeenCalled();
+    expect(mock.confirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mock.sync).toHaveBeenCalledTimes(2));
+    expect(mock.sync.mock.calls[1][1]).toBe(mock.sync.mock.calls[0][1]);
+  });
+  it("test_US_INT_06_AC1_reports missing HTTP sync route without claiming order-not-found", async () => {
+    mock.sync.mockRejectedValueOnce(new ApiError("UNKNOWN_ERROR", "HTTP 404", "missing-route-cid", undefined, 404));
+    mount(); search();
+    expect(await screen.findByRole("heading", { name: "Sync & check endpoint unavailable" })).toBeInTheDocument();
+    expect(screen.getByText(/does not expose POST \/integration\/orders\/sync-now/)).toBeInTheDocument();
+    expect(screen.queryByText("Order not found or outside your store")).not.toBeInTheDocument();
+    expect(screen.queryByText("Synced · CFO routing confirmed.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(mock.plan).not.toHaveBeenCalled();
+    expect(mock.confirm).not.toHaveBeenCalled();
+  });
   it("reuses the same Idempotency-Key on a failed sync retry", async () => {
     mock.sync.mockRejectedValueOnce(new ApiError("SYNC_IN_PROGRESS", "Still syncing", "cid", undefined, 409));
     mount(); search();
