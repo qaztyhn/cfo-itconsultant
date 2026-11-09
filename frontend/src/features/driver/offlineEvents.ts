@@ -90,7 +90,7 @@ async function markConflict(event: PendingEvent, code: string): Promise<void> {
  * Completed trips are allowed only to replay the *same* immutable idempotency key,
  * so a lost success response can be recovered instead of forging an acknowledgment.
  */
-async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
+export async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
   const trip = await assignedTrip(item.tripId);
   const assignedStop = trip.stops.find((stop) => stop.trip_stop_id === item.stopId && stop.order_id === item.orderId);
   if (!assignedStop) return false;
@@ -113,7 +113,7 @@ export async function replayBatch(
   let sent = 0;
   let conflict = 0;
   for (const item of items) {
-    if (item.state === "conflict") { conflict++; continue; }
+    if (item.state === "conflict") { conflict++; break; }
     try {
       if (!(await dependencies.eligible(item))) {
         await dependencies.reject(item, "NOT_ON_TRIP");
