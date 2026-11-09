@@ -17,3 +17,7 @@ The latest owner clarification [DEC-WMS-READONLY-20261109](DEC_WMS_READ_ONLY_STO
 **Therefore do not enable WMS mutation from CFO yet.** Dev 1/Dev 2 must submit a tightly scoped contract/approval proposal for **reserve/status/release only**, WMS source authority, authentication, request/response and idempotency, reservation expiry/partial fulfillment, conflict/timeout compensation and stock calculation ownership. Legacy POS modifications and WMS physical stock adjustments remain out of scope. Seek explicit owner approval of the narrow outbound write exception and verified WMS interface before implementation.
 
 **Not part of this docs PR:** any WMS endpoint implementation, live credentials, actual reservation, code changes, migration or merge.
+
+## Conditional reverse mapping (owner confirmed 2026-11-09)
+
+[DEC-WMS-REVERSE-SKU-20261109](DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md) requires that any future owner-approved CFO→WMS reserve/release request use verified **WMS-native original SKU** by market/warehouse and original order-line provenance, with exact stock-unit conversion. A global product may map to multiple local SKUs; never guess an inverse. POS local SKU and WMS SKU must not be assumed equal without verification. Missing/ambiguous → fail closed. This does **not** authorize WMS writes.
