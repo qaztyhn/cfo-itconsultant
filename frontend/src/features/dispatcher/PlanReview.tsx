@@ -77,7 +77,7 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
   if (run.result === "infeasible" || plans.length === 0) {
     const gate = run.failed_check ? `Failed gate: ${gateLabel(run.failed_check)}.` : "";
     const earliest = run.earliest_feasible_date ? ` Earliest feasible date ${run.earliest_feasible_date}.` : "";
-    return <><EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />{run.kind !== "replan_suggestion" && <HoldActions run={run} expired />}</>;
+    return <><EmptyState message={`No feasible plan for this order. ${gate}${earliest}`.trim()} />{(run.rejected_candidates?.length ?? 0) > 0 && <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />}{run.kind !== "replan_suggestion" && <HoldActions run={run} expired />}</>;
   }
 
   return (
