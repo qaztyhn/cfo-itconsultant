@@ -33,8 +33,8 @@ type TripList = { items: DriverTrip[] };
 export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED";
 export type DriverEventPayload =
   | { trip_id: number }
-  | { trip_id: number; recipient_name: string; note?: string }
-  | { trip_id: number; failure_reason: string; note?: string };
+  | { trip_id: number; trip_stop_id: number; recipient_name: string; note?: string }
+  | { trip_id: number; trip_stop_id: number; failure_reason: string; note?: string };
 
 export type DriverEvent = {
   event_type: DriverEventType;
