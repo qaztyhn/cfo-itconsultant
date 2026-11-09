@@ -108,4 +108,7 @@ def test_nonretroactive_scope_rejects_source_batch_captured_before_approval(db: 
     assert "NO_ACCEPTED_STOCK_BATCH" in preflight.blockers
     assert "STOCK_SNAPSHOT_MISSING" in preflight.blockers
     assert fetch(db, "SELECT count(*) FROM ops.stock_snapshot")[0][0] == 0
-    assert fetch(db, "SELECT error FROM stg.sync_run WHERE entity='stock'")[0][0] == "STOCK_SCOPE_NOT_CONFIGURED"
+    assert (
+        fetch(db, "SELECT error FROM stg.sync_run WHERE entity='stock'")[0][0]
+        == "STOCK_SCOPE_NOT_CONFIGURED"
+    )
