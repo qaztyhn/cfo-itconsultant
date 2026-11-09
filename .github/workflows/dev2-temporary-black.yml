@@ -1,0 +1,27 @@
+name: dev2-temporary-black-formatter
+on:
+  push:
+    branches:
+      - feat/dev2-deterministic-demo-fixtures-20261109
+permissions:
+  contents: write
+jobs:
+  format-seed:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Format only changed seed-related Python files
+        run: |
+          python -m pip install 'black==26.10.1'
+          black --line-length 110 backend/app/seed/scenarios.py source_system/app/seed_demo.py backend/tests/unit/test_seed_scenarios.py
+          git config user.name 'dev2-seed-format-bot'
+          git config user.email 'dev2-seed-format-bot@users.noreply.github.com'
+          git add -- backend/app/seed/scenarios.py source_system/app/seed_demo.py backend/tests/unit/test_seed_scenarios.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'style(seed): format D7 edge fixtures'
+            git push origin HEAD:feat/dev2-deterministic-demo-fixtures-20261109
+          fi
