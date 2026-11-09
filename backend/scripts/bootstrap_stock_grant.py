@@ -10,6 +10,7 @@ from app.core.db import get_engine, get_sessionmaker
 from app.deps import CurrentUser
 from app.domain.models.ref import AppUser, Market, StockAdminGrant
 from app.services.stock_scope_service import grant_admin
+from scripts._stock_demo_clock import require_current_demo_clock
 
 
 async def main() -> None:
@@ -31,6 +32,7 @@ async def main() -> None:
     if args.operator_id == args.recipient_id:
         raise SystemExit("Self grant is forbidden")
     async with get_sessionmaker()() as session:
+        await require_current_demo_clock(session)
         market = await session.scalar(select(Market).where(Market.code == args.market))
         operator = await session.get(AppUser, args.operator_id)
         recipient = await session.get(AppUser, args.recipient_id)

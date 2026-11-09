@@ -24,6 +24,15 @@ Decision: `DEC-STOCK-GRANT-BOOTSTRAP-20261109`, as extended by `DEC-STOCK-GRANT-
 
    The operator and the two recipients must be three distinct verified accounts. Never use direct SQL to bypass the checks. Verify each grant's `market_id`, `granted_by`, `valid_from`, `valid_to`, and `reason_text`, plus a matching append-only `audit.decision_log` `STOCK_GRANT_CREATED` row with before/after and Owner reference. `revoke_grant` requires that same delegated operator and a reason; verify its audit row and that the revoked grant no longer authorizes scope work.
 4. Have the author create the explicit SE SKU and warehouse scope using the stock scope service. Have the distinct approver approve it. Record `approved_at`, `effective_from`, author, approver, version, expected warehouse × SKU row count, and `STOCK_SCOPE_APPROVED` audit. Do not set an earlier effective time or alter the clock. A batch with `as_of <= effective_from` cannot establish post-approval stock.
+
+   For the target order's reviewed narrow pilot scope, the read-only preflight found confirmed SKU `SE-BRD-GYP-13` and active SE warehouse IDs `6` (GBG), `7` (STO), `8` (MLM). Use `DEMO_DISPOSABLE=1` with the normal database connection and run from `backend/`. Execute each dry-run first; use the returned draft scope ID for independent approval:
+
+   ```sh
+   python -m scripts.manage_stock_demo_scope --market SE --actor-id 2 create --sku SE-BRD-GYP-13 --warehouse-id 6 --warehouse-id 7 --warehouse-id 8 --reason "Owner demo target SE-2026-000149"
+   python -m scripts.manage_stock_demo_scope --market SE --actor-id 2 --execute create --sku SE-BRD-GYP-13 --warehouse-id 6 --warehouse-id 7 --warehouse-id 8 --reason "Owner demo target SE-2026-000149"
+   python -m scripts.manage_stock_demo_scope --market SE --actor-id 132 approve --scope-id SCOPE_ID
+   python -m scripts.manage_stock_demo_scope --market SE --actor-id 132 --execute approve --scope-id SCOPE_ID
+   ```
 5. Dev 2 must publish a **complete authoritative Source/WMS batch** with trusted `as_of > effective_from`, every expected warehouse × in-scope SKU row including explicit zeroes, source batch identity, and normal freshness/coverage validation. Do not insert CFO stock rows manually. Run the normal stock sync and inspect `ops.stock_write_run`: accepted status, matching scope version and source batch, expected count equal to recorded count. A rejected or stale batch remains a block.
    The direct Dev 2 handoff is recorded in the discussion on [PR #215](https://github.com/qaztyhn/cfo-itconsultant/pull/215). The earlier 300-row run #5 is rejected evidence, not a publishable post-approval batch.
 6. Against that same PostgreSQL database, locate `SE-2026-000149` and invoke the normal authenticated Planning endpoint `POST /orders/{order_id}/plan` as a permitted Dispatcher. Capture the planning run and its stock provenance. Report the actual result and gate failures. A generated plan is not APPROVED until an authorized user explicitly approves it and the approval transaction succeeds. Preserve the sync and Planning evidence in the PR or demo record.
