@@ -29,6 +29,8 @@ def monitoring(api: Api) -> Api:
         "VALUES (1,'scoped.integration@test.invalid','synthetic-not-usable','{admin}')",
         "INSERT INTO ref.market (code,name,timezone,currency) "
         "VALUES ('YY','Second synthetic market','UTC','EUR')",
+        "INSERT INTO ref.market (code,name,timezone,currency) "
+        "VALUES ('SE','Synthetic Sweden','Europe/Stockholm','SEK')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles) "
         "VALUES (2,'other.integration@test.invalid','synthetic-not-usable','{sales}')",
         "INSERT INTO stg.sync_run "
@@ -106,7 +108,12 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
         stock["stock_scope"],
     ) == ("unconfigured", "unconfigured", "unconfigured")
     products = next(item for item in data["sources"] if item["entity"] == "products")
-    assert products["unmapped"] == 1
+    assert products["unmapped"] == 0  # ZZ has no local product catalog.
+    sweden = monitoring.get("/integration/overview", 2, market="SE")
+    se_products = next(
+        item for item in sweden.json()["sources"] if item["entity"] == "products"
+    )
+    assert se_products["unmapped"] == 1
     assert products["rejected"] is None
     assert products["status"] == "never_run"
 
