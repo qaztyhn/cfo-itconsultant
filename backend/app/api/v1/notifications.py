@@ -1,9 +1,7 @@
 """Customer notification endpoints; never send email from a request handler.
 
-Roles and market scope are checked by notify_service. The order-specific paths
-are contract implementations, but the pre-existing orders router currently has
-stub routes registered first. Their route ownership needs a separate Dev 1 PR
-to make those two paths reachable; this PR does not alter that router.
+Roles and market scope are checked by notify_service. Order-specific paths
+are registered here exactly once; the obsolete orders-router stubs are removed.
 """
 
 from typing import Annotated
