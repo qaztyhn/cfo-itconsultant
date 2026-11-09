@@ -182,7 +182,9 @@ python3 tools/demo_db_verify.py \
 
 This tool only runs with `APP_ENV=test`, `DEMO_DISPOSABLE=1`, the exact
 approved `APP_NOW`, and a `cfo-demo-*` project. It independently re-reads
-the authenticated Source order versions, then uses PostgreSQL `psql` in
+**all pages of the authenticated submitted and cancelled Source order feeds** (fail-closed
+on cancelled, contradictory, incomplete, duplicate or wrong-store records) to obtain
+the Source versions, then uses PostgreSQL `psql` in
 the **named disposable** Compose project to prove that order
 `SE-2026-000149` has exactly one CFO row and one CFO routing decision
 at the matching source version, and that pending-mapped
