@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Guarded smoke controls (stdlib, no network)
-        run: python -m unittest discover -s tools/tests -p test_demo_smoke.py -v
+        run: python -m unittest discover -s tools/tests -p 'test_demo*.py' -v
       - name: Docker Compose real Source/CFO/frontend synthetic preflight
         run: python tools/demo_ci.py
       - name: Upload non-PII smoke status ledger
