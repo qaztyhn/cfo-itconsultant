@@ -294,7 +294,7 @@ async def list_orders(
         # Other text/number lookups retain the existing order-number/name behaviour.
         raw = q.strip()
         digits = re.sub(r"[^0-9]", "", raw)
-        phone_like = bool(re.fullmatch(r"[+0-9 ()\\-./]+", raw)) and (
+        phone_like = bool(re.fullmatch(r"[+0-9 ()./-]+", raw)) and (
             raw.startswith("+") or len(digits) >= 8
         )
         if phone_like and len(digits) < 9:
