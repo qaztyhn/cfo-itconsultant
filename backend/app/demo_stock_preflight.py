@@ -42,7 +42,8 @@ async def run(external_ref: str) -> int:
         # Avoid forwarding arbitrary failed-run exception text that may contain PII or secrets.
         payload["latest_sync_error"] = (
             outcome.latest_sync_error
-            if outcome.latest_sync_error in {
+            if outcome.latest_sync_error
+            in {
                 "STOCK_SCOPE_NOT_CONFIGURED",
                 "STOCK_ROWS_MISSING",
                 "STOCK_NORMALIZATION_REJECTED",
