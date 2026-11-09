@@ -1,6 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
 
+## [DEC-WMS-READONLY-20261109] — 2026-11-09 — owner scope clarification, docs only
+
+- Owner nhắc lại CFO **chỉ lấy dữ liệu tồn kho từ WMS**, không quản lý nghiệp vụ xuất/nhập/chuyển hoặc đối soát vật lý. WMS chịu trách nhiệm sổ tồn và chứng từ; CFO đọc batch hợp lệ, kiểm freshness/coverage và giữ riêng lượng held/committed cho đơn để tránh hứa hàng trùng.
+- **Thay thế đề xuất** luồng đối soát WMS/chứng cứ Warehouse Manager + independent reviewer trong CFO tại DEC-T18-WMS-RECON-20261109. Không triển khai trạng thái hàng đợi đối soát hoặc alarm Q3 24 giờ; không tự cộng inbound hoặc trừ lại physical outbound. #127 cần review lại phạm vi `confirm-source/receive` trước khi merge.
+- [Decision record](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). Chỉ docs; không đổi API/DDL/runtime và không merge code PR.
+
 ## [DEC-STOCK-GRANT-BOOTSTRAP-20261109 / DEC-T18-WMS-RECON-20261109] — 2026-11-09 — owner-approved, docs-only
 
 - Owner đồng ý **System Admin được ủy quyền cấp grant Stock Admin đầu tiên theo market**, bắt buộc audit và cấm tự cấp quyền cho mình; giữ S1/S2. Không có bootstrap/role mặc định được tạo bởi PR docs.
