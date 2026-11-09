@@ -195,7 +195,4 @@ def test_US_INT_02_AC1_protected_source_change_keeps_warning_and_commitment(
             "SELECT source_version,status,approved_plan_id FROM ops.customer_order",
         )[0]
     ) == (1, "APPROVED", 1)
-    assert (
-        fetch(db, "SELECT count(*) FROM ops.alert WHERE type='ORDER_CHANGED_AFTER_APPROVAL'")[0][0]
-        == 1
-    )
+    assert fetch(db, "SELECT count(*) FROM ops.alert WHERE type='ORDER_CHANGED_AFTER_APPROVAL'")[0][0] == 1
