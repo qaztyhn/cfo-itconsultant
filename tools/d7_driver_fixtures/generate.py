@@ -7,6 +7,7 @@ fixture schemas, not SQLAlchemy rows and not a source of legally certified scope
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
 TZ = ZoneInfo("Europe/Stockholm")
-FIRST_DAY = date(2026, 9, 14)
+FIRST_DAY = date(2026, 9, 9)
 HISTORY_DAYS = 56
 FUTURE_START = date(2026, 11, 9)
 SCHEMA = "d7.synthetic.v1"
@@ -235,7 +236,24 @@ def build() -> dict[str, dict[str, object]]:
                               "future_start": FUTURE_START.isoformat(),
                               "vehicle_count": len(files["vehicles.json"]["records"]),
                               "driver_count": len(files["drivers.json"]["records"]),
-                              "files": sorted(files), "offline_only": True}
+                              "files": sorted([*files, "verification.json"]), "offline_only": True}
+    # Explicit, revocable DEMO-ONLY attestation of immutable synthetic bytes;
+    # not a human/regulatory certification and never a production verifier.
+    signed = ("manifest.json", "drivers.json") + tuple(
+        f"history_week_{n:02d}.json" for n in range(1, 9)
+    )
+    files["verification.json"] = {
+        "schema_version": SCHEMA,
+        "source": SOURCE,
+        "kind": "synthetic_attestation",
+        "source_kind": SOURCE,
+        "verified_by": "Synthetic Demo Reviewer (fixture-only)",
+        "verified_at": "2026-11-04T08:00:00+01:00",
+        "expires_at": "2026-11-05T08:00:00+01:00",
+        "revoked": False,
+        "legal_verified": False,
+        "sha256": {name: hashlib.sha256(encoded(files[name])).hexdigest() for name in signed},
+    }
     return files
 
 
