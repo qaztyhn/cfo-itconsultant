@@ -231,7 +231,7 @@ function Workspace({ order }: { order: ManualOrder }) {
 export function ManualPlan() {
   const { orderId } = useParams<{ orderId: string }>();
   const id = Number(orderId);
-  const valid = typeof orderId === "string" && /^[1-9]\\d*$/.test(orderId) && Number.isSafeInteger(id);
+  const valid = typeof orderId === "string" && /^[1-9]\d*$/.test(orderId) && Number.isSafeInteger(id);
   const dispatcher = useAuthStore(s => s.user?.roles.includes("dispatcher") ?? false);
   const query = useQuery({
     queryKey: ["manual-plan", "order", id],
