@@ -6,8 +6,11 @@ requires Dev 2's persistent disposable WMS service. Never claims real WMS ACK.
 """
 
 import os
+from dataclasses import replace
+from datetime import datetime
 from decimal import Decimal
 
+from app.adapters.base import StockItemDTO, StockSnapshotDTO
 from app.adapters.wms_reservation import (
     AckLine,
     ReservationAck,
@@ -28,11 +31,13 @@ class SyntheticWmsPort:
             or os.environ.get("DEMO_DISPOSABLE") != "1"
         ):
             raise RuntimeError("Synthetic WMS is restricted to the disposable demo")
+        self._initial = dict(quantities)
         self._available = dict(quantities)
         self._acks: dict[str, ReservationAck] = {}
         self._requests: dict[str, ReservationRequest] = {}
         self._batch = 1
         self.reserve_count = 0
+        self._released: set[str] = set()
 
     async def reserve(self, request: ReservationRequest) -> ReservationAck:
         old = self._acks.get(request.idempotency_key)
@@ -73,6 +78,35 @@ class SyntheticWmsPort:
             raise WmsRejected("market_conflict")
         return self._acks.get(idempotency_key)
 
+    async def fetch_stock(self) -> StockSnapshotDTO:
+        """Complete synthetic stock batch; never real Source/WMS inventory."""
+        rows = tuple(
+            StockItemDTO(warehouse, sku, on_hand, on_hand - self._available[(warehouse, sku)])
+            for (warehouse, sku), on_hand in sorted(self._initial.items())
+        )
+        return StockSnapshotDTO(
+            as_of=datetime.fromisoformat(DEMO_NOW),
+            items=rows,
+            batch_id=self._batch,
+            item_count=len(rows),
+        )
+
     async def release(self, market: str, reservation_id: str, idempotency_key: str) -> ReservationAck:
-        # This contract double deliberately refuses unsupported release semantics.
-        raise WmsRejected("release_not_implemented")
+        """Idempotent synthetic compensation, never physical issue/receipt."""
+        matches = [
+            key
+            for key, ack in self._acks.items()
+            if ack.reservation_id == reservation_id and self._requests[key].market == market
+        ]
+        if len(matches) != 1:
+            raise WmsRejected("reservation_not_found")
+        key = matches[0]
+        if idempotency_key != f"{key}:release":
+            raise WmsRejected("release_key_conflict")
+        if key not in self._released:
+            for line in self._requests[key].lines:
+                self._available[(line.warehouse_code, line.wms_sku)] += line.quantity
+            self._released.add(key)
+            self._batch += 1
+            self._acks[key] = replace(self._acks[key], status="released")
+        return self._acks[key]
