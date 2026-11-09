@@ -33,7 +33,7 @@ function ChecksTable({ checks, rejected }: {
   rejected?: { warehouse_id?: number; failed_check?: string; code?: string; detail?: { message?: string } }[];
 }) {
   // Flat rejected_candidates are a first-failure explanation, NOT evidence that earlier gates passed.
-  const rows = checks?.length ? checks : rejected?.map(item => ({
+  const rows: WarehouseChecks[] = checks?.length ? checks : rejected?.map(item => ({
     warehouse_id: item.warehouse_id,
     ...(GATES.includes(item.failed_check as typeof GATES[number])
       ? { [item.failed_check as string]: { passed: false, code: item.code, detail: item.detail } }
