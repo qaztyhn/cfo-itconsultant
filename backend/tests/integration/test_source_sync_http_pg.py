@@ -57,8 +57,7 @@ def client(db: str, monkeypatch: pytest.MonkeyPatch):
         return SourceOrder.model_validate(state.raw)
 
     monkeypatch.setattr(AdapterRegistry, "configure", lambda *args, **kwargs: None)
-    monkeypatch.setattr(AdapterRegistry, "get", lambda *args: SimpleNamespace(fetch_order_for_sync=fetch_order))
-    # Bound method on SimpleNamespace is not automatically bound; return a real adapter stub.
+    # A transport-only stub preserves the real PostgreSQL acceptance call.
     class Reader:
         async def fetch_order_for_sync(self, external_ref: str):
             return await fetch_order(self, external_ref)
@@ -66,7 +65,7 @@ def client(db: str, monkeypatch: pytest.MonkeyPatch):
     with TestClient(api, raise_server_exceptions=False) as test:
         yield test, state, api
     import asyncio
-    asyncio.run(engine.dispose())
+    asyncio.run(engine.dispose(close=False))
 
 
 def post(client: TestClient, key: str, ref: str = "EXT-1"):
