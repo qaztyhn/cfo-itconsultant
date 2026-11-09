@@ -21,9 +21,7 @@ def phone_shaped_query(raw: str) -> bool:
     """Match the existing CS phone-query classifier without persisting its value."""
     value = raw.strip()
     digits = re.sub(r"[^0-9]", "", value)
-    return bool(_PHONE_CHARACTERS.fullmatch(value)) and (
-        value.startswith("+") or len(digits) >= 8
-    )
+    return bool(_PHONE_CHARACTERS.fullmatch(value)) and (value.startswith("+") or len(digits) >= 8)
 
 
 class CsPhoneProductionGate(BaseHTTPMiddleware):
