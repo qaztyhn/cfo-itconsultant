@@ -13,7 +13,7 @@ fully approved, driver-executable happy path. See
   verified eligible vehicle chosen by the *actual planner*, demo driver
   `driver1@cfo.demo`. Do **not** assign a driver or claim a vehicle match
   merely because the reference record exists.
-- **Fixture cases:** `SE-2026-000123` (candidate standard workflow),
+- **Fixture cases:** `SE-2026-000149` (light, physically plausible standard workflow candidate),
   `SE-2026-000137` (requested-date/resource negative scenario; actual engine
   result must be measured), `SE-2026-000156` (pending SKU `88412`,
   definitive legacy routing negative case). These are existing synthetic
@@ -131,7 +131,7 @@ python3 tools/demo_smoke.py --exercise-sync --report demo-sync-results.json
 ```
 
 The script checks the documented `POST /integration/orders/sync-now` with
-a stable UUID `Idempotency-Key` for `SE-2026-000123`, repeats it with
+a stable UUID `Idempotency-Key` for `SE-2026-000149`, repeats it with
 the same body/key, verifies the same CFO order is readable by Sales and
 Dispatcher, then checks the unmapped `SE-2026-000156` remains `legacy`
 with no CFO order. No POS write. If the endpoint is absent (current
@@ -150,7 +150,7 @@ enable real WMS writes to make this pass.
 ```sh
 docker compose exec -T postgres psql -U cfo -d cfo -Atc \
   "SELECT count(*), min(source_version), max(source_version)
-   FROM ops.customer_order WHERE external_ref='SE-2026-000123';"
+   FROM ops.customer_order WHERE external_ref='SE-2026-000149';"
 ```
 
 Expect **exactly one** row, source version equal to the Source GET version.
