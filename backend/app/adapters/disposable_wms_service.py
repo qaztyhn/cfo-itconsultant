@@ -28,7 +28,7 @@ def permitted() -> bool:
         os.environ.get("APP_ENV") == "test"
         and os.environ.get("DEMO_DISPOSABLE") == "1"
         and os.environ.get("APP_NOW") == FROZEN
-        and os.environ.get("WMS_PRODUCTION_ENABLED", "0") != "1"
+        and os.environ.get("WMS_PRODUCTION_ENABLED", "0").lower() in ("", "0", "false")
     )
 
 
@@ -218,6 +218,9 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             status TEXT NOT NULL,source_version INTEGER NOT NULL,
             ack TEXT NOT NULL,lines TEXT NOT NULL);
         """)
+        # executescript commits the schema DDL; restart a real transaction so an
+        # invalid/partial seed can never survive a failed initialization.
+        conn.execute("BEGIN IMMEDIATE")
         _seed(conn, fixture)
 
     def authorize(x_demo_wms_key: str | None) -> None:
