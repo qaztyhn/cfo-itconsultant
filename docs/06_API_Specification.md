@@ -368,7 +368,8 @@ Dùng cho đơn `PLANNED` hoặc `NO_FEASIBLE_DATE` (v1.2). Engine vẫn kiểm 
 // POST /orders/{id}/date-negotiations
 { "proposed_date": "2026-11-20", "outcome": "agreed", "channel": "phone",
   "contacted_at": "2026-11-05T09:40:00Z", "note": "Customer OK with 20 Nov" }
-// 201 → nếu outcome = "agreed": đơn có thể chạy lại với date_mode/date_to mới (service cập nhật version + 1) khi dispatcher gọi /plan
+// 201 chỉ lưu date_negotiation/DATE_NEGOTIATION_RECORDED; "agreed" KHÔNG tự đổi date_to/version hoặc replan.
+// Sau đó Dispatcher chủ động gọi hành động Apply agreed date (API/DTO kỹ thuật cần review), server xác minh agreement/version/audit trước khi đổi ngày và chạy planning mới; không auto approve, không sửa POS.
 // outcome = "declined": đơn có thể bị hủy; outcome = "unreachable": remind_at = now + 24h, tạo nhắc
 ```
 
