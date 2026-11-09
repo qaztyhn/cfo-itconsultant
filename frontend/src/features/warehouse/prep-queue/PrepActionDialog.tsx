@@ -31,10 +31,11 @@ export function safeActionError(cause: unknown): string {
 
 /** Confirmed warehouse action only; shift-change is a report, never an edit to the approved official roster. */
 export function PrepActionDialog({
-  choice, warehouseId, onClose, onAcknowledged,
+  choice, warehouseId, reportDate, onClose, onAcknowledged,
 }: {
   choice: ActionChoice;
   warehouseId: number;
+  reportDate: string;
   onClose: () => void;
   onAcknowledged: () => Promise<unknown>;
 }) {
@@ -43,7 +44,7 @@ export function PrepActionDialog({
   const [sku, setSku] = useState("");
   const [qty, setQty] = useState("1");
   const [vehicleId, setVehicleId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(reportDate);
   const [staffPresent, setStaffPresent] = useState("0");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -91,7 +92,12 @@ export function PrepActionDialog({
       const ack = await submitPrepEvent(prepared);
       setResult(`CFO recorded event #${ack.event_id} for order ${order.order_no}.`);
       attempt.current = null;
-      await onAcknowledged();
+      // A refresh failure never reverses an already acknowledged server write.
+      try {
+        await onAcknowledged();
+      } catch {
+        // The caller already displayed the authoritative ACK. Re-fetch on the next poll.
+      }
       onClose();
     } catch (cause) {
       setWarning(safeActionError(cause));
