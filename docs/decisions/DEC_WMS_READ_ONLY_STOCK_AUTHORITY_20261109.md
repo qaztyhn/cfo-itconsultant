@@ -21,3 +21,7 @@
 ## Handoff
 
 **Dev 1:** Review #127 transfer/receipt endpoints and any synthesized stock adjustments against WMS-source-only policy; preserve WMS-source ATP and CFO reservations. Review #148 to keep Stock Admin authority limited to CFO configuration/scope. **Dev 2:** Read complete/fresh WMS stock batches, preserve idempotency and stock unavailable/fail-closed behavior; do not invent movement reconciliation services. **Dev 3:** Show source freshness/unknown stock, do not add an unapproved reconciliation dashboard.
+
+## Subsequent approved narrow exception — reservation on CFO-approved plan
+
+[DEC-WMS-RESERVE-SYNC-20261109](DEC_WMS_RESERVE_SYNC_20261109.md) **supersedes the blanket no-CFO-write-to-WMS wording above only for an owner-selected reserve-on-approval workflow**: CFO reads WMS stock, an authorized user confirms a plan, CFO sends a narrowly scoped WMS reserve request using the verified original WMS SKU, WMS atomically confirms and reduces available (not physical on_hand), and CFO immediately refreshes its WMS-derived stock/availability and order state. Actual WMS API and production write deployment are still gated by reviewed contract/security/testing; the decision does not permit WMS physical stock adjustment or reintroduce CFO-owned transfer reconciliation. All other read-only boundaries remain.
