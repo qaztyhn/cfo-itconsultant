@@ -2,7 +2,7 @@
 
 Requires Dev 1 source_handoff (#202). Never lets polling choose routing and
 never writes POS/WMS, plans or approvals. Source list API has no by-ID GET,
-so both complete status feeds are checked conservatively before acceptance.
+so the merged public adapter helper verifies both feeds before acceptance.
 """
 
 from typing import Annotated
@@ -12,9 +12,8 @@ from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.adapters.order_wire import SourceCancellation, SourceOrder
 from app.adapters.registry import AdapterConfigurationError, AdapterRegistry
-from app.adapters.rest_adapter import RestMarketAdapter, SourceReadError
+from app.adapters.rest_adapter import SourceReadError
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
 from app.domain.models.ref import Market
@@ -35,36 +34,6 @@ class SyncNowOutput(BaseModel):
     routing_status: str
     sync_status: str
     already_decided: bool
-
-
-async def _read_submitted(reader: RestMarketAdapter, external_ref: str) -> SourceOrder | None:
-    """Demo bridge: fully read both D1 status lists; contradictory source status blocks routing."""
-    # The concrete authenticated RestMarketAdapter owns HTTP validation/page guards.
-    submitted: SourceOrder | None = None
-    async for row in reader._pages(
-        "orders",
-        None,
-        SourceOrder,
-        key_fields=("id",),
-        page_size=200,
-        filters={"status": "SUBMITTED_FOR_PLANNING"},
-    ):
-        if row.id == external_ref:
-            submitted = row
-    cancelled = False
-    async for row in reader._pages(  # type: ignore[attr-defined]
-        "orders",
-        None,
-        SourceCancellation,
-        key_fields=("id",),
-        page_size=200,
-        filters={"status": "CANCELLED"},
-    ):
-        if row.id == external_ref:
-            cancelled = True
-    if submitted is not None and cancelled:
-        raise SourceReadError("Source changed during the routing lookup")
-    return None if cancelled else submitted
 
 
 @router.post(
@@ -100,7 +69,7 @@ async def sync_now(
             market_timezone=market.timezone,
         )
         reader = registry.get(market.code)
-        source = await _read_submitted(reader, body.external_ref)
+        source = await reader.fetch_order_for_sync(body.external_ref)
     except (AdapterConfigurationError, SourceReadError, ValueError):
         # Never echo a remote URL, key, Source record or personal contact info.
         raise DomainError(
