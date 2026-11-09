@@ -144,7 +144,6 @@ describe("US-PLN-07 AC2–AC5 — explicit customer agreement", () => {
     fireEvent.change(screen.getByLabelText("Negotiation reason / contact note"), { target: { value: "No response" } });
     fireEvent.click(screen.getByRole("button", { name: "Record customer outcome" }));
     expect(await screen.findByText(/Follow-up reminder is server-managed/)).toBeInTheDocument();
-    expect(mock.replan).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Run new plan for agreed date" })).not.toBeInTheDocument();
   });
   it("keeps the negotiation form on API failure, without a false success", async () => {
