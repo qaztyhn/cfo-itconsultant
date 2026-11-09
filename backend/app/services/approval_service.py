@@ -504,6 +504,14 @@ async def _approve(
     # Existing isolated unit/PG tests remain backward-compatible solely as
     # pre-WMS internal transaction tests, NOT as evidence of final approval.
     if get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1":
+        # Persisted synthetic ACK by itself is NOT sufficient. Inspect the
+        # current ledger under the order lock, then fail closed until an
+        # authenticated native-SKU→CFO stock-batch linkage is verified.
+        if get_settings().app_env == "test" and os.environ.get("DEMO_DISPOSABLE") == "1":
+            from app.services.wms_finalization_gate import inspect_wms_gate
+
+            wms_state = await inspect_wms_gate(session, order, plan)
+            raise _fail("PLAN_NOT_APPROVABLE", wms_state.reason)
         raise _fail(
             "PLAN_NOT_APPROVABLE",
             "WMS reservation acknowledgment and durable recovery are not configured.",
