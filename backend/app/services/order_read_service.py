@@ -34,6 +34,7 @@ from app.domain.models.ops import (
     MilestoneEvent,
     Notification,
     OrderLine,
+    OrderRouting,
     TripStop,
 )
 from app.domain.models.plan import FulfilmentPlan, PlanningRun
@@ -63,7 +64,21 @@ IN_EXECUTION = (S.APPROVED, S.PREPARING, S.GOODS_READY, S.LOADED, S.DISPATCHED)
 ORDER_SORT = frozenset({"submitted_at", "date_to", "promise_end", "committed_date", "order_no", "status"})
 DEFAULT_SORT = "submitted_at"  # + id: thứ tự đặt hàng (BR-ORD-05)
 RISK_COLORS = frozenset({"green", "yellow", "orange", "red"})
+QUEUE_STATUSES = frozenset({S.SUBMITTED.value, S.PLANNED.value, S.NO_FEASIBLE_DATE.value})
 DATE_MODES = frozenset({"exact", "range", "latest"})
+
+
+def _cfo_route() -> ColumnElement[bool]:
+    """An order enters the CFO planning queue only after its immutable route decision."""
+    return (
+        select(OrderRouting.market_id)
+        .where(
+            OrderRouting.market_id == CustomerOrder.market_id,
+            OrderRouting.external_ref == CustomerOrder.external_ref,
+            OrderRouting.route == "cfo",
+        )
+        .exists()
+    )
 
 
 class OrderReader(Protocol):
@@ -281,6 +296,8 @@ async def list_orders(
         if not statuses or any(s not in S.__members__ for s in statuses):
             raise DomainError("VALIDATION_ERROR", "Unknown order status.", {"field": "status"})
         query = query.where(CustomerOrder.status.in_(statuses))
+        if QUEUE_STATUSES.intersection(statuses):
+            query = query.where(or_(CustomerOrder.status.not_in(QUEUE_STATUSES), _cfo_route()))
     if blocked is not None:
         flag = CustomerOrder.status == S.BLOCKED_UNMAPPED_SKU.value
         query = query.where(flag if blocked else ~flag)
@@ -591,9 +608,9 @@ async def counts(session: AsyncSession, scope: OrderScope) -> dict[str, object]:
         await session.execute(
             select(
                 bucket(and_(~closed_before_today, CustomerOrder.status != S.BLOCKED_UNMAPPED_SKU.value)),
-                bucket(CustomerOrder.status == S.SUBMITTED.value),
-                bucket(CustomerOrder.status == S.PLANNED.value),
-                bucket(CustomerOrder.status == S.NO_FEASIBLE_DATE.value),
+                bucket(and_(CustomerOrder.status == S.SUBMITTED.value, _cfo_route())),
+                bucket(and_(CustomerOrder.status == S.PLANNED.value, _cfo_route())),
+                bucket(and_(CustomerOrder.status == S.NO_FEASIBLE_DATE.value, _cfo_route())),
                 bucket(CustomerOrder.status.in_([s.value for s in IN_EXECUTION])),
                 bucket(pending_suggestion),
                 bucket(and_(CustomerOrder.status == S.DELIVERED.value, CustomerOrder.delivered_at >= start)),
