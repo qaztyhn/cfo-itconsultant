@@ -147,9 +147,12 @@ def test_US_INT_01_AC2_newer_source_updates_only_existing_cfo_record(db: str) ->
     assert fetch(db, "SELECT count(*) FROM ops.order_line")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.order_routing")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
-    with pytest.raises(DomainError) as exc:
-        accept(db, source(version=1), "src-old")
-    assert exc.value.code == "RESOURCE_CONFLICT"
+    for stale_version in (1, 2):
+        with pytest.raises(DomainError) as exc:
+            accept(db, source(version=stale_version), f"src-old-{stale_version}")
+        assert exc.value.code == "RESOURCE_CONFLICT"
+    assert fetch(db, "SELECT count(*) FROM ops.customer_order")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='ROUTING_DECIDED'")[0][0] == 1
 
 
 def test_US_INT_01_AC4_idempotency_key_cannot_be_reused_for_another_source(
