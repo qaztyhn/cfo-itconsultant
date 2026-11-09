@@ -141,7 +141,6 @@ def test_demo_D7_missing_day_real_postgres_planner_fails_closed(
     attest_d7(tmp_path)
     transact(standard_order, lambda s: planning_service.plan(1, DISPATCHER, {}, session=s))
     assert (
-        fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0]
-        == "NO_FEASIBLE_DATE"
+        fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "NO_FEASIBLE_DATE"
     )
     assert fetch(standard_order, "SELECT count(*) FROM plan.vehicle_reservation")[0][0] == 0
