@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
-from app.deps import DbSession, CurrentUser, require_roles
+from app.deps import CurrentUser, DbSession, require_roles
 from app.services import integration_monitor_service as monitor
 
 Admin = Annotated[CurrentUser, Depends(require_roles("admin"))]
