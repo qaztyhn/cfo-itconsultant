@@ -89,9 +89,12 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
     rows, mapping = fixture.get("stock"), fixture.get("mapping")
     source_orders = fixture.get("source_orders")
     if (
-        not isinstance(rows, list) or not rows
-        or not isinstance(mapping, list) or not mapping
-        or not isinstance(source_orders, list) or not source_orders
+        not isinstance(rows, list)
+        or not rows
+        or not isinstance(mapping, list)
+        or not mapping
+        or not isinstance(source_orders, list)
+        or not source_orders
     ):
         raise ValueError("Explicit stock rows and native SKU mappings required")
     fingerprint = hashlib.sha256(canonical(fixture)).hexdigest()
@@ -138,16 +141,23 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
     seen_lines: set[tuple[int, int]] = set()
     for order in source_orders:
         order_id, plan_id, version = (
-            order.get("order_id"), order.get("plan_id"), order.get("source_version")
+            order.get("order_id"),
+            order.get("plan_id"),
+            order.get("source_version"),
         )
         source_ref = order.get("source_ref")
         source_lines = order.get("lines")
         if (
-            type(order_id) is not int or order_id <= 0
-            or type(plan_id) is not int or plan_id <= 0
-            or type(version) is not int or version <= 0
-            or not isinstance(source_ref, str) or not source_ref
-            or not isinstance(source_lines, list) or not source_lines
+            type(order_id) is not int
+            or order_id <= 0
+            or type(plan_id) is not int
+            or plan_id <= 0
+            or type(version) is not int
+            or version <= 0
+            or not isinstance(source_ref, str)
+            or not source_ref
+            or not isinstance(source_lines, list)
+            or not source_lines
         ):
             raise ValueError("Explicit synthetic Source order/version evidence required")
         for line in source_lines:
@@ -156,9 +166,12 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
             wh = line.get("warehouse_code")
             quantity = decimal(line.get("quantity"), positive=True)
             if (
-                type(line_id) is not int or line_id <= 0
-                or not isinstance(pos_sku, str) or not pos_sku
-                or not isinstance(wh, str) or not wh
+                type(line_id) is not int
+                or line_id <= 0
+                or not isinstance(pos_sku, str)
+                or not pos_sku
+                or not isinstance(wh, str)
+                or not wh
                 or (order_id, line_id) in seen_lines
                 or ("SE", wh, pos_sku) not in seen_mapping
             ):
@@ -336,7 +349,8 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                 "status": "accepted",
                 "revision": f"synthetic:{batch}",
                 "reflected_in_batch_id": batch,
-                "source_version": body.source_version, "source_ref": body.source_ref,
+                "source_version": body.source_version,
+                "source_ref": body.source_ref,
                 "lines": lines,
             }
             conn.execute(
