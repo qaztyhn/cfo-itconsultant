@@ -21,7 +21,7 @@ from app.adapters.registry import AdapterRegistry
 from app.api.v1.source_sync import router
 from app.core.errors import install_error_handlers
 from app.deps import CurrentUser, get_current_user, get_db
-from tests.integration.conftest import fetch
+from tests.integration.conftest import async_url, fetch
 from tests.integration.test_ingest_orders import db as db  # noqa: F401
 from tests.integration.test_ingest_orders import source
 from tests.integration.test_ingest_references import mapped
@@ -36,7 +36,7 @@ ACTOR = CurrentUser(
 @pytest.fixture
 def client(db: str, monkeypatch: pytest.MonkeyPatch):
     mapped(db)
-    engine = create_async_engine(db)
+    engine = create_async_engine(async_url(db))
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def session_dependency():
