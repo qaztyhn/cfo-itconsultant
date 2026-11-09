@@ -23,13 +23,15 @@ ACCOUNTS = (
 )
 
 
-async def seed_accounts(session: AsyncSession, password: str) -> None:
+async def seed_accounts(
+    session: AsyncSession, password: str, accounts: tuple[tuple[str, str, str, str], ...] = ACCOUNTS
+) -> None:
     """Caller owns the transaction. Roles/scopes come from migration 0008."""
     if not password.strip():
         raise ValueError("SEED_DEMO_PASSWORD is required")
     await session.execute(text("SELECT pg_advisory_xact_lock(20261104)"))
     market = (await session.execute(text("SELECT id FROM ref.market WHERE code='SE'"))).scalar_one()
-    for name, position, location_code, location_type in ACCOUNTS:
+    for name, position, location_code, location_type in accounts:
         params = {"market": market, "code": location_code, "type": location_type}
         await session.execute(
             text("""INSERT INTO ref.location (market_id, type, code, name, lat, lon)

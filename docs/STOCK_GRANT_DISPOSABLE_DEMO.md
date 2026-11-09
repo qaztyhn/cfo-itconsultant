@@ -3,6 +3,15 @@
 Decision: `DEC-STOCK-GRANT-BOOTSTRAP-20261109`, as extended by `DEC-STOCK-GRANT-CONTROL-20261109`. This procedure is for an isolated, resettable demo database. It does not authorize a production grant or imply that Source/WMS has published stock.
 
 1. Record the Owner's written authorization (this conversation and `DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md`), exact System Admin `ref.app_user.id`, market `SE`, recipient IDs, capabilities, and reason in the change ticket. Review the ticket and database identity mapping with Dev 1 and Dev 2. The operator must be an active Admin, distinct from each recipient; each recipient must be an active Admin. Do not use a shared account. Set `STOCK_GRANT_SYSTEM_ADMIN_USER_ID`, `STOCK_GRANT_AUTHORIZED_MARKET=SE`, and `STOCK_GRANT_OWNER_AUTHORIZATION_REF` in the controlled process environment from that reviewed record. Never place credentials or a fabricated authorization reference in the repository. The Owner explicitly required presenting exact identities for confirmation before bootstrap execution.
+
+   Live read-only preflight found only one existing active SE Admin (`app_user.id=2`, `IT_INTEGRATION`). A dedicated operator and independent approver are absent. After review, provision those two **accounts only** in the disposable container with `DEMO_DISPOSABLE=1` and `SEED_DEMO_PASSWORD` from the existing secret mechanism:
+
+   ```sh
+   python -m scripts.provision_stock_demo_admins
+   python -m scripts.provision_stock_demo_admins --execute
+   ```
+
+   The command uses the M0 account provisioning rules, reports the two actual `app_user.id` values, preserves existing accounts on retry, and creates **zero Stock Admin grants**. Verify the resulting three distinct IDs and present them to the Owner for confirmation before any grant execution. If the dedicated accounts already exist, the procedure verifies rather than resets them. `app_user.id=2` is a candidate for Admin A only after identity review, not an assumed authorization.
 2. Confirm this is the disposable database and that `SELECT count(*) FROM ref.stock_admin_grant WHERE market_id = (SELECT id FROM ref.market WHERE code='SE');` returns zero. Snapshot the database before any change. Do not reset a shared database to force this condition.
 3. From `backend/`, with `DATABASE_URL` set by the normal deployment mechanism, run the preflight and then the reviewed write (replace shell placeholders with the exact approved IDs):
 
@@ -19,6 +28,6 @@ Decision: `DEC-STOCK-GRANT-BOOTSTRAP-20261109`, as extended by `DEC-STOCK-GRANT-
    The direct Dev 2 handoff is recorded in the discussion on [PR #215](https://github.com/qaztyhn/cfo-itconsultant/pull/215). The earlier 300-row run #5 is rejected evidence, not a publishable post-approval batch.
 6. Against that same PostgreSQL database, locate `SE-2026-000149` and invoke the normal authenticated Planning endpoint `POST /orders/{order_id}/plan` as a permitted Dispatcher. Capture the planning run and its stock provenance. Report the actual result and gate failures. A generated plan is not APPROVED until an authorized user explicitly approves it and the approval transaction succeeds. Preserve the sync and Planning evidence in the PR or demo record.
 
-Focused verification from `backend/` with Python 3.12, dependencies, and an isolated PostgreSQL test URL: `python -m pytest tests/integration/test_stock_scope_service.py -q`. Run `python tools/harness.py backend` from the repository root before review. In the demo container use the reviewed `python -m app.demo_ingest stock` and `python -m app.demo_stock_preflight --external-ref SE-2026-000149` commands from PR #215 after Dev 2 publishes the new batch.
+Focused verification from `backend/` with Python 3.12, dependencies, and an isolated PostgreSQL test URL: `python -m pytest tests/integration/test_stock_scope_service.py tests/integration/test_m0_seed.py -q`. Run `python tools/harness.py backend` from the repository root before review. In the demo container use the reviewed `python -m app.demo_ingest stock` and `python -m app.demo_stock_preflight --external-ref SE-2026-000149` commands from PR #215 after Dev 2 publishes the new batch.
 
 Stop on any missing authorization, mismatch, failed audit, incomplete/stale batch, or planning gate. Revoke demo grants with the reviewed operator before retiring the environment; archive audit evidence, then discard the disposable database.
