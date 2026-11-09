@@ -1,6 +1,6 @@
 # Agent task board — 2026-11-09 after merges
 
-> Snapshot of `main` at [`89a8f3d`](https://github.com/qaztyhn/cfo-itconsultant/commit/89a8f3d33453d4e02df812068ec6944eae2d8499). **Coordination only:** not new business approvals, not proof of E2E or production readiness. Check fresh GitHub PR state and `AGENTS.md`, `docs/09_AI_Coding_Rules.md`, `docs/ASSUMPTIONS.md` before code or merge.
+> Originally based on `main` at [`89a8f3d`](https://github.com/qaztyhn/cfo-itconsultant/commit/89a8f3d33453d4e02df812068ec6944eae2d8499); PR state reverified 2026-11-09. **Coordination only:** not new business approvals, not proof of E2E or production readiness. Check fresh GitHub PR state and `AGENTS.md`, `docs/09_AI_Coding_Rules.md`, `docs/ASSUMPTIONS.md` before code or merge.
 
 ## Merged baseline
 
@@ -11,12 +11,16 @@
 | [#167](https://github.com/qaztyhn/cfo-itconsultant/pull/167) | Owner-approved CS search/privacy, M6 Prep Queue, Stock Admin grant and D8 staging decisions |
 | [#168](https://github.com/qaztyhn/cfo-itconsultant/pull/168) | CS lookup implementation handoff |
 | [#152](https://github.com/qaztyhn/cfo-itconsultant/pull/152) | Integration monitoring read API (Agent 15): merged |
+| [#144](https://github.com/qaztyhn/cfo-itconsultant/pull/144) | Read-only Integration Dashboard UI: merged; no duplicate implementation |
+| [#149](https://github.com/qaztyhn/cfo-itconsultant/pull/149) | My Store Orders read-only UI: merged; server isolation E2E remains separate |
+| [#156](https://github.com/qaztyhn/cfo-itconsultant/pull/156) | Revenue Dashboard: merged; no unapproved revenue formula |
+| [#163](https://github.com/qaztyhn/cfo-itconsultant/pull/163) | Disabled WMS reservation adapter: merged as foundation, not a live write path |
 
 ## Open PRs: reserved file scopes; do not duplicate
 
-- Core/WMS: [#129 Execution](https://github.com/qaztyhn/cfo-itconsultant/pull/129); [#137 GPS](https://github.com/qaztyhn/cfo-itconsultant/pull/137); [#127 Transfers](https://github.com/qaztyhn/cfo-itconsultant/pull/127); [#121 T07](https://github.com/qaztyhn/cfo-itconsultant/pull/121); [#148 scope/evidence](https://github.com/qaztyhn/cfo-itconsultant/pull/148); [#163 disabled WMS port](https://github.com/qaztyhn/cfo-itconsultant/pull/163); [#164 scope-gated stock writer](https://github.com/qaztyhn/cfo-itconsultant/pull/164). #164 is stacked on #148, which depends on #129; not an independently mergeable production writer.
+- Core/WMS: [#129 Execution](https://github.com/qaztyhn/cfo-itconsultant/pull/129); [#137 GPS](https://github.com/qaztyhn/cfo-itconsultant/pull/137); [#127 Transfers](https://github.com/qaztyhn/cfo-itconsultant/pull/127); [#121 T07](https://github.com/qaztyhn/cfo-itconsultant/pull/121); [#148 scope/evidence](https://github.com/qaztyhn/cfo-itconsultant/pull/148); [#164 scope-gated stock writer](https://github.com/qaztyhn/cfo-itconsultant/pull/164). #164 is stacked on #148, which depends on #129; not an independently mergeable production writer.
 - M6 UI: [#154 Prep read UI](https://github.com/qaztyhn/cfo-itconsultant/pull/154); [#159 Prep API](https://github.com/qaztyhn/cfo-itconsultant/pull/159); [#160 Prep contract UI](https://github.com/qaztyhn/cfo-itconsultant/pull/160).
-- Frontend and KPI: [#143 KPI API](https://github.com/qaztyhn/cfo-itconsultant/pull/143), [#150 KPI UI](https://github.com/qaztyhn/cfo-itconsultant/pull/150), [#156 Revenue UI](https://github.com/qaztyhn/cfo-itconsultant/pull/156), [#161 Handling Groups](https://github.com/qaztyhn/cfo-itconsultant/pull/161), [#165 No Feasible Date](https://github.com/qaztyhn/cfo-itconsultant/pull/165), [#166 seed](https://github.com/qaztyhn/cfo-itconsultant/pull/166), [#169 Sales UI](https://github.com/qaztyhn/cfo-itconsultant/pull/169), [#146/#151 Plan Review fixes](https://github.com/qaztyhn/cfo-itconsultant/pull/146), [#153 Manual Plan](https://github.com/qaztyhn/cfo-itconsultant/pull/153), [#147 Exceptions](https://github.com/qaztyhn/cfo-itconsultant/pull/147), [#149 Store Orders](https://github.com/qaztyhn/cfo-itconsultant/pull/149), [#144 Data Integration UI](https://github.com/qaztyhn/cfo-itconsultant/pull/144). Open PR does not mean merged/accepted.
+- Frontend and KPI: [#143 KPI API](https://github.com/qaztyhn/cfo-itconsultant/pull/143), [#150 KPI UI](https://github.com/qaztyhn/cfo-itconsultant/pull/150), [#161 Handling Groups](https://github.com/qaztyhn/cfo-itconsultant/pull/161), [#165 No Feasible Date](https://github.com/qaztyhn/cfo-itconsultant/pull/165), [#166 seed](https://github.com/qaztyhn/cfo-itconsultant/pull/166), [#169 Sales UI](https://github.com/qaztyhn/cfo-itconsultant/pull/169), [#146 canonical Plan Review](https://github.com/qaztyhn/cfo-itconsultant/pull/146) (duplicate #151 closed unmerged), [#153 Manual Plan](https://github.com/qaztyhn/cfo-itconsultant/pull/153), [#147 Exceptions](https://github.com/qaztyhn/cfo-itconsultant/pull/147), Open PR does not mean merged/accepted.
 
 ## Next independent assignments
 
@@ -35,7 +39,7 @@
 ## Latest decision constraints
 
 - [CS, M6, Stock Admin, D8 decisions](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md): server-side CS privacy/phone normalization; canonical Prep Queue `capacity.schedule_verified`; only Owner-delegated System Admin may grant/revoke Stock Admin; D8 approved in staging, not production.
-- [WMS reserve intent](decisions/DEC_WMS_RESERVE_SYNC_20261109.md): only controlled reserve-on-confirmation exception to read-only WMS boundary; actual WMS API, ACK/transport, release, deployment not verified. #162 validator and #163 disabled port are **not** live integration; no double-count.
+- [WMS reserve intent](decisions/DEC_WMS_RESERVE_SYNC_20261109.md): only controlled reserve-on-confirmation exception to read-only WMS boundary; actual WMS API, ACK/transport, release, deployment not verified. #162 validator and merged #163 disabled port are **not** live integration; no double-count.
 - [GPS 7-day retention](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md): stop live collection/read immediately at trip/duty end; restricted authorized historical retention **up to 7 days**, then controlled deletion; #129/#137 must be reconciled, not parallel-edited.
 - [WMS stock authority](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md): WMS owns physical on-hand and transfer movements, CFO does not invent physical reconciliation or WMS movement writes.
 - Never treat docs approval, mocked frontend tests or open PRs as finished implementation.
