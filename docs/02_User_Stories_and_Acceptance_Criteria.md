@@ -524,3 +524,13 @@ Các AC trên được làm rõ bởi [27 owner decisions](decisions/OWNER_CROSS
 - AC-WMS-SKU-04. Match authoritative WMS ACK with requested SKU/warehouse/qty and idempotency; avoid double deduction. **This acceptance does not grant WMS write permission.**
 
 [Decision](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
+
+### WMS stock confirmation — owner-approved business acceptance (DEC-WMS-RESERVE-SYNC-20261109)
+
+- AC-WMS-RES-01. Given CFO has an eligible 100%-mapped order and fresh complete WMS stock, when planning, then CFO checks WMS availability (including reservations from all WMS channels) and counts only temporary CFO holds not already reflected in WMS. Missing/stale data fails closed.
+- AC-WMS-RES-02. Given authorized Sales/Dispatcher approves a valid plan, then CFO must construct an idempotent WMS reserve for correctly reverse-mapped native SKU, warehouse and stock unit. Only after WMS confirms the exact lines/qty may CFO guarantee stock and finalize approval; failed, partial or unknown reserve may not be presented as approved.
+- AC-WMS-RES-03. Given WMS confirms reserve 60 from on_hand 100, then WMS available becomes 40 while on_hand stays 100 until actual issue; CFO **immediately** refreshes its WMS-derived stock/order state and does **not** deduct 60 a second time. Scheduled polling verifies later changes.
+- AC-WMS-RES-04. Given successful WMS ACK but delayed published snapshot, concurrent second order, timeout or failed local commit, CFO must never promise duplicate stock; use reviewed version-linked pending protection/fail-closed state, idempotent status lookup and compensation. Actual WMS API and rollout require explicit technical/security review.
+
+[Decision](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
