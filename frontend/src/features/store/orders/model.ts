@@ -31,7 +31,7 @@ function nonnegative(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 function clean(value: unknown, max = 100): string | null {
-  return typeof value === "string" && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/.test(value)
+  return typeof value === "string" && value.length > 0 && value.length <= max && Array.from(value).every(char => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127)
     ? value : null;
 }
 function date(value: unknown): string | null {
