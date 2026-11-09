@@ -193,7 +193,11 @@ def test_store_tier_for_sales_and_cs(od: Api) -> None:
     assert "handling_group" not in body["lines"][0] and "flags" not in body["lines"][0]
     assert body["sales"] == {"id": 6, "name": "Sam Sales"} and body["origin_store"]["id"] == 2
     cs = od.get("/orders/3", CS).json()
-    assert cs["risk"] == {"status": "AT_RISK", "forecast_eta": "2026-11-13T11:30:00Z"}
+    assert cs["risk"] == {
+        "status": "AT_RISK",
+        "color": "orange",
+        "forecast_eta": "2026-11-13T11:30:00Z",
+    }
 
 
 def test_driver_tier(od: Api) -> None:
