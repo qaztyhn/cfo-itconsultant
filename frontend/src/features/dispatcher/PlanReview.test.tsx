@@ -37,6 +37,24 @@ const apiError = (status: number, code: string, message: string, correlationId =
 describe("PlanReview — plans", () => {
   beforeEach(() => signIn("dispatcher@cfo.demo"));
 
+  it("test_US_PLN_06_AC5_matches_the_persisted_backend_vehicle_and_gate_DTO", async () => {
+    // Mirrors backend/tests/integration/test_planning_vehicle_dto.py and planning_service._vehicle_out.
+    const dispatcher = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
+      headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}${userByEmail("dispatcher@cfo.demo").id}` },
+    }).then((response) => response.json());
+    const plan = dispatcher.plans[0];
+    expect(plan.checks.stock).toEqual({ passed: true, code: "STOCK_OK" });
+    expect(plan.vehicles[0]).toMatchObject({ vehicle_id: 15, driver_employee_id: 71, vehicle: { id: 15, code: "GBG-12-03", capacity_kg: "12000" } });
+    expect(plan.vehicles[0]).not.toHaveProperty("driver");
+    expect(plan).not.toHaveProperty("promise_window_preview");
+    expect(dispatcher.rejected_candidates[0]).toMatchObject({ warehouse_id: 2, vehicle_code: "STO-12-04" });
+
+    const sales = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
+      headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}${userByEmail("sales@cfo.demo").id}` },
+    }).then((response) => response.json());
+    expect(Object.keys(sales.plans[0].vehicles[0]).sort()).toEqual(["eta_at", "seq"]);
+  });
+
   it("shows plans in the order the API returns them, RECOMMENDED only on rank 1", async () => {
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
@@ -99,7 +117,7 @@ describe("PlanReview — plans", () => {
     const original = await fetch(`${API_BASE_URL}/planning-runs/${MOCK_RUN_IDS.normal}`, {
       headers: { Authorization: `Bearer ${MOCK_TOKEN_PREFIX}1` },
     }).then((r) => r.json());
-    original.plans[0].checks.truck = { pass: false, code: "TRUCK_BUSY" };
+    original.plans[0].checks.truck = { passed: false, code: "TRUCK_BUSY" };
     server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json(original)));
 
     renderAt(runUrl(MOCK_RUN_IDS.normal));
@@ -117,11 +135,11 @@ describe("PlanReview — plans", () => {
     expect(document.body.textContent).not.toMatch(/\$|€|\bSEK\b|\bkr\b|\bcost\b|\bprice\b/i);
   });
 
-  it("shows the driver name to a dispatcher", async () => {
+  it("shows only the driver employee ID supplied by the backend", async () => {
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
     await screen.findAllByRole("article");
-    expect(within(planCards()[0]).getByText(/Driver Björn Eriksson/)).toBeInTheDocument();
+    expect(within(planCards()[0]).getByText(/Driver #71/)).toBeInTheDocument();
   });
 
   it("explains why other candidates were rejected", async () => {
@@ -219,33 +237,15 @@ describe("PlanReview — states", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("shows fresh data without a warning when the integration overview is fresh", async () => {
-    renderAt(runUrl(MOCK_RUN_IDS.normal));
-
-    const freshness = await screen.findByText(/Data as of/);
-    expect(freshness.closest("[data-component=DataFreshness]")).toHaveAttribute("data-stale", "false");
-  });
-
-  it("warns when the server flags the data as stale", async () => {
-    server.use(
-      http.get(`${API_BASE_URL}/integration/overview`, () =>
-        HttpResponse.json({ sources: [{ name: "WMS stock", data_as_of: "2026-11-04T08:00:00+01:00" }], next_sync_at: null, stale: true }),
-      ),
-    );
-    renderAt(runUrl(MOCK_RUN_IDS.normal));
-
-    const warning = await screen.findByText(/Stale data/);
-    expect(warning.closest("[data-component=DataFreshness]")).toHaveAttribute("data-stale", "true");
-    expect(warning.closest("[data-component=DataFreshness]")).toHaveTextContent("⚠");
-  });
-
-  it("treats a failing integration overview as 'freshness unknown' and still shows plans", async () => {
-    server.use(http.get(`${API_BASE_URL}/integration/overview`, () => apiError(404, "NOT_FOUND", "Not found.")));
+  it("shows unknown freshness without requesting the unimplemented integration endpoint", async () => {
+    let overviewCalls = 0;
+    server.use(http.get(`${API_BASE_URL}/integration/overview`, () => { overviewCalls += 1; return apiError(404, "NOT_FOUND", "Not found."); }));
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
     expect(await screen.findByText(/Data freshness unknown/)).toBeInTheDocument();
     expect(screen.getByText(/Verify before approving/)).toBeInTheDocument();
     expect(await screen.findAllByRole("article")).toHaveLength(3);
+    expect(overviewCalls).toBe(0);
   });
 });
 
@@ -264,6 +264,6 @@ describe("PlanReview — access", () => {
     renderAt(runUrl(MOCK_RUN_IDS.normal));
 
     await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(screen.queryByText(/Driver Björn/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Driver #71/)).not.toBeInTheDocument();
   });
 });

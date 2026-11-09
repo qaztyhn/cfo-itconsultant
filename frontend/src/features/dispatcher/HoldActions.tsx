@@ -51,7 +51,7 @@ export function HoldActions({ run, expired }: HoldActionsProps) {
   });
 
   const left = Math.max(0, MAX_HOLD_EXTENSIONS - run.hold_extensions);
-  const canExtend = !expired && left > 0 && !extension.isPending;
+  const canExtend = Boolean(run.hold_expires_at) && run.kind !== "replan_suggestion" && !expired && left > 0 && !extension.isPending;
 
   async function handlePlanAgain(result: ReasonResult) {
     // Lỗi (409/422…) được ném lại để ReasonModal hiện trong modal và giữ modal mở.
