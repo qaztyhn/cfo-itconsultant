@@ -13,8 +13,8 @@ export interface VehicleListProps {
 }
 
 export function VehicleList({ vehicles, showDriver = false, className }: VehicleListProps) {
-  const totalKg = vehicles.reduce((sum, v) => sum + (toNumber(v.vehicle.capacity_kg) ?? 0), 0);
-  const summary = `${vehicles.length} ${vehicles.length === 1 ? "truck" : "trucks"} · ${formatTonnes(totalKg)} total`;
+  const totalKg = vehicles.reduce((sum, v) => sum + (toNumber(v.vehicle?.capacity_kg) ?? 0), 0);
+  const summary = `${vehicles.length} ${vehicles.length === 1 ? "truck" : "trucks"}${vehicles.every((v) => v.vehicle) ? ` · ${formatTonnes(totalKg)} total` : ""}`;
 
   return (
     <div className={className} data-component="VehicleList">
@@ -24,19 +24,15 @@ export function VehicleList({ vehicles, showDriver = false, className }: Vehicle
           <li key={v.seq} className="rounded-control border bg-rowHover px-3 py-2 text-body">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span>
-                <span className="font-mono font-semibold text-ink">{v.vehicle.code}</span>{" "}
-                <span className="text-inkMuted">{v.vehicle.name}</span>
+                <span className="font-mono font-semibold text-ink">{v.vehicle?.code ?? `Vehicle ${v.seq}`}</span>{" "}
+                <span className="text-inkMuted">{v.vehicle?.name}</span>
               </span>
               <span className="font-mono text-caption text-ink">ETA {formatTime(v.eta_at)}</span>
             </div>
             <div className="mt-1 flex flex-wrap gap-x-4 text-caption text-inkMuted">
-              <span>
-                Load {formatKg(v.load_kg)} / {formatKg(v.vehicle.capacity_kg)}
-              </span>
-              <span>
-                {formatM3(v.load_m3)} / {formatM3(v.vehicle.capacity_m3)}
-              </span>
-              {showDriver && v.driver && <span>Driver {v.driver.name}</span>}
+              {v.vehicle && <span>Load {formatKg(v.load_kg)} / {formatKg(v.vehicle.capacity_kg)}</span>}
+              {v.vehicle && <span>{formatM3(v.load_m3)} / {formatM3(v.vehicle.capacity_m3)}</span>}
+              {showDriver && v.driver_employee_id != null && <span>Driver #{v.driver_employee_id}</span>}
             </div>
           </li>
         ))}

@@ -10,6 +10,7 @@ Owner: Dev 1 (A) — M1.
 
 from collections.abc import Sequence
 from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,6 +69,27 @@ def _location_scope(query: Select[Location, str], scope: HrReadScope) -> Select[
     return query
 
 
+async def _market_timezones(session: AsyncSession, market_ids: set[int]) -> dict[int, str]:
+    """IANA timezone per market (`ref.market.timezone`); a missing/invalid value is an error, never UTC."""
+    if not market_ids:
+        return {}
+    found = {
+        i: tz
+        for i, tz in (
+            await session.execute(select(Market.id, Market.timezone).where(Market.id.in_(market_ids)))
+        ).all()
+    }
+    for market_id in market_ids:
+        tz = found.get(market_id)
+        try:
+            if not tz or not tz.strip():
+                raise ValueError
+            ZoneInfo(tz)
+        except (ValueError, ZoneInfoNotFoundError, OSError):
+            raise DomainError("INTERNAL_ERROR", "Market time zone configuration is invalid.") from None
+    return found
+
+
 async def _location_views(
     session: AsyncSession, scope: HrReadScope, rows: Sequence[tuple[Location, str]]
 ) -> list[dict[str, object]]:
@@ -81,6 +103,7 @@ async def _location_views(
         )
         for loc_id, level, emp_id in result.all():
             managers.setdefault((loc_id, level), emp_id)
+    timezones = await _market_timezones(session, {loc.market_id for loc, _ in rows})
     owner_ids = {loc.owner_employee_id for loc, _ in rows if loc.owner_employee_id is not None}
     names = await _names(session, owner_ids | set(managers.values()))
     views: list[dict[str, object]] = []
@@ -89,6 +112,7 @@ async def _location_views(
             {
                 "id": loc.id,
                 "market": market_code.strip(),
+                "timezone": timezones[loc.market_id],
                 "type": loc.type,
                 "code": loc.code,
                 "name": loc.name,
