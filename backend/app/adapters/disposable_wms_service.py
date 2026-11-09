@@ -67,6 +67,7 @@ class Reserve(BaseModel):
     order_id: int = Field(gt=0)
     plan_id: int = Field(gt=0)
     source_version: int = Field(gt=0)
+    source_ref: str = Field(min_length=1)
     idempotency_key: str = Field(min_length=1, max_length=200)
     lines: list[NativeLine] = Field(min_length=1)
 
@@ -86,7 +87,12 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
     if fixture.get("source_kind") != "synthetic_demo" or fixture.get("market") != "SE":
         raise ValueError("Synthetic Swedish fixture required")
     rows, mapping = fixture.get("stock"), fixture.get("mapping")
-    if not isinstance(rows, list) or not rows or not isinstance(mapping, list) or not mapping:
+    source_orders = fixture.get("source_orders")
+    if (
+        not isinstance(rows, list) or not rows
+        or not isinstance(mapping, list) or not mapping
+        or not isinstance(source_orders, list) or not source_orders
+    ):
         raise ValueError("Explicit stock rows and native SKU mappings required")
     fingerprint = hashlib.sha256(canonical(fixture)).hexdigest()
     prior = conn.execute("SELECT value FROM meta WHERE key='fixture_hash'").fetchone()
@@ -129,6 +135,39 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
             "INSERT INTO mapping(market,warehouse,pos_sku,wms_sku,unit,version) VALUES(?,?,?,?,?,?)",
             (market, wh, pos, sku, unit, version),
         )
+    seen_lines: set[tuple[int, int]] = set()
+    for order in source_orders:
+        order_id, plan_id, version = (
+            order.get("order_id"), order.get("plan_id"), order.get("source_version")
+        )
+        source_ref = order.get("source_ref")
+        source_lines = order.get("lines")
+        if (
+            type(order_id) is not int or order_id <= 0
+            or type(plan_id) is not int or plan_id <= 0
+            or type(version) is not int or version <= 0
+            or not isinstance(source_ref, str) or not source_ref
+            or not isinstance(source_lines, list) or not source_lines
+        ):
+            raise ValueError("Explicit synthetic Source order/version evidence required")
+        for line in source_lines:
+            line_id = line.get("order_line_id")
+            pos_sku = line.get("pos_sku")
+            wh = line.get("warehouse_code")
+            quantity = decimal(line.get("quantity"), positive=True)
+            if (
+                type(line_id) is not int or line_id <= 0
+                or not isinstance(pos_sku, str) or not pos_sku
+                or not isinstance(wh, str) or not wh
+                or (order_id, line_id) in seen_lines
+                or ("SE", wh, pos_sku) not in seen_mapping
+            ):
+                raise ValueError("Synthetic Source line lacks original warehouse/SKU identity")
+            seen_lines.add((order_id, line_id))
+            conn.execute(
+                "INSERT INTO source_lines VALUES(?,?,?,?,?,?,?,?)",
+                (order_id, plan_id, version, source_ref, line_id, wh, pos_sku, number(quantity)),
+            )
     conn.execute("INSERT INTO meta(key,value) VALUES('fixture_hash',?)", (fingerprint,))
     conn.execute("INSERT INTO meta(key,value) VALUES('batch_id','1')")
 
@@ -168,6 +207,11 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             market TEXT NOT NULL,warehouse TEXT NOT NULL,pos_sku TEXT NOT NULL,
             wms_sku TEXT NOT NULL,unit TEXT NOT NULL,version TEXT NOT NULL,
             PRIMARY KEY(market,warehouse,pos_sku));
+        CREATE TABLE IF NOT EXISTS source_lines(
+            order_id INTEGER NOT NULL, plan_id INTEGER NOT NULL, source_version INTEGER NOT NULL,
+            source_ref TEXT NOT NULL, order_line_id INTEGER NOT NULL, warehouse TEXT NOT NULL,
+            pos_sku TEXT NOT NULL, quantity TEXT NOT NULL,
+            PRIMARY KEY(order_id,order_line_id));
         CREATE TABLE IF NOT EXISTS reservations(
             request_key TEXT PRIMARY KEY, market TEXT NOT NULL,
             reservation_id TEXT NOT NULL UNIQUE,digest TEXT NOT NULL,
@@ -208,6 +252,13 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                 if prior["digest"] != digest:
                     _error("IDEMPOTENCY_CONFLICT")
                 return json.loads(prior["ack"])
+            original_lines = conn.execute(
+                "SELECT * FROM source_lines WHERE order_id=? ORDER BY order_line_id",
+                (body.order_id,),
+            ).fetchall()
+            if len(original_lines) != len(body.lines) or not original_lines:
+                _error("SOURCE_PROVENANCE_UNVERIFIED")
+            originals = {int(row["order_line_id"]): row for row in original_lines}
             wanted: dict[tuple[str, str], Decimal] = {}
             lines: list[dict[str, Any]] = []
             for line in body.lines:
@@ -226,6 +277,17 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                     quantity = decimal(line.quantity, positive=True)
                 except ValueError:
                     _error("QUANTITY_INVALID", 422)
+                original = originals.get(line.order_line_id)
+                if (
+                    original is None
+                    or original["plan_id"] != body.plan_id
+                    or original["source_version"] != body.source_version
+                    or original["source_ref"] != body.source_ref
+                    or original["warehouse"] != line.warehouse_code
+                    or original["pos_sku"] != line.pos_sku
+                    or original["quantity"] != number(quantity)
+                ):
+                    _error("SOURCE_PROVENANCE_UNVERIFIED")
                 key = (line.warehouse_code, line.wms_sku)
                 wanted[key] = wanted.get(key, Decimal(0)) + quantity
                 lines.append(
@@ -271,7 +333,7 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                 "status": "accepted",
                 "revision": f"synthetic:{batch}",
                 "reflected_in_batch_id": batch,
-                "source_version": body.source_version,
+                "source_version": body.source_version, "source_ref": body.source_ref,
                 "lines": lines,
             }
             conn.execute(
