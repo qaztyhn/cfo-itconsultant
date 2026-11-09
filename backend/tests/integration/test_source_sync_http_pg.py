@@ -4,6 +4,7 @@ Only the external Source transport is replaced by a synthetic typed snapshot.
 The Dev 1 acceptance service, DB transaction, advisory lock, routing and audit
 are REAL. The disposable Compose preflight separately tests real Source HTTP.
 """
+
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,7 @@ def client(db: str, monkeypatch: pytest.MonkeyPatch):
         return SourceOrder.model_validate(state.raw)
 
     monkeypatch.setattr(AdapterRegistry, "configure", lambda *args, **kwargs: None)
+
     # A transport-only stub preserves the real PostgreSQL acceptance call.
     class Reader:
         async def fetch_order_for_sync(self, external_ref: str):
@@ -65,6 +67,7 @@ def client(db: str, monkeypatch: pytest.MonkeyPatch):
     with TestClient(api, raise_server_exceptions=False) as test:
         yield test, state, api
     import asyncio
+
     asyncio.run(engine.dispose(close=False))
 
 
