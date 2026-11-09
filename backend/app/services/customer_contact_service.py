@@ -4,7 +4,7 @@ The legacy orders router still owns its unimplemented REST stubs. Wire this
 service in a separate review after in-flight CS DTO PR #189 merges, rather than
 changing a contested router file. Never log or audit customer-facing free text.
 """
-from datetime import datetime
+
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,14 +90,14 @@ async def create(
         actor_user_id=user_id,
         actor_employee_id=employee_id,
         actor_role="customer_service",
-        snapshot={"channel":channel,"reason_code":reason_code},
+        snapshot={"channel": channel, "reason_code": reason_code},
     )
     return {
-        "id":event.id,
-        "order_id":order.id,
-        "channel":event.channel,
-        "reason_code":event.reason_code,
-        "contacted_at":event.contacted_at,
+        "id": event.id,
+        "order_id": order.id,
+        "channel": event.channel,
+        "reason_code": event.reason_code,
+        "contacted_at": event.contacted_at,
     }
 
 
@@ -123,14 +123,14 @@ async def list_logs(
         "items": [
             {
                 "id": entry.id,
-                "order_id":order.id,
-                "channel":entry.channel,
-                "reason_code":entry.reason_code,
-                "contacted_at":entry.contacted_at,
+                "order_id": order.id,
+                "channel": entry.channel,
+                "reason_code": entry.reason_code,
+                "contacted_at": entry.contacted_at,
             }
             for entry in entries
         ],
-        "page":page,
-        "page_size":page_size,
-        "total":int(total or 0),
+        "page": page,
+        "page_size": page_size,
+        "total": int(total or 0),
     }
