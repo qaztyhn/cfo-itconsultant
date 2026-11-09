@@ -25,7 +25,8 @@ import {
   BUCKETS, RISK_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, isDateRangeInvalid, parseQueueState, toQueueQuery, updateParams,
   type Bucket,
 } from "./orderQueue/queueState";
-import { customerSite, destinationFor, requestedLabel, warehouseLabel } from "./orderQueue/rowView";
+import { OrderAction } from "./orderQueue/OrderAction";
+import { customerSite, requestedLabel, warehouseLabel } from "./orderQueue/rowView";
 
 const POLL_MS = 20_000;
 const BUCKET_LABELS: Record<Bucket, string> = {
@@ -58,17 +59,6 @@ function Indicators({ order }: { order: QueueOrder }) {
         </span>
       )}
     </>
-  );
-}
-
-function ActionLink({ order }: { order: QueueOrder }) {
-  const destination = destinationFor(order);
-  if (!destination) return <span className="text-xs text-inkMuted">—</span>;
-  return (
-    <Link to={destination.to} aria-label={`${destination.label} for order ${order.orderNo}`}
-      className="inline-flex rounded-control border border-border px-3 py-1.5 text-sm font-semibold text-pine hover:bg-rowHover">
-      {destination.label}
-    </Link>
   );
 }
 
@@ -105,7 +95,7 @@ function OrderTable({ items }: { items: QueueOrder[] }) {
                 </td>
                 <td className="px-4 py-3"><div className="flex flex-col items-start gap-1"><Indicators order={order} /></div></td>
                 <td className="px-4 py-3"><StatusChip status={order.status as OrderStatus} /></td>
-                <td className="px-4 py-3"><ActionLink order={order} /></td>
+                <td className="px-4 py-3"><OrderAction order={order} /></td>
               </tr>
             );
           })}
@@ -136,7 +126,7 @@ function OrderCards({ items }: { items: QueueOrder[] }) {
             </dl>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2"><Indicators order={order} /></div>
-              <ActionLink order={order} />
+              <OrderAction order={order} />
             </div>
           </li>
         );

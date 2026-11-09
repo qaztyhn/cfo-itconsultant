@@ -252,7 +252,7 @@ describe("Order queue rows and counts", () => {
 describe("Order queue navigation and layouts", () => {
   const link = (name: string) => main().getAllByRole("link", { name })[0];
 
-  it("test_US_ORD_02_AC3_row_links_point_to_the_right_list_screen", async () => {
+  it("test_US_ORD_02_AC3_row_actions_match_order_status", async () => {
     server.use(ordersOk([
       row({ id: 1, order_no: "SE-A1", status: "PLANNED" }),
       row({ id: 2, order_no: "SE-A2", status: "NO_FEASIBLE_DATE" }),
@@ -263,11 +263,12 @@ describe("Order queue navigation and layouts", () => {
     renderAt("/dispatcher/orders");
 
     await waitFor(() => expect(main().getAllByText("SE-A1").length).toBeGreaterThan(0));
-    expect(link("Plan review for order SE-A1")).toHaveAttribute("href", "/dispatcher/plan-review");
+    expect(main().getAllByRole("button", { name: "Plan review for order SE-A1" }).length).toBeGreaterThan(0);
     expect(link("Exceptions for order SE-A2")).toHaveAttribute("href", "/dispatcher/exceptions");
     expect(link("Tracking for order SE-A3")).toHaveAttribute("href", "/dispatcher/tracking");
-    expect(main().queryAllByRole("link", { name: /for order SE-A4/ })).toHaveLength(0);
+    expect(main().getAllByRole("button", { name: "Run planning for order SE-A4" }).length).toBeGreaterThan(0);
     expect(main().queryAllByRole("link", { name: /for order SE-A5/ })).toHaveLength(0);
+    expect(main().queryAllByRole("button", { name: /for order SE-A5/ })).toHaveLength(0);
   });
 
   it("test_US_ORD_02_AC3_renders_both_table_and_card_layouts", async () => {
