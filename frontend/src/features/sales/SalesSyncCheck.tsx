@@ -23,14 +23,30 @@ const escalation = "Escalate this order to Dispatcher. Sales cannot override the
 function StatusError({ error, retry }: { error: unknown; retry?: () => void }) {
   const api = isApiError(error) ? error : null;
   const status = api?.status;
-  const label = status === 403 ? "Permission denied" :
+  const networkUnavailable = api?.code === "NETWORK_ERROR" || status === 0;
+  // A FastAPI 404 with no standard CFO error body means the requested route
+  // was not found. A structured CFO 404 still means order-not-found/scope.
+  const endpointUnavailable = (status === 404 || status === 405) && api?.code === "UNKNOWN_ERROR";
+  const label = networkUnavailable ? "Cannot reach CFO API" :
+    endpointUnavailable ? "Sync & check endpoint unavailable" :
+    status === 401 ? "Session expired or invalid" :
+    status === 403 ? "Permission denied" :
     status === 404 ? "Order not found or outside your store" :
     status === 409 ? "Conflict — refresh before proceeding" :
     status === 422 ? "Invalid order or request" :
     status === 503 ? "Source or CFO unavailable" : "Request failed";
   const safeError = api ? new ApiError(api.code, label, api.correlationId, undefined, api.status) : error;
   return <section aria-label="Sync error" className="space-y-2">
-    <ErrorState title={label} error={safeError} onRetry={status === 403 || status === 404 ? undefined : retry} />
+    <ErrorState title={label} error={safeError} onRetry={status === 401 || status === 403 || status === 404 || status === 405 ? undefined : retry} />
+    {networkUnavailable && <p className="text-caption">
+      The browser could not connect to the configured CFO API. Check that the backend is running,
+      VITE_API_URL points to its /api/v1 endpoint, and the backend permits this local frontend origin
+      (for example localhost:5174). No routing decision has been verified.
+    </p>}
+    {endpointUnavailable && <p className="text-caption">
+      This CFO API does not expose POST /integration/orders/sync-now. Deploy the reviewed backend
+      Sync &amp; Check endpoint before retrying. No routing decision has been verified.
+    </p>}
     {(status === 409 || status === 503) && <p className="text-caption">{status === 503 ?
       "No routing result was verified. The server may have recorded a decision; retry the same operation before proceeding." :
       "The server may have recorded a decision. Retry the same operation; do not start manual fulfilment without resolving the routing status."}</p>}
