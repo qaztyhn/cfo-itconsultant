@@ -508,9 +508,9 @@
 - **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
 - **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
 
-## PROPOSAL-M6-PREP-QUEUE-001 — Đồng bộ API Prep queue và IANA timezone (09/11/2026)
+## PROPOSAL-M6-PREP-QUEUE-001 — Đồng bộ API Prep queue và IANA timezone (09/11/2026; owner-approved 09/11/2026)
 
-- **Trạng thái:** quyết định kỹ thuật **được tư vấn đề xuất** theo yêu cầu chốt M6 của Dev1; **chưa có lời phê duyệt tường minh của chủ dự án**, vì vậy giữ PR docs ở Draft đến khi xác nhận. Không được gán nhãn owner-approved hay tự merge.
+- **Trạng thái:** **owner-approved, 09/11/2026** (chủ dự án phê duyệt toàn bộ quyết định trong PR #157). Triển khai backend ở PR riêng xếp chồng trên #129; không có giả định nghiệp vụ mới. Chi tiết xác minh lịch ca: `schedule_verified=true` chỉ khi có dòng `hr.employee_shift_schedule` `scheduled` do quản lý có `can_approve` hiệu lực tại thời điểm nhập (theo ngày market của `assigned_at`) và mọi dòng của ngày đó đều hợp lệ; thiếu/sai ⇒ `false`.
 - **Endpoint chuẩn:** `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD`, phản hồi đầy đủ `capacity + orders` của Phụ lục A, bao gồm `schedule_verified` bắt buộc và `next_action`. `GET /prep-queue?warehouse_id=&date=` là đường cũ, nếu duy trì chỉ làm alias dùng chung implementation.
 - **Shape:** `share` trong [0,1]; capacity/booked/work phút là JSON integer; useful hours, kg là JSON number; không serialize Decimal sang chuỗi (trừ tiền). Cutoff `HH:mm` theo market; mốc ca / prep / loading ISO 8601 aware offset. Đơn nhiều xe giữ loading theo từng trip.
 - **Fail-closed:** thiếu roster chính thức hoặc xác minh công suất → `schedule_verified=false`, `total_min=free_min=0`, UI hiện `Capacity not verified`; vẫn đọc được đơn đã duyệt nếu có nguồn tin cậy, tuyệt đối không bịa công suất. Không biến lỗi thiếu adapter/thực thi thành `200` giả hoặc cho phép approve/dispatch vượt safety checks.

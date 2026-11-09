@@ -173,7 +173,8 @@ class LocationOut(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "id": 7, "market": "SE", "type": "warehouse", "code": "STO", "name": "Stockholm DC",
+                    "id": 7, "market": "SE", "timezone": "Europe/Stockholm", "type": "warehouse",
+                    "code": "STO", "name": "Stockholm DC",
                     "address": "…", "lat": 59.3293, "lon": 18.0686, "loading_cutoff_time": "15:00",
                     "is_active": True, "owner": {"employee_id": 40, "name": "…"},
                     "managers": {"primary": {"employee_id": 40, "name": "…"}, "deputy": None},
@@ -184,6 +185,7 @@ class LocationOut(BaseModel):
 
     id: int
     market: str
+    timezone: str  # IANA, from ref.market.timezone (never nullable, never browser/auth-derived)
     type: str
     code: str
     name: str

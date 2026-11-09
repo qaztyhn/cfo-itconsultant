@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [M6 Prep Queue canonical API + `timezone` của location] — 2026-11-09 — Dev 1 (owner-approved PROPOSAL-M6-PREP-QUEUE-001)
+
+- `GET /warehouses/{id}/prep-queue?date=` trả đủ Phụ lục A (`capacity` + `orders`, `schedule_verified` bắt buộc, số nguyên phút, ISO 8601 có offset theo `ref.market.timezone`, loading theo từng trip, `next_action` từ trạng thái server). `GET /prep-queue?warehouse_id=` là alias dùng chung service, cùng response. Thiếu lịch chính thức ⇒ 200 với `schedule_verified=false`, `total_min=free_min=0`, `shifts=[]`, vẫn trả `booked_min` thật và các đơn đã duyệt; lỗi dữ liệu/dependency ⇒ lỗi chuẩn, không có 200 giả.
+- `GET /locations`, `GET /locations/{id}`: thêm `timezone` (IANA, bắt buộc, từ `ref.market.timezone`, mọi loại location); timezone thiếu/không hợp lệ ⇒ `500 INTERNAL_ERROR`, không mặc định UTC. Không đổi migration. Fail-closed duyệt/dispatch/ca tài xế giữ nguyên (#129).
+
 ## [M6-1 — POD thành công duy nhất theo `trip_stop` + M7 session-aware] — 2026-11-09 — Dev 1 (#129)
 
 - Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
