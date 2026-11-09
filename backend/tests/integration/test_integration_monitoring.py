@@ -79,7 +79,7 @@ def test_US_ADM_01_AC1_pagination_status_filter_latest_success(monitoring: Api) 
     assert partial.json()["items"][0]["rows_rejected"] == 1
     overview = monitoring.get("/integration/overview", 2, market="SE")
     assert overview.status_code == 200, overview.text
-    feed = next(item for item in overview.json()["sources"] if item["entity"] == "orders")
+    feed = overview.json()["sources"]["orders"]
     assert feed["status"] == "failed"
     assert feed["last_successful_run_id"] == 1
     assert feed["checkpoint"] == "2026-11-08T09:59:00+00:00"
@@ -107,19 +107,19 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
     assert data["scheduler"]["jobs"] == []
     assert "stock" not in data["scheduler"]["supported_feed_types"]
     assert data["route_matrix"]["pairs"] == 0
-    stock = next(item for item in data["sources"] if item["entity"] == "stock")
+    stock = data["sources"]["stock"]
     assert (
         stock["availability"],
         stock["status"],
         stock["stock_scope"],
     ) == ("unconfigured", "unconfigured", "unconfigured")
-    products = next(item for item in data["sources"] if item["entity"] == "products")
+    products = data["sources"]["products"]
     assert products["unmapped"] == 0  # ZZ has no local product catalog.
     assert products["rejected"] is None
     assert products["status"] == "never_run"
     se_result = monitoring.get("/integration/overview", 2, market="SE")
     assert se_result.status_code == 200, se_result.text
-    se_products = next(item for item in se_result.json()["sources"] if item["entity"] == "products")
+    se_products = se_result.json()["sources"]["products"]
     assert se_products["unmapped"] == 1  # Synthetic pending SKU in ref.product_se.
     assert se_products["rejected"] is None
 
@@ -169,7 +169,7 @@ def test_US_INT_01_AC4_empty_and_failed_only_runs(monitoring: Api) -> None:
     failed = monitoring.get("/sync-runs", 2, market="SE", status="failed")
     assert failed.json()["items"][0]["complete_success"] is False
     overview = monitoring.get("/integration/overview", 2, market="YY")
-    empty_feed = next(item for item in overview.json()["sources"] if item["entity"] == "customers")
+    empty_feed = overview.json()["sources"]["customers"]
     assert empty_feed["last_successful_run_id"] is None
     assert empty_feed["status"] == "never_run"
 
@@ -246,13 +246,13 @@ def test_US_ADM_01_AC1_large_history_latest_rows_stay_market_scoped(
     )
     se = monitoring.get("/integration/overview", 3)
     assert se.status_code == 200, se.text
-    feed = next(row for row in se.json()["sources"] if row["entity"] == "customers")
+    feed = se.json()["sources"]["customers"]
     assert feed["status"] == "running"
     assert feed["last_successful_run_id"] is not None
     assert feed["last_successful_at"] is not None
     assert feed["rows"] == 0
     zz = monitoring.get("/integration/overview", 2, market="ZZ")
     assert zz.status_code == 200, zz.text
-    other = next(row for row in zz.json()["sources"] if row["entity"] == "customers")
+    other = zz.json()["sources"]["customers"]
     assert other["rows"] == 9999
     assert other["last_successful_run_id"] != feed["last_successful_run_id"]
