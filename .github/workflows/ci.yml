@@ -21,6 +21,14 @@ jobs:
       - run: pytest
       - run: python -m unittest discover -s tools/tests
         working-directory: .
+      - name: Check deterministic D7 demo files
+        run: python tools/d7_driver_fixtures/generate.py --check
+        working-directory: .
+      - name: Validate synthetic D7 evidence and negative cases
+        run: |
+          python tools/d7_driver_fixtures/validate.py
+          python -m unittest discover -s tools/d7_driver_fixtures -p 'test_*.py' -v
+        working-directory: .
       - name: Check CFO contract artifact availability
         id: contract
         run: python ../tools/check_openapi.py --baseline ../contracts/cfo.openapi.json --app app.main:app --readiness

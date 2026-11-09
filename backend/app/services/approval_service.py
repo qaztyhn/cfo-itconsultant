@@ -8,6 +8,7 @@ The planning API is owned by T14 and is deliberately not edited here.
 
 import hashlib
 import json
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
-from app.core.config import MarketConfig
+from app.core.config import MarketConfig, get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
@@ -495,6 +496,26 @@ async def _approve(
     proof = await recheck(session, plan.id)
     if not _proof_valid(proof, plan, order):
         raise _fail("RESOURCE_CONFLICT", "Fresh engine/source gate validation failed.", conflict="five_gates")
+
+    # DEC-WMS-RESERVE-SYNC: a local hold and five passing gates are NOT a WMS
+    # reserve ACK. Production/staging and the real disposable demo must never
+    # commit APPROVED before a durable reservation intent, exact WMS ACK,
+    # post-ACK stock refresh and recovery ledger are integrated and verified.
+    # Existing isolated unit/PG tests remain backward-compatible solely as
+    # pre-WMS internal transaction tests, NOT as evidence of final approval.
+    if get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1":
+        # Persisted synthetic ACK by itself is NOT sufficient. Inspect the
+        # current ledger under the order lock, then fail closed until an
+        # authenticated native-SKU→CFO stock-batch linkage is verified.
+        if get_settings().app_env == "test" and os.environ.get("DEMO_DISPOSABLE") == "1":
+            from app.services.wms_finalization_gate import inspect_wms_gate
+
+            wms_state = await inspect_wms_gate(session, order, plan)
+            raise _fail("PLAN_NOT_APPROVABLE", wms_state.reason)
+        raise _fail(
+            "PLAN_NOT_APPROVABLE",
+            "WMS reservation acknowledgment and durable recovery are not configured.",
+        )
 
     plan.status = "approved"
     await session.flush()

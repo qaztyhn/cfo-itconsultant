@@ -25,13 +25,22 @@ from app.core.logging import configure_logging
 def create_app() -> FastAPI:
     """Tạo ứng dụng FastAPI với middleware, lỗi chuẩn và router v1."""
     settings = get_settings()
+    # Explicit opt-in. No production driver-history reader is configured by default.
+    from app.adapters.demo_d7_reader import configure_disposable_reader
+
+    configure_disposable_reader()
     if settings.app_now:  # chỉ cố định đồng hồ khi APP_NOW được đặt (08 mục 1.6)
         clock.init_from_settings(settings.app_now)
     configure_logging(Path("logs") if settings.app_env == "local" else None)
     app = FastAPI(title="CFO API", version="0.1.0", docs_url="/docs")
+    # Vite selects 5174 when 5173 is occupied. Admit only these exact
+    # additional loopback origins in local development; never widen staging/prod.
+    cors_origins = list(settings.cors_origins)
+    if settings.app_env == "local":
+        cors_origins.extend(("http://localhost:5174", "http://127.0.0.1:5174"))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=list(dict.fromkeys(cors_origins)),
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Correlation-ID"],

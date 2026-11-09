@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Customer, Inbound, Order, OrderLine, Product, VehicleCalendar
+from app.models import (
+    Address,
+    Customer,
+    Inbound,
+    Order,
+    OrderLine,
+    Product,
+    VehicleCalendar,
+)
 from app.seed_reference import (
     seed_catalog,
     seed_customers,
@@ -75,12 +83,21 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
         address = await session.get(Address, spec["address_id"])
         if customer is None or address is None or address.customer_id != customer.id:
             raise ValueError("Unknown/mismatched demo customer and address")
+        if spec["date_mode"] == "exact" and spec["date_from"] != spec["date_to"]:
+            raise ValueError("Conflicting exact date in synthetic Source fixture")
         fields = {
             "customer_id": customer.id,
             "address_id": address.id,
             "date_mode": str(spec["date_mode"]),
             "date_from": date.fromisoformat(str(spec["date_from"])),
-            "date_to": date.fromisoformat(str(spec["date_to"])),
+            # The scenario manifest specifies a requested *calendar day* twice
+            # for downstream planning, but Source D1 exact-date schema requires
+            # a NULL upper bound. Do not weaken the approved Source validator.
+            "date_to": (
+                None
+                if spec["date_mode"] == "exact" and spec["date_from"] == spec["date_to"]
+                else date.fromisoformat(str(spec["date_to"]))
+            ),
             "window_start": time.fromisoformat(str(spec["window_start"])),
             "window_end": time.fromisoformat(str(spec["window_end"])),
             "sales_code": str(spec["sales_code"]),
@@ -123,7 +140,12 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
             if product is None:
                 raise ValueError(f"Missing SKU for demo order: {key}")
             expected.append(
-                (int(line["line_no"]), product.sku, Decimal(str(line["qty"])), product.unit_price)
+                (
+                    int(line["line_no"]),
+                    product.sku,
+                    Decimal(str(line["qty"])),
+                    product.unit_price,
+                )
             )
         if existing is not None:
             if [(v.line_no, v.sku, v.qty, v.unit_price) for v in actual] != expected:

@@ -1,7 +1,7 @@
 {
   "coverage_days": 7,
-  "date_from": "2026-09-14",
-  "date_to": "2026-09-20",
+  "date_from": "2026-09-09",
+  "date_to": "2026-09-15",
   "kind": "driver_history",
   "records": [
     {
@@ -10,6 +10,115 @@
       "driving_intervals": [
         {
           "elapsed_min": 120,
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-09"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D01",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 960,
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-10"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D01",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 960,
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-11"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D01",
+      "driving_intervals": [],
+      "driving_min": 0,
+      "duty_end": null,
+      "duty_start": null,
+      "rest_before_duty": null,
+      "verified_off_duty": true,
+      "verified_rest_window": {
+        "elapsed_min": 1440,
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
+      },
+      "work_date": "2026-09-12"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D01",
+      "driving_intervals": [],
+      "driving_min": 0,
+      "duty_end": null,
+      "duty_start": null,
+      "rest_before_duty": null,
+      "verified_off_duty": true,
+      "verified_rest_window": {
+        "elapsed_min": 1440,
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
+      },
+      "work_date": "2026-09-13"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D01",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
           "end": "2026-09-14T11:00+02:00",
           "start": "2026-09-14T09:00+02:00"
         },
@@ -22,7 +131,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -56,88 +169,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D01",
+      "driver_code": "D02",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D01",
+      "driver_code": "D02",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D01",
+      "driver_code": "D02",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D01",
+      "driver_code": "D02",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -146,14 +255,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D01",
+      "driver_code": "D02",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -162,10 +271,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -185,7 +294,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -193,169 +306,6 @@
     {
       "coverage_status": "complete",
       "driver_code": "D02",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-15T11:00+02:00",
-          "start": "2026-09-15T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-15T14:00+02:00",
-          "start": "2026-09-15T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-15T16:00+02:00",
-      "duty_start": "2026-09-15T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-15T08:00+02:00",
-        "start": "2026-09-14T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-15"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D02",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-16"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D02",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-17"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D02",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-18"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D02",
-      "driving_intervals": [],
-      "driving_min": 0,
-      "duty_end": null,
-      "duty_start": null,
-      "rest_before_duty": null,
-      "verified_off_duty": true,
-      "verified_rest_window": {
-        "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
-      },
-      "work_date": "2026-09-19"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D02",
-      "driving_intervals": [],
-      "driving_min": 0,
-      "duty_end": null,
-      "duty_start": null,
-      "rest_before_duty": null,
-      "verified_off_duty": true,
-      "verified_rest_window": {
-        "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
-      },
-      "work_date": "2026-09-20"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D03",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-14T11:00+02:00",
-          "start": "2026-09-14T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-14T14:00+02:00",
-          "start": "2026-09-14T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-14T16:00+02:00",
-      "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-14"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D03",
       "driving_intervals": [
         {
           "elapsed_min": 120,
@@ -386,26 +336,22 @@
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
@@ -413,26 +359,26 @@
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
@@ -440,26 +386,26 @@
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
@@ -472,10 +418,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
@@ -488,10 +434,173 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D03",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-14T11:00+02:00",
+          "start": "2026-09-14T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-14T14:00+02:00",
+          "start": "2026-09-14T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-14T16:00+02:00",
+      "duty_start": "2026-09-14T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-14"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D03",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-15T11:00+02:00",
+          "start": "2026-09-15T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-15T14:00+02:00",
+          "start": "2026-09-15T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-15T16:00+02:00",
+      "duty_start": "2026-09-15T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 960,
+        "end": "2026-09-15T08:00+02:00",
+        "start": "2026-09-14T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-15"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D04",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-09"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D04",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 960,
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-10"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D04",
+      "driving_intervals": [
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
+        },
+        {
+          "elapsed_min": 120,
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
+        }
+      ],
+      "driving_min": 240,
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
+      "rest_before_duty": {
+        "elapsed_min": 960,
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
+      },
+      "verified_off_duty": false,
+      "verified_rest_window": null,
+      "work_date": "2026-09-11"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D04",
+      "driving_intervals": [],
+      "driving_min": 0,
+      "duty_end": null,
+      "duty_start": null,
+      "rest_before_duty": null,
+      "verified_off_duty": true,
+      "verified_rest_window": {
+        "elapsed_min": 1440,
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
+      },
+      "work_date": "2026-09-12"
+    },
+    {
+      "coverage_status": "complete",
+      "driver_code": "D04",
+      "driving_intervals": [],
+      "driving_min": 0,
+      "duty_end": null,
+      "duty_start": null,
+      "rest_before_duty": null,
+      "verified_off_duty": true,
+      "verified_rest_window": {
+        "elapsed_min": 1440,
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
+      },
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -511,7 +620,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -545,88 +658,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D04",
+      "driver_code": "D05",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D04",
+      "driver_code": "D05",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D04",
+      "driver_code": "D05",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D04",
+      "driver_code": "D05",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -635,14 +744,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D04",
+      "driver_code": "D05",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -651,10 +760,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -674,7 +783,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -708,88 +821,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D05",
+      "driver_code": "D06",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D05",
+      "driver_code": "D06",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D05",
+      "driver_code": "D06",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D05",
+      "driver_code": "D06",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -798,14 +907,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D05",
+      "driver_code": "D06",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -814,10 +923,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -837,7 +946,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -871,88 +984,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D06",
+      "driver_code": "D07",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D06",
+      "driver_code": "D07",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D06",
+      "driver_code": "D07",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D06",
+      "driver_code": "D07",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -961,14 +1070,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D06",
+      "driver_code": "D07",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -977,10 +1086,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -1000,7 +1109,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -1034,88 +1147,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D07",
+      "driver_code": "D08",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D07",
+      "driver_code": "D08",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D07",
+      "driver_code": "D08",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D07",
+      "driver_code": "D08",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1124,14 +1233,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D07",
+      "driver_code": "D08",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1140,10 +1249,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -1163,7 +1272,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -1197,88 +1310,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D08",
+      "driver_code": "D09",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D08",
+      "driver_code": "D09",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D08",
+      "driver_code": "D09",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D08",
+      "driver_code": "D09",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1287,14 +1396,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D08",
+      "driver_code": "D09",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1303,10 +1412,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -1326,7 +1435,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -1360,88 +1473,84 @@
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D09",
+      "driver_code": "D10",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
+          "end": "2026-09-09T11:00+02:00",
+          "start": "2026-09-09T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
+          "end": "2026-09-09T14:00+02:00",
+          "start": "2026-09-09T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
+      "duty_end": "2026-09-09T16:00+02:00",
+      "duty_start": "2026-09-09T08:00+02:00",
+      "rest_before_duty": null,
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-16"
+      "work_date": "2026-09-09"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D09",
+      "driver_code": "D10",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
+          "end": "2026-09-10T11:00+02:00",
+          "start": "2026-09-10T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
+          "end": "2026-09-10T14:00+02:00",
+          "start": "2026-09-10T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
+      "duty_end": "2026-09-10T16:00+02:00",
+      "duty_start": "2026-09-10T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
+        "end": "2026-09-10T08:00+02:00",
+        "start": "2026-09-09T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-17"
+      "work_date": "2026-09-10"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D09",
+      "driver_code": "D10",
       "driving_intervals": [
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
+          "end": "2026-09-11T11:00+02:00",
+          "start": "2026-09-11T09:00+02:00"
         },
         {
           "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
+          "end": "2026-09-11T14:00+02:00",
+          "start": "2026-09-11T12:00+02:00"
         }
       ],
       "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
+      "duty_end": "2026-09-11T16:00+02:00",
+      "duty_start": "2026-09-11T08:00+02:00",
       "rest_before_duty": {
         "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
+        "end": "2026-09-11T08:00+02:00",
+        "start": "2026-09-10T16:00+02:00"
       },
       "verified_off_duty": false,
       "verified_rest_window": null,
-      "work_date": "2026-09-18"
+      "work_date": "2026-09-11"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D09",
+      "driver_code": "D10",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1450,14 +1559,14 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
+        "end": "2026-09-13T00:00+02:00",
+        "start": "2026-09-12T00:00+02:00"
       },
-      "work_date": "2026-09-19"
+      "work_date": "2026-09-12"
     },
     {
       "coverage_status": "complete",
-      "driver_code": "D09",
+      "driver_code": "D10",
       "driving_intervals": [],
       "driving_min": 0,
       "duty_end": null,
@@ -1466,10 +1575,10 @@
       "verified_off_duty": true,
       "verified_rest_window": {
         "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
+        "end": "2026-09-14T00:00+02:00",
+        "start": "2026-09-13T00:00+02:00"
       },
-      "work_date": "2026-09-20"
+      "work_date": "2026-09-13"
     },
     {
       "coverage_status": "complete",
@@ -1489,7 +1598,11 @@
       "driving_min": 240,
       "duty_end": "2026-09-14T16:00+02:00",
       "duty_start": "2026-09-14T08:00+02:00",
-      "rest_before_duty": null,
+      "rest_before_duty": {
+        "elapsed_min": 3840,
+        "end": "2026-09-14T08:00+02:00",
+        "start": "2026-09-11T16:00+02:00"
+      },
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-14"
@@ -1520,119 +1633,6 @@
       "verified_off_duty": false,
       "verified_rest_window": null,
       "work_date": "2026-09-15"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D10",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-16T11:00+02:00",
-          "start": "2026-09-16T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-16T14:00+02:00",
-          "start": "2026-09-16T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-16T16:00+02:00",
-      "duty_start": "2026-09-16T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-16T08:00+02:00",
-        "start": "2026-09-15T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-16"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D10",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-17T11:00+02:00",
-          "start": "2026-09-17T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-17T14:00+02:00",
-          "start": "2026-09-17T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-17T16:00+02:00",
-      "duty_start": "2026-09-17T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-17T08:00+02:00",
-        "start": "2026-09-16T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-17"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D10",
-      "driving_intervals": [
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-18T11:00+02:00",
-          "start": "2026-09-18T09:00+02:00"
-        },
-        {
-          "elapsed_min": 120,
-          "end": "2026-09-18T14:00+02:00",
-          "start": "2026-09-18T12:00+02:00"
-        }
-      ],
-      "driving_min": 240,
-      "duty_end": "2026-09-18T16:00+02:00",
-      "duty_start": "2026-09-18T08:00+02:00",
-      "rest_before_duty": {
-        "elapsed_min": 960,
-        "end": "2026-09-18T08:00+02:00",
-        "start": "2026-09-17T16:00+02:00"
-      },
-      "verified_off_duty": false,
-      "verified_rest_window": null,
-      "work_date": "2026-09-18"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D10",
-      "driving_intervals": [],
-      "driving_min": 0,
-      "duty_end": null,
-      "duty_start": null,
-      "rest_before_duty": null,
-      "verified_off_duty": true,
-      "verified_rest_window": {
-        "elapsed_min": 1440,
-        "end": "2026-09-20T00:00+02:00",
-        "start": "2026-09-19T00:00+02:00"
-      },
-      "work_date": "2026-09-19"
-    },
-    {
-      "coverage_status": "complete",
-      "driver_code": "D10",
-      "driving_intervals": [],
-      "driving_min": 0,
-      "duty_end": null,
-      "duty_start": null,
-      "rest_before_duty": null,
-      "verified_off_duty": true,
-      "verified_rest_window": {
-        "elapsed_min": 1440,
-        "end": "2026-09-21T00:00+02:00",
-        "start": "2026-09-20T00:00+02:00"
-      },
-      "work_date": "2026-09-20"
     }
   ],
   "schema_version": "d7.synthetic.v1",

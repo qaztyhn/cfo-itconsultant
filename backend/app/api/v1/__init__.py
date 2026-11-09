@@ -17,12 +17,14 @@ from app.api.v1 import (
     orders,
     planning,
     revenue,
+    source_sync,
     transfers,
 )
 
 router = APIRouter()
 router.include_router(auth.router)
 router.include_router(orders.router)
+router.include_router(source_sync.router)
 router.include_router(planning.router)
 router.include_router(transfers.router)
 router.include_router(execution.router)

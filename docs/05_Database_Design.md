@@ -1113,3 +1113,30 @@ Historical GPS (validly collected, maximum seven days) requires separately scope
 Agreed customer date requires persisted agreement evidence, version and explicit Dispatcher `Apply agreed date` transaction plus replan, without mutating source POS or auto-approving; actual implementation/DDL still need a reviewed change. `prep_window.start` is a nullable `START_PREP` actual event (no extra planned timestamp stored by inference). KPI admin reads require an explicit market selection and use a 30-day default/366-day maximum reporting window.
 
 Synthetic WMS reservation and fixtures are permitted in staging **only**; no physical WMS write, fake legal driver eligibility or golden assertion changes. No new DB columns/tables are approved by this note alone.
+
+## P0 WMS reservation intent ledger — isolated demo and future verified WMS contract
+
+The following table is **CFO-owned durable bookkeeping**. It is NOT a WMS API, an ACK, or authority to approve an order. No production WMS writes are enabled. The unique order constraint deliberately blocks any second reservation/replan until a reviewed release/supersession workflow is implemented.
+
+```sql
+CREATE TABLE ops.wms_reservation_intent (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  market_id smallint NOT NULL REFERENCES ref.market(id),
+  order_id bigint NOT NULL REFERENCES ops.customer_order(id),
+  plan_id bigint NOT NULL REFERENCES plan.fulfilment_plan(id),
+  order_version integer NOT NULL,
+  source_version integer NOT NULL,
+  request_key text NOT NULL UNIQUE,
+  request_payload jsonb NOT NULL,
+  request_digest text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  reservation_id text,
+  ack_revision text,
+  ack_payload jsonb,
+  reflected_in_batch_id bigint,
+  refreshed_batch_id bigint,
+  is_synthetic boolean NOT NULL
+);
+```
+
+All rows also have `created_at` and `updated_at`; migration 0014 owns constraints, indexes and triggers. States: pending, unknown, acked, refreshed, rejected, released. Only a verified matching ACK can advance to acked; a matching batch-inclusion proof can advance to refreshed. **Refreshed is not APPROVED**; ApprovalService remains fail closed pending an audited, double-count-safe finalization contract.

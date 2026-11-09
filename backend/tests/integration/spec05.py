@@ -53,6 +53,7 @@ def spec_tables_in(*schemas: str) -> dict[str, frozenset[str]]:
 
 
 # Bảng/cột 05 do migration 0009 thêm (Q12/Q12b/Q14) — test của migration trước đó so với spec "trước 0009".
+TABLES_ADDED_IN_0014 = frozenset({"ops.wms_reservation_intent"})
 TABLES_ADDED_IN_0013 = frozenset(
     {
         "ref.stock_admin_grant",
@@ -70,5 +71,5 @@ def spec_tables_before_0009(*schemas: str) -> dict[str, frozenset[str]]:
     return {
         name: cols - COLUMNS_ADDED_IN_0009.get(name, frozenset())
         for name, cols in spec_tables_in(*schemas).items()
-        if name not in TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013
+        if name not in TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013 | TABLES_ADDED_IN_0014
     }

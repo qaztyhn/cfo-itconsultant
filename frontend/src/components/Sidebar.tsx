@@ -8,6 +8,7 @@ import { ExternalLink } from "lucide-react";
 import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { POS_URL } from "../api/config";
+import { PATHS } from "../app/access";
 import type { AuthUser, UserRole } from "../api/contracts/auth";
 import { fetchOrderCounts } from "../api/orders";
 import { badgeValue, buildMenu } from "../app/menu";
@@ -96,10 +97,16 @@ export function Sidebar({ className }: SidebarProps) {
                         {count ? <span className={BADGE}>{count}</span> : null}
                       </NavLink>
                     ) : item.external === "pos" ? (
-                      <a href={POS_URL} target="_blank" rel="noreferrer" className={`${ITEM} ${ITEM_IDLE}`}>
-                        <span>{item.label}</span>
-                        <ExternalLink aria-hidden="true" className="h-4 w-4" />
-                      </a>
+                      POS_URL ? (
+                        <a href={POS_URL} target="_blank" rel="noopener noreferrer" className={`${ITEM} ${ITEM_IDLE}`}>
+                          <span>{item.label}</span>
+                          <ExternalLink aria-hidden="true" className="h-4 w-4" />
+                        </a>
+                      ) : (
+                        <NavLink to={PATHS.salesNewOrder} className={({ isActive }) => `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`}>
+                          <span>{item.label}</span>
+                        </NavLink>
+                      )
                     ) : null}
                   </li>
                 );

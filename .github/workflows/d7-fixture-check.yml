@@ -1,0 +1,23 @@
+# Synthetic-only D7 fixture determinism and attestation; never enables production verification.
+name: d7-fixture-check
+on:
+  pull_request:
+    paths:
+      - "tools/d7_driver_fixtures/**"
+      - ".github/workflows/d7-fixture-check.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-d7:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Check canonical committed JSON hashes and timeline
+        run: |
+          python tools/d7_driver_fixtures/generate.py --check
+          python tools/d7_driver_fixtures/validate.py
+      - name: Positive and negative synthetic D7 tests
+        run: python -m unittest discover -s tools/d7_driver_fixtures -p 'test_*.py' -v

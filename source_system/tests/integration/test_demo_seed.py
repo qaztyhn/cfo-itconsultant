@@ -41,7 +41,13 @@ async def test_US_SRC_01_AC1_source_demo_postgres_rerun_and_collision_rollback()
             assert await load(session, fixture, source_instance=schema) == 66
         async with AsyncSession(engine) as session, session.begin():
             assert await load(session, fixture, source_instance=schema) == 0
-            assert (await session.scalars(select(Order))).all().__len__() == 66
+            orders = (await session.scalars(select(Order))).all()
+            assert len(orders) == 66
+            assert all(
+                o.date_mode == "exact" and o.date_from is not None and o.date_to is None for o in orders
+            )
+            # The approved D1 payload for exact date *cannot* expose both bounds.
+            assert any(o.id == "SE-2026-000149" for o in orders)
             assert (await session.scalars(select(Inbound))).all().__len__() == 1
             assert (await session.scalars(select(StockBatch))).all().__len__() == 1
         snapshot = await read_snapshot(engine)
