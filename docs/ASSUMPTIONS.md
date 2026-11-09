@@ -54,6 +54,8 @@
 
 | [DEC-WMS-REVERSE-SKU-20261109](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md) | Nếu CFO gửi reserve/release sang WMS, phải **ánh xạ ngược mã global về SKU WMS gốc đúng market/kho, đơn vị tồn**; global có nhiều SKU gốc thì không tự chọn | 09/11 | Owner: “cái này nếu mà từ cfo về thì phải ánh xạ ngược lại mã sản phẩm cũ” | Yêu cầu có điều kiện đã chốt; quyền ghi WMS chưa duyệt |
 
+| [DEC-WMS-RESERVE-SYNC-20261109](decisions/DEC_WMS_RESERVE_SYNC_20261109.md) | CFO đọc batch tồn WMS để kiểm tra đơn; khi người có quyền xác nhận phương án, CFO **yêu cầu WMS reserve theo SKU gốc**, WMS trừ **available** (không trừ on_hand ngay), CFO **đọc lại/cập nhật ngay** từ WMS; không tính trùng reservation | 09/11 | Owner: “nếu cfo có đơn, thì so khớp với số lượng trong hiện tại lấy từ wms. sau khi đơn được xác nhận wms trừ thì cfo cũng phải cập nhật lại dữ liệu” | Chốt luồng nghiệp vụ; actual WMS write API & go-live chờ review |
+
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
 ### Cách ghi nhận quyết định mới — bắt buộc
@@ -572,3 +574,11 @@
 - Một global product có thể tương ứng nhiều local SKU, nên không được tự lấy SKU đầu tiên, không gộp pool không chứng cứ. Không tìm được SKU duy nhất theo dòng đơn/kho, SKU chưa confirmed, mapping hết hiệu lực, sai đơn vị hoặc số lượng WMS ⇒ **không gửi lệnh**.
 - Nếu WMS xác nhận reservation thì phải khớp warehouse/SKU/quantity/idempotency; không trừ hai lần WMS available. **Quy tắc này chưa cho phép CFO ghi WMS**; Owner vẫn cần duyệt ngoại lệ reserve/release sau khi Dev xác minh API thực tế.
 - [Biên bản](decisions/DEC_WMS_REVERSE_SKU_FOR_RESERVATIONS_20261109.md).
+
+## DEC-WMS-RESERVE-SYNC-20261109 — Duyệt đơn, WMS giữ hàng, CFO cập nhật ngay
+
+- CFO trước khi lên kế hoạch kiểm tra số tồn khả dụng từ WMS theo batch đủ mới, market/kho/SKU gốc WMS đã ánh xạ chuẩn. CFO vẫn tạo hold tạm tối đa 15 phút; hold tạm khác với reservation WMS.
+- **Khi Sales/Dispatcher hợp lệ xác nhận phương án**, CFO được **theo định hướng nghiệp vụ** gửi yêu cầu WMS reserve số lượng tương ứng theo đúng SKU gốc WMS và đơn vị WMS. WMS là bên quyết định atomic availability, bao gồm các đơn từ hệ thống khác; WMS phải ACK reservation thật trước khi CFO coi hàng đã được bảo đảm. Không tự approve nếu WMS không xác nhận.
+- WMS reserve làm giảm **available** chứ không trừ **on_hand vật lý** ngay. WMS chỉ trừ on_hand khi xuất hàng thật, đồng thời tiêu thụ reservation. CFO phải **đọc/cập nhật WMS ngay sau ACK**, không đợi polling 5 phút; polling chỉ kiểm lại. Không trừ hai lần lượng đã nằm trong WMS reserved. Nếu stock feed đến chậm, khóa/bảo vệ lượng chưa phản ánh hoặc fail-closed cho giao dịch mới.
+- Quyết định này là **ngoại lệ nghiệp vụ reserve hẹp** so với quy tắc chỉ GET WMS trước đây; không cấp quyền thay đổi on_hand, không ghi POS, không giao/nhận/chuyển hàng vật lý, không khởi động đối soát chuyển kho CFO. API WMS thực tế, WMS idempotency, ACK/timeout, rollback và API release/adjust cần Dev 1/Dev 2 xác minh, đặc tả, kiểm thử và phê duyệt triển khai trước khi bật ghi thật.
+- [Biên bản](decisions/DEC_WMS_RESERVE_SYNC_20261109.md). Không sửa code hoặc merge PR code chỉ từ quyết định này.
