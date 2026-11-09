@@ -22,5 +22,5 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: ruff check app/adapters/disposable_wms_service.py tests/unit/test_disposable_wms_service.py
-      - run: black --diff --check app/adapters/disposable_wms_service.py tests/unit/test_disposable_wms_service.py
+      - run: black --diff --check app/adapters/disposable_wms_service.py tests/unit/test_disposable_wms_service.py app/demo_stock_readonly.py
       - run: pytest tests/unit/test_disposable_wms_service.py -v
