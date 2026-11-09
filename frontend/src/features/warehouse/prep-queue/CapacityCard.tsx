@@ -21,10 +21,12 @@ export interface CapacityCardProps {
 
 export function CapacityCard({ capacity, timeZone, className }: CapacityCardProps) {
   const verified = isCapacityVerified(capacity);
-  const hasShifts = capacity.shifts.length > 0;
+  // Shift times may be `hh:mm` or ISO with offset: show and lay out both in the warehouse's local time.
+  const shifts = capacity.shifts.map((shift) => ({ ...shift, start: formatClock(shift.start, timeZone), end: formatClock(shift.end, timeZone) }));
+  const hasShifts = shifts.length > 0;
   const cutoff = formatClock(capacity.cutoff, timeZone);
   const cutoffKnown = /^\d{2}:\d{2}$/.test(cutoff);
-  const layout = layoutCapacityBar(capacity.shifts, cutoffKnown ? cutoff : null);
+  const layout = layoutCapacityBar(shifts, cutoffKnown ? cutoff : null);
 
   return (
     <section aria-labelledby="capacity-heading" className={["rounded-card border bg-surface p-6 shadow-card", className].filter(Boolean).join(" ")}>

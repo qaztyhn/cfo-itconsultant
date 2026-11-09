@@ -1,5 +1,5 @@
 /**
- * Local types for the Warehouse Prep Queue (docs/06 Appendix A, `GET /prep-queue?warehouse_id=&date=`).
+ * Local types for the Warehouse Prep Queue (docs/06 Appendix A payload, `GET /warehouses/{id}/prep-queue?date=` agreed with Dev 1)`.
  * DEPENDENCY: hand-written because `schema.d.ts` is not generated yet (docs/09 §9). Replace with generated
  * types once Dev 1/2 export OpenAPI, then delete this file.
  * Owner: Dev 3 (stream C) — M6.
@@ -35,7 +35,7 @@ export interface HandlingMixItem {
  */
 export interface CapacityShift {
   name: string;
-  /** `hh:mm` local time of the warehouse. */
+  /** `hh:mm` or ISO 8601 with offset. */
   start: string;
   end: string;
   present: number;
@@ -53,11 +53,11 @@ export interface Capacity {
   /** Loading cut-off, `hh:mm` local time or ISO 8601 with offset. */
   cutoff: string | null;
   /**
-   * DEPENDENCY: NOT in docs/06 Appendix A. Optional local field based on ASSUMPTIONS Q12d (ASM-007).
-   * Capacity counts as verified ONLY when this is exactly `true`; missing or `false` means "not verified".
+   * Required boolean (contract agreed with Dev 1; ASM-007, BR-PRP-06). `true` only for the official schedule entered by the
+   * Warehouse Manager. Capacity counts as verified ONLY when exactly `true`.
    * `present`, `expected_staff` and `shifts` must never be used to infer verification.
    */
-  schedule_verified?: boolean;
+  schedule_verified: boolean;
 }
 
 export interface PrepWindow {
@@ -91,7 +91,7 @@ export interface PrepQueueOrder {
    * Server hint, display only. Docs do not define its values, so no logic may depend on it:
    * row actions are derived from `status` and `prep_state` (docs/03 §5.6).
    */
-  next_action: string | null;
+  next_action?: string | null;
 }
 
 export interface PrepQueueResponse {

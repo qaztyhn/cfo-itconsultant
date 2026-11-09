@@ -1,29 +1,107 @@
 /**
- * Read-only adapter for `GET /prep-queue?warehouse_id=&date=` (docs/06 Appendix A).
- * DEPENDENCY: docs/06 §8.2 and docs/03 §5.6 list `/warehouses/{id}/prep-queue` instead; Appendix A is followed because it
- * defines the payload. Confirm the final path with Dev 1 before integration.
+ * Read-only adapter for `GET /warehouses/{id}/prep-queue?date=YYYY-MM-DD` (contract agreed with Dev 1).
+ * DEPENDENCY: backend must return 200 with the full payload (docs/06 Appendix A shape, `schedule_verified` required).
+ * Numbers are JSON numbers (no decimal strings); `share` is 0–1; times are `HH:mm` or ISO 8601 with offset.
+ * The parser checks every field the screen renders, so a wrong payload becomes an error state, never a render crash.
  * Owner: Dev 3 (stream C) — M6.
  */
 import { ApiError, apiGet } from "../../../api/client";
-import type { PrepQueueParams, PrepQueueResponse } from "./types";
+import type { Capacity, CapacityShift, LoadingEntry, OrderStatus, PrepQueueOrder, PrepQueueParams, PrepQueueResponse } from "./types";
 
-export const PREP_QUEUE_PATH = "/prep-queue";
+export const prepQueuePath = (warehouseId: number) => `/warehouses/${warehouseId}/prep-queue`;
 
 export const prepQueueKey = (warehouseId: number | null, date: string | null) => ["prep-queue", warehouseId, date] as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+type Json = Record<string, unknown>;
+
+function invalid(field: string): never {
+  throw new ApiError("INVALID_RESPONSE", "The server returned an unexpected prep queue response.", undefined, { field });
 }
 
-/** Minimal shape check so a broken payload becomes an error state instead of a crash. */
+const isRecord = (value: unknown): value is Json => typeof value === "object" && value !== null && !Array.isArray(value);
+const rec = (value: unknown, field: string): Json => (isRecord(value) ? value : invalid(field));
+const arr = (value: unknown, field: string): unknown[] => (Array.isArray(value) ? value : invalid(field));
+const str = (value: unknown, field: string): string => (typeof value === "string" ? value : invalid(field));
+const num = (value: unknown, field: string): number => (typeof value === "number" && Number.isFinite(value) ? value : invalid(field));
+const bool = (value: unknown, field: string): boolean => (typeof value === "boolean" ? value : invalid(field));
+
+function parseShift(value: unknown, field: string): CapacityShift {
+  const shift = rec(value, field);
+  const share = num(shift.share, `${field}.share`);
+  if (share < 0 || share > 1) invalid(`${field}.share`); // 0–1 ratio; 90 would mean a unit mismatch
+  return {
+    name: str(shift.name, `${field}.name`),
+    start: str(shift.start, `${field}.start`),
+    end: str(shift.end, `${field}.end`),
+    present: num(shift.present, `${field}.present`),
+    useful_hours: num(shift.useful_hours, `${field}.useful_hours`),
+    share,
+    minutes: num(shift.minutes, `${field}.minutes`),
+    booked: num(shift.booked, `${field}.booked`),
+  };
+}
+
+function parseCapacity(value: unknown): Capacity {
+  const capacity = rec(value, "capacity");
+  const cutoff = capacity.cutoff;
+  if (cutoff !== null && typeof cutoff !== "string") invalid("capacity.cutoff");
+  return {
+    booked_min: num(capacity.booked_min, "capacity.booked_min"),
+    total_min: num(capacity.total_min, "capacity.total_min"),
+    free_min: num(capacity.free_min, "capacity.free_min"),
+    shifts: arr(capacity.shifts, "capacity.shifts").map((item, index) => parseShift(item, `capacity.shifts[${index}]`)),
+    cutoff,
+    schedule_verified: bool(capacity.schedule_verified, "capacity.schedule_verified"),
+  };
+}
+
+function parseLoading(value: unknown, field: string): LoadingEntry {
+  const entry = rec(value, field);
+  return {
+    trip_id: num(entry.trip_id, `${field}.trip_id`),
+    at: str(entry.at, `${field}.at`),
+    vehicle_code: str(entry.vehicle_code, `${field}.vehicle_code`),
+    after_cutoff: bool(entry.after_cutoff, `${field}.after_cutoff`),
+    loaded: bool(entry.loaded, `${field}.loaded`),
+  };
+}
+
+function parseOrder(value: unknown, field: string): PrepQueueOrder {
+  const order = rec(value, field);
+  const prepWindow = rec(order.prep_window, `${field}.prep_window`);
+  const state = order.prep_state;
+  if (state !== "running" && state !== "paused" && state !== null) invalid(`${field}.prep_state`);
+  const nextAction = order.next_action;
+  if (nextAction !== undefined && nextAction !== null && typeof nextAction !== "string") invalid(`${field}.next_action`);
+
+  return {
+    order_id: num(order.order_id, `${field}.order_id`),
+    order_no: str(order.order_no, `${field}.order_no`),
+    lines: num(order.lines, `${field}.lines`),
+    weight_kg: num(order.weight_kg, `${field}.weight_kg`),
+    handling_mix: arr(order.handling_mix, `${field}.handling_mix`).map((item, index) => {
+      const group = rec(item, `${field}.handling_mix[${index}]`);
+      return { code: str(group.code, `${field}.handling_mix[${index}].code`), name: str(group.name, `${field}.handling_mix[${index}].name`) };
+    }),
+    work_min: num(order.work_min, `${field}.work_min`),
+    prep_window: { start: str(prepWindow.start, `${field}.prep_window.start`), end: str(prepWindow.end, `${field}.prep_window.end`) },
+    loading: arr(order.loading, `${field}.loading`).map((item, index) => parseLoading(item, `${field}.loading[${index}]`)),
+    prep_state: state,
+    // Unknown status strings are kept: StatusChip still renders them instead of breaking.
+    status: str(order.status, `${field}.status`) as OrderStatus,
+    next_action: nextAction ?? null,
+  };
+}
+
 export function parsePrepQueueResponse(payload: unknown): PrepQueueResponse {
-  if (isRecord(payload) && isRecord(payload.capacity) && Array.isArray(payload.capacity.shifts) && Array.isArray(payload.orders)) {
-    return payload as unknown as PrepQueueResponse;
-  }
-  throw new ApiError("INVALID_RESPONSE", "The server returned an unexpected prep queue response.");
+  const root = rec(payload, "response");
+  return {
+    capacity: parseCapacity(root.capacity),
+    orders: arr(root.orders, "orders").map((item, index) => parseOrder(item, `orders[${index}]`)),
+  };
 }
 
 export async function fetchPrepQueue(params: PrepQueueParams, signal?: AbortSignal): Promise<PrepQueueResponse> {
-  const payload = await apiGet<unknown>(PREP_QUEUE_PATH, { warehouse_id: params.warehouse_id, date: params.date }, signal);
+  const payload = await apiGet<unknown>(prepQueuePath(params.warehouse_id), { date: params.date }, signal);
   return parsePrepQueueResponse(payload);
 }

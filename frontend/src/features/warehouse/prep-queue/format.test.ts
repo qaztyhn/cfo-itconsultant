@@ -101,7 +101,7 @@ describe("US-WH-02 capacity display (values come from the API, never computed he
   it("ASM-007: capacity is verified only when schedule_verified === true", () => {
     expect(isCapacityVerified({ schedule_verified: true })).toBe(true);
     expect(isCapacityVerified({ schedule_verified: false })).toBe(false);
-    expect(isCapacityVerified({})).toBe(false);
+    expect(isCapacityVerified({} as unknown as Parameters<typeof isCapacityVerified>[0])).toBe(false);
     // Cast: a malformed payload (string) must not count as verified either.
     expect(isCapacityVerified({ schedule_verified: "true" as unknown as boolean })).toBe(false);
   });

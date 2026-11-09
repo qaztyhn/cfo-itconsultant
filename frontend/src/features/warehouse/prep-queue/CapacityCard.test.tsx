@@ -45,4 +45,16 @@ describe("CapacityCard (US-WH-02, ASM-007)", () => {
     render(<CapacityCard capacity={capacityVerified()} timeZone={TZ} />);
     expect(screen.getByText("15:00")).toBeInTheDocument();
   });
+
+  it("shows ISO shift times in the warehouse's local time and still draws the bar", () => {
+    const capacity = capacityVerified();
+    capacity.shifts[0] = { ...capacity.shifts[0], start: "2026-11-12T05:00:00Z", end: "2026-11-12T13:00:00Z" };
+    capacity.shifts[1] = { ...capacity.shifts[1], start: "2026-11-12T13:00:00Z", end: "2026-11-12T21:00:00Z" };
+    render(<CapacityCard capacity={capacity} timeZone={TZ} />);
+
+    expect(screen.getByText("06:00–14:00")).toBeInTheDocument();
+    expect(screen.getByText("14:00–22:00")).toBeInTheDocument();
+    expect(screen.getByTestId("capacity-bar")).toBeInTheDocument();
+    expect(screen.queryByText(/Unverified time/)).toBeNull();
+  });
 });

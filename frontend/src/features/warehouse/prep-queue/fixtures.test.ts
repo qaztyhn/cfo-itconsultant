@@ -19,10 +19,10 @@ describe("prep queue fixtures", () => {
     expect(orders.some((o) => o.loading.some((l) => l.loaded))).toBe(true);
   });
 
-  it("ASM-007: the unverified scenario has people present but no schedule_verified field", () => {
+  it("ASM-007: the unverified scenario has people present but schedule_verified is false", () => {
     const capacity = capacityUnverified();
     expect(capacity.shifts.every((s) => s.present > 0)).toBe(true);
-    expect("schedule_verified" in capacity).toBe(false);
+    expect(capacity.schedule_verified).toBe(false);
   });
 
   it("no-schedule scenario has no capacity", () => {

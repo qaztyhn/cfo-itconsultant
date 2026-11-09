@@ -86,4 +86,14 @@ describe("OrdersTable (read-only)", () => {
 
     expect(screen.getByText("Unverified time · GBG-12-03")).toBeInTheDocument();
   });
+
+  it("converts an ISO prep window and loading time to the warehouse's local time", () => {
+    const [order] = buildPrepQueueFixture("verified").orders;
+    order.prep_window = { start: "2026-11-12T05:00:00Z", end: "2026-11-12T07:10:00Z" };
+    order.loading = [{ ...order.loading[0], at: "2026-11-12T07:30:00Z" }];
+    render(<OrdersTable orders={[order]} timeZone={TZ} queueDate={FIXTURE_DATE} />);
+
+    expect(screen.getByText("06:00 → 08:10")).toBeInTheDocument();
+    expect(screen.getByText("08:30 · GBG-12-03")).toBeInTheDocument();
+  });
 });

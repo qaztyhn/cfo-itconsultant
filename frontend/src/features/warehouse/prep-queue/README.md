@@ -21,16 +21,21 @@ No state-changing action exists in this PR (no Start prep, Pause, Resume, Goods 
 | `OrdersTable.tsx` | Read-only orders table, one column below 1024 px |
 | `fixtures.ts`, `mswHandlers.ts` | Synthetic data and local MSW handlers (not registered in `api/mocks/handlers.ts`) |
 
-## Dependencies and assumptions (need an owner decision)
+## Contract (agreed with Dev 1) and open dependencies
 
-1. **Endpoint path.** Appendix A (`GET /prep-queue?warehouse_id=&date=`) is followed because it defines the payload. `06` §8.2 and `03` §5.6 list `/warehouses/{id}/prep-queue` and `/warehouses/{id}/capacity`. Dev 1 to confirm the final path.
-2. **`schedule_verified`.** Not in Appendix A. Optional local field based on ASSUMPTIONS Q12d (ASM-007). Capacity is shown as verified only when it is exactly `true`; missing or `false` shows "Capacity not verified". It is never inferred from `present`, `shifts` or `expected_staff`. It does not block any button and is not used to promise delivery.
-3. **Units.** `share` is read as a 0–1 ratio and `booked` as minutes (Appendix A gives no units). Dev 1 to confirm.
-4. **Time zone.** `GET /locations` on the real backend does not return `timezone` (only the shared mock does). Without it the screen stops with a clear message and does not call the API. "Today" is computed in the warehouse time zone from an explicit `now` parameter.
-5. **Time formats.** API times may be `hh:mm` or ISO 8601 with offset. An ISO time without offset is shown as "Unverified time", never guessed.
-6. **Types** are hand-written until `schema.d.ts` exists.
-7. **`next_action`** is not used; row actions (next PR) are derived from `status` and `prep_state`.
-8. **Warehouse choice.** The sidebar scope is used. With several allowed warehouses and "All warehouses", the user is asked to pick one; the first warehouse is never assumed.
+Agreed contract:
+- `GET /api/v1/warehouses/{id}/prep-queue?date=YYYY-MM-DD` returns `200` with `capacity` and `orders` (docs/06 Appendix A shape).
+- `share` is a JSON number 0–1; `booked`, `booked_min`, `total_min`, `free_min`, `shifts[].minutes` are integers (minutes); `useful_hours`, `weight_kg` are numbers. No decimal strings.
+- `capacity.schedule_verified` is a required boolean. Without an official schedule confirmed by the Warehouse Manager the backend returns `200` with `schedule_verified=false` and zero available capacity; the UI shows "Capacity not verified". Capacity is never derived from `expected_staff` or seed data.
+- Times: `cutoff` is `HH:mm`; `loading[].at`, `prep_window.start/end` and shift start/end are ISO 8601 with offset (the UI also accepts `HH:mm`). An ISO time without offset is shown as "Unverified time".
+- `GET /locations` returns `timezone` (IANA, from `ref.market.timezone`) for every location. The UI never guesses a time zone.
+
+Still open (not shipped):
+1. **Backend.** Backend #129 reportedly still returns `PLAN_NOT_APPROVABLE` for this endpoint, and `/locations` has no `timezone` yet. Until both ship, the screen works only against local MSW fixtures. No integration test against the real backend exists yet.
+2. **Types** are hand-written until `schema.d.ts` exists. `timezone` is read through a local type (`LocationWithTimeZone`) so shared `api/locations.ts` is untouched.
+3. **`next_action`** is not used; row actions (next PR) are derived from `status` and `prep_state`.
+4. **Warehouse choice.** The sidebar scope is used. With several allowed warehouses and "All warehouses", the user is asked to pick one; the first warehouse is never assumed.
+5. This screen does not approve plans. The ASM-007 warning never disables the row actions, which only record what happened.
 
 ## Viewing the screen locally without touching shared mocks
 
