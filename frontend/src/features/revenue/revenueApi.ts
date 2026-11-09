@@ -1,5 +1,5 @@
 /** Revenue-only HTTP boundary. Financial values are opaque server decimal strings. */
-import { apiGet, apiFetch, ApiError, buildQuery } from "../../api/client";
+import { apiGet, ApiError, buildQuery } from "../../api/client";
 import { API_BASE_URL } from "../../api/config";
 import { useAuthStore } from "../../app/store";
 
