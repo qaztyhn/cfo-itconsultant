@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tools.demo_ci import check_db_report
 from tools.demo_db_verify import (
     APP_NOW, Check, evaluate, safe_context, sync_outcome, verify,
 )
@@ -142,6 +143,46 @@ class DemoDatabaseProofTests(unittest.TestCase):
             result = verify(ENV, SOURCE, report)
         self.assertEqual(result[0].status, "FAIL")
         self.assertNotIn("secret-sql-error", result[0].detail)
+
+    def test_US_INT_01_AC3_preflight_requires_postgres_result_after_sync(self):
+        sync = self.make_report("PASS")
+        db = sync.parent / "db.json"
+        db.write_text(json.dumps({
+            "schema": "demo-db-proof-v1",
+            "checks": [
+                {"check": "postgres_once", "status": "PASS"},
+                {"check": "postgres_legacy_negative", "status": "PASS"},
+            ],
+        }))
+        self.assertTrue(check_db_report(sync, db))
+        db.write_text(json.dumps({
+            "schema": "demo-db-proof-v1",
+            "checks": [
+                {"check": "postgres_once", "status": "NOT VERIFIED"},
+                {"check": "postgres_legacy_negative", "status": "PASS"},
+            ],
+        }))
+        self.assertFalse(check_db_report(sync, db))
+
+    def test_US_INT_01_AC2_missing_routing_proves_only_blocked_db(self):
+        sync = self.make_report("BLOCKED")
+        db = sync.parent / "db.json"
+        db.write_text(json.dumps({
+            "schema": "demo-db-proof-v1",
+            "checks": [
+                {"check": "postgres_once", "status": "BLOCKED"},
+                {"check": "postgres_legacy_negative", "status": "NOT VERIFIED"},
+            ],
+        }))
+        self.assertTrue(check_db_report(sync, db))
+        db.write_text(json.dumps({
+            "schema": "demo-db-proof-v1",
+            "checks": [
+                {"check": "postgres_once", "status": "PASS"},
+                {"check": "postgres_legacy_negative", "status": "PASS"},
+            ],
+        }))
+        self.assertFalse(check_db_report(sync, db))
 
     def test_US_INT_01_AC2_malformed_or_absent_sync_report_denied(self):
         tmp = tempfile.TemporaryDirectory()
