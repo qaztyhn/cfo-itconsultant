@@ -5,12 +5,13 @@ This is STRUCTURAL VALIDATION only. It is NOT a regulatory eligibility engine.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from generate import FIRST_DAY, FIXTURES, HISTORY_DAYS, SCHEMA, SOURCE, build, elapsed_minutes
+from generate import FIRST_DAY, FIXTURES, HISTORY_DAYS, SCHEMA, SOURCE, build, elapsed_minutes, encoded
 
 
 class FixtureError(ValueError):
@@ -47,6 +48,24 @@ def validate(payloads: dict[str, dict[str, Any]]) -> dict[str, int]:
     manifest = payloads["manifest.json"]
     require(manifest.get("offline_only") is True, "Manifest must prohibit DB insertion")
     require(manifest["files"] == sorted(set(payloads) - {"manifest.json", "verification.json"}), "Manifest filenames mismatch")
+    attestation = payloads["verification.json"]
+    require(attestation.get("source_kind") == SOURCE and attestation.get("revoked") is False,
+            "Attestation must be explicitly synthetic and unrevoked")
+    who = attestation.get("verified_by")
+    require(isinstance(who, str) and bool(who.strip()), "Synthetic verifier must be named")
+    fixed_clock = instant("2026-11-04T10:05:00+01:00")
+    require(instant(attestation["verified_at"]) <= fixed_clock < instant(attestation["expires_at"]),
+            "Synthetic attestation is expired or from the future")
+    required_hashes = {"manifest.json", "drivers.json"} | {
+        f"history_week_{n:02d}.json" for n in range(1, 9)
+    }
+    digests = attestation.get("sha256")
+    require(isinstance(digests, dict) and set(digests) == required_hashes,
+            "Synthetic integrity manifest is incomplete")
+    for name in sorted(required_hashes):
+        require(digests[name] == hashlib.sha256(encoded(payloads[name])).hexdigest(),
+                "Synthetic D7 fixture content does not match attestation")
+
     vehicles = payloads["vehicles.json"]["records"]
     drivers = payloads["drivers.json"]["records"]
     require(len(vehicles) in (8, 9, 10) and len(drivers) == 10, "Incorrect pilot population")

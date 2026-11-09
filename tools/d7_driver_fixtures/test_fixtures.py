@@ -43,6 +43,27 @@ class D7FixtureTests(unittest.TestCase):
                 (path / "vehicles.json").write_bytes(b"{}\r\n")
                 self.assertEqual(generate(check=True), ["Missing or nondeterministic fixture: vehicles.json"])
 
+    def test_D7_frozen_clock_and_synthetic_hash_attestation(self) -> None:
+        manifest = self.payloads["manifest.json"]
+        self.assertEqual(manifest["history_start"], "2026-09-09")
+        self.assertEqual(manifest["history_end"], "2026-11-03")
+        proof = self.payloads["verification.json"]
+        self.assertEqual(proof["source_kind"], "synthetic_demo")
+        self.assertFalse(proof["revoked"])
+        self.assertTrue(proof["verified_by"])
+        self.assertLessEqual(instant(proof["verified_at"]), instant("2026-11-04T10:05:00+01:00"))
+        self.assertGreater(instant(proof["expires_at"]), instant("2026-11-04T10:05:00+01:00"))
+
+    def test_D7_rejects_tampered_attestation_and_expiry(self) -> None:
+        corrupted = copy.deepcopy(self.payloads)
+        corrupted["verification.json"]["sha256"]["manifest.json"] = "0" * 64
+        with self.assertRaises(FixtureError):
+            validate(corrupted)
+        expired = copy.deepcopy(self.payloads)
+        expired["verification.json"]["expires_at"] = "2026-11-04T09:05:00+01:00"
+        with self.assertRaises(FixtureError):
+            validate(expired)
+
     def test_D7_payload_mass_is_not_max_permissible_mass(self) -> None:
         vs = self.payloads["vehicles.json"]["records"]
         van = next(x for x in vs if x["vehicle_code"] == "GBG-03-02")
