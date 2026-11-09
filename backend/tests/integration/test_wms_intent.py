@@ -73,9 +73,9 @@ def test_changed_intent_is_rejected_without_second_reservation(db: str) -> None:
     _prepare(db)
     request = _request()
     _run(db, lambda s: wms_intent.begin_intent(s, request, synthetic=True))
-    different = build_request("ZZ", 1, 1, (request.lines[0].__class__(
-        1, "SKU1", "WMS-1", "WH-1", Decimal(21), "pcs", "map-v1"
-    ),))
+    different = build_request(
+        "ZZ", 1, 1, (request.lines[0].__class__(1, "SKU1", "WMS-1", "WH-1", Decimal(21), "pcs", "map-v1"),)
+    )
     with pytest.raises(DomainError) as err:
         _run(db, lambda s: wms_intent.begin_intent(s, different, synthetic=True))
     assert err.value.code == "RESOURCE_CONFLICT"
@@ -114,14 +114,18 @@ def test_ack_commit_failure_recovers_from_same_synthetic_key(db: str, monkeypatc
         _run(
             db,
             lambda s: wms_intent.mark_refreshed(
-                s, request.idempotency_key, batch_id=ack.reflected_in_batch_id - 1,
+                s,
+                request.idempotency_key,
+                batch_id=ack.reflected_in_batch_id - 1,
                 inclusion_proven=True,
             ),
         )
     refreshed = _run(
         db,
         lambda s: wms_intent.mark_refreshed(
-            s, request.idempotency_key, batch_id=ack.reflected_in_batch_id,
+            s,
+            request.idempotency_key,
+            batch_id=ack.reflected_in_batch_id,
             inclusion_proven=True,
         ),
     )
