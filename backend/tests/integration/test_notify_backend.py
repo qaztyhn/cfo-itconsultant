@@ -292,17 +292,11 @@ def test_US_NOT_01_AC4_shadow_mode_suppresses_and_audits(empty_db: str) -> None:
 
 
 @pytest.mark.parametrize("template", ["DISPATCHED", "DELIVERED", "FAILED"])
-def test_US_NOT_01_AC1_status_queues_are_idempotent(
-    empty_db: str, template: str
-) -> None:
+def test_US_NOT_01_AC1_status_queues_are_idempotent(empty_db: str, template: str) -> None:
     prepare(empty_db, status=template)
     with patch("app.services.notify_service.clock.now", return_value=NOW):
-        first = run(
-            empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session)
-        )
-        second = run(
-            empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session)
-        )
+        first = run(empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session))
+        second = run(empty_db, lambda session: notify_service.enqueue(1, template, 1, session=session))
     assert first == second
     assert fetch(empty_db, "SELECT template,status FROM ops.notification")[0] == (template, "queued")
 
@@ -316,9 +310,7 @@ def test_US_NOT_02_AC5_cached_send_never_bypasses_current_market_scope(empty_db:
         payload = {"eta_window": WINDOW, "version": 1}
         run(
             empty_db,
-            lambda session: notify_service.send_draft(
-                draft, actor(), payload, key, session=session
-            ),
+            lambda session: notify_service.send_draft(draft, actor(), payload, key, session=session),
         )
     with pytest.raises(DomainError) as error:
         run(
@@ -338,9 +330,7 @@ def test_US_NOT_01_AC2_recipient_with_display_name_never_leaks_into_queue(empty_
     )
     with patch("app.services.notify_service.clock.now", return_value=NOW):
         run(empty_db, lambda session: notify_service.enqueue(1, "CONFIRMED", 1, session=session))
-    result = fetch(
-        empty_db, "SELECT status,recipient,suppressed_reason FROM ops.notification"
-    )[0]
+    result = fetch(empty_db, "SELECT status,recipient,suppressed_reason FROM ops.notification")[0]
     assert result == ("suppressed", "suppressed@cfo.test", "recipient_not_allowed")
 
 
