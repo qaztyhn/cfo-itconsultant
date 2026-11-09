@@ -115,9 +115,7 @@ def test_US_ADM_01_AC1_stock_scheduler_and_mapping_status(monitoring: Api) -> No
     products = next(item for item in data["sources"] if item["entity"] == "products")
     assert products["unmapped"] == 0  # ZZ has no local product catalog.
     sweden = monitoring.get("/integration/overview", 2, market="SE")
-    se_products = next(
-        item for item in sweden.json()["sources"] if item["entity"] == "products"
-    )
+    se_products = next(item for item in sweden.json()["sources"] if item["entity"] == "products")
     assert se_products["unmapped"] == 1
     assert products["rejected"] is None
     assert products["status"] == "never_run"
