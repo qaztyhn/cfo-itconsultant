@@ -560,10 +560,8 @@ def test_BE_05_explicit_stop_pod_preserves_other_vehicle_and_order_lifecycle(
     assert_error(response, 409, "IDEMPOTENCY_CONFLICT")
     trip_status_sql = "SELECT status::text AS status FROM ops.delivery_trip WHERE id=1"
     assert fetch(execution_api.dsn, trip_status_sql)[0]["status"] == "completed"
-    assert fetch(
-        execution_api.dsn,
-        "SELECT status::text AS status FROM ops.delivery_trip WHERE id=2",
-    )[0]["status"] == "on_road"
+    other_trip_sql = "SELECT status::text AS status FROM ops.delivery_trip WHERE id=2"
+    assert fetch(execution_api.dsn, other_trip_sql)[0]["status"] == "on_road"
     assert closed == [1]
     assert first.json()["order_status"] == "DISPATCHED"
     assert notices == ["DISPATCHED"]
