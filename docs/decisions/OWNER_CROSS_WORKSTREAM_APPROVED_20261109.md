@@ -49,6 +49,10 @@
 - **KPI-1:** Keep **10 published KPI keys**: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`. Correct text saying eight. The two currently unsupported diagnostics `hard_constraint_violations` and `event_to_alert_latency_s_median` must be `null`, not invented zeros or guesses.
 - **KPI-2:** Use **approval date** for planning cohorts, **delivery/completion date** for delivery cohorts and **warehouse work_date** for capacity, in each market's IANA timezone. Any other ambiguous metric cohort needs reviewed definition rather than guessing.
 
+## Amendment to G4 — approved later on 2026-11-09
+
+**The original G4 immediate raw GPS deletion instruction above is superseded in retention timing ONLY** by [DEC-GPS-RET-20261109](DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md): stop collection/live read at trip/shift end immediately, retain already lawfully captured history for at most **seven days** with approved investigation scope/audit and legal/privacy controls, then erase. The 30-minute device cadence, 100-point cap, absence of out-of-duty collection, individual notices and legal sign-off remain unchanged. The owner separately approved operational reviews at **07:00 and 13:00 Europe/Stockholm**, not all D8 jobs.
+
 ## Handoff and safeguards
 
 **Dev 1:** stock-grant/version/evidence schema and APIs with Dev 2; T18 reconciliation, D7 eligibility loader and T16 recheck, M6 per-trip-stop POD migration and event/RiskService integration; backend DTO/contract harmonization and M8 KPI contracts.
