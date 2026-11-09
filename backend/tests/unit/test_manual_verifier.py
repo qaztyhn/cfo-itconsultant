@@ -5,11 +5,10 @@ from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 
-from test_engine_planner_orchestration import config, order, warehouse
-
 from app.engine.gate import all_passed
 from app.engine.manual import verify_manual
 from app.engine.planner import plan_order
+from tests.unit.test_engine_planner_orchestration import config, order, warehouse
 
 
 class ManualVerifierTests(unittest.TestCase):
