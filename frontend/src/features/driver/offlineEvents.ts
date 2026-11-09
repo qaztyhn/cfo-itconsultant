@@ -93,9 +93,19 @@ async function markConflict(event: PendingEvent, code: string): Promise<void> {
 export async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
   const trip = await assignedTrip(item.tripId);
   const assignedStop = trip.stops.find((stop) => stop.trip_stop_id === item.stopId && stop.order_id === item.orderId);
-  if (!assignedStop) return false;
-  if (item.event.event_type === "DISPATCHED") return trip.status === "loading" || trip.status === "on_road";
-  return trip.status === "on_road" || trip.status === "completed";
+  if (!assignedStop || item.event.payload.trip_id !== item.tripId) return false;
+  if (item.event.event_type === "DISPATCHED") {
+    // Dispatch is trip-scoped and cannot introduce stop-specific fields.
+    return trip.status === "loading" || trip.status === "on_road";
+  }
+  // Older queued POD events with no trip_stop_id cannot be sent after a
+  // contract upgrade. Exact stop identity must match both outbox and server.
+  if (!("trip_stop_id" in item.event.payload) ||
+      item.event.payload.trip_stop_id !== item.stopId) return false;
+  const matchingTerminal = item.event.event_type === "DELIVERED" ? "delivered" : "failed";
+  return (trip.status === "on_road" &&
+      (assignedStop.status === "pending" || assignedStop.status === matchingTerminal)) ||
+    (trip.status === "completed" && assignedStop.status === matchingTerminal);
 }
 
 /** Injectable replay core for deterministic offline/RBAC/conflict tests.
