@@ -37,8 +37,8 @@ def test_US_WH_06_AC1_demo_driver_shifts_are_audited_and_idempotent(empty_db: st
     assert fetch(empty_db, "SELECT count(*) FROM hr.attendance")[0][0] == 0
     execute(
         empty_db,
-        "UPDATE hr.employee_shift_schedule SET status='cancelled',cancelled_by=assigned_by "
-        "WHERE id=(SELECT min(id) FROM hr.employee_shift_schedule)",
+        "UPDATE hr.employee_shift_schedule SET status='cancelled',cancelled_by=assigned_by, "
+        "cancelled_at='2026-11-04T09:05:00Z' WHERE id=(SELECT min(id) FROM hr.employee_shift_schedule)",
     )
     assert transact(empty_db, seed) == 0
     assert (
