@@ -134,6 +134,7 @@ sequenceDiagram
   participant UI as Web
   participant API as CFO API
   participant DB as PostgreSQL
+  participant WMS as WMS reservation adapter (real disabled until approved)
   D->>UI: Mở đơn PLANNED
   UI->>API: GET planning-run
   API-->>UI: 3 phương án, hold_expires_at
@@ -152,11 +153,19 @@ sequenceDiagram
   UI->>API: POST approve với Idempotency-Key
   API->>DB: BEGIN, advisory lock kho → sản phẩm → ngày, rồi khóa mọi xe → mọi tài xế (chỉ khóa khi duyệt)
   API->>API: Kiểm tra lại bằng engine
-  alt Còn hợp lệ
-    API->>DB: Giữ chỗ thành committed, tạo trip, đơn APPROVED
-    API->>DB: decision_log, eta v1, thông báo CONFIRMED
-    API-->>UI: 200 đã duyệt
-  else Đã bị chiếm
+  alt Năm gate còn hợp lệ và đủ phiên bản nguồn
+    API->>WMS: Reserve exact native SKU, warehouse, quantity, idempotency key
+    alt WMS ACK khớp đầy đủ và đã persist
+      WMS-->>API: Verified reservation ACK
+      API->>DB: Commit holds, create trips, APPROVED, audit, outbox CONFIRMED atomically
+      API->>WMS: Immediate authoritative stock refresh/status read
+      API-->>UI: Approved; stock verified from WMS
+    else WMS failed/partial/unknown or no authorised live adapter
+      WMS-->>API: Rejected/unknown; simulated ACK cannot guarantee real stock
+      API->>DB: Do not finalize APPROVED; preserve/reconcile safe state
+      API-->>UI: Reservation not verified; retry/status-check
+    end
+  else Gate/resource conflict
     API->>DB: ROLLBACK
     API-->>UI: 409 RESOURCE_CONFLICT
     UI-->>D: Toast và nút Re-run plan
@@ -165,10 +174,10 @@ sequenceDiagram
 
 **Chi tiết bổ sung**
 1. Nếu `reserve_class = tight`: bắt buộc tick "I accept the tight schedule" trước khi Approve.
-2. Hold hết hạn: chip đỏ nhạt; Approve vẫn thử (kiểm tra lại); nút **Extend** tối đa 2 lần mỗi lần 15 phút.
+2. Hold hết hạn: chip đỏ nhạt, khóa Approve của hold cũ, backend từ chối `HOLD_EXPIRED`/409 kể cả nếu UI cũ vẫn gửi request; phải **Plan Again** và kiểm đủ gate trước khi tiếp tục. **Extend** chỉ khi hold còn hợp lệ, tối đa 2 lần mỗi lần 15 phút.
 3. Duyệt phương án rank > 1: modal lý do bắt buộc (`ALT_SELECTED`).
 4. Ngày cam kết khác ngày khách đã đồng ý: cần chọn bản ghi `date_negotiation.agreed`.
-5. **Kết quả:** đơn `APPROVED`, `committed_date`, `promise_start/end`, `delivery_trip` + `trip_stop`, email/SMS `CONFIRMED`, các hold khác `released`.
+5. **Kết quả mục tiêu:** chỉ sau authoritative WMS ACK khớp SKU gốc/kho/số lượng, persist được và đọc tồn ngay sau ACK, đơn mới được coi stock-guaranteed/APPROVED, tạo trip, commit holds, audit và enqueue CONFIRMED trong transaction. **Code trên `main` còn thiếu WMS ACK và transactional notification enqueue; flow này chưa phải E2E hoàn tất.** Adapter simulated chỉ staging/demo, không xác nhận tồn thật.
 
 ## 6. Luồng không có ngày khả thi và thương lượng ngày
 
@@ -179,20 +188,21 @@ flowchart TD
   A["Đơn NO_FEASIBLE_DATE"] --> B["Xem check hỏng theo kho và ngày sớm nhất"]
   B --> C{"Do thiếu hàng?"}
   C -- "Có" --> D["Xem gợi ý chuyển kho"]
-  D --> E["DISP duyệt chuyển kho"]
-  E --> F["Kho nguồn xác nhận"]
-  F --> G["Hàng nhập xác nhận ETA"] --> H
+  D --> E["DISP gửi yêu cầu chuyển kho (CFO)"]
+  E --> F["WMS thực hiện và ghi nhận xuất/nhập vật lý"]
+  F --> G["CFO đọc batch tồn WMS đã xác minh, không tự cộng inbound"] --> H
   C -- "Không" --> H["DISP liên hệ khách đề xuất ngày mới"]
   H --> I{"Kết quả"}
-  I -- "Khách đồng ý" --> J["Ghi date_negotiation agreed"]
-  J --> K["Cập nhật ngày yêu cầu, version +1, chạy lại kế hoạch"]
+  I -- "Khách đồng ý" --> J["Lưu date_negotiation agreed, chưa đổi ngày"]
+  J --> X["Dispatcher bấm Apply agreed date; backend xác minh agreement/version và audit"]
+  X --> K["Cập nhật ngày theo hợp đồng đã duyệt, chạy planning mới, kiểm tất cả gate"]
   I -- "Từ chối" --> L["Ghi declined, hủy đơn có lý do hoặc thử ngày khác"]
   I -- "Không liên lạc được" --> M["Ghi unreachable, nhắc sau 24 giờ"]
   M --> H
   K --> N["Về luồng 4 và 5"]
 ```
 
-**Quy tắc cứng:** hệ thống **không bao giờ** tự đổi ngày yêu cầu; chỉ khi có bản ghi `agreed` (người, kênh, giờ) mới đổi. **Chuyển kho:** `suggested → approved (DISP) → source_confirmed (quản lý kho nguồn) → received (kho đích)`; sau `source_confirmed` hàng được tính như hàng nhập đã xác nhận; kho đích vẫn xử lý trọn đơn.
+**Quy tắc cứng Q4/Q3:** lưu `date_negotiation.agreed` **chưa đủ để đổi ngày**: chỉ Dispatcher chọn `Apply agreed date` sau khi kiểm agreement/version/audit mới yêu cầu lập lại kế hoạch, không tự duyệt. CFO chỉ **gợi ý/yêu cầu** chuyển kho; WMS là nơi duy nhất xác nhận xuất/nhập vật lý. Không có giai đoạn `source_confirmed/received` do CFO click, không tự coi chuyển kho là hàng inbound khả dụng. Chỉ dùng snapshot/batch WMS mới, đầy đủ và đúng SKU, không cộng/trừ trùng.
 
 ## 7. Luồng khai báo năng lực kho hằng ngày
 
@@ -253,7 +263,7 @@ sequenceDiagram
 ```
 
 **Chi tiết**
-1. Trước khi gửi GPS lần đầu: thông báo "gửi vị trí cho dispatcher mỗi 30 phút, khách không thấy, xóa sau 30 ngày" và xin quyền vị trí. Từ chối → app vẫn dùng được cho các mốc (không có GPS), dispatcher thấy "Location off".
+1. Trước khi gửi GPS lần đầu: notice/ack riêng từng tài xế và xin quyền vị trí: "trong chuyến on-road và ca hợp lệ, gửi vị trí mỗi 30 phút cho Dispatcher được gán; dừng chia sẻ live ngay khi kết thúc trip/ca; lịch sử thu hợp lệ có thể giữ tối đa 7 ngày để privacy/compliance reviewer có quyền theo case tra soát; khách không thấy." **Không bật GPS tài xế thật trước khi có legal/privacy/DPIA sign-off.** Từ chối → app vẫn dùng được cho các mốc (không có GPS), dispatcher thấy "Location off".
 2. `DELIVERED`: bắt buộc **Received by**; ghi chú tùy chọn. Mỗi lần giao (mỗi `trip_stop`) có một bản ghi POD riêng. `FAILED`: bắt buộc **Failure reason** (customer absent, site inaccessible, refused, wrong address, vehicle breakdown, goods damaged, other).
 3. Khi `gps_enabled = false` hoặc chưa `on_road`, API từ chối vị trí; app im lặng thôi gửi.
 4. Mất tín hiệu > 60 phút: SYS tạo alert `GPS_LOST` cho DISP.

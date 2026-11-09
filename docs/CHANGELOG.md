@@ -1,5 +1,47 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [DOC-CONTRACT-RECONCILIATION-20261109] — 2026-11-09 — docs-only correction, no new Owner decision
+
+- Reconcile **the original rule sections**, not only appendices, across `AGENTS.md`, `docs/01`–`docs/10` where applicable. All edits refer to existing owner-approved decisions in `docs/ASSUMPTIONS.md`; **no new business approval, DDL, runtime feature or production enablement**.
+- **WMS:** preserve POS/ERP read-only and WMS physical stock authority; document the conditional owner-approved WMS reservation/ACK/refresh business flow (real WMS writes still disabled, fake ACK staging/demo only). Show only CFO transfer suggestions/requests/cancellations; legacy physical `confirm-source/receive` routes deny 409, no invented inbound/reconciliation or double counting.
+- **CS/Stock/GPS/date:** top-level agent rules now distinguish case-based 7-day GPS history from Dispatcher live views, require Owner-delegated System Admin for **all** Stock Admin grants, and record `agreed` separately from explicit Dispatcher **Apply agreed date**. Correct outdated driver privacy copy that said GPS retained 30 days.
+- **KPI/acceptance/demo:** replace stale 8-KPI references with **10 metric keys** and two unavailable diagnostics `null`; correct blocked SKU scenario (legacy, not automatic CFO queue), hold-expiry and WMS reserve gates. Maintain unchanged historical DB migrations/enums; label superseded acceptance prose where needed.
+- GitHub's earlier changelog labels like “Draft”, “review pending” or “#127 đang review” describe **their historical entry time**, not present PR status. No source app/backend/frontend files were modified by this docs reconciliation. Developer E2E, real WMS API, privacy/legal gate and production deployment remain pending.
+
+## [T18 — Quy trình chuyển kho theo Q3, không ghi vật lý trên CFO] — 2026-11-09 — PR #127 (đang review)
+
+- Bổ sung gợi ý/yêu cầu/hủy chuyển kho với quyền theo market và audit `TRANSFER_CANCELLED` (bắt buộc lý do). `confirm-source` và `receive` giữ route nhưng **từ chối 409** sau kiểm quyền, không tạo inbound hay sửa số liệu WMS; WMS là hệ thống duy nhất ghi nhận di chuyển vật lý. `TRANSFER_CONFIRMED/RECEIVED` chỉ giữ làm nhãn lịch sử/hợp đồng, không phải thao tác đang chạy.
+- Chưa có bằng chứng tích hợp đối soát WMS hoặc E2E chuyển kho. PR giữ an toàn fail-closed, không cho phép ghi WMS hoặc tự cộng/trừ tồn.
+
+## [T07 stock writer × S1–S5 (#121 + #148), vẫn tắt trong scheduler] — 2026-11-09 — Dev 2
+
+- `ingest_stock.apply` ghi tồn CFO chỉ khi: có scope đã duyệt hiệu lực tại `as_of` của batch Source (không hồi tố), đủ mọi hàng kho × SKU kỳ vọng (thiếu = unknown ⇒ từ chối cả batch; 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua), `normalize_stock` chấp nhận (ánh xạ đã xác nhận, đơn vị/quy đổi, độc lập có evidence còn hiệu lực). Ghi `ops.stock_write_run` (scope/evidence version); replay cùng batch id là no-op; lỗi không đổi checkpoint, giữ tồn cũ. `usable()` = lần ghi chấp nhận mới nhất còn trong `stale_stock_min` và scope còn hiệu lực.
+- Scheduler vẫn **không** chạy `stock`; chỉ CLI tường minh. Chưa nối: hook vô hiệu evidence khi mapping/đơn vị đổi (Dev 1), đọc lại sau WMS ACK (#163), WMS reserve thật.
+
+
+## [M6 Prep Queue canonical API + `timezone` của location] — 2026-11-09 — Dev 1 (owner-approved PROPOSAL-M6-PREP-QUEUE-001)
+
+- `GET /warehouses/{id}/prep-queue?date=` trả đủ Phụ lục A (`capacity` + `orders`, `schedule_verified` bắt buộc, số nguyên phút, ISO 8601 có offset theo `ref.market.timezone`, loading theo từng trip, `next_action` từ trạng thái server). `GET /prep-queue?warehouse_id=` là alias dùng chung service, cùng response. Thiếu lịch chính thức ⇒ 200 với `schedule_verified=false`, `total_min=free_min=0`, `shifts=[]`, vẫn trả `booked_min` thật và các đơn đã duyệt; lỗi dữ liệu/dependency ⇒ lỗi chuẩn, không có 200 giả.
+- `GET /locations`, `GET /locations/{id}`: thêm `timezone` (IANA, bắt buộc, từ `ref.market.timezone`, mọi loại location); timezone thiếu/không hợp lệ ⇒ `500 INTERNAL_ERROR`, không mặc định UTC. Không đổi migration. Fail-closed duyệt/dispatch/ca tài xế giữ nguyên (#129).
+## [S1–S5 — persistence scope/evidence tồn kho (đề xuất kỹ thuật, Draft)] — 2026-11-09 — Dev 1, cần Dev 2 review
+
+- Migration `0013` + docs/05 §6.1: `ref.stock_admin_grant`, `ops.stock_scope_version`, `ops.stock_independence_evidence`, `ops.stock_write_run` (64 bảng). Scope bất biến sau duyệt (trigger), tác giả ≠ người duyệt (CHECK), evidence tối đa 30 ngày (CHECK), lịch sử chỉ thêm, `stock_write_run` chỉ thêm và duy nhất theo `(market, source_batch_id)`.
+- `app/services/stock_scope_service.py`: grant Admin theo market (S1), tác giả≠người duyệt/người nộp≠người duyệt (S2), scope hiệu lực theo `as_of` của batch Source, không hồi tố (S3), `require_expected_coverage` (hàng thiếu = unknown, từ chối cả lần ghi; số 0 tường minh hợp lệ; hàng ngoài scope bị bỏ qua) (S4), evidence tự vô hiệu khi ánh xạ/đơn vị/quy đổi/scope đổi (fingerprint tính lại mỗi lần dùng + hook `invalidate_evidence_for_skus`) (S5). Audit trong cùng transaction.
+- **Chưa làm**: route Admin API, nối vào `mapping_service`/writer T07 (Dev 2), grant đầu tiên là bước runbook. Writer tồn kho production **vẫn tắt**. Tên bảng/cột là đề xuất chờ review (docs/05 §6.1).
+
+## [M6-1 — POD thành công duy nhất theo `trip_stop` + M7 session-aware] — 2026-11-09 — Dev 1 (#129)
+
+- Migration `0012`: bỏ `ux_pod_one_delivered(order_id)`, thêm `ux_pod_one_delivered_trip_stop(trip_stop_id) WHERE result='delivered'` (cạnh `UNIQUE(trip_stop_id)`). Một đơn nhiều xe có thể có nhiều POD delivered ở các điểm dừng khác nhau. Downgrade fail closed nếu đã có nhiều POD delivered của một đơn.
+- `execution_service` gọi `risk_service.recalculate(..., session=session)` trong cùng transaction (sự kiện, forecast, alert cùng commit/rollback); đơn `DELIVERED` không có forecast mới (M7 đóng alert rủi ro).
+- Chưa đổi: notification outbox (chờ Dev 2, N4), bằng chứng D7 56 ngày, GPS assignment.
+
+
+## [Plan Review frontend alignment with merged #134/#139] — 2026-11-09 — Dev 3, review pending
+
+- Align Plan Review with persisted planning DTO: five gates use `passed`, vehicle allocations use nested `vehicle` plus IDs, rejected candidates use flat fields, and Sales vehicle data remains compact. No driver name or invented promise window is displayed.
+- Approval UI fails closed for suggestion/infeasible runs, missing or failed gates, absent/expired holds, and non-proposed plans. Changed delivery dates require selection of a matching `agreed` negotiation; tight reserve requires explicit acknowledgement. Backend approval remains authoritative.
+- Stop requesting the unimplemented integration overview from this screen; show unknown freshness until a trusted endpoint exists. No API, DDL, or owner decision changed.
+
 ## [DEC-INT Q2–Q10 + Owner-controlled merge — 2026-11-09] — nine owner approvals, docs only
 
 - Owner chọn **tự bấm Merge (Q1)**. Agent Integration Lead phải sửa conflicts, CI, PR dependencies và chuyển từng PR phù hợp **Draft → Ready for review** sau khi thực sự reviewable; không auto-merge hoặc bypass branch protection. `Draft=false` không đồng nghĩa GitHub cho phép merge.

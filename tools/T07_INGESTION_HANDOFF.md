@@ -1,5 +1,37 @@
 # T07 — ingestion and ingest-only scheduler
 
+## Current T07 contract status — 2026-11-08, main 361bd73
+
+This section supersedes earlier stock-persistence and pending-PR statements below.
+PRs #105, #106, #111 and T14 #117 are merged. T07 runner/reference/order PRs #115,
+#116 and #118 were merged by the owner. Scheduler #119 and stock-readiness #121
+remain review work; no automatic merge is enabled.
+
+DEC-CFO-STOCK-SCOPE-001 requires an explicitly fixed CFO SKU scope before ingestion;
+confirmed mappings and the Source batch cannot define that scope implicitly.
+DEC-CFO-STOCK-INDEPENDENCE-001 requires verified physical independence before summing
+SKUs. Scope/evidence storage, versions, effectivity and authority are not yet contracted.
+PR #120 is a pure-normalizer proposal, not an approved persistence repository.
+
+Accordingly the earlier whole-market stock replacement is withdrawn. Production
+scheduler runs customers, products, orders, inbound and fleet only. Explicit stock
+CLI diagnostics record a failed run/reject (STOCK_SCOPE_NOT_CONFIGURED), preserve all
+cached stock and commitments, and never advance the checkpoint. A complete empty
+Source batch also cannot clear CFO stock without the scoped contract. Stock usability
+returns false; this is a dependency gate, not implemented availability proof.
+
+T14 now has a real suggest_replan core. Its default loader reads the existing CFO
+order/version; wiring it directly to a newer Source DTO would plan the old approved
+order. A reviewed fresh-source input adapter and risk integration remain necessary.
+The trusted callback tests prove transaction guards, not a real T14/T16 E2E flow.
+No edits to planning_service.py, approval_service.py or api/v1/planning.py are made.
+
+Verification below with older commits/counts is historical. Final exact-head checks
+are recorded in PR #121. No new business decision, schema, public API or config key
+is introduced. Assumptions: reviewed; existing approved stock-scope/independence rules.
+
+## Historical implementation notes (superseded where stated above)
+
 Scope: US-INT-01 AC2–AC5, US-INT-02 AC1–AC3, US-INT-03 transport/persistence subset,
 US-ADM-01 AC2; FR-INT-02/04/05/06 and BR-ORD-01, DEC-ROUTING-002, DEC-SRC-D1-001.
 Approved decisions override older architecture examples that auto-create/route orders.
@@ -132,3 +164,45 @@ Recheck during implementation: #111 merged into main at `06ab96d` after the init
 and #111 now agree on fixed-SKU/503 DTO. #106 is still open, reconciled on a new head awaiting review.
 Do not read the earlier initial audit as the current merge status or reuse superseded pool code.
 Full stock persistence/freshness still needs an all-or-nothing batch review and its own tests.
+
+## Delivery E: stock after merged Q9/Q10
+
+This delivery supersedes the earlier five-feed exclusion. It incorporates main `06ab96d`, where
+#105 and #111 are merged. The worker now polls stock last as a sixth feed. It reads a complete
+batch, the complete source product unit catalogue, and the batch again to detect publication
+changes. Confirmed CFO mapping/unit/factor must match; conversion occurs once. Any unknown SKU,
+unconfirmed mapping, ambiguous multi-SKU/global identity, unknown warehouse, invalid quantity,
+capture regression/conflict or incomplete source response rejects the whole batch. No owner rule
+was added to skip pending SKU rows or aggregate unverified inventories.
+
+Replacement is one transaction for the configured market/source namespace, including an explicitly
+published complete zero-row batch. Other markets and all CFO reservations are preserved; no snapshot
+`FOR UPDATE` is used. HTTP 503/failed validation/downstream callback rolls back replacement and keeps
+the old snapshot/capture. Replay retains the original row provenance/time. A failed batch cannot
+advance its checkpoint or be published as partial complete inventory. Batch counters count inventory
+rows, including zero for a genuinely published empty batch. Safe batch rejection metadata is recorded.
+
+`ingest_stock.usable(session,market_id,now=...)` distinguishes current successful/fresh capture from
+unavailable/failed/running/stale state, including a fresh complete empty batch. A failed latest run
+invalidates even recently cached rows. T14/T16 must consume this **in addition to** their real source
+and per-item/locked approval checks; forbidden planning/approval files are untouched. Providing this
+helper is not proof that the production five-gate availability integration already exists.
+
+The existing stale-stock threshold/key/Dispatcher warning are retained; an old source capture is never
+renewed to job time. Changes affecting approved/in-flight orders still require the trusted risk handoff;
+without it the stock run fails and rolls back. No automatic replan approval or reservation release occurs.
+
+Worker batches have an additional market lease so replicas cannot interleave dependent feeds, plus
+per-feed leases shared with manual runs. Standalone workers configure safe JSON logging and one
+correlation ID per batch. APP_NOW freezes business time, while the periodic timer uses APScheduler's
+wall clock unless a timer anchor is explicitly injected for tests. CLI supports a scoped manual retry:
+
+```powershell
+.venv/Scripts/python.exe -m app.jobs.ingest --market SE --entity orders --retry-run-id 123
+```
+
+Tests use only temporary PostgreSQL databases and mocked read-only HTTP. Full final CI/verification
+is recorded in the PR; focused PostgreSQL cases cover duplicates, partial/failure/retry, stale versions,
+concurrency, protected approved data, scheduler execution/clock, stock empty/unavailable/scope, mapping
+failures, capture integrity and preservation of CFO commitments. Source OpenAPI #106 remains a separate
+review gate. No live deployment, extended D8 tick contract or whole-M2/E2E acceptance is claimed.

@@ -53,6 +53,14 @@ def spec_tables_in(*schemas: str) -> dict[str, frozenset[str]]:
 
 
 # Bảng/cột 05 do migration 0009 thêm (Q12/Q12b/Q14) — test của migration trước đó so với spec "trước 0009".
+TABLES_ADDED_IN_0013 = frozenset(
+    {
+        "ref.stock_admin_grant",
+        "ops.stock_scope_version",
+        "ops.stock_independence_evidence",
+        "ops.stock_write_run",
+    }
+)
 TABLES_ADDED_IN_0009 = frozenset({"hr.employee_shift_schedule", "hr.driver_duty_log", "ops.order_routing"})
 COLUMNS_ADDED_IN_0009 = {"ref.vehicle": frozenset({"max_permissible_mass_kg", "regulation_561_scope"})}
 
@@ -62,5 +70,5 @@ def spec_tables_before_0009(*schemas: str) -> dict[str, frozenset[str]]:
     return {
         name: cols - COLUMNS_ADDED_IN_0009.get(name, frozenset())
         for name, cols in spec_tables_in(*schemas).items()
-        if name not in TABLES_ADDED_IN_0009
+        if name not in TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013
     }

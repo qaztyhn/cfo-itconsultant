@@ -56,6 +56,7 @@ const DEFS: Def[] = [
   route("REVENUE", "Revenue", PATHS.revenue),
   { group: "SALES", id: "pos-new-order", label: "New order", external: "pos", allow: anyRole("sales") },
   route("SALES", "My store orders", PATHS.storeOrders),
+  route("SALES", "Sync & confirm delivery", PATHS.salesSyncCheck),
   route("WAREHOUSE", "Prep queue", PATHS.warehousePrep),
   route("WAREHOUSE", "Attendance & shifts", PATHS.warehouseAttendance),
   route("WAREHOUSE", "Transfers", PATHS.warehouseTransfers),

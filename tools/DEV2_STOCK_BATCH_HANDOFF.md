@@ -5,6 +5,26 @@ Covers the merged #111 (adapter + normalizer) and this update for the owner deci
 **DEC-CFO-STOCK-INDEPENDENCE-001** (aggregate only verified independent stock, option A). This is a review checklist,
 **not** approval. Nothing here writes to the database or to the source.
 
+## T07 ingestion status (PR #121, synchronized with merged #119 and #120)
+
+The T07 scheduler runs the five supported production feeds: customers, products,
+orders, inbound and fleet. The old whole-market stock replacement is withdrawn.
+**Explicit stock diagnostic runs fail closed** with `STOCK_SCOPE_NOT_CONFIGURED`,
+including a complete but empty Source batch. They preserve cached stock and
+commitments, report failure and **do not advance stock checkpoints**. This is a
+dependency gate, not evidence of stock availability or full US-INT-03 acceptance.
+
+The approved scope and independence **policies** below are implemented by the pure
+normalizer (#120), but the storage, versions, effective dates and decision authority
+for fixed SKU scopes and independent-stock evidence have not been approved.
+No inferred scopes, persistence schema or API contract are introduced by #121.
+Stock publication/persistence remains blocked pending a reviewed contract.
+
+T14 has a real replan core, but the default planner input still reads the
+existing CFO order/version. Wiring it to a newer Source DTO without a reviewed
+fresh-input adapter would plan stale order details. Replan/risk integration and
+the full T14/T16 end-to-end flow remain separate handoffs.
+
 ## Agreed DTO (Source → CFO adapter)
 
 `GET /stock` → `200 {"as_of", "batch_id", "item_count", "items": [{"warehouse_code","sku","on_hand","reserved"}]}`
