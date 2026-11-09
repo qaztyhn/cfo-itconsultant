@@ -434,7 +434,7 @@
 ## Epic 14 — KPI và nhật ký
 
 **US-KPI-01 — Dashboard KPI** · FR-KPI-01
-- AC1. *Then* hiện 8 chỉ số kèm baseline và thay đổi so với baseline; có biểu đồ chuỗi theo ngày (ngày tính theo múi giờ market).
+- AC1. *Then* dashboard hiện **10 KPI vận hành**, có baseline/biến động và biểu đồ theo **ngày market-local**; mặc định 30 ngày, tối đa 366. Hai diagnostics chưa đủ nguồn (`hard_constraint_violations`, `event_to_alert_latency_s_median`) trả `null`, không giả 0; System Admin chọn market rõ trước khi xem.
 - AC2. *Given* đơn FAILED, *Then* không nằm trong mẫu số `on_time_rate`.
 - AC3. *Then* "cost per delivery" hiển thị là giờ công và km trung bình mỗi lần giao, không quy ra tiền.
 - AC4. *Then* `/kpi/*` chỉ cho `admin` hoặc người có `ops`; Business owner (`revenue_all`) nhận `403`.
