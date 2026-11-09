@@ -42,6 +42,9 @@
 
 | [DEC-OWNER-20261109](#dec-owner-20261109--27-quyết-định-liên-workstream-đã-duyệt-ngày-09112026) | 27 quyết định chốt: S1–S5, T18-1–3, D7-1–4, G1–G5, N1–N5, M6-1, API-1–2, KPI-1–2 | 09/11 | Owner xác nhận rõ ràng 09/11; [biên bản](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_20261109.md) | **Approved contract; code/migration/E2E pending** |
 
+| [DEC-GPS-RET-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | **Thay G4**: ngừng theo dõi ngay khi trip/ca kết thúc, lưu lịch sử tọa độ hợp lệ **tối đa 7 ngày** với quyền tra soát có lý do/audit; xóa đúng hạn, GPS thật cần privacy/legal sign-off | 09/11 | Owner xác nhận “ok lưu 7 ngày” sau khi trao đổi retention | **Approved policy; backend/UI/retention migrations pending** |
+| [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | Rà soát vận hành tổng thể **07:00 và 13:00 mỗi ngày theo giờ Thụy Điển (Europe/Stockholm)**; tách khỏi đồng bộ định kỳ và xử lý sự kiện | 09/11 | Owner xác nhận “7h và 13h” | **Approved review times only; toàn bộ D8 chưa duyệt** |
+
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
 ### Cách ghi nhận quyết định mới — bắt buộc
@@ -508,3 +511,15 @@
 - **KPI-1/2:** **10 KPI keys** đã xuất hiện trong JSON; 2 diagnostics chưa có công thức/nguồn tin cậy trả `null`, không giả 0; cohort theo ngày approved/giao/work_date theo market timezone.
 - **Tình trạng:** **Đã phê duyệt nghiệp vụ**, còn phải update schema/API/engine/frontend, migration, PostgreSQL E2E, pháp lý/GDPR và PR review. Không mặc nhiên cho phép live GPS hay bỏ fail-closed, **không auto-merge PR code**.
 
+## DEC-GPS-RET-20261109 — G4 cập nhật: lịch sử GPS 7 ngày
+
+- **Chốt bởi Owner ngày 09/11/2026:** ngừng thu và cắt quyền xem GPS live **ngay** khi trip/ca kết thúc (đến trước), nhưng giữ vị trí đã thu hợp lệ **tối đa 7 ngày sau khi kết thúc khoảng thu hợp lệ** để tra soát sự cố/khiếu nại theo quyền được phê duyệt, lý do cụ thể và log audit.
+- **Thay thế một phần G4 trước đó:** quy tắc “xóa toàn bộ raw GPS ngay sau trip/ca” trong DEC-OWNER-20261109 nay không còn áp dụng; các điều kiện 30 phút/device, tối đa 100 điểm/batch, không theo dõi ngoài ca vẫn giữ nguyên. Lịch sử GPS không được tự động hiển thị ở live endpoints hay cho mọi Dispatcher cùng market.
+- **Quyền riêng tư:** cần mục đích hợp lệ, đánh giá pháp lý/DPIA và thông báo từng tài xế trước khi dùng dữ liệu người thật; quá 7 ngày xóa các điểm và xử lý backup/cache theo quy trình. Không tự lưu quá hạn khi có khiếu nại nếu chưa được duyệt riêng.
+- **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md). **Code/migration và triển khai thật chưa hoàn thành.**
+
+## DEC-D8-OPS-20261109 — Rà soát vận hành hai lần mỗi ngày
+
+- **Chốt bởi Owner ngày 09/11/2026:** rà soát vận hành tổng thể **07:00 và 13:00 giờ địa phương Thụy Điển (Europe/Stockholm)**, mỗi ngày, gồm đơn còn tồn/đến hạn/nguy cơ trễ, độ tươi tồn kho, năng lực kho và lịch chính thức kho/tài xế.
+- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Chỉ **hai mốc giờ rà soát** được duyệt; **chưa phê duyệt toàn bộ job list/tần suất/cron/hosting của D8**, không bật job hoặc phát sinh chi phí từ quyết định này.
+- **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md).
