@@ -212,11 +212,11 @@ export function TodaysTrips() {
   }
 
   if (!authenticatedDriver || userId === null) {
-    return <main className="mx-auto max-w-lg p-5" role="alert">Driver authorization required. No trip information is available.</main>;
+    return <main data-screen="TodaysTrips" className="mx-auto max-w-lg p-5" role="alert">Driver authorization required. No trip information is available.</main>;
   }
 
   return (
-    <main className="min-h-screen bg-stone pb-12 text-ink">
+    <main data-screen="TodaysTrips" className="min-h-screen bg-stone pb-12 text-ink">
       <header className="rounded-b-card bg-deepPine px-5 pb-8 pt-7 text-white">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
@@ -336,7 +336,7 @@ export function TodaysTrips() {
             ))}
           </section>
         )}
-        <aside className={card} aria-label="GPS and privacy notice">
+        <section className={card} aria-label="GPS and privacy notice">
           <h2 className="text-h3 font-semibold">Location privacy</h2>
           <p className="mt-2 text-body">GPS upload is off. Browser permission: {permission}. No device coordinates are collected by this screen.</p>
           <p className="mt-2 text-caption text-inkMuted">
@@ -351,7 +351,7 @@ export function TodaysTrips() {
             You must have an active assigned trip, verified duty, individual notice/acknowledgment, and approved deployment before sharing begins.
             Offline GPS points are never queued by this app.
           </p>}
-        </aside>
+        </section>
       </div>
     </main>
   );
