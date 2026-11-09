@@ -1,5 +1,16 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [BE-02 — CS production phone-search gate and CFO log privacy] — 2026-11-09 — Dev 1
+
+- Non-synthetic production `GET /orders?q=` phone-shaped lookup returns
+  `403 FORBIDDEN` by default. Only explicit opt-in after independent infrastructure
+  privacy review can reach existing RBAC/market-scoped lookup.
+- Prevents raw `q` values and query-string phone digits reaching first-party CFO
+  structured event logs; adds fail-closed, no-PII HTTP and log tests. Does not
+  redact browser/proxy/WAF/APM/uvicorn access logs or grant production permission.
+- No schema migration or new API endpoint. Issue #181 remains the deployment gate;
+  no production phone search, distributed rate limiter or real data enabled.
+
 ## [Đề xuất: adapter engine cho kế hoạch tay] — 2026-11-09 — Dev 1 (chỉ tài liệu)
 
 - `docs/proposals/MANUAL_PLAN_ENGINE_ADAPTER_PROPOSAL.md`: nêu xung đột hợp đồng (docs/06 §6.4 "duyệt luôn" so với yêu cầu không tự duyệt) Owner đã chốt phương án A (`DEC-MANUAL-PLAN-20261109`); proposal còn mang tính tài liệu về bộ kiểm tra engine, chức năng engine còn thiếu (`verify_manual`, tái dùng các hàm thuần hiện có), luồng service, ma trận test PostgreSQL. Không đổi code/API; `manual_plan()` vẫn từ chối fail-closed.
@@ -9,6 +20,10 @@
 - Thêm `services/driver_history.py`: kiểm chứng thuần túy 56 ngày lịch địa phương (kết thúc ngày hôm trước), phân biệt `off_duty` có cửa sổ nghỉ xác minh với `unknown`/thiếu/trùng; từ chối bằng chứng thiếu, bị thu hồi, hết hạn, chưa có người xác minh, mâu thuẫn (chồng duty, lái ngoài duty, duty trong ngày nghỉ, thời gian không múi giờ). `synthetic_demo` chỉ được chấp nhận ngoài `production` và không bao giờ là xác minh pháp lý.
 - `planning_inputs.official_driver_context` (và qua đó planning + T16 five-gate) cùng `execution_service._driver_gate` (dispatch/giao) dùng **cùng một proof** rồi chạy cùng quy tắc engine (`driver_problem`: ca chính thức, nghỉ 11 giờ liên tục, giờ làm, giới hạn lái, bằng lái, xe ngoài/trong phạm vi 561). Không thêm quy tắc pháp lý mới, không đổi DB/API/migration.
 - **Nguồn bằng chứng production chưa được phê duyệt** (lưu trữ/người xác nhận — xem proposal D7): reader mặc định `None` ⇒ vẫn fail closed (`EVIDENCE_MISSING`). Hành vi "cho phép" chỉ được chứng minh qua reader test; cần quyết định Owner về phương án lưu trữ A/B và người attest trước khi bật cho tài xế thật.
+
+## [Keep Current cho gợi ý lập lại (06 §6.6)] — 2026-11-09 — Dev 1
+
+- `POST /planning-runs/{id}/keep-current` thực thi thật (trước đây luôn từ chối): chỉ Dispatcher cùng market, `reason_text` bắt buộc (`422 REASON_REQUIRED`), chỉ áp dụng cho `planning_run.kind='replan_suggestion'` mới nhất của đơn còn kế hoạch đã duyệt trước dispatch; một lần duy nhất (quyết định lại/stale ⇒ `409 ILLEGAL_TRANSITION`). Cùng transaction: đóng alert `replan:{order}:{run}` và ghi `REPLAN_KEPT` (lý do, plan giữ lại, actor). Kế hoạch đã duyệt, giữ chỗ, chuyến và trạng thái đơn **không đổi**; không bao giờ tự duyệt gợi ý. Khóa theo thứ tự đơn → run (như approve). Chưa làm: duyệt kế hoạch thay thế từ gợi ý (cần quyết định/triển khai riêng).
 
 ## [M6 × GPS — hook cuối chuyến dùng retention 7 ngày] — 2026-11-09 — Dev 1 + Dev 2 (#137)
 

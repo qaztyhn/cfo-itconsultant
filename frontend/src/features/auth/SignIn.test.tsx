@@ -121,5 +121,9 @@ describe("SignIn", () => {
     await user.click(submitButton());
 
     await waitFor(() => expect(currentPath()).toBe(landing));
+    if (landing === "/revenue") {
+      expect(await screen.findByText("Recognised revenue")).toBeInTheDocument();
+      expect(await screen.findByText(/Period 2026-10-05/)).toBeInTheDocument();
+    }
   });
 });

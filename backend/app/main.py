@@ -17,6 +17,7 @@ from app.api.v1 import router as api_v1_router
 from app.core import clock
 from app.core.config import get_settings
 from app.core.correlation import CorrelationIdMiddleware
+from app.core.cs_phone_gate import CsPhoneProductionGate
 from app.core.errors import install_error_handlers
 from app.core.logging import configure_logging
 
@@ -34,6 +35,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Correlation-ID"],
+    )
+    app.add_middleware(
+        CsPhoneProductionGate,
+        app_env=settings.app_env,
+        live_enabled=settings.cs_phone_search_production_enabled,
     )
     app.add_middleware(CorrelationIdMiddleware)
     install_error_handlers(app)
