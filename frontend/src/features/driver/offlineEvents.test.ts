@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client";
 import type { DriverTrip } from "./driverApi";
-import { assignedTrip } from "./driverApi";
+import { assignedTrip, stopScopedPodEnabled } from "./driverApi";
 import { eligibleForReplay, replayBatch, type PendingEvent } from "./offlineEvents";
 
-vi.mock("./driverApi", () => ({ assignedTrip: vi.fn(), submitDriverEvent: vi.fn() }));
+vi.mock("./driverApi", () => ({ assignedTrip: vi.fn(), submitDriverEvent: vi.fn(), stopScopedPodEnabled: vi.fn() }));
 
 const event: PendingEvent = {
   key: "stable-event-key",
@@ -42,7 +42,7 @@ const trip: DriverTrip = {
   }],
 };
 
-beforeEach(() => { vi.mocked(assignedTrip).mockReset(); });
+beforeEach(() => { vi.mocked(assignedTrip).mockReset(); vi.mocked(stopScopedPodEnabled).mockReset().mockReturnValue(false); });
 
 describe("Driver assigned-trip revalidation", () => {
   it("allows only matching trip and stop identities", async () => {
@@ -68,7 +68,24 @@ describe("Driver assigned-trip revalidation", () => {
       ...event, event: { ...event.event, payload: { trip_id: 99, trip_stop_id: 41, recipient_name: "Demo" } },
     })).toBe(false);
     expect(await eligibleForReplay({
-      ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } as never },
+      ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } },
+    })).toBe(true);
+  });
+
+  it("does not replay ambiguous legacy POD without an explicit stop ID", async () => {
+    vi.mocked(assignedTrip).mockResolvedValue({
+      ...trip, stops: [trip.stops[0], { ...trip.stops[0], trip_stop_id: 42 }],
+    });
+    expect(await eligibleForReplay({
+      ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } },
+    })).toBe(false);
+  });
+
+  it("does not replay a legacy payload after the new server stop contract is enabled", async () => {
+    vi.mocked(stopScopedPodEnabled).mockReturnValue(true);
+    vi.mocked(assignedTrip).mockResolvedValue(trip);
+    expect(await eligibleForReplay({
+      ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } },
     })).toBe(false);
   });
 
