@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -198,3 +199,45 @@ def test_US_RSK_01_AC1_recalculate_without_request_transaction_is_fail_closed() 
     with pytest.raises(DomainError) as caught:
         asyncio.run(risk_service.recalculate(1, "approval"))
     assert caught.value.code == "PLAN_NOT_APPROVABLE"
+
+@pytest.mark.parametrize("has_dispatcher", [False, True])
+def test_US_NOT_02_AC1_risk_requires_reviewed_actor_and_caller_transaction(
+    risk_db: tuple[str, dict[str, datetime]], monkeypatch: pytest.MonkeyPatch, has_dispatcher: bool
+) -> None:
+    dsn, state = risk_db
+    calls: list[int] = []
+    reviewer = SimpleNamespace(id=2, employee_id=2, roles=("dispatcher",), market="SE")
+
+    async def draft(order_id: int, payload: dict[str, object], *, session: AsyncSession, actor: object) -> int:
+        assert order_id == 1
+        assert payload["version"] == 1
+        assert session.in_transaction()
+        assert actor is reviewer
+        calls.append(order_id)
+        return 42
+
+    monkeypatch.setattr(risk_service.notify_service, "create_delay_draft", draft)
+    _recalc(dsn, at=state["now"] - timedelta(minutes=1))
+    state["now"] += timedelta(minutes=2)
+    _recalc(dsn, at=state["now"] - timedelta(minutes=1))
+    state["now"] += timedelta(minutes=6)
+    reviewed_window: dict[str, object] = {
+        "start": "2026-11-10T09:00:00Z",
+        "end": "2026-11-10T11:00:00Z",
+        "version": 1,
+    }
+    result = run(
+        dsn,
+        lambda session: risk_service.recalculate(
+            1,
+            "source_change",
+            session=session,
+            signal_at=state["now"] - timedelta(minutes=1),
+            delay_window=reviewed_window,
+            delay_actor=reviewer if has_dispatcher else None,
+        ),
+    )
+    assert result is not None and result["risk_status"] == "PREDICTED_LATE"
+    assert result["delay_draft"] == ("draft_requested" if has_dispatcher else "blocked_dispatcher_review")
+    assert calls == ([1] if has_dispatcher else [])
+
