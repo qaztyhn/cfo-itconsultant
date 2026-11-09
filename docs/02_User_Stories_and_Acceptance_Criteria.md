@@ -130,6 +130,8 @@
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
 
+**Newer owner clarification [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) takes precedence over the WMS proof/reviewer acceptance proposal below:** CFO does **not** manage physical transfer reconciliation. WMS owns stock/transfer records; CFO reads complete/fresh stock snapshots and maintains only its own planning holds/commits. Do not implement AC-WMS-02/03 as an independent CFO evidence-approval workflow or a 24h reconciliation queue. Review legacy transfer confirm/receive acceptance in #127 before implementation.
+
 **Stock Admin bootstrap & WMS transfer reconciliation — acceptance supplement (09/11/2026):**
 - AC-BOOT-01. Chỉ **System Admin được Owner ủy quyền** mới bootstrap grant Stock Admin đầu tiên cho market; không tự cấp cho chính mình, không seed quyền mặc định; audit người cấp/nhận, market, quyền, hiệu lực, lý do và before/after.
 - AC-WMS-01. Giả định WMS cũ ghi nhận **xuất và nhập chuyển kho**; adapter phải chứng minh dữ liệu đó thật sự đọc được, không tự giả mã giao dịch/ACK. CFO không ghi ngược WMS.
