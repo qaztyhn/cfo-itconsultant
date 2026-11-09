@@ -61,6 +61,23 @@ def execution_api(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F8
         clock.set_now(None)
 
 
+GPS_DUTY = (
+    "UPDATE ref.market SET gps_enabled=true WHERE id=1",
+    "INSERT INTO hr.employee_shift_schedule (employee_id,warehouse_id,work_date,start_time,end_time,"
+    "assigned_by,assigned_at) VALUES (5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z'), "
+    "(11,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
+)
+
+
+def positions(db: str) -> list[tuple[int, str]]:
+    rows_ = fetch(
+        db,
+        "SELECT trip_id, to_char(recorded_at AT TIME ZONE 'UTC','HH24:MI') AS t "
+        "FROM ops.vehicle_position ORDER BY 1,2",
+    )
+    return [(r["trip_id"], r["t"]) for r in rows_]
+
+
 def send(
     client: Api,
     actor: int,
@@ -314,6 +331,7 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
 
     execute(
         execution_api.dsn,
+        *GPS_DUTY,
         "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
         "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'simulator'), "
         "(2, 2, 59, 18, '2026-11-10T08:31Z', 'simulator')",
@@ -327,7 +345,8 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     )
     assert first.status_code == 200, first.text
     assert first.json()["order_status"] == "DISPATCHED"
-    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
+    # DEC-GPS-RET: valid points are retained (7 days) after a trip ends, not deleted at once
+    assert positions(execution_api.dsn) == [(1, "08:30"), (2, "08:31")]
     assert messages == ["DISPATCHED"]
 
     second = send(
@@ -341,7 +360,7 @@ def test_US_EXE_02_AC5_AC7_partial_delivery_single_notice_and_gps_purge(
     assert second.json()["order_status"] == "FAILED"
     assert messages == ["DISPATCHED", "FAILED"]
     assert triggers == ["delivery_failed"]
-    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 0
+    assert positions(execution_api.dsn) == [(1, "08:30"), (2, "08:31")]
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 2
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.alert WHERE type='EXCEPTION'")[0]["n"] == 1
 
@@ -536,8 +555,10 @@ def test_M6_1_failure_after_the_pod_insert_rolls_back_pod_stop_and_gps_purge(
     _dispatch_both_vehicles(execution_api, monkeypatch, notices)
     execute(
         execution_api.dsn,
+        *GPS_DUTY,
         "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
-        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'simulator')",
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'simulator'), "
+        "(1, 1, 59, 18, '2026-11-10T08:00Z', 'simulator')",  # before departure: invalid, purge must be undone
     )
 
     async def failing_risk(order_id: int, trigger: str, *, session: object = None) -> None:
@@ -561,6 +582,112 @@ def test_M6_1_failure_after_the_pod_insert_rolls_back_pod_stop_and_gps_purge(
         fetch(execution_api.dsn, "SELECT status::text AS s FROM ops.delivery_trip WHERE id=1")[0]["s"]
         == "on_road"
     )
-    assert (
-        fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.vehicle_position")[0]["n"] == 1
-    )  # GPS purge undone
+    assert positions(execution_api.dsn) == [(1, "08:00"), (1, "08:30")]  # GPS cleanup rolled back too
+
+
+def test_DEC_GPS_RET_terminal_keeps_valid_points_removes_invalid_and_isolates_other_vehicles(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _dispatch_both_vehicles(execution_api, monkeypatch, [])
+    execute(
+        execution_api.dsn,
+        *GPS_DUTY,
+        "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) VALUES "
+        "(1, 1, 59, 18, '2026-11-10T08:30Z', 'device'), "  # valid
+        "(1, 1, 59, 18, '2026-11-10T08:00Z', 'device'), "  # before the actual departure (08:10)
+        "(1, 1, 59, 18, '2026-11-10T10:00Z', 'device'), "  # after the trip ended (09:30)
+        "(2, 2, 59, 18, '2026-11-10T08:00Z', 'device'), "  # other vehicle: before ITS departure (08:12)
+        "(2, 2, 59, 18, '2026-11-10T08:40Z', 'device')",  # other vehicle, still on the road: untouched
+    )
+    done = send(
+        execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
+    )
+    assert done.status_code == 200, done.text
+    assert positions(execution_api.dsn) == [(1, "08:30"), (2, "08:00"), (2, "08:40")]
+    # trip 2 is still tracked: its own cleanup happens only when it ends
+    ended = send(
+        execution_api, 14, "DELIVERED", "2026-11-10T09:40:00Z", {"trip_id": 2, "recipient_name": "S"}
+    )
+    assert ended.status_code == 200, ended.text
+    assert positions(execution_api.dsn) == [(1, "08:30"), (2, "08:40")]
+
+
+def test_DEC_GPS_RET_points_without_verified_shift_or_with_gps_off_are_all_invalid(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _dispatch_both_vehicles(execution_api, monkeypatch, [])
+    execute(
+        execution_api.dsn,
+        "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'device')",
+    )  # no official shift and GPS disabled for the market
+    done = send(
+        execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
+    )
+    assert done.status_code == 200, done.text
+    assert positions(execution_api.dsn) == []
+
+
+def test_DEC_GPS_RET_no_collection_after_the_trip_ends_and_expired_points_are_never_returned(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import timedelta
+
+    from app.deps import CurrentUser
+    from app.services import gps_service
+    from tests.integration.dev2_helpers import transact
+
+    _dispatch_both_vehicles(execution_api, monkeypatch, [])
+    execute(
+        execution_api.dsn,
+        *GPS_DUTY,
+        "INSERT INTO ops.vehicle_position (trip_id, vehicle_id, lat, lon, recorded_at, source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:30Z', 'device')",
+    )
+    done = send(
+        execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
+    )
+    assert done.status_code == 200, done.text
+    late = execution_api.send(
+        "POST",
+        "/trips/1/positions",
+        DRIVER,
+        {
+            "positions": [
+                {
+                    "lat": 59.3,
+                    "lon": 18.1,
+                    "accuracy_m": 10,
+                    "recorded_at": "2026-11-10T09:00:00Z",
+                    "source": "device",
+                }
+            ]
+        },
+    )
+    assert_error(late, 409, "NOT_ON_TRIP")  # offline upload after the trip ended is refused
+    assert positions(execution_api.dsn) == [(1, "08:30")]
+
+    reviewer = CurrentUser(id=1, employee_id=1, roles=("admin",), market="SE")
+
+    async def allow(
+        _s, _a, _t
+    ):  # a reviewed authorizer does not exist yet; this stands in for it in the test
+        return True
+
+    async def read(session, now):
+        return await gps_service.read_history(
+            session, reviewer, 1, case_ref="CASE-1", reason="Complaint", authorizer=allow, now=now
+        )
+
+    within = transact(execution_api.dsn, lambda s: read(s, clock.now() + timedelta(days=6)))
+    assert len(within) == 1
+    expired = transact(execution_api.dsn, lambda s: read(s, clock.now() + timedelta(days=8)))
+    assert expired == []  # not returned although the retention job never ran
+    assert positions(execution_api.dsn) == [(1, "08:30")]  # still stored: only the job deletes
+    default = CurrentUser(id=2, employee_id=2, roles=("dispatcher",), market="SE")
+
+    async def denied(session):
+        return await gps_service.read_history(session, default, 1, case_ref="C", reason="r", now=clock.now())
+
+    with pytest.raises(Exception, match="not authorized"):
+        transact(execution_api.dsn, denied)  # default authorizer: Dispatcher never reads history
