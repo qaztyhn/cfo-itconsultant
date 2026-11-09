@@ -93,6 +93,10 @@ SEED: tuple[str, ...] = (
         extra_vals=", 'UNMAPPED_SKU: SE-X'",
     ),
     _order(6, "SUBMITTED", "2026-11-01T07:00Z", market=2, customer=2),
+    "INSERT INTO ops.order_routing(market_id,external_ref,route,reason_code,decided_at,"
+    "decided_source_version,decided_by_user_id) VALUES "
+    "(1,'POS-1','cfo','all_confirmed','2026-11-01T09:00Z',1,1),"
+    "(1,'POS-2','cfo','all_confirmed','2026-11-01T08:00Z',1,1)",
     "INSERT INTO ops.order_line (order_id, line_no, local_sku, global_product_id, qty_sale, qty_base, "
     "unit_price, line_total) VALUES (3, 1, 'SE-CEM', 1, 2, 80, 950, 1900), "
     "(1, 1, 'SE-CEM', 1, 1, 40, 950, 950)",
@@ -273,6 +277,23 @@ def test_counts_follow_scope(od: Api) -> None:
     assert sales["nav"] == {"order_queue": 0, "exceptions": 0, "tracking_risk": 0}
     driver = od.get("/orders/counts", DRIVER).json()
     assert (driver["all"], driver["in_execution"], driver["nav"]["exceptions"]) == (1, 1, 1)
+
+
+def test_demo_queue_excludes_legacy_and_unresolved_routes(od: Api) -> None:
+    execute(
+        od.dsn,
+        _order(7, "SUBMITTED", "2026-11-03T13:00Z", store="2"),
+        _order(8, "SUBMITTED", "2026-11-03T14:00Z", store="2"),
+        "INSERT INTO ops.order_routing(market_id,external_ref,route,reason_code,decided_at,"
+        "decided_source_version,decided_by_user_id) VALUES "
+        "(1,'POS-7','legacy','unmapped_sku','2026-11-03T13:00Z',1,1)",
+    )
+    assert ids(od.get("/orders", DISPATCHER, status="SUBMITTED")) == [1]
+    assert ids(od.get("/orders", SALES, status="SUBMITTED")) == [1]
+    assert ids(od.get("/orders", DISPATCHER, status="SUBMITTED,PLANNED")) == [2, 1]
+    assert ids(od.get("/orders", DISPATCHER, status="BLOCKED_UNMAPPED_SKU")) == [5]
+    counts = od.get("/orders/counts", DISPATCHER).json()
+    assert counts["needs_plan"] == 1 and counts["nav"]["order_queue"] == 2
 
 
 # --- CS-01 / CS-02: PostgreSQL-backed phone search and allowlisted detail -------------------------------
