@@ -86,7 +86,13 @@ async def available_stock(
 async def confirmed_inbound(
     session: AsyncSession, warehouse_ids: Sequence[int], product_ids: Sequence[int]
 ) -> dict[int, tuple[InboundCtx, ...]]:
-    """{kho: hàng nhập confirmed & chưa received của các sản phẩm được hỏi}, sắp theo ETA rồi mã."""
+    """{kho: hàng nhập confirmed & chưa received của các sản phẩm được hỏi}, sắp theo ETA rồi mã.
+
+    T18-1 (DEC-OWNER-20261109): inbound created by a warehouse TRANSFER is never counted while pending.
+    `snapshot.as_of` alone does not prove the destination WMS already includes the goods, and no verified
+    transfer-to-WMS reconciliation identity exists yet, so counting it could double-count stock. The
+    Warehouse Manager's explicit receipt (`received=true`) remains the authoritative operational close.
+    """
     result = await session.execute(
         select(InboundShipment)
         .where(
@@ -94,6 +100,7 @@ async def confirmed_inbound(
             InboundShipment.global_product_id.in_(product_ids),
             InboundShipment.confirmed.is_(True),
             InboundShipment.received.is_(False),
+            InboundShipment.source != "transfer",
         )
         .order_by(InboundShipment.eta_date, InboundShipment.inbound_ref)
     )

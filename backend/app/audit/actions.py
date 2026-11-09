@@ -25,7 +25,9 @@ class Action(StrEnum):
     EXCEPTION_REPORTED = "EXCEPTION_REPORTED"
     TRANSFER_SUGGESTED = "TRANSFER_SUGGESTED"
     TRANSFER_APPROVED = "TRANSFER_APPROVED"
-    TRANSFER_CONFIRMED = "TRANSFER_CONFIRMED"
+    TRANSFER_CONFIRMED = "TRANSFER_CONFIRMED"  # historical source-side confirmation
+    TRANSFER_RECEIVED = "TRANSFER_RECEIVED"  # historical receipt, WMS owns physical state
+    TRANSFER_CANCELLED = "TRANSFER_CANCELLED"  # reason required
     NOTIFICATION_SENT = "NOTIFICATION_SENT"
     NOTIFICATION_SUPPRESSED = "NOTIFICATION_SUPPRESSED"
     RESERVATION_HELD = "RESERVATION_HELD"
@@ -66,6 +68,7 @@ REASON_REQUIRED: frozenset[Action] = frozenset(
         Action.ORDER_CANCELLED,
         Action.NOTIFICATION_SUPPRESSED,
         Action.GPS_HISTORY_ACCESSED,  # mandatory case/reason for restricted review
+        Action.TRANSFER_CANCELLED,  # dispatcher: mandatory reason
         Action.ROUTING_MANUAL_START_RECORDED,  # DEC-ROUTING-002: ngoại lệ có lý do
         Action.ROUTING_MANUAL_CONFLICT_ESCALATED,
         Action.STOCK_GRANT_REVOKED,
