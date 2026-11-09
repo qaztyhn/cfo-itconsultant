@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../../app/store";
 import { USE_MOCKS } from "../../api/config";
 import { getDriverTrip, listDriverTrips, type DriverTrip } from "./driverApi";
@@ -14,12 +14,13 @@ export function TodaysTrips() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pending, setPending] = useState(0);
   const [queueMessage, setQueueMessage] = useState("");
+  const bootstrappedDriver = useRef<number | null>(null);
   const list = useQuery({ queryKey: ["driver", "trips", user?.id], queryFn: ({ signal }) => listDriverTrips(undefined, signal), enabled: driver, retry: false });
   const detail = useQuery({ queryKey: ["driver", "trip", selectedId], queryFn: ({ signal }) => getDriverTrip(selectedId!, signal), enabled: driver && selectedId !== null, retry: false });
   const refreshQueue = useCallback(async () => {
-    if (!driverUserId) return;
-    try { setPending((await pendingFor(driverUserId)).length); }
-    catch { setQueueMessage("Offline storage is unavailable. Updates cannot be saved on this device."); }
+    if (!driverUserId) return 0;
+    try { const count = (await pendingFor(driverUserId)).length; setPending(count); return count; }
+    catch { setQueueMessage("Offline storage is unavailable. Updates cannot be saved on this device."); return 0; }
   }, [driverUserId]);
   const sync = useCallback(async () => {
     if (!driverUserId || USE_MOCKS) return;
@@ -30,7 +31,14 @@ export function TodaysTrips() {
       else if (result.sent) { setQueueMessage(`${result.sent} update(s) confirmed by the server.`); void list.refetch(); void detail.refetch(); }
     } catch { setQueueMessage("Offline storage is unavailable. Updates remain unverified."); }
   }, [driverUserId, list, detail]);
-  useEffect(() => { void Promise.resolve().then(refreshQueue); }, [refreshQueue]);
+  useEffect(() => {
+    if (!driverUserId || bootstrappedDriver.current === driverUserId) return;
+    bootstrappedDriver.current = driverUserId;
+    void Promise.resolve().then(async () => {
+      const count = await refreshQueue();
+      if (online && count > 0) await sync();
+    });
+  }, [driverUserId, online, refreshQueue, sync]);
   useEffect(() => {
     const onOnline = () => { setOnline(true); void sync(); };
     const onOffline = () => setOnline(false);

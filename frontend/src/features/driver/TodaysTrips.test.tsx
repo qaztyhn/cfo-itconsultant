@@ -137,6 +137,14 @@ describe("US-EXE-03 driver mobile workflow", () => {
     expect(await screen.findByText(/ILLEGAL_TRANSITION/)).toBeInTheDocument();
     expect(sendEvent).not.toHaveBeenCalled();
   });
+  it("checks an existing offline queue when reopened online", async () => {
+    pending.mockResolvedValue([{ idempotencyKey: "stored" }]);
+    replay.mockResolvedValue({ sent: 1, pending: 0, conflict: null });
+    auth("driver"); mount();
+    await screen.findByText("ORDER-129");
+    await waitFor(() => expect(replay).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/1 update\(s\) confirmed by the server/)).toBeInTheDocument();
+  });
   it("keeps GPS collection off without individual evidence or duty proof", async () => {
     const getCurrentPosition = vi.fn();
     Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
