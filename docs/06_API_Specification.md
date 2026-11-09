@@ -489,6 +489,10 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 ```
 `GET /orders/{id}/contact-logs`: dispatcher và CS.
 
+**BE-03 server persistence contract:** `POST` requires a verified active CS account with `employee_id` and an order in the same market; 201 response includes `id, order_id, channel, reason_code, note, employee_id, contacted_at` (the last field is a server timestamp with UTC offset). `channel` and `reason_code` are normalized safe snake-case identifiers (max 32/64 characters); `note` is optional, at most 1000 characters. Unknown request fields are rejected (422), including any raw `phone` or `email` fields.
+
+`GET` requires CS or Dispatcher in the order's market, supports `page` (starting at 1) and `page_size` (1–200) and returns `{items, page, page_size, total}`, newest first by server contact time, then ID. No GPS, contact phone/email, internal planning or pricing is exposed. Each CS write inserts `ops.customer_contact_log` and a metadata-only `CUSTOMER_CONTACT_RECORDED` immutable decision audit row in **the same database transaction**. The audit contains the actor user/employee, time, order, channel and reason code, **never** the free-text contact note or private contact values. Errors roll back both rows; no customer notification or POS/WMS write is performed.
+
 ## 12. Sản phẩm, ánh xạ, nhóm xử lý (IT)
 
 **ASM-005 — Chính sách phạm vi CFO:** Khoảng 100 SKU mapping confirmed ban đầu (pilot) và mở rộng dần. CFO chỉ điều phối đơn có toàn bộ SKU đã xác nhận. Đơn thiếu SKU đi theo quy trình cũ; API đồng bộ đơn của CFO phải đánh giá điều kiện trước khi tạo planning run/hold, trả kết quả **không đủ điều kiện CFO / tiếp tục quy trình cũ**, không gọi Dispatcher để giữ đơn chờ IT. Không được tự chuyển đơn cũ vào CFO sau mapping. Mã phản hồi, dữ liệu định danh luồng, cách ngăn hai luồng cùng xử lý và xử lý đơn đã nhập ở CFO trước thay đổi là **thiết kế cần chốt khi triển khai**, không tự coi API hiện tại đã hỗ trợ.
