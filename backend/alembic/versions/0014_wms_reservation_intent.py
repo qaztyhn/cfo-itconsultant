@@ -7,8 +7,7 @@ down_revision = "0013"
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
 CREATE TABLE ops.wms_reservation_intent (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   market_id smallint NOT NULL REFERENCES ref.market(id),
@@ -43,9 +42,7 @@ CREATE TABLE ops.wms_reservation_intent (
 )
 """
     )
-    op.execute(
-        "CREATE INDEX ix_wms_intent_market_status ON ops.wms_reservation_intent (market_id,status)"
-    )
+    op.execute("CREATE INDEX ix_wms_intent_market_status ON ops.wms_reservation_intent (market_id,status)")
     op.execute(
         "CREATE TRIGGER trg_set_updated_at BEFORE UPDATE ON ops.wms_reservation_intent "
         "FOR EACH ROW EXECUTE FUNCTION audit.set_updated_at()"
