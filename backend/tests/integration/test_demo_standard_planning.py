@@ -6,9 +6,11 @@ claim WMS reserve ACK, production stock ingestion, or final approval acceptance.
 
 import json
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
+from app.adapters import demo_d7_reader
 from app.core import clock
 from app.deps import CurrentUser
 from app.services import driver_history, planning_service
@@ -19,6 +21,8 @@ from tests.integration.dev2_helpers import transact
 from tests.integration.test_ingest_orders import db as db  # noqa: F401 (PostgreSQL fixture)
 from tests.integration.test_ingest_orders import prepare, run_orders, source
 from tests.integration.test_ingest_runner import NOW
+from tests.unit.test_demo_d7_reader import attest as attest_d7
+from tests.unit.test_demo_d7_reader import fixture as build_d7
 
 pytestmark = pytest.mark.integration
 TARGET = date(2026, 11, 10)
@@ -102,3 +106,41 @@ def test_US_PLN_03_AC3_missing_official_driver_shift_cannot_produce_plan(standar
         fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "NO_FEASIBLE_DATE"
     )
     assert fetch(standard_order, "SELECT count(*) FROM plan.stock_reservation")[0][0] == 0
+
+
+def _enable_disposable_d7(db: str, tmp_path, monkeypatch) -> None:
+    build_d7(tmp_path)
+    execute(db, "UPDATE hr.employee SET employee_no='DEMO-DRIVER-1' WHERE id=2")
+    monkeypatch.setenv("DEMO_DISPOSABLE", "1")
+    monkeypatch.setattr(
+        demo_d7_reader,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="test", app_now=demo_d7_reader.DEMO_NOW),
+    )
+    driver_history.configure_reader(demo_d7_reader.DisposableD7Reader(tmp_path))
+
+
+def test_demo_D7_attested_reader_real_postgres_planner(standard_order: str, tmp_path, monkeypatch) -> None:
+    _enable_disposable_d7(standard_order, tmp_path, monkeypatch)
+    run_id = transact(standard_order, lambda s: planning_service.plan(1, DISPATCHER, {}, session=s))
+    assert run_id == 1
+    assert fetch(standard_order, "SELECT result FROM plan.planning_run WHERE id=1")[0][0] == "feasible"
+    plan_id = fetch(standard_order, "SELECT id FROM plan.fulfilment_plan ORDER BY rank LIMIT 1")[0][0]
+    proof = transact(standard_order, lambda s: five_gate_recheck(s, plan_id))
+    assert all(proof.gates.values())
+
+
+def test_demo_D7_missing_day_real_postgres_planner_fails_closed(
+    standard_order: str, tmp_path, monkeypatch
+) -> None:
+    _enable_disposable_d7(standard_order, tmp_path, monkeypatch)
+    first_week = tmp_path / "history_week_01.json"
+    data = json.loads(first_week.read_text(encoding="utf-8"))
+    data["records"].pop()
+    first_week.write_text(json.dumps(data), encoding="utf-8")
+    attest_d7(tmp_path)
+    transact(standard_order, lambda s: planning_service.plan(1, DISPATCHER, {}, session=s))
+    assert (
+        fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "NO_FEASIBLE_DATE"
+    )
+    assert fetch(standard_order, "SELECT count(*) FROM plan.vehicle_reservation")[0][0] == 0
