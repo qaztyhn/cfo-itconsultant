@@ -97,7 +97,10 @@ def test_WMS_multiple_local_skus_same_global_keep_distinct_original_lines() -> N
         (
             source(),
             source(
-                line_no=2, pos_sku="POS-50", wms_sku="WMS-BAG50", sale_quantity=Decimal("2")
+                line_no=2,
+                pos_sku="POS-50",
+                wms_sku="WMS-BAG50",
+                sale_quantity=Decimal("2"),
             ),
         ),
         idempotency_key="same-order-one-reservation",
@@ -129,7 +132,9 @@ def test_WMS_fractional_or_unverified_precision_fails_without_rounding(
         prepare_intent(
             (
                 source(
-                    sale_quantity=quantity, units_to_base=Decimal("1"), wms_quantity_scale=scale
+                    sale_quantity=quantity,
+                    units_to_base=Decimal("1"),
+                    wms_quantity_scale=scale,
                 ),
             ),
             idempotency_key="stable",
