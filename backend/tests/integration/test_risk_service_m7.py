@@ -242,4 +242,3 @@ def test_US_NOT_02_AC1_risk_requires_reviewed_actor_and_caller_transaction(
     assert result is not None and result["risk_status"] == "PREDICTED_LATE"
     assert result["delay_draft"] == ("draft_requested" if has_dispatcher else "blocked_dispatcher_review")
     assert calls == ([1] if has_dispatcher else [])
-
