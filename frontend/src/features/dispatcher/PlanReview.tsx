@@ -68,7 +68,7 @@ interface RunBodyProps {
 
 function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
-  const [approved, setApproved] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const expired = useHoldExpired(run.hold_expires_at);
 
   const plans = run.plans.slice(0, MAX_PLANS);
@@ -108,7 +108,7 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
                 <button
                   type="button"
                   aria-pressed={isSelected}
-                  disabled={approved}
+                  disabled={submitted}
                   onClick={() => setSelectedRank(plan.rank)}
                   className="rounded-control border bg-surface px-3 py-1.5 text-body font-semibold text-ink disabled:opacity-50"
                 >
@@ -122,7 +122,7 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
 
       <RejectedCandidatesTable candidates={run.rejected_candidates ?? []} />
 
-      <ApprovalFlow run={run} plan={selected} showDriver={showDriver} expired={expired} onApproved={() => setApproved(true)} />
+      <ApprovalFlow key={selected?.id ?? "none"} run={run} plan={selected} showDriver={showDriver} expired={expired} onSubmitted={() => setSubmitted(true)} />
     </>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * Luồng duyệt phương án (docs/06 mục 6.3). Owner: Dev 3 (luồng C) — M5.
  * - Idempotency-Key gắn với (plan, nội dung gửi): thử lại cùng nội dung dùng lại key, đổi nội dung thì tạo key mới.
- * - Chỉ báo thành công khi backend trả order.status === "APPROVED". Không bypass 409 nào.
+ * - CFO APPROVED không chứng minh WMS đã reserve. Không báo thành công WMS khi thiếu ACK DTO.
  * - T16 backend hiện fail-closed khi chưa có recheck adapter: lỗi PLAN_NOT_APPROVABLE được hiển thị nguyên văn, không giả thành công.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,7 +12,7 @@ import { GATE_KEYS, type ApprovePlanInput, type ApprovePlanResponse, type Plan, 
 import { approvePlan, fetchDateNegotiations, fetchOrderRequestedDate, planningKeys } from "../../api/planning";
 import { DecisionBar } from "../../components/DecisionBar";
 import { ReasonModal, type ReasonOption, type ReasonResult } from "../../components/ReasonModal";
-import { describeCommit, formatDayTime, formatTime } from "../../lib/planFormat";
+import { describeCommit } from "../../lib/planFormat";
 
 // docs/06 chưa định nghĩa danh mục mã lý do chọn phương án khác (ví dụ mẫu: closest_to_customer).
 const ALT_REASONS: ReasonOption[] = [
@@ -38,12 +38,12 @@ export interface ApprovalFlowProps {
   plan: Plan | null;
   showDriver: boolean;
   expired: boolean;
-  onApproved: () => void;
+  onSubmitted: () => void;
   /** Mặc định theo chế độ chạy; tách ra để test. */
   mock?: boolean;
 }
 
-export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock = USE_MOCKS }: ApprovalFlowProps) {
+export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock = USE_MOCKS }: ApprovalFlowProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
@@ -77,6 +77,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
   else if (orderQuery.isError || !requestedDate) blockedReason = "Requested delivery date is unavailable.";
   else if (dateChanged && (negotiationsQuery.isPending || negotiationsQuery.isError)) blockedReason = "Checking customer date agreement…";
   else if (dateChanged && !selectedAgreement) blockedReason = "Select an agreed customer date for this plan.";
+  else if (result) blockedReason = "CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.";
   else if (run.reserve_class === "tight" && !tightAccepted) blockedReason = "Accept the tight schedule before approving.";
   else if (submitting) blockedReason = "Approval is being submitted…";
 
@@ -96,7 +97,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
       setResult(response);
       setProblem(null);
       setOpen(false);
-      onApproved();
+      onSubmitted();
       void queryClient.invalidateQueries({ queryKey: planningKeys.run(run.id) });
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (error) {
@@ -114,7 +115,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
 
   return (
     <>
-      {result && <SuccessPanel result={result} mock={mock} />}
+      {result && <UnverifiedPanel result={result} mock={mock} />}
       {problem && <ProblemPanel error={problem} />}
       {dateChanged && (
         <label className="flex flex-col gap-1 text-body text-ink">
@@ -129,7 +130,7 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
       <DecisionBar
         plan={plan}
         expired={expired}
-        approved={result !== null}
+        approved={false}
         blockedReason={blockedReason}
         onApprove={() => {
           setProblem(null);
@@ -153,19 +154,13 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onApproved, mock 
   );
 }
 
-function SuccessPanel({ result, mock }: { result: ApprovePlanResponse; mock: boolean }) {
-  const committed = result.order.committed;
+function UnverifiedPanel({ result, mock }: { result: ApprovePlanResponse; mock: boolean }) {
   return (
-    <div role="status" className="flex flex-col gap-1 rounded-card border border-risk-onTrack-bg bg-risk-onTrack-bg p-4 text-risk-onTrack-fg">
+    <div role="alert" className="flex flex-col gap-1 rounded-card border border-risk-atRisk-bg bg-risk-atRisk-bg p-4 text-risk-atRisk-fg">
       <p className="text-h3">
-        <span aria-hidden="true">✓ </span>Approved · order status {result.order.status}
+        CFO reports {result.order.status}; WMS reservation is unverified.
       </p>
-      {committed && (
-        <p className="text-body">
-          Committed delivery {formatDayTime(committed.promise_start)}–{formatTime(committed.promise_end)}.
-        </p>
-      )}
-      {result.trip_ids.length > 0 && <p className="font-mono text-caption">Trips {result.trip_ids.join(", ")}</p>}
+      <p className="text-body">The current response has no WMS reservation acknowledgment or refreshed stock version. Do not dispatch or repeat the request without checking backend state.</p>
       {mock && <p className="font-mono text-caption">MOCK API · simulated approval, nothing was committed to a real backend.</p>}
     </div>
   );
