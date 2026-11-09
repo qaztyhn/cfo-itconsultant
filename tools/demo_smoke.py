@@ -61,7 +61,11 @@ class Http:
         try:
             with self.opener.open(request, timeout=12) as response:
                 payload = response.read(262144)
-                return response.status, json.loads(payload) if payload else None
+                media_type = response.headers.get("Content-Type", "").lower()
+                # The web SPA serves HTML, not JSON: a successful HTML 200
+                # is not an API parsing failure and is not browser-render evidence.
+                parsed = json.loads(payload) if payload and "json" in media_type else None
+                return response.status, parsed
         except HTTPError as error:
             # Do not print or persist error bodies (which might contain PII).
             return error.code, None
