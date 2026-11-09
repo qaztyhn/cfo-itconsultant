@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [WMS Reservation Adapter (đề xuất/mock, KHÔNG bật ghi WMS) + D8 slot] — 2026-11-09 — Dev 2
+
+- Thêm `adapters/wms_reservation.py` (port reserve/status/release **đề xuất, chưa xác minh**, `DisabledWmsPort` mặc định, khóa idempotency ổn định, kiểm ACK khớp tuyệt đối, timeout→status lookup, partial/mismatch→release bù, unknown→fail closed), `wms_sku.py` (ánh xạ ngược SKU gốc WMS, fail closed), `stock_accounting.py` (không trừ đôi `reserved`), `stock_refresh.py` (đọc lại ngay sau ACK, không đổi checkpoint) và `jobs/ops_review_slots.py` (07:00/13:00 giờ market, chưa bật cron). Test với WMS giả trong bộ nhớ.
+- Chưa có API/credential WMS thật, nguồn quan hệ POS↔WMS SKU, trường `reflected_in_batch_id`, ledger/outbox (Dev 1). Xem `docs/proposals/WMS_RESERVATION_ADAPTER_CONTRACT.md`.
+
 
 
 ## [DEC-CS-SEARCH / DEC-CS-PRIVACY / DEC-M6-PREP-QUEUE / DEC-STOCK-GRANT-CONTROL / DEC-D8-STAGING-SCHEDULE — 20261109] — 2026-11-09 — five owner approvals, docs-only
