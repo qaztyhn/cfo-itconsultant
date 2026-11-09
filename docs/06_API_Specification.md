@@ -418,7 +418,7 @@ Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn 
 | `LOADED` | warehouse | theo **từng xe** (`trip_id` bắt buộc); đơn → `LOADED` khi mọi xe đã lên hàng | `{ "trip_id": 930 }` |
 | `DISPATCHED` | driver | theo từng xe (chuyến của mình → `on_road`); đơn → `DISPATCHED` ở xe đầu tiên | `{ "trip_id": 930 }` |
 | `DELIVERED` | driver | POD theo từng **trip_stop** thuộc chuyến và đơn đã duyệt; trip chỉ kết thúc khi **mọi stop** của trip kết thúc; đơn → `DELIVERED` khi toàn bộ stops/trips của đơn hoàn tất thành công | `{ "trip_id": 930, "trip_stop_id": 991, "recipient_name": "Erik Berg", "note": "…" }` |
-| `FAILED` | driver | theo từng xe; tạo `proof_of_delivery(result=failed)`; đơn → `FAILED` khi mọi chuyến kết thúc và có xe thất bại (lần giao lại sau đó có POD riêng) | `{ "failure_reason": "customer_absent", "note": "…" }` (bắt buộc `failure_reason` thuộc danh sách chuẩn) |
+| `FAILED` | driver | POD thất bại theo từng **trip_stop** của chuyến được phân công; trip chỉ kết thúc khi mọi stop đã kết thúc; đơn → `FAILED` khi mọi stop/trip hoàn tất và có stop thất bại | `{ "trip_id": 930, "trip_stop_id": 991, "failure_reason": "customer_absent", "note": "…" }` (reason thuộc danh sách chuẩn) |
 | `SHORTAGE` | warehouse | mọi trạng thái đang chuẩn bị | `{ "sku": "SE-CEM-25", "qty_missing": 3, "note": "…" }` |
 | `BREAKAGE` | warehouse | — | `{ "sku": "…", "qty": 2, "note": "…" }` |
 | `VEHICLE_ISSUE` | warehouse | — | `{ "vehicle_id": 15, "note": "Flat tyre" }` |
