@@ -1,6 +1,6 @@
 # Owner decisions — GPS 7-day retention and two daily operational reviews (2026-11-09)
 
-**Status: OWNER APPROVED for the TWO specific changes below.** The owner explicitly changed the GPS historical data retention to **seven days** and selected operational-review times **07:00 and 13:00, Sweden local time**. This record updates the earlier `DEC-OWNER-20261109` G4 deletion policy and the time of the D8 `morning_check` proposal **only to that extent**. All other D8 jobs, tick API/SLA and hosting remain proposed unless separately approved.
+**Status: OWNER APPROVED for the TWO specific changes below.** The owner explicitly changed the GPS historical data retention to **seven days** and selected operational-review times **07:00 and 13:00, Sweden local time**. This record updates the earlier `DEC-OWNER-20261109` G4 deletion policy and the time of the D8 `morning_check` proposal **only to that extent**. All other D8 jobs, tick API/SLA and hosting remain proposed unless separately approved. **Later amendment (same date):** [DEC-D8-STAGING-SCHEDULE-20261109](DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md) explicitly approves the proposed **job list/cadences for staging/demo implementation/testing only**; production activation, tick API/SLA and hosting are still not approved.
 
 ## DEC-GPS-RET-20261109 — Amend G4: seven-day restricted historical retention
 
