@@ -22,6 +22,12 @@ describe("CS api boundary", () => {
     expect(get).toHaveBeenCalledWith("/orders", { q: "ORD-0042", page: 1, page_size: 20 }, controller.signal);
   });
 
+  it("test_US_CS_01_AC1_search_requests_the_given_page", async () => {
+    get.mockResolvedValueOnce({ items: [], page: 3, page_size: 20, total: 50 });
+    await searchOrders("Anna", undefined, 3);
+    expect(get).toHaveBeenCalledWith("/orders", { q: "Anna", page: 3, page_size: 20 }, undefined);
+  });
+
   it("test_US_CS_01_AC1_blank_search_sends_no_request", async () => {
     const page = await searchOrders("   ");
     expect(get).not.toHaveBeenCalled();
