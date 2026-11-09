@@ -45,6 +45,10 @@
 | [DEC-GPS-RET-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | **Thay G4**: ngừng theo dõi ngay khi trip/ca kết thúc, lưu lịch sử tọa độ hợp lệ **tối đa 7 ngày** với quyền tra soát có lý do/audit; xóa đúng hạn, GPS thật cần privacy/legal sign-off | 09/11 | Owner xác nhận “ok lưu 7 ngày” sau khi trao đổi retention | **Approved policy; backend/UI/retention migrations pending** |
 | [DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md) | Rà soát vận hành tổng thể **07:00 và 13:00 mỗi ngày theo giờ Thụy Điển (Europe/Stockholm)**; tách khỏi đồng bộ định kỳ và xử lý sự kiện | 09/11 | Owner xác nhận “7h và 13h” | **Approved review times only; toàn bộ D8 chưa duyệt** |
 
+| [DEC-STOCK-GRANT-BOOTSTRAP-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Owner ủy quyền System Admin tin cậy tạo **grant Stock Admin đầu tiên theo market**, có lý do/audit; **cấm tự cấp quyền cho mình** và không tự bootstrap | 09/11 | Owner đồng ý Q1 sau giải thích cấp quyền ban đầu | Quyết định đã chốt; schema/runbook/code cần review |
+| [ASM-WMS-MOVEMENT-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Giả định nghiệp vụ**: WMS cũ ghi nhận xuất kho A và nhập kho B khi chuyển kho; **chưa chứng minh API WMS trả movement ID hay liên kết snapshot** | 09/11 | Owner: “assume là có đi” | Giả định chốt; Dev 2 phải xác minh nguồn thật |
+| [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | Đối soát chuyển kho ưu tiên chứng cứ movement/receipt từ WMS; thiếu thì Warehouse Manager nộp chứng cứ, người có quyền độc lập duyệt; **không tự suy từ timestamp/lượng tồn, không đếm trùng** | 09/11 | Owner: “đồng ý” với Q2 | Quyết định đã chốt; cần contract/migration/tests |
+
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
 ### Cách ghi nhận quyết định mới — bắt buộc
@@ -523,3 +527,19 @@
 - **Chốt bởi Owner ngày 09/11/2026:** rà soát vận hành tổng thể **07:00 và 13:00 giờ địa phương Thụy Điển (Europe/Stockholm)**, mỗi ngày, gồm đơn còn tồn/đến hạn/nguy cơ trễ, độ tươi tồn kho, năng lực kho và lịch chính thức kho/tài xế.
 - Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Chỉ **hai mốc giờ rà soát** được duyệt; **chưa phê duyệt toàn bộ job list/tần suất/cron/hosting của D8**, không bật job hoặc phát sinh chi phí từ quyết định này.
 - **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md).
+
+## DEC-STOCK-GRANT-BOOTSTRAP-20261109 — System Admin cấp quyền đầu tiên cho Stock Admin
+
+- Owner chỉ định/ủy quyền **System Admin** đủ tin cậy thiết lập grant Stock Admin đầu tiên **theo market** (pilot SE). Grant phải rõ người cấp/nhận, market, quyền, hiệu lực, thời gian, lý do và audit; **không tự cấp cho chính mình**, không tạo stock-admin mặc định khi seed/login.
+- Giữ S1/S2: chỉ grant còn hiệu lực mới được quản trị/phê duyệt scope hoặc chứng cứ tồn; người tạo scope khác người duyệt, Warehouse Manager nộp chứng cứ khác người phê duyệt. Việc tự động cho phép cấp grant tiếp hoặc cấp quyền của System Admin không được suy từ chức danh, cần review kỹ thuật/ủy quyền.
+- [Quyết định và giới hạn triển khai](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). **Chưa thực thi cấp quyền thật.**
+
+## ASM-WMS-MOVEMENT-20261109 — Giả định WMS cũ ghi nhận chuyển kho
+
+- Owner cho phép **assume** quản lý kho đã ghi nhận **xuất kho nguồn và nhập kho đích trên WMS cũ**. CFO vẫn chỉ GET/đọc, không sửa WMS. **Giả định này không có nghĩa API WMS đang trả mã movement, transfer ID, acknowledgment hoặc snapshot linkage**; Dev 2 phải kiểm tra dữ liệu có thể lấy thật.
+
+## DEC-T18-WMS-RECON-20261109 — Đối soát chuyển kho theo chứng cứ WMS
+
+- Ưu tiên đối chiếu chứng từ movement/receipt WMS cho **cả kho nguồn và kho đích**, đúng transfer, kho, SKU, số lượng, trạng thái và batch/version. Thiếu API/cặp chứng cứ thì Warehouse Manager cung cấp bằng chứng WMS và **người có thẩm quyền độc lập, theo market** phê duyệt với audit; thiếu thẩm quyền/chứng cứ ⇒ pending/fail closed.
+- Không giải phóng điều chỉnh xuất kho hoặc cộng nhập vào hàng khả dụng chỉ vì snapshot mới hơn hoặc lượng tăng/giảm tình cờ; tránh double-subtract kho nguồn, double-add kho đích. Giữ chốt nghiệp vụ receipt của Warehouse Manager, không coi receipt là chứng cứ stock snapshot đã phản ánh lượng hàng.
+- **Mốc escalation 24 giờ vẫn là đề xuất Q3 chưa được Owner phê duyệt.** Chi tiết [decision record](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md). Code/Source API/migration chưa nghiệm thu.
