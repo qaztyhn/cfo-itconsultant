@@ -35,6 +35,31 @@ const main = () => within(screen.getByRole("main"));
 const firstButton = async (name: string) => (await main().findAllByRole("button", { name }))[0];
 
 describe("OrderAction", () => {
+  it("general Plan Review entry redirects to the PLANNED queue instead of a blank page", async () => {
+    renderAt("/dispatcher/plan-review");
+    await waitFor(() => expect(currentPath()).toBe("/dispatcher/orders"));
+    expect(await main().findByText("No orders match these filters.")).toBeInTheDocument();
+    expect(main().getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+  });
+
+  it("planned run history forbidden does not navigate or fabricate a run", async () => {
+    server.use(queue(order()), http.get(RUNS, () =>
+      HttpResponse.json(errorBody("FORBIDDEN", "Access denied"), { status: 403 })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/not allowed/i);
+    expect(currentPath()).toBe("/dispatcher/orders");
+  });
+
+  it("planning failure and invalid server run ID never navigate to a fake review", async () => {
+    server.use(queue(order({ status: "SUBMITTED" })),
+      http.post(PLAN, () => HttpResponse.json(errorBody("PLAN_NOT_FEASIBLE", "No feasible plan"), { status: 422 })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Run planning for order SE-2026-004021"));
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/No feasible plan/);
+    expect(currentPath()).toBe("/dispatcher/orders");
+  });
+
   it("test_US_ORD_02_AC3_planned_opens_latest_real_run_and_skips_replan_suggestion", async () => {
     server.use(queue(order()), landing(88), http.get(RUNS, () => HttpResponse.json({ items: [
       { id: 99, order_id: 4021, run_no: 4, kind: "replan_suggestion", result: "feasible", hold_expires_at: null },
