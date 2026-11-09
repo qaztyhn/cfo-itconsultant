@@ -52,6 +52,7 @@ from app.engine.types import (
     VehicleCtx,
     WarehouseCtx,
 )
+from app.services import driver_history
 from app.services.planning_context import available_stock, confirmed_inbound, fleet_context, route_info
 
 
@@ -200,8 +201,13 @@ async def official_driver_context(
     days: list[date],
     now: datetime,
     zone: ZoneInfo,
+    market_code: str | None = None,
 ) -> tuple[tuple[VehicleCtx, ...], tuple[DriverCtx, ...]]:
-    """Attach official whole-duty shifts and recorded driving history; never infer completeness."""
+    """Attach official shifts and the VERIFIED 56-day history proof; never infer completeness.
+
+    `history_complete` comes only from `driver_history.load_proof` (rolling 56 market-local dates, explicit
+    off-duty vs unknown, verified/unrevoked/unexpired evidence); no proof => False (fail closed).
+    """
     if not days:
         return vehicles, drivers
     vehicle_ids = {v.id for v in vehicles}
@@ -267,20 +273,37 @@ async def official_driver_context(
         driving[duty.employee_id][duty.duty_start.astimezone(zone).date()] += duty.driving_min
     out: list[DriverCtx] = []
     for d in drivers:
+        proof = (
+            await driver_history.load_proof(session, d.employee_id, market_code, zone, now)
+            if market_code is not None
+            else driver_history.HistoryProof(False, ("EVIDENCE_MISSING",))
+        )
         dlog = driving[d.employee_id]
         recent = today - timedelta(days=6)
         fortnight = today - timedelta(days=13)
+        if proof.complete:
+            # Verified evidence covers dates before today; today's recorded duty (DB log) is added on top.
+            merged = dict(proof.driving_min_by_day)
+            for day, minutes in dlog.items():
+                if day >= today:
+                    merged[day] = merged.get(day, 0) + minutes
+            week = proof.driving_min_week + sum(m for day, m in dlog.items() if day >= today)
+            fort = proof.driving_min_fortnight + sum(m for day, m in dlog.items() if day >= today)
+            merged_duty = tuple(sorted({*proof.duty_history, *histories[d.employee_id]}))
+        else:
+            merged = dict(dlog)
+            week = sum(minutes for day, minutes in dlog.items() if day >= recent)
+            fort = sum(minutes for day, minutes in dlog.items() if day >= fortnight)
+            merged_duty = tuple(sorted(histories[d.employee_id]))
         out.append(
             replace(
                 d,
                 shifts=tuple(sorted(intervals[d.employee_id])),
-                duty_history=tuple(sorted(histories[d.employee_id])),
-                driving_min_by_day=dict(dlog),
-                driving_min_week=sum(minutes for day, minutes in dlog.items() if day >= recent),
-                driving_min_fortnight=sum(minutes for day, minutes in dlog.items() if day >= fortnight),
-                # D7's 56-day completeness marker has not been added to the DB.
-                # Nonempty history is NOT proof of coverage on rest days.
-                history_complete=False,
+                duty_history=merged_duty,
+                driving_min_by_day=merged,
+                driving_min_week=week,
+                driving_min_fortnight=fort,
+                history_complete=proof.complete,
             )
         )
     return vehicles, tuple(out)
@@ -442,7 +465,7 @@ async def load_inputs(
             session, wh.id, days, now=now, today=local.date(), exclude_order_id=order.id
         )
         vehicles, drivers = await official_driver_context(
-            session, wh.id, vehicles, drivers, days=days, now=now, zone=zone
+            session, wh.id, vehicles, drivers, days=days, now=now, zone=zone, market_code=market.code.strip()
         )
         warehouses.append(
             WarehouseCtx(

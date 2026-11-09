@@ -259,13 +259,13 @@ async def recalculate(
     session: AsyncSession | None = None,
     signal_at: datetime | None = None,
     trusted_remaining: Mapping[int, tuple[datetime, int]] | None = None,
-    delay_window: dict[str, str] | None = None,
+    delay_window: dict[str, object] | None = None,
+    delay_actor: object | None = None,
 ) -> dict[str, object] | None:
     """Persist one signal-driven version and deduped alerts in the CALLER transaction.
 
-    The current M6 stub does not pass its transaction yet: it fails closed instead
-    of writing a forecast that survives a rolled-back execution event.
-    No customer notification is sent; an approved window/draft adapter is pending.
+    Forecasts, alerts and any explicitly Dispatcher-reviewed DELAY draft share one
+    caller transaction. A missing reviewer/window never causes automatic messaging.
     """
     if session is None:
         raise _missing("Transactional risk integration requires the caller's session.")
@@ -396,21 +396,21 @@ async def recalculate(
     if assessed.risk_status == "PREDICTED_LATE" and (
         previous is None or previous.risk_status != "PREDICTED_LATE"
     ):
-        # A forecast instant does NOT specify the customer-facing ETA window.
-        # Never make up its boundaries. If owner-approved window is supplied,
-        # request the existing D4 draft interface (which is still a stub on main).
+        # A forecast alone never authorizes a customer-facing DELAY message.
+        # An authenticated Dispatcher must explicitly supply the reviewed window
+        # and version. Use the same transaction for risk, draft and audit writes.
         draft_status = "blocked_missing_approved_window"
         if delay_window is not None:
-            try:
-                from app.services.notification_templates import EtaWindow
-
-                EtaWindow.model_validate(delay_window)
-                await notify_service.create_delay_draft(order.id, delay_window)
-                draft_status = "draft_requested"
-            except NotImplementedError:
-                draft_status = "blocked_notification_adapter"
-            except ValueError as exc:
-                raise _missing("Approved DELAY window is invalid.") from exc
+            if delay_actor is None:
+                draft_status = "blocked_dispatcher_review"
+            else:
+                try:
+                    draft_id = await notify_service.create_delay_draft(
+                        order.id, delay_window, session=session, actor=delay_actor
+                    )
+                    draft_status = "draft_requested" if draft_id is not None else "unchanged"
+                except NotImplementedError:
+                    draft_status = "blocked_notification_adapter"
     return {
         "version": row.version,
         "order_id": order.id,

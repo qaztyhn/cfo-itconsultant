@@ -1,6 +1,6 @@
 # Manual plan (`POST /orders/{id}/manual-plan`) — engine adapter proposal and blocking decision
 
-**Status: proposal only (Dev 1, 2026-11-09). No code, schema or API change.** `approval_service.manual_plan()` keeps rejecting with `409 PLAN_NOT_APPROVABLE`; Dev 3's Manual Plan UI (`ManualPlan.tsx`, already merged) expects exactly that fail-closed answer until this lands.
+**Status: proposal only (Dev 1, 2026-11-09). Owner subsequently chose Option A in `DEC-MANUAL-PLAN-20261109` (`docs/ASSUMPTIONS.md`, merged PR #185). The decision is no longer blocked; the five-gate verifier/service implementation is still pending. No code, schema or API change in this PR.** `approval_service.manual_plan()` keeps rejecting with `409 PLAN_NOT_APPROVABLE`; Dev 3's Manual Plan UI (`ManualPlan.tsx`, already merged) expects exactly that fail-closed answer until this lands.
 
 ## 1. Blocking contract conflict (needs an Owner decision)
 
@@ -9,7 +9,7 @@
 | docs/06 §6.4, docs/02 US-PLN AC3, docs/04 step 6 | A valid manual plan is created with `status = manual` and **"duyệt luôn" (approved immediately)**; `order → APPROVED`, five-gate re-check, reservations committed, `MANUAL_PLAN_CREATED`. |
 | Task statement for this work, AGENTS "no automatic approval" | A manually created plan must **not** be approved automatically. |
 
-Both cannot hold. Options: **(A)** keep §6.4: the Dispatcher's explicit submission of the manual plan *is* the approval decision (authorized Dispatcher only, reason mandatory, full audit) — no system auto-approval, but one step; **(B)** change §6.4: manual plan is saved as `proposed`/held and approved by a separate `POST /plans/{id}/approve` (two steps, requires updating docs/06, docs/02 AC3 and Dev 3's UI result handling). Recommendation: **A**, because it matches approved docs and the UI; the Dispatcher is the decision maker and `09` invariant 21 only forbids *system* approval. **Not implemented until the Owner chooses.**
+Both cannot hold. Options: **(A)** keep §6.4: the Dispatcher's explicit submission of the manual plan *is* the approval decision (authorized Dispatcher only, reason mandatory, full audit) — no system auto-approval, but one step; **(B)** change §6.4: manual plan is saved as `proposed`/held and approved by a separate `POST /plans/{id}/approve` (two steps, requires updating docs/06, docs/02 AC3 and Dev 3's UI result handling). Recommendation: **A**, because it matches approved docs and the UI; the Dispatcher is the decision maker and `09` invariant 21 only forbids *system* approval. **Owner decision (later update): Option A approved in `DEC-MANUAL-PLAN-20261109`. This proposal is not an implementation or production approval.**
 
 ## 2. Missing engine piece (technical, no contract needed)
 
@@ -35,4 +35,4 @@ normal 1-vehicle and 2-vehicle (loads sum to the order); under-/over-allocated l
 
 ## 5. Dependencies
 
-Dev 3: response/422 mapping of `ManualPlan.tsx` (check codes) once the option is chosen. Dev 2: verified driver-evidence reader (otherwise every manual plan fails closed on `safety`, correctly). Owner: option A or B.
+Dev 3: response/422 mapping of `ManualPlan.tsx` (check codes) once the option is chosen. Dev 2: verified driver-evidence reader (otherwise every manual plan fails closed on `safety`, correctly). Owner: Option A selected (`DEC-MANUAL-PLAN-20261109`); implementation remains pending.
