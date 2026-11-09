@@ -66,9 +66,7 @@ def test_BE_03_cs_creates_real_contact_log_with_actor_timestamp_and_safe_audit(c
 
 def test_BE_03_contact_history_has_pagination_and_correct_market_scope(contact_api: Api) -> None:
     for reason in ("first_call", "second_call", "third_call"):
-        response = contact_api.send(
-            "POST", "/orders/3/contact-logs", CS, {**BODY, "reason_code": reason}
-        )
+        response = contact_api.send("POST", "/orders/3/contact-logs", CS, {**BODY, "reason_code": reason})
         assert response.status_code == 201, response.text
     page = contact_api.get("/orders/3/contact-logs", CS, page=1, page_size=2)
     assert page.status_code == 200, page.text
@@ -87,9 +85,7 @@ def test_BE_03_contact_history_has_pagination_and_correct_market_scope(contact_a
 
 
 @pytest.mark.parametrize("actor", [ADMIN, SALES, VIEWER, None])
-def test_BE_03_only_cs_may_write_and_only_dispatcher_cs_may_read(
-    contact_api: Api, actor: int | None
-) -> None:
+def test_BE_03_only_cs_may_write_and_only_dispatcher_cs_may_read(contact_api: Api, actor: int | None) -> None:
     response = contact_api.send("POST", "/orders/3/contact-logs", actor, BODY)
     expected_status = 401 if actor is None else 403
     expected_code = "AUTH_INVALID" if actor is None else "FORBIDDEN"
@@ -102,7 +98,8 @@ def test_BE_03_only_cs_may_write_and_only_dispatcher_cs_may_read(
 def test_BE_03_dispatcher_cannot_write_even_with_read_access(contact_api: Api) -> None:
     assert_error(
         contact_api.send("POST", "/orders/3/contact-logs", DISPATCHER, BODY),
-        403, "FORBIDDEN",
+        403,
+        "FORBIDDEN",
     )
     response = contact_api.get("/orders/3/contact-logs", DISPATCHER)
     assert response.status_code == 200 and response.json()["items"] == []
@@ -118,10 +115,8 @@ def test_BE_03_invalid_input_never_creates_log_or_audit(contact_api: Api) -> Non
         response = contact_api.send("POST", "/orders/3/contact-logs", CS, payload)
         assert_error(response, 422, "VALIDATION_ERROR")
     assert fetch(contact_api.dsn, "SELECT count(*) AS n FROM ops.customer_contact_log")[0]["n"] == 0
-    assert fetch(
-        contact_api.dsn,
-        "SELECT count(*) AS n FROM audit.decision_log WHERE action='CUSTOMER_CONTACT_RECORDED'",
-    )[0]["n"] == 0
+    audit_count_sql = "SELECT count(*) AS n FROM audit.decision_log WHERE action='CUSTOMER_CONTACT_RECORDED'"
+    assert fetch(contact_api.dsn, audit_count_sql)[0]["n"] == 0
 
 
 def test_BE_03_failed_audit_rolls_back_contact_log(contact_api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
