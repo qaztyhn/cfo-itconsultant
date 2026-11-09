@@ -113,6 +113,10 @@ def cli() -> int:
         if call(["bash", "tools/demo_setup.sh"]) != 0:
             print("FAIL: synthetic demo setup did not complete.")
             return 1
+        # Read-only evidence only: Source batch and governed CFO stock are distinct.
+        # A BLOCKED stock status does not turn Sales routing smoke into approval.
+        if call([sys.executable, "tools/demo_stock_probe.py"]) != 0:
+            print("BLOCKED: read-only stock evidence probe unavailable.")
         # Compose --wait checks health only where a healthcheck exists. The
         # Vite dev container has none; require a REAL HTTP response before
         # running the smoke rather than classifying a startup race as failure.

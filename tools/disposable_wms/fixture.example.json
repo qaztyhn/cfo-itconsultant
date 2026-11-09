@@ -1,0 +1,53 @@
+{
+  "source_kind": "synthetic_demo",
+  "market": "SE",
+  "stock": [
+    {
+      "warehouse_code": "GBG",
+      "wms_sku": "WMS-CEM-25",
+      "wms_unit": "bag",
+      "on_hand": "100.000"
+    }
+  ],
+  "mapping": [
+    {
+      "market": "SE",
+      "warehouse_code": "GBG",
+      "pos_sku": "SE-CEM-MOR-25",
+      "wms_sku": "WMS-CEM-25",
+      "wms_unit": "bag",
+      "mapping_version": "synthetic:confirmed-v1",
+      "confirmed": true
+    }
+  ],
+  "source_orders": [
+    {
+      "order_id": 50,
+      "plan_id": 80,
+      "source_version": 2,
+      "source_ref": "SYN-POS-50",
+      "lines": [
+        {
+          "order_line_id": 99,
+          "pos_sku": "SE-CEM-MOR-25",
+          "warehouse_code": "GBG",
+          "quantity": "60.000"
+        }
+      ]
+    },
+    {
+      "order_id": 51,
+      "plan_id": 81,
+      "source_version": 2,
+      "source_ref": "SYN-POS-51",
+      "lines": [
+        {
+          "order_line_id": 100,
+          "pos_sku": "SE-CEM-MOR-25",
+          "warehouse_code": "GBG",
+          "quantity": "50.000"
+        }
+      ]
+    }
+  ]
+}
