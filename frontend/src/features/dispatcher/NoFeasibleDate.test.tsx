@@ -112,6 +112,18 @@ describe("US-PLN-07 AC1/2 — No Feasible Date diagnostics", () => {
     expect(screen.getByText("cid-500")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
+  it("renders a skeleton while the planning request is loading", async () => {
+    mock.run.mockImplementation(() => new Promise(() => undefined));
+    mount();
+    expect(screen.getByRole("status", { busy: true })).toBeInTheDocument();
+    expect(screen.queryByText("2026-11-12")).not.toBeInTheDocument();
+  });
+  it("renders an empty, non-actionable state when the run is now feasible", async () => {
+    mock.run.mockResolvedValue({ ...run, result: "feasible", plans: [] });
+    mount();
+    expect(await screen.findByText("This planning run is not an infeasible result.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Record customer outcome" })).not.toBeInTheDocument();
+  });
   it("does not allow retry on server 403", async () => {
     mock.run.mockRejectedValue(new ApiError("FORBIDDEN", "denied", "cid-403", undefined, 403));
     mount();
