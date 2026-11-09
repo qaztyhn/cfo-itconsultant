@@ -30,11 +30,18 @@ export type DriverTrip = {
 
 type TripList = { items: DriverTrip[] };
 
+/** Turn on only after the BE-05 stop-scoped execution API (#188) is deployed.
+ * Default OFF preserves the merged single-stop contract on main.
+ */
+export function stopScopedPodEnabled(): boolean {
+  return import.meta.env.VITE_DRIVER_STOP_POD_ENABLED === "true";
+}
+
 export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED";
 export type DriverEventPayload =
   | { trip_id: number }
-  | { trip_id: number; trip_stop_id: number; recipient_name: string; note?: string }
-  | { trip_id: number; trip_stop_id: number; failure_reason: string; note?: string };
+  | { trip_id: number; trip_stop_id?: number; recipient_name: string; note?: string }
+  | { trip_id: number; trip_stop_id?: number; failure_reason: string; note?: string };
 
 export type DriverEvent = {
   event_type: DriverEventType;
