@@ -4,11 +4,11 @@ import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchLocations } from "../../api/locations";
 import { renderAt, signInAs, userByEmail } from "../../test/utils";
-import { COUNTS_URL, ORDERS_URL, OVERVIEW_URL, useOrderQueueMsw } from "./orderQueue/testServer";
+import { COUNTS_URL, ORDERS_URL, OVERVIEW_URL, setupOrderQueueMsw } from "./orderQueue/testServer";
 
 vi.mock("../../api/locations", () => ({ fetchLocations: vi.fn() }));
 
-const server = useOrderQueueMsw();
+const server = setupOrderQueueMsw();
 
 beforeEach(() => {
   vi.mocked(fetchLocations).mockReset();
