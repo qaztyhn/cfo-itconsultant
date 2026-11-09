@@ -324,15 +324,36 @@ def test_US_CS_02_AC1_cs_detail_is_server_allowlisted_and_masked(od: Api) -> Non
     assert body["committed"]["date"] == "2026-11-13"
     assert body["risk"] == {"status": "AT_RISK", "forecast_eta": "2026-11-13T11:30:00Z"}
     assert set(body) == {
-        "id", "order_no", "status", "market", "customer", "contact",
-        "delivery", "date_request", "committed", "risk", "version", "submitted_at",
+        "id",
+        "order_no",
+        "status",
+        "market",
+        "customer",
+        "contact",
+        "delivery",
+        "date_request",
+        "committed",
+        "risk",
+        "version",
+        "submitted_at",
     }
     assert set(body["delivery"]) == {"address"}
     assert set(body["contact"]) == {"name", "phone", "email"}
     for secret in (
-        "private.person", "customer.example", "9876", "Private operational note",
-        "receiving_restrictions", "special_requirements", "lat", "lon",
-        "latest_run_id", "approved_plan_id", "score", "gps", "slack_min", "risk_color",
+        "private.person",
+        "customer.example",
+        "9876",
+        "Private operational note",
+        "receiving_restrictions",
+        "special_requirements",
+        "lat",
+        "lon",
+        "latest_run_id",
+        "approved_plan_id",
+        "score",
+        "gps",
+        "slack_min",
+        "risk_color",
     ):
         assert secret not in response.text
 
