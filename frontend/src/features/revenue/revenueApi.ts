@@ -98,5 +98,3 @@ export function noCustomerNames<T extends RevenueOrder>(orders: T[]): Omit<T, "c
     return safe;
   });
 }
-// apiFetch re-export deliberately avoided: CSV must be streamed as a Blob.
-void apiFetch;
