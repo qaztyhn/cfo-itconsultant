@@ -15,7 +15,7 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: black --diff --check .
+      - run: black --check .
       - run: mypy app/engine
       - run: lint-imports
       - run: pytest -q tests/integration/test_source_handoff.py
