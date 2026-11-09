@@ -3,7 +3,6 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { POS_URL } from "../api/config";
 import { fetchOrderCounts } from "../api/orders";
 import { signOut } from "../app/session";
 import { useScopeStore } from "../app/scope";
@@ -87,12 +86,12 @@ describe("Sidebar", () => {
     expect(screen.getByRole("link", { name: /Order queue/ })).not.toHaveAttribute("aria-current");
   });
 
-  it("sales sees New order as an external POS link and never requests counts", () => {
+  it("test_US_ORD_01_AC1_shows Sales a safe in-app New order entry when POS is unconfigured", () => {
     renderSidebar("sales@cfo.demo");
 
     const pos = screen.getByRole("link", { name: "New order" });
-    expect(pos).toHaveAttribute("href", POS_URL);
-    expect(pos).toHaveAttribute("target", "_blank");
+    expect(pos).toHaveAttribute("href", "/sales/new-order");
+    expect(pos).not.toHaveAttribute("target");
     expect(screen.getByRole("link", { name: "My store orders" })).toBeInTheDocument();
     expect(fetchOrderCounts).not.toHaveBeenCalled();
   });

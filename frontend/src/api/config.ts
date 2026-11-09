@@ -7,8 +7,27 @@ export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8
 /** true khi chạy `npm run dev:mock`. Dùng để DemoBanner cảnh báo "mock API, chưa tích hợp thật" (T7). */
 export const USE_MOCKS = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === "true";
 
-/** URL ứng dụng POS giả lập (03 mục 6) mở từ mục menu "New order". ASM-G: mặc định cổng 8100, cần Dev 2 xác nhận. */
-export const POS_URL = (import.meta.env.VITE_POS_URL ?? "http://localhost:8100").replace(/\/+$/, "");
+/** POS is a separate web application, not the source-system API on port 8100.
+ * Unconfigured or unsafe URLs must never redirect a deployed CFO client to localhost.
+ */
+export function resolvePosUrl(raw: string | undefined, isProd: boolean): string | null {
+  if (!raw?.trim()) return null;
+  try {
+    const url = new URL(raw.trim());
+    if (url.username || url.password) return null;
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && !isProd)) return null;
+    const host = url.hostname.toLowerCase();
+    if (isProd && (host === "localhost" || host === "localhost." ||
+      host.endsWith(".localhost") || host.startsWith("127.") ||
+      host === "[::1]" || host === "0.0.0.0")) return null;
+    return url.href.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Configured POS web UI, or null when no usable POS deployment is available. */
+export const POS_URL = resolvePosUrl(import.meta.env.VITE_POS_URL, import.meta.env.PROD);
 
 /** Giá trị VITE_APP_ENV được phép bật chế độ demo trong bản build production. */
 const DEMO_ENVS = ["demo", "local", "staging"];

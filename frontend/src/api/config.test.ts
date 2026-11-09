@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveAppEnv } from "./config";
+import { resolveAppEnv, resolvePosUrl } from "./config";
 
 describe("resolveAppEnv", () => {
   it.each([
@@ -80,4 +80,25 @@ describe("APP_ENV trong bản build production thực tế", () => {
     expect(cfg.APP_ENV).toBe("demo");
     expect(cfg.isDemoEnv()).toBe(true);
   }, 30_000);
+});
+describe("POS configuration is safe for cloud deployment", () => {
+  it("does not use an implicit localhost URL", () => {
+    expect(resolvePosUrl(undefined, true)).toBeNull();
+    expect(resolvePosUrl("", true)).toBeNull();
+    expect(resolvePosUrl("   ", false)).toBeNull();
+  });
+
+  it("rejects localhost and insecure schemes in production", () => {
+    expect(resolvePosUrl("http://localhost:8100", true)).toBeNull();
+    expect(resolvePosUrl("https://localhost:8100", true)).toBeNull();
+    expect(resolvePosUrl("http://127.0.0.1:8100", true)).toBeNull();
+    expect(resolvePosUrl("https://pos.example.test", true)).toBe("https://pos.example.test");
+    expect(resolvePosUrl("javascript:alert(1)", true)).toBeNull();
+    expect(resolvePosUrl("https://user:password@pos.example.test", true)).toBeNull();
+  });
+
+  it("allows a deliberately configured HTTP local POS UI only during development", () => {
+    expect(resolvePosUrl("http://localhost:9000/", false)).toBe("http://localhost:9000");
+    expect(resolvePosUrl(" https://pos.example.test/orders/ ", false)).toBe("https://pos.example.test/orders");
+  });
 });
