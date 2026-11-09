@@ -319,13 +319,18 @@ def test_US_CS_02_AC1_cs_detail_is_server_allowlisted_and_masked(od: Api) -> Non
     response = od.get("/orders/3", CS)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["contact"]["phone"] == "******67"
-    assert body["contact"]["email"] == "***@***"
+    assert body["contact"]["phone_masked"] == "******67"
+    assert body["contact"]["email_masked"] == "***@***"
     assert body["committed"]["date"] == "2026-11-13"
-    assert body["risk"] == {"status": "AT_RISK", "forecast_eta": "2026-11-13T11:30:00Z"}
+    assert body["risk"] == {
+        "status": "AT_RISK",
+        "color": "orange",
+        "forecast_eta": "2026-11-13T11:30:00Z",
+    }
     assert set(body) == {
         "id",
         "order_no",
+        "external_ref",
         "status",
         "market",
         "customer",
@@ -338,7 +343,9 @@ def test_US_CS_02_AC1_cs_detail_is_server_allowlisted_and_masked(od: Api) -> Non
         "submitted_at",
     }
     assert set(body["delivery"]) == {"address"}
-    assert set(body["contact"]) == {"name", "phone", "email"}
+    assert set(body["contact"]) == {"name", "phone_masked", "email_masked"}
+    assert "phone" not in body["contact"] and "email" not in body["contact"]
+    assert "approved_plan_id" not in body and "latest_run_id" not in body
     for secret in (
         "private.person",
         "customer.example",
