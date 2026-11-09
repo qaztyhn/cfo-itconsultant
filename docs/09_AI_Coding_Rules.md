@@ -274,3 +274,14 @@ Read [DEC-GPS-RET-20261109 / DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_RE
 
 
 **DEC-WMS-RESERVE-SYNC-20261109 — owner-approved workflow (implementation not enabled):** CFO reads fresh WMS stock, plan holds locally, then **authorized plan confirmation** requires authoritative WMS reserve ACK on verified original WMS SKU, warehouse and stock units before marking stock guaranteed; **immediately refresh/read WMS stock** afterward (do not wait five minutes). WMS reservation changes available only; physical issue changes on_hand only inside WMS. Never double-subtract already-WMS-reserved CFO quantities. If feed lags, maintain version-linked conservative protection or fail closed. Reject unknown/partial ACK, timeouts and competing requests with idempotent status lookup; resolve cross-system commit failures with reviewed saga/compensation, not assumed global transaction. Only a narrow reserve business exception is approved, and no real WMS endpoint/writes are activated until full API/auth/contract tests and deployment sign-off. [Decision](decisions/DEC_WMS_RESERVE_SYNC_20261109.md).
+
+
+### 18.2 Owner-approved integration unblocking and manual merge authority — 09/11/2026
+
+See [DEC-INT Q2–Q10](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) and `docs/ASSUMPTIONS.md`:
+
+- **Merge control:** Integration Lead owns fixing PR conflicts, dependencies, checks, DTO/DB integration and making independently safe PRs `Ready for review`. **Only Owner clicks Merge**; neither agent nor bot auto-merges. Verify current head SHA, mergeability state, required reviewers/checks and actual safety/E2E before presenting a PR as merge-ready. Do not flip Draft to hide a blocker.
+- **WMS:** stage/test fake reserve with simulated label; never real-write without verified API. CFO transfer request/suggestion only, WMS remains sole physical stock/transfer authority.
+- **Date/GPS/KPI/Prep:** only Dispatcher explicitly applies validated date negotiation then replans; historical GPS only case-authorized privacy/compliance reviewer (legal gate); KPI 30-day default/366-day max and explicit System Admin market; M6 actual prep start can be null.
+- **Seed/PII/D8:** keep golden assertions, correct synthetic data or report BLOCKED; GET `q` phone under TLS, no-referrer and query-log redaction with acknowledged URL-history residual risk; D8 staging/manual only, no production job, real recipient/worker GPS or spend.
+- **No silent source-of-truth overrides:** prior docs/PRs describing CFO as WMS physical transfer approver are superseded for that power only. Q2–Q10 business policy approved, but route/DDL/role names and E2E remain separately reviewed technical work.
