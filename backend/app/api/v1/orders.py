@@ -307,8 +307,6 @@ async def cancel_order(order_id: int) -> dict[str, object]:
     raise NotImplementedError
 
 
-
-
 @router.post("/orders/{order_id}/contact-logs")
 async def create_contact_log(order_id: int) -> dict[str, object]:
     """POST /orders/{order_id}/contact-logs — customer_service (06 mục 11)."""
