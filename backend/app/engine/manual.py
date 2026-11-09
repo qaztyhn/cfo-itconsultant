@@ -45,7 +45,7 @@ def verify_manual(
     stock = stock_check(atp)
     if not stock.passed or atp.stock_ready_date is None:
         return (stock,)
-    checks = (stock,)
+    checks: tuple[CheckResult, ...] = (stock,)
 
     workload = compute_workload(order.lines, cfg)
     prep = schedule_preparation(
