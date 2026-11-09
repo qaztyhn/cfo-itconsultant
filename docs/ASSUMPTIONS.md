@@ -538,7 +538,7 @@
 ## DEC-D8-OPS-20261109 — Rà soát vận hành hai lần mỗi ngày
 
 - **Chốt bởi Owner ngày 09/11/2026:** rà soát vận hành tổng thể **07:00 và 13:00 giờ địa phương Thụy Điển (Europe/Stockholm)**, mỗi ngày, gồm đơn còn tồn/đến hạn/nguy cơ trễ, độ tươi tồn kho, năng lực kho và lịch chính thức kho/tài xế.
-- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Quyết định này lúc ban hành chỉ duyệt **hai mốc giờ rà soát**. **Bổ sung sau trong ngày 09/11:** DEC-D8-STAGING-SCHEDULE-20261109 duyệt toàn bộ lịch job/tần suất đề xuất **cho staging/demo בד**, không production/tick API/cron hosting/chi phí thật; không bật production job từ bản ghi này.
+- Đây **không phải** đồng bộ đơn hàng 2 lần/ngày. Đồng bộ Source/Sales Sync Now và xử lý mốc theo sự kiện vẫn thuộc hợp đồng riêng. Quyết định này lúc ban hành chỉ duyệt **hai mốc giờ rà soát**. **Bổ sung sau trong ngày 09/11:** DEC-D8-STAGING-SCHEDULE-20261109 duyệt toàn bộ lịch job/tần suất đề xuất **chỉ cho staging/demo**, không production/tick API/cron hosting/chi phí thật; không bật production job từ bản ghi này.
 - **Biên bản:** [DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md).
 
 ## DEC-STOCK-GRANT-BOOTSTRAP-20261109 — System Admin cấp quyền đầu tiên cho Stock Admin
