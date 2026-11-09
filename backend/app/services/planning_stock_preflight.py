@@ -57,9 +57,7 @@ async def diagnose(
         raise ValueError("CFO order has not been synced for this market")
     product_ids = set(
         (
-            await session.scalars(
-                select(OrderLine.global_product_id).where(OrderLine.order_id == order.id)
-            )
+            await session.scalars(select(OrderLine.global_product_id).where(OrderLine.order_id == order.id))
         ).all()
     )
     warehouses = (
@@ -74,19 +72,24 @@ async def diagnose(
     eligible = {wh.id for wh in warehouses}
     expected = {(wh_id, product_id) for wh_id in eligible for product_id in product_ids}
     snapshots = (
-        await session.scalars(
-            select(StockSnapshot).where(
-                StockSnapshot.warehouse_id.in_(eligible),
-                StockSnapshot.global_product_id.in_(product_ids),
+        (
+            await session.scalars(
+                select(StockSnapshot).where(
+                    StockSnapshot.warehouse_id.in_(eligible),
+                    StockSnapshot.global_product_id.in_(product_ids),
+                )
             )
-        )
-    ).all() if eligible and product_ids else []
+        ).all()
+        if eligible and product_ids
+        else []
+    )
     found = {(row.warehouse_id, row.global_product_id): row for row in snapshots}
     freshness = MarketConfig.model_validate(market.config).stale_stock_min
     missing = tuple(sorted(expected - set(found)))
     stale = tuple(
         sorted(
-            key for key, row in found.items()
+            key
+            for key, row in found.items()
             if row.as_of < now - timedelta(minutes=freshness)
             or row.as_of > now + timedelta(minutes=freshness)
         )
