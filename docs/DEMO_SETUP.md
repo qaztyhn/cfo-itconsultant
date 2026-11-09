@@ -143,6 +143,13 @@ with no CFO order. No POS write. If the endpoint is absent (current
 `main`), it reports **BLOCKED** and does not pretend the order was
 created by polling.
 
+**Authentication rate-limit:** each probe logs in four demo roles. CFO's
+real five-attempts-per-minute/IP limiter remains active. When running
+the read-only and mutating probes manually back-to-back, allow more than
+60 seconds between them; otherwise the second probe correctly fails
+with HTTP 429. The isolated CI preflight respects that window without
+disabling or resetting the limiter.
+
 If a valid plan is produced, an *optional, explicit* guarded attempt
 `--exercise-sync --exercise-approval` submits only a server-identified
 eligible rank-1 Sales plan through the approved API. Approval might
