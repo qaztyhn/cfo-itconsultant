@@ -73,9 +73,7 @@ async def seed_local_reference(fixture: DemoFixture) -> tuple[int, int]:
             warehouse = await seed_roster(
                 session, start=date(2026, 11, 4), end=date(2026, 11, 13), now=clock.now()
             )
-            drivers = await seed_driver_shifts(
-                session, shifts=fixture["driver_shifts"], now=clock.now()
-            )
+            drivers = await seed_driver_shifts(session, shifts=fixture["driver_shifts"], now=clock.now())
             return warehouse, drivers
     finally:
         await get_engine().dispose()
@@ -85,7 +83,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("demo-fixtures.json"))
     parser.add_argument(
-        "--export-only", action="store_true",
+        "--export-only",
+        action="store_true",
         help="Only export synthetic source inputs; do not connect to CFO DB",
     )
     args = parser.parse_args()

@@ -50,18 +50,23 @@ def test_US_SRC_01_AC1_manifest_is_idempotent_and_refuses_file_collision(tmp_pat
 def test_US_ATP_01_AC3_inbound_golden_no_source_stock_double_count() -> None:
     fixture = generate()
     stock = {
-        (r["warehouse_code"], r["sku"]): Decimal(r["on_hand"])
-        for r in fixture["stock_snapshot"]["items"]
+        (r["warehouse_code"], r["sku"]): Decimal(r["on_hand"]) for r in fixture["stock_snapshot"]["items"]
     }
     sku = "SE-TIL-ADH-25"
     assert stock["GBG", sku] == 42
     assert stock["MLM", sku] == 0
     assert stock["STO", sku] >= 160
-    assert fixture["inbound"] == [{
-        "inbound_ref": "IN-SE-88213", "warehouse_code": "MLM",
-        "sku": sku, "qty": "200", "eta_date": "2026-11-11",
-        "confirmed": True, "received": False
-    }]
+    assert fixture["inbound"] == [
+        {
+            "inbound_ref": "IN-SE-88213",
+            "warehouse_code": "MLM",
+            "sku": sku,
+            "qty": "200",
+            "eta_date": "2026-11-11",
+            "confirmed": True,
+            "received": False,
+        }
+    ]
     assert GOLDEN["SE-2026-000137"]["earliest_date"] == "2026-11-12"
 
 
@@ -79,10 +84,7 @@ def test_US_PLN_03_AC3_multivehicle_and_crane_targets_preserved_not_fabricated()
 
 def test_US_INT_01_AC2_stock_race_and_unmapped_are_explicit() -> None:
     fixture = generate()
-    items = {
-        (r["warehouse_code"], r["sku"]): r
-        for r in fixture["stock_snapshot"]["items"]
-    }
+    items = {(r["warehouse_code"], r["sku"]): r for r in fixture["stock_snapshot"]["items"]}
     assert items["GBG", "SE-DEMO-N3-004"]["on_hand"] == "100"
     orders = {str(o["id"]): o for o in fixture["orders"]}
     assert orders["SE-2026-000180"]["lines"][0]["qty"] == "80"

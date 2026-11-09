@@ -45,14 +45,11 @@ def check_manifest(data: dict[str, Any]) -> None:
         raise ValueError("Unsupported/incomplete demo manifest")
     history = data.get("driver_history", [])
     if len(history) != 560 or any(
-        row.get("verified") is not False or row.get("reg_561_scope") != "unknown"
-        for row in history
+        row.get("verified") is not False or row.get("reg_561_scope") != "unknown" for row in history
     ):
         raise ValueError("Synthetic driving history cannot be promoted to verified")
     rows = data.get("stock_snapshot", {}).get("items", [])
-    if len(rows) != 300 or len({
-        (r.get("warehouse_code"), r.get("sku")) for r in rows
-    }) != 300:
+    if len(rows) != 300 or len({(r.get("warehouse_code"), r.get("sku")) for r in rows}) != 300:
         raise ValueError("Incomplete/duplicate published WMS snapshot")
     order_ids = [o["id"] for o in data["orders"] + data["completed_orders"]]
     if len(set(order_ids)) != len(order_ids):
@@ -90,11 +87,20 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
         if existing is None:
             session.add(
                 Order(
-                    id=key, version=1, status="SUBMITTED_FOR_PLANNING",
-                    address=address.address, lat=address.lat, lon=address.lon,
-                    contact_name=customer.name, contact_phone=None, contact_email=customer.email,
-                    receiving_restrictions=None, special_requirements=None,
-                    created_at=now, updated_at=now, **fields
+                    id=key,
+                    version=1,
+                    status="SUBMITTED_FOR_PLANNING",
+                    address=address.address,
+                    lat=address.lat,
+                    lon=address.lon,
+                    contact_name=customer.name,
+                    contact_phone=None,
+                    contact_email=customer.email,
+                    receiving_restrictions=None,
+                    special_requirements=None,
+                    created_at=now,
+                    updated_at=now,
+                    **fields,
                 )
             )
             await session.flush()
@@ -123,8 +129,13 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
         for line_no, sku, qty, price in expected:
             session.add(
                 OrderLine(
-                    order_id=key, line_no=line_no, sku=sku, qty=qty,
-                    unit_price=price, created_at=now, updated_at=now
+                    order_id=key,
+                    line_no=line_no,
+                    sku=sku,
+                    qty=qty,
+                    unit_price=price,
+                    created_at=now,
+                    updated_at=now,
                 )
             )
     return inserted
@@ -146,8 +157,12 @@ async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: d
             continue
         session.add(
             Inbound(
-                inbound_ref=key[0], warehouse_code=key[1], sku=key[2],
-                created_at=now, updated_at=now, **values
+                inbound_ref=key[0],
+                warehouse_code=key[1],
+                sku=key[2],
+                created_at=now,
+                updated_at=now,
+                **values,
             )
         )
     for spec in data["vehicle_calendar"]:
@@ -163,8 +178,12 @@ async def _inbound_and_fleet(session: AsyncSession, data: dict[str, Any], now: d
             continue
         session.add(
             VehicleCalendar(
-                vehicle_code=key[0], from_ts=start, to_ts=end,
-                kind=spec["kind"], created_at=now, updated_at=now
+                vehicle_code=key[0],
+                from_ts=start,
+                to_ts=end,
+                kind=spec["kind"],
+                created_at=now,
+                updated_at=now,
             )
         )
 

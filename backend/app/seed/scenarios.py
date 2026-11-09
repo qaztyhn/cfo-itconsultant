@@ -37,12 +37,8 @@ UNMAPPED_SKUS = frozenset({"448812", "88412", "449130"})
 # contracts/engine have satisfied them. Preserve them when prerequisites fail.
 GOLDEN = {
     "SE-2026-000123": {"plans": 3, "gross_kg": "4120", "volume_m3": "9.6"},
-    "SE-2026-000137": {
-        "result": "NO_FEASIBLE_DATE", "earliest_date": "2026-11-12"
-    },
-    "SE-2026-000144": {
-        "result": "NO_FEASIBLE_DATE", "failed_check": "truck", "reason": "capability"
-    },
+    "SE-2026-000137": {"result": "NO_FEASIBLE_DATE", "earliest_date": "2026-11-12"},
+    "SE-2026-000144": {"result": "NO_FEASIBLE_DATE", "failed_check": "truck", "reason": "capability"},
     "SE-2026-000160": {"vehicle_count": 2, "preferred_pair": ["GBG-18-01", "GBG-12-03"]},
 }
 # Actual deficiencies are tracked, never repaired by spoofing passed engine tests.
@@ -148,10 +144,7 @@ def _order(
         "window_end": window[1],
         "status": "SUBMITTED_FOR_PLANNING",
         "target_cfo_status": expectation,
-        "lines": [
-            {"line_no": i, "sku": sku, "qty": str(qty)}
-            for i, (sku, qty) in enumerate(skus, 1)
-        ],
+        "lines": [{"line_no": i, "sku": sku, "qty": str(qty)} for i, (sku, qty) in enumerate(skus, 1)],
     }
 
 
@@ -159,10 +152,22 @@ def _orders() -> list[dict[str, object]]:
     # 000123: 4 lines and exactly 4,120 kg under present reference weights;
     # volume mismatch is explicitly reported in BLOCKERS, never hidden.
     cases = (
-        (123, 1, (("SE-CEM-MOR-25", 160), ("SE-BRD-GYP-13", 4),
-                  ("SE-TMB-C24-4895", 4), ("SE-PNT-INT-10", 4)), "2026-11-10", ("08:00", "14:30"), "PLANNED"),
-        (137, 5, (("SE-TIL-ADH-25", 160), ("SE-TIL-POR-60", 20),
-                  ("SE-CEM-MOR-25", 10)), "2026-11-09", ("07:00", "15:00"), "NO_FEASIBLE_DATE"),
+        (
+            123,
+            1,
+            (("SE-CEM-MOR-25", 160), ("SE-BRD-GYP-13", 4), ("SE-TMB-C24-4895", 4), ("SE-PNT-INT-10", 4)),
+            "2026-11-10",
+            ("08:00", "14:30"),
+            "PLANNED",
+        ),
+        (
+            137,
+            5,
+            (("SE-TIL-ADH-25", 160), ("SE-TIL-POR-60", 20), ("SE-CEM-MOR-25", 10)),
+            "2026-11-09",
+            ("07:00", "15:00"),
+            "NO_FEASIBLE_DATE",
+        ),
         (141, 2, (("SE-BRD-GYP-13", 40),), "2026-11-05", ("10:00", "12:30"), "PREPARING"),
         (138, 3, (("SE-TIL-POR-60", 80),), "2026-11-05", ("13:00", "16:00"), "LOADED"),
         (129, 31, (("SE-PNT-INT-10", 10),), "2026-11-05", ("12:00", "18:00"), "DISPATCHED"),
@@ -198,8 +203,12 @@ def _completed_orders(seed: int) -> list[dict[str, object]]:
         day = date(2026, 11, 3) + timedelta(days=i % 7)
         result.append(
             _order(
-                number, customer, (("SE-CEM-MOR-25", rng.randint(1, 24)),),
-                day.isoformat(), store=store, expectation="DELIVERED"
+                number,
+                customer,
+                (("SE-CEM-MOR-25", rng.randint(1, 24)),),
+                day.isoformat(),
+                store=store,
+                expectation="DELIVERED",
             )
         )
     # 000200 is deliberately unassigned to a store in CFO revenue *target*,
@@ -227,16 +236,18 @@ def _driver_history() -> list[dict[str, object]]:
     for index in range(1, 11):
         for offset in range(56):
             day = first + timedelta(days=offset)
-            records.append({
-                "employee_no": f"DEMO-DRIVER-{index}",
-                "market_local_day": day.isoformat(),
-                "activity": "off_duty" if day.isoweekday() > 5 else "duty",
-                "reg_561_scope": "unknown",
-                "evidence_type": "synthetic_demo_unverified",
-                "verified": False,
-                "reviewer_id": None,
-                "source_version": "demo-v1",
-            })
+            records.append(
+                {
+                    "employee_no": f"DEMO-DRIVER-{index}",
+                    "market_local_day": day.isoformat(),
+                    "activity": "off_duty" if day.isoweekday() > 5 else "duty",
+                    "reg_561_scope": "unknown",
+                    "evidence_type": "synthetic_demo_unverified",
+                    "verified": False,
+                    "reviewer_id": None,
+                    "source_version": "demo-v1",
+                }
+            )
     return records
 
 
@@ -249,17 +260,19 @@ def _driver_shifts() -> list[dict[str, object]]:
             day = first + timedelta(days=offset)
             if day.isoweekday() > 5:
                 continue
-            shifts.append({
-                "employee_no": f"DEMO-DRIVER-{index}",
-                "warehouse_code": wh,
-                "work_date": day.isoformat(),
-                "start": "06:00",
-                "end": "14:00",
-                "break_start": "10:00",
-                "break_end": "11:00",
-                "authority": f"DEMO-{wh}-W00",
-                "purpose": "synthetic_official_shift_fixture",
-            })
+            shifts.append(
+                {
+                    "employee_no": f"DEMO-DRIVER-{index}",
+                    "warehouse_code": wh,
+                    "work_date": day.isoformat(),
+                    "start": "06:00",
+                    "end": "14:00",
+                    "break_start": "10:00",
+                    "break_end": "11:00",
+                    "authority": f"DEMO-{wh}-W00",
+                    "purpose": "synthetic_official_shift_fixture",
+                }
+            )
     return shifts
 
 
@@ -276,20 +289,29 @@ def generate(seed: int = RANDOM_SEED) -> DemoFixture:
         "orders": orders,
         "completed_orders": _completed_orders(seed),
         "stock_snapshot": _stock(),
-        "inbound": [{
-            "inbound_ref": "IN-SE-88213", "warehouse_code": "MLM",
-            "sku": "SE-TIL-ADH-25", "qty": "200",
-            "eta_date": "2026-11-11", "confirmed": True, "received": False
-        }],
-        "vehicle_calendar": [{
-            "vehicle_code": "MLM-12-02", "from_ts": "2026-11-10T06:00:00+01:00",
-            "to_ts": "2026-11-10T18:00:00+01:00", "kind": "busy"
-        }],
+        "inbound": [
+            {
+                "inbound_ref": "IN-SE-88213",
+                "warehouse_code": "MLM",
+                "sku": "SE-TIL-ADH-25",
+                "qty": "200",
+                "eta_date": "2026-11-11",
+                "confirmed": True,
+                "received": False,
+            }
+        ],
+        "vehicle_calendar": [
+            {
+                "vehicle_code": "MLM-12-02",
+                "from_ts": "2026-11-10T06:00:00+01:00",
+                "to_ts": "2026-11-10T18:00:00+01:00",
+                "kind": "busy",
+            }
+        ],
         "driver_shifts": _driver_shifts(),
         "driver_history": _driver_history(),
         "e2e_scenarios": [
-            {"number": number, "name": label,
-             "order_ids": [f"SE-2026-{key}" for key in ids]}
+            {"number": number, "name": label, "order_ids": [f"SE-2026-{key}" for key in ids]}
             for number, label, ids in E2E
         ],
         "golden_expected": GOLDEN,
@@ -320,17 +342,14 @@ def validate(value: DemoFixture) -> None:
     if not isinstance(rows, list) or len(rows) != 3 * len(expected_skus):
         raise ValueError("Stock batch is not complete across three warehouses")
     keys = [(r["warehouse_code"], r["sku"]) for r in rows]
-    if len(keys) != len(set(keys)) or set(keys) != {
-        (wh, sku) for wh in WAREHOUSES for sku in expected_skus
-    }:
+    if len(keys) != len(set(keys)) or set(keys) != {(wh, sku) for wh in WAREHOUSES for sku in expected_skus}:
         raise ValueError("Duplicate/incomplete WMS stock keys")
     if any(Decimal(str(r["reserved"])) < 0 or Decimal(str(r["on_hand"])) < 0 for r in rows):
         raise ValueError("Stock quantities must be nonnegative")
     if any(line["sku"] not in expected_skus for o in orders for line in o["lines"]):
         raise ValueError("Order includes SKU outside source catalogue")
     if len(value["driver_history"]) != 560 or any(
-        row["verified"] is not False or row["reg_561_scope"] != "unknown"
-        for row in value["driver_history"]
+        row["verified"] is not False or row["reg_561_scope"] != "unknown" for row in value["driver_history"]
     ):
         raise ValueError("Synthetic D7 data must remain explicitly unverified")
     if value["gps_enabled"]:

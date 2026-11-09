@@ -41,10 +41,15 @@ def test_US_WH_06_AC1_demo_driver_shifts_are_audited_and_idempotent(empty_db: st
         "WHERE id=(SELECT min(id) FROM hr.employee_shift_schedule)",
     )
     assert transact(empty_db, seed) == 0
-    assert fetch(
-        empty_db,
-        "SELECT count(*) FROM hr.employee_shift_schedule WHERE status='cancelled'",
-    )[0][0] == 1
+    assert (
+        fetch(
+            empty_db,
+            "SELECT count(*) FROM hr.employee_shift_schedule WHERE status='cancelled'",
+        )[
+            0
+        ][0]
+        == 1
+    )
 
 
 def test_US_WH_06_AC2_demo_driver_roster_refuses_unauthorized_manager(empty_db: str) -> None:

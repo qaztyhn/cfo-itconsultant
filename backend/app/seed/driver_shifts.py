@@ -28,9 +28,7 @@ from app.domain.models.ref import AppUser, Location, Market
 REASON = "Synthetic demo driver roster explicitly assigned by named warehouse manager."
 
 
-async def seed_driver_shifts(
-    session: AsyncSession, *, shifts: list[dict[str, object]], now: datetime
-) -> int:
+async def seed_driver_shifts(session: AsyncSession, *, shifts: list[dict[str, object]], now: datetime) -> int:
     """Caller owns transaction; missing permission/fixture causes rollback."""
     if now.tzinfo is None:
         raise ValueError("Driver roster timestamp must include timezone")
@@ -50,7 +48,8 @@ async def seed_driver_shifts(
         warehouse = (
             await session.scalars(
                 select(Location).where(
-                    Location.market_id == market.id, Location.code == warehouse_code,
+                    Location.market_id == market.id,
+                    Location.code == warehouse_code,
                     Location.type == "warehouse",
                 )
             )
@@ -58,7 +57,8 @@ async def seed_driver_shifts(
         driver = (
             await session.scalars(
                 select(Employee).where(
-                    Employee.market_id == market.id, Employee.employee_no == employee_no,
+                    Employee.market_id == market.id,
+                    Employee.employee_no == employee_no,
                 )
             )
         ).one()
@@ -128,14 +128,22 @@ async def seed_driver_shifts(
         session.add(schedule)
         await session.flush()
         await record_decision(
-            session, Action.SHIFT_CHANGED, "employee_shift_schedule", str(schedule.id),
+            session,
+            Action.SHIFT_CHANGED,
+            "employee_shift_schedule",
+            str(schedule.id),
             reason_text=REASON,
-            actor_user_id=user.id, actor_employee_id=manager.id, actor_role="warehouse",
+            actor_user_id=user.id,
+            actor_employee_id=manager.id,
+            actor_role="warehouse",
             before=None,
             after={
-                "employee_id": driver.id, "warehouse_id": warehouse.id,
-                "work_date": day.isoformat(), "shift_template_id": template.id,
-                "break_start": pause.isoformat(), "break_end": resume.isoformat(),
+                "employee_id": driver.id,
+                "warehouse_id": warehouse.id,
+                "work_date": day.isoformat(),
+                "shift_template_id": template.id,
+                "break_start": pause.isoformat(),
+                "break_end": resume.isoformat(),
                 "status": "scheduled",
             },
         )
