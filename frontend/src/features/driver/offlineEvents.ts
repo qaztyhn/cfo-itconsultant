@@ -105,7 +105,8 @@ export async function eligibleForReplay(item: PendingEvent): Promise<boolean> {
     // Legacy single-stop queued events remain replayable against the merged
     // backend. Never infer a stop from an ambiguous multi-stop trip.
     if (trip.stops.length !== 1 || stopScopedPodEnabled()) return false;
-  } else if (payloadStopId !== item.stopId) {
+  } else if (payloadStopId !== item.stopId || !stopScopedPodEnabled()) {
+    // A queued BE-05 event must never be sent after a deploy rollback.
     return false;
   }
   const matchingTerminal = item.event.event_type === "DELIVERED" ? "delivered" : "failed";
