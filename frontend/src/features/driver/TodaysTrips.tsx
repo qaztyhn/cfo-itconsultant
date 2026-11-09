@@ -80,12 +80,13 @@ export function TodaysTrips() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
 
   const refreshPending = useCallback(async () => {
-    if (userId === null) { setPending([]); return; }
+    if (userId === null) { setPending([]); return []; }
     try {
       const items = await pendingForUser(userId);
       if (useAuthStore.getState().user?.id === userId) setPending(items);
+      return items;
     }
-    catch { setError("Secure offline storage is unavailable. Updates cannot be queued."); }
+    catch { setError("Secure offline storage is unavailable. Updates cannot be queued."); return []; }
   }, [userId]);
 
   const refreshTrips = useCallback(async () => {
@@ -129,14 +130,15 @@ export function TodaysTrips() {
   useEffect(() => {
     let active = true;
     // Schedule state-changing refresh after effect setup (React compiler lint rule).
-    void Promise.resolve().then(() => {
+    void Promise.resolve().then(async () => {
       if (!active) return;
       if (userId === null) { setTrips([]); setTripOwner(null); setPending([]); setSelectedTrip(null); return; }
       void refreshTrips();
-      void refreshPending();
+      const items = await refreshPending();
+      if (active && online && items.some((item) => item.state === "pending")) void retryPending();
     });
     return () => { active = false; };
-  }, [userId, refreshTrips, refreshPending]);
+  }, [userId, online, refreshTrips, refreshPending, retryPending]);
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -147,14 +149,6 @@ export function TodaysTrips() {
       window.removeEventListener("offline", updateOnline);
     };
   }, []);
-
-  useEffect(() => {
-    if (online && userId !== null && pending.some((item) => item.state === "pending")) {
-      void Promise.resolve().then(() => retryPending());
-    }
-    // Deliberately do not loop on changes in the pending list; only on re-connection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online, userId]);
 
   useEffect(() => {
     if (!navigator.permissions?.query) return;
@@ -282,6 +276,8 @@ export function TodaysTrips() {
                 <p className="font-semibold">{stop.order_no} · Stop {stop.trip_stop_id}</p>
                 <p className="text-body">{stop.delivery_address}</p>
                 <p className="text-caption text-inkMuted">Receiving: {stop.receiving_window.start ?? "—"}–{stop.receiving_window.end ?? "—"}</p>
+                {stop.contact_name && <p className="text-caption text-inkMuted">Receiving contact: {stop.contact_name}{stop.contact_phone ? ` · ${stop.contact_phone}` : ""}</p>}
+                {stop.special_requirements && <p className="text-caption text-inkMuted">Site instructions: {stop.special_requirements}</p>}
                 <p className="text-caption text-inkMuted">ETA: {timeLabel(stop.eta_planned_at)}</p>
                 <p className="text-caption">Stop status: {stop.status}</p>
               </div>

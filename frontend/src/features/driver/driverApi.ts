@@ -50,13 +50,20 @@ function isAssignedTrip(value: unknown): value is DriverTrip {
   return typeof trip.trip_id === "number" && typeof trip.vehicle_code === "string" &&
     typeof trip.status === "string" && Array.isArray(trip.stops) &&
     trip.stops.every((stop) => stop && typeof stop.order_id === "number" &&
-      typeof stop.trip_stop_id === "number" && typeof stop.order_no === "string");
+      typeof stop.trip_stop_id === "number" && typeof stop.order_no === "string" &&
+      typeof stop.delivery_address === "string" &&
+      stop.receiving_window !== null && typeof stop.receiving_window === "object" &&
+      typeof stop.receiving_window.start !== "undefined" &&
+      typeof stop.receiving_window.end !== "undefined");
 }
 
 export function assignedTrips(): Promise<DriverTrip[]> {
-  return apiGet<TripList>("/driver/trips").then((response) =>
-    Array.isArray(response?.items) ? response.items.filter(isAssignedTrip) : [],
-  );
+  return apiGet<TripList>("/driver/trips").then((response) => {
+    if (!Array.isArray(response?.items) || !response.items.every(isAssignedTrip)) {
+      throw new Error("Unverified assigned-trip contract.");
+    }
+    return response.items;
+  });
 }
 
 export async function assignedTrip(tripId: number): Promise<DriverTrip> {

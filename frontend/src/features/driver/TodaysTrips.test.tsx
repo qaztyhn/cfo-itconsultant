@@ -51,6 +51,29 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     expect(screen.queryByText("SE-999")).toBeNull();
   });
 
+  it("shows server-provided receiving contact and site instructions in trip details", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{ ...loaded, stops: [{
+      ...loaded.stops[0], contact_phone: "+46 00 123 45", special_requirements: "Use loading gate B",
+    }] }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Review and dispatch" }));
+    expect(screen.getByText("Receiving contact: Demo contact · +46 00 123 45")).toBeInTheDocument();
+    expect(screen.getByText("Site instructions: Use loading gate B")).toBeInTheDocument();
+  });
+
+  it("retries a persisted pending update when opened online", async () => {
+    vi.mocked(pendingForUser).mockResolvedValue([{
+      key: "stable-key", userId: 4, tripId: 12, stopId: 30, orderId: 44,
+      event: { event_type: "DISPATCHED", occurred_at: "2026-11-09T08:00:00Z", payload: { trip_id: 12 } },
+      state: "pending",
+    }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await waitFor(() => expect(replayEvents).toHaveBeenCalledWith(4));
+  });
+
   it("does not fetch trips for an unauthorized role", async () => {
     signInAs(userByEmail("sales@cfo.demo"));
     renderAt("/driver");
