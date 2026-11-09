@@ -1,4 +1,5 @@
 """Disposable WMS HTTP + persistent SQLite acceptance: never an approval E2E."""
+
 import copy
 from pathlib import Path
 
@@ -9,25 +10,37 @@ from app.adapters.disposable_wms_service import FROZEN, create_app, verify_batch
 
 KEY = "synthetic-disposable-local-only-key-1234567890"
 FIXTURE = {
-    "source_kind": "synthetic_demo", "market": "SE",
-    "stock": [
-        {"warehouse_code": "GBG", "wms_sku": "WMS-CEM-25",
-         "wms_unit": "bag", "on_hand": "100.000"}
-    ],
+    "source_kind": "synthetic_demo",
+    "market": "SE",
+    "stock": [{"warehouse_code": "GBG", "wms_sku": "WMS-CEM-25", "wms_unit": "bag", "on_hand": "100.000"}],
     "mapping": [
-        {"market": "SE", "warehouse_code": "GBG", "pos_sku": "SE-CEM-MOR-25",
-         "wms_sku": "WMS-CEM-25", "wms_unit": "bag",
-         "mapping_version": "synthetic:confirmed-v1", "confirmed": True}
+        {
+            "market": "SE",
+            "warehouse_code": "GBG",
+            "pos_sku": "SE-CEM-MOR-25",
+            "wms_sku": "WMS-CEM-25",
+            "wms_unit": "bag",
+            "mapping_version": "synthetic:confirmed-v1",
+            "confirmed": True,
+        }
     ],
 }
 REQUEST = {
-    "market": "SE", "order_id": 50, "plan_id": 80, "source_version": 2,
+    "market": "SE",
+    "order_id": 50,
+    "plan_id": 80,
+    "source_version": 2,
     "idempotency_key": "cfo-res-test-immutable",
     "lines": [
-        {"order_line_id": 99, "pos_sku": "SE-CEM-MOR-25",
-         "wms_sku": "WMS-CEM-25", "warehouse_code": "GBG",
-         "wms_unit": "bag", "mapping_version": "synthetic:confirmed-v1",
-         "quantity": "60.000"}
+        {
+            "order_line_id": 99,
+            "pos_sku": "SE-CEM-MOR-25",
+            "wms_sku": "WMS-CEM-25",
+            "warehouse_code": "GBG",
+            "wms_unit": "bag",
+            "mapping_version": "synthetic:confirmed-v1",
+            "quantity": "60.000",
+        }
     ],
 }
 HEADERS = {"X-Demo-WMS-Key": KEY}
@@ -68,13 +81,14 @@ def test_reserve_status_restart_release_and_authenticated_inclusion(database: Pa
 
     # Process restart: new app/DB connection, same on-disk state and immutable request.
     with _client(database) as restarted:
-        status = restarted.get(
-            f"/v1/status/SE/{REQUEST['idempotency_key']}", headers=HEADERS
-        )
+        status = restarted.get(f"/v1/status/SE/{REQUEST['idempotency_key']}", headers=HEADERS)
         assert status.status_code == 200 and status.json() == ack
         assert restarted.post("/v1/reserve", json=REQUEST, headers=HEADERS).json() == ack
-        release = {"market": "SE", "reservation_id": ack["reservation_id"],
-                   "idempotency_key": REQUEST["idempotency_key"] + ":release"}
+        release = {
+            "market": "SE",
+            "reservation_id": ack["reservation_id"],
+            "idempotency_key": REQUEST["idempotency_key"] + ":release",
+        }
         done = restarted.post("/v1/release", json=release, headers=HEADERS)
         assert done.status_code == 200 and done.json()["status"] == "released"
         assert restarted.post("/v1/release", json=release, headers=HEADERS).json() == done.json()

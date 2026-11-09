@@ -3,6 +3,7 @@
 NOT a production WMS adapter, an approval service, or a CFO stock publisher.
 Nothing is mounted in normal backend routes. Explicit disposable settings are mandatory.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -117,9 +118,7 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
             raise ValueError("Synthetic relation must be explicitly confirmed and market scoped")
         if (wh, sku) not in seen_rows:
             raise ValueError("Mapped SKU is absent from the declared warehouse inventory")
-        unit_row = conn.execute(
-            "SELECT unit FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
-        ).fetchone()
+        unit_row = conn.execute("SELECT unit FROM stock WHERE warehouse=? AND sku=?", (wh, sku)).fetchone()
         if unit_row[0] != unit:
             raise ValueError("WMS stock unit does not match confirmed relation")
         key = (market, wh, pos)
@@ -189,9 +188,7 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
         return value
 
     def response(conn: sqlite3.Connection, reservation_id: str) -> dict[str, Any]:
-        row = conn.execute(
-            "SELECT * FROM reservations WHERE reservation_id=?", (reservation_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
         if row is None:
             _error("RESERVATION_NOT_FOUND", 404)
         return json.loads(row["ack"])
@@ -218,8 +215,12 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                     "SELECT wms_sku,unit,version FROM mapping WHERE market=? AND warehouse=? AND pos_sku=?",
                     (body.market, line.warehouse_code, line.pos_sku),
                 ).fetchone()
-                if (match is None or match["wms_sku"] != line.wms_sku
-                    or match["unit"] != line.wms_unit or match["version"] != line.mapping_version):
+                if (
+                    match is None
+                    or match["wms_sku"] != line.wms_sku
+                    or match["unit"] != line.wms_unit
+                    or match["version"] != line.mapping_version
+                ):
                     _error("NATIVE_MAPPING_UNVERIFIED")
                 try:
                     quantity = decimal(line.quantity, positive=True)
@@ -227,12 +228,17 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                     _error("QUANTITY_INVALID", 422)
                 key = (line.warehouse_code, line.wms_sku)
                 wanted[key] = wanted.get(key, Decimal(0)) + quantity
-                lines.append({
-                    "order_line_id": line.order_line_id, "pos_sku": line.pos_sku,
-                    "wms_sku": line.wms_sku, "warehouse_code": line.warehouse_code,
-                    "wms_unit": line.wms_unit, "mapping_version": line.mapping_version,
-                    "quantity": number(quantity),
-                })
+                lines.append(
+                    {
+                        "order_line_id": line.order_line_id,
+                        "pos_sku": line.pos_sku,
+                        "wms_sku": line.wms_sku,
+                        "warehouse_code": line.warehouse_code,
+                        "wms_unit": line.wms_unit,
+                        "mapping_version": line.mapping_version,
+                        "quantity": number(quantity),
+                    }
+                )
             for (wh, sku), qty in wanted.items():
                 stock = conn.execute(
                     "SELECT on_hand,reserved FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
@@ -244,27 +250,42 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                     "UPDATE stock SET reserved=? WHERE warehouse=? AND sku=?",
                     (
                         number(
-                            Decimal(conn.execute(
-                                "SELECT reserved FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
-                            ).fetchone()[0]) + qty
+                            Decimal(
+                                conn.execute(
+                                    "SELECT reserved FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
+                                ).fetchone()[0]
+                            )
+                            + qty
                         ),
-                        wh, sku,
+                        wh,
+                        sku,
                     ),
                 )
             batch = bump(conn)
             reservation_id = "SYN-" + digest[:24]
             ack = {
-                "source_kind": "synthetic_demo", "market": body.market,
+                "source_kind": "synthetic_demo",
+                "market": body.market,
                 "idempotency_key": body.idempotency_key,
-                "reservation_id": reservation_id, "status": "accepted",
-                "revision": f"synthetic:{batch}", "reflected_in_batch_id": batch,
+                "reservation_id": reservation_id,
+                "status": "accepted",
+                "revision": f"synthetic:{batch}",
+                "reflected_in_batch_id": batch,
                 "source_version": body.source_version,
                 "lines": lines,
             }
             conn.execute(
                 "INSERT INTO reservations VALUES(?,?,?,?,?,?,?,?)",
-                (body.idempotency_key, body.market, reservation_id, digest, "accepted",
-                 body.source_version, canonical(ack).decode(), canonical(lines).decode()),
+                (
+                    body.idempotency_key,
+                    body.market,
+                    reservation_id,
+                    digest,
+                    "accepted",
+                    body.source_version,
+                    canonical(ack).decode(),
+                    canonical(lines).decode(),
+                ),
             )
             return ack
 
@@ -304,13 +325,17 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                     _error("RESERVATION_STATE_CONFLICT")
                 conn.execute(
                     "UPDATE stock SET reserved=? WHERE warehouse=? AND sku=?",
-                    (number(Decimal(stock[0]) - Decimal(line["quantity"])),
-                     line["warehouse_code"], line["wms_sku"]),
+                    (
+                        number(Decimal(stock[0]) - Decimal(line["quantity"])),
+                        line["warehouse_code"],
+                        line["wms_sku"],
+                    ),
                 )
             batch = bump(conn)
             ack = json.loads(row["ack"])
-            ack.update({"status": "released", "revision": f"synthetic:{batch}",
-                        "reflected_in_batch_id": batch})
+            ack.update(
+                {"status": "released", "revision": f"synthetic:{batch}", "reflected_in_batch_id": batch}
+            )
             conn.execute(
                 "UPDATE reservations SET status='released',ack=? WHERE request_key=?",
                 (canonical(ack).decode(), row["request_key"]),
@@ -324,18 +349,27 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             rows = conn.execute("SELECT * FROM stock ORDER BY warehouse,sku").fetchall()
             batch = int(conn.execute("SELECT value FROM meta WHERE key='batch_id'").fetchone()[0])
             included = sorted(
-                row[0] for row in conn.execute(
+                row[0]
+                for row in conn.execute(
                     "SELECT reservation_id FROM reservations WHERE status='accepted'"
                 ).fetchall()
             )
             payload = {
-                "source_kind": "synthetic_demo", "market": "SE",
-                "as_of": FROZEN, "batch_id": batch, "complete": True,
-                "item_count": len(rows), "included_reservation_ids": included,
+                "source_kind": "synthetic_demo",
+                "market": "SE",
+                "as_of": FROZEN,
+                "batch_id": batch,
+                "complete": True,
+                "item_count": len(rows),
+                "included_reservation_ids": included,
                 "items": [
-                    {"warehouse_code": row["warehouse"], "wms_sku": row["sku"],
-                     "wms_unit": row["unit"], "on_hand": row["on_hand"],
-                     "reserved": row["reserved"]}
+                    {
+                        "warehouse_code": row["warehouse"],
+                        "wms_sku": row["sku"],
+                        "wms_unit": row["unit"],
+                        "on_hand": row["on_hand"],
+                        "reserved": row["reserved"],
+                    }
                     for row in rows
                 ],
             }
@@ -362,11 +396,16 @@ def verify_batch(batch: dict[str, Any], shared_key: str, *, expected_reservation
         ):
             return False
         items = batch["items"]
-        if (batch["source_kind"] != "synthetic_demo" or batch["market"] != "SE"
-            or batch["complete"] is not True or batch["item_count"] != len(items)
-            or batch["as_of"] != FROZEN or type(batch["batch_id"]) is not int
+        if (
+            batch["source_kind"] != "synthetic_demo"
+            or batch["market"] != "SE"
+            or batch["complete"] is not True
+            or batch["item_count"] != len(items)
+            or batch["as_of"] != FROZEN
+            or type(batch["batch_id"]) is not int
             or batch["batch_id"] < 1
-            or expected_reservation_id not in batch["included_reservation_ids"]):
+            or expected_reservation_id not in batch["included_reservation_ids"]
+        ):
             return False
         if len({(r["warehouse_code"], r["wms_sku"]) for r in items}) != len(items):
             return False
