@@ -15,7 +15,6 @@ from app.domain.models.hr import Employee
 from app.domain.models.ops import CustomerContactLog, CustomerOrder
 from app.services import order_read_service
 
-
 CHANNELS = frozenset({"phone", "email", "chat"})
 REASONS = frozenset({"where_is_my_order", "change_request", "complaint", "delay_inquiry", "other"})
 
