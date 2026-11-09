@@ -46,5 +46,6 @@ jobs:
             demo-ci-read-results.json
             demo-ci-sync-results.json
             demo-ci-db-results.json
+            demo-ci-stock-results.json
           if-no-files-found: ignore
           retention-days: 7
