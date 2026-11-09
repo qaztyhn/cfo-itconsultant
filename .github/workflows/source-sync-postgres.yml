@@ -20,5 +20,5 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check tests/integration/test_source_sync_http_pg.py
-      - run: black --check --diff tests/integration/test_source_sync_http_pg.py
+      - run: black --check tests/integration/test_source_sync_http_pg.py
       - run: pytest tests/integration/test_source_sync_http_pg.py -v
