@@ -117,6 +117,7 @@ def test_US_NOT_02_AC3_discard_request_requires_reason(
     assert response.status_code == 200
     assert response.json() == {"id": draft, "status": "suppressed"}
 
+
 def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(
     notifications_api: tuple[TestClient, dict[str, SimpleNamespace], str],
 ) -> None:
@@ -136,4 +137,3 @@ def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(
     roles["actor"] = actor("dispatcher", market="NO")
     assert client.get("/api/v1/orders/1/notifications").status_code == 404
     assert client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 2}).status_code == 404
-
