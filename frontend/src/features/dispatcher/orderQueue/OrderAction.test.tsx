@@ -60,17 +60,59 @@ describe("OrderAction", () => {
     expect(currentPath()).toBe("/dispatcher/orders");
   });
 
-  it("test_US_ORD_02_AC3_planned_opens_latest_real_run_and_skips_replan_suggestion", async () => {
+  it("test_US_ORD_02_AC3_planned_opens_absolute_latest_reviewable_run", async () => {
     server.use(queue(order()), landing(88), http.get(RUNS, () => HttpResponse.json({ items: [
-      { id: 99, order_id: 4021, run_no: 4, kind: "replan_suggestion", result: "feasible", hold_expires_at: null },
-      { id: 88, order_id: 4021, run_no: 3, kind: "rerun", result: "feasible", hold_expires_at: null },
-      { id: 55, order_id: 4021, run_no: 2, kind: "initial", result: "feasible", hold_expires_at: null },
+      { id: 88, order_id: 4021, run_no: 3, kind: "rerun", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+      { id: 55, order_id: 4021, run_no: 2, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
     ] })));
     renderAt("/dispatcher/orders");
 
     await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
 
     await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/88"));
+  });
+
+  it("newest replan suggestion never falls back to an older feasible run", async () => {
+    server.use(queue(order()), http.get(RUNS, () => HttpResponse.json({ items: [
+      { id: 99, order_id: 4021, run_no: 4, kind: "replan_suggestion", result: "feasible", hold_expires_at: null },
+      { id: 88, order_id: 4021, run_no: 3, kind: "rerun", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+    ] })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/newest run is a replan suggestion/i);
+    expect(currentPath()).toBe("/dispatcher/orders");
+  });
+
+  it("newest infeasible run never falls back to the older feasible run", async () => {
+    server.use(queue(order()), http.get(RUNS, () => HttpResponse.json({ items: [
+      { id: 99, order_id: 4021, run_no: 4, kind: "rerun", result: "infeasible", hold_expires_at: null },
+      { id: 88, order_id: 4021, run_no: 3, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+    ] })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/not feasible/i);
+    expect(currentPath()).toBe("/dispatcher/orders");
+  });
+
+  it("newest expired hold opens that run for truthful expiry and Plan Again", async () => {
+    server.use(queue(order()), landing(99), http.get(RUNS, () => HttpResponse.json({ items: [
+      { id: 99, order_id: 4021, run_no: 4, kind: "rerun", result: "feasible", hold_expires_at: "2020-01-01T00:00:00Z" },
+      { id: 88, order_id: 4021, run_no: 3, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+    ] })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
+    await waitFor(() => expect(currentPath()).toBe("/dispatcher/plan-review/99"));
+  });
+
+  it("malformed latest history fails closed rather than opening another run", async () => {
+    server.use(queue(order()), http.get(RUNS, () => HttpResponse.json({ items: [
+      { id: 99, order_id: 4021, run_no: 4, kind: "rerun", result: "feasible", hold_expires_at: "not-a-date" },
+      { id: 88, order_id: 4021, run_no: 3, kind: "initial", result: "feasible", hold_expires_at: "2099-11-18T16:00:00+01:00" },
+    ] })));
+    renderAt("/dispatcher/orders");
+    await userEvent.setup().click(await firstButton("Plan review for order SE-2026-004021"));
+    expect((await main().findAllByRole("alert"))[0]).toHaveTextContent(/no valid hold/i);
+    expect(currentPath()).toBe("/dispatcher/orders");
   });
 
   it("test_US_ORD_02_AC3_planned_without_run_shows_error_and_does_not_navigate", async () => {
