@@ -33,7 +33,7 @@ export async function findLatestRunId(orderId: number): Promise<number | null> {
       || !["feasible", "infeasible"].includes(String(entry.result))
       || !(entry.hold_expires_at === null || (
         typeof entry.hold_expires_at === "string"
-        && /(?:Z|[+-]\\d\\d:\\d\\d)$/.test(entry.hold_expires_at)
+        && /(?:Z|[+-]\d\d:\d\d)$/.test(entry.hold_expires_at)
         && Number.isFinite(Date.parse(entry.hold_expires_at))
       ))) {
       throw new Error("Invalid planning history. Refresh the order queue.");
