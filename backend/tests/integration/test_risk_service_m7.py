@@ -115,6 +115,7 @@ def test_US_RSK_02_AC4_AC5_negative_slack_twice_min_gap_and_dedupe(
     assert red["risk_status"] == "PREDICTED_LATE"
     assert red["consecutive_negative"] == 2
     assert red["delay_draft"] == "blocked_missing_approved_window"
+    assert fetch(dsn, "SELECT count(*) FROM ops.notification")[0][0] == 0  # No auto-DELAY send.
     assert fetch(dsn, "SELECT count(*) AS n FROM ops.eta_forecast")[0]["n"] == 3
     active = fetch(dsn, "SELECT type,level,resolved_at FROM ops.alert ORDER BY id")
     assert [(a["type"], a["level"]) for a in active] == [
