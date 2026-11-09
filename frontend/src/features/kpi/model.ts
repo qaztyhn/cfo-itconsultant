@@ -64,12 +64,19 @@ export function decisions(raw:unknown):{items:SafeDecision[];total:number|null} 
     if(id===null)return [];
     // Do NOT render actor names, free-text reasons, before/after, snapshot, PII or raw JSON.
     const action=typeof x.action==="string"&&CODE.test(x.action)?x.action:"UNVERIFIED";
-    const at=typeof x.created_at==="string"&&TIMESTAMP.test(x.created_at)&&Number.isFinite(Date.parse(x.created_at))?x.created_at:
-      typeof x.at==="string"&&TIMESTAMP.test(x.at)&&Number.isFinite(Date.parse(x.at))?x.at:"Unavailable";
+    const at=[x.ts,x.created_at,x.at].find(value=>
+      typeof value==="string"&&TIMESTAMP.test(value)&&Number.isFinite(Date.parse(value))) as string|undefined;
     const subject=typeof x.order_id==="number"&&int(x.order_id)!==null?`Order #${x.order_id}`:
       "Not reported";
-    const correlationId=typeof x.correlation_id==="string"&&/^[a-fA-F0-9-]{36}$/.test(x.correlation_id)?x.correlation_id:null;
-    return [{id,at,action,subject,actor:"Withheld for privacy",correlationId}];
+    const correlationId=typeof x.correlation_id==="string"&&
+      /^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$/.test(x.correlation_id)?x.correlation_id:null;
+    const actorId=int(x.actor_user_id);
+    const role=typeof x.actor_role==="string"&&
+      ["admin","dispatcher","warehouse","sales","driver","customer_service","viewer"].includes(x.actor_role)
+      ?x.actor_role:null;
+    const actor=role?(actorId!==null?`${role} · user #${actorId}`:role):
+      actorId!==null?`User #${actorId}`:"Withheld for privacy";
+    return [{id,at:at??"Unavailable",action,subject,actor,correlationId}];
   })};
 }
 export function pageNumber(raw:string|null):number {
