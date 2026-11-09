@@ -27,6 +27,16 @@ from tests.integration.test_approval_service import db as db  # noqa: F401
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def disposable_wms_scope(monkeypatch) -> None:
+    monkeypatch.setenv("DEMO_DISPOSABLE", "1")
+    monkeypatch.setattr(
+        wms_intent,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="test", app_now="2026-11-04T10:05:00+01:00"),
+    )
+
+
 def _run(dsn: str, fn):
     async def go():
         engine = create_async_engine(async_url(dsn), poolclass=NullPool)
@@ -237,3 +247,12 @@ def test_synthetic_release_is_idempotent_and_never_mutates_on_hand(db: str, monk
     assert first.status == "released"
     row = asyncio.run(port.fetch_stock()).items[0]
     assert (row.on_hand, row.reserved) == (Decimal(50), Decimal(0))
+
+
+def test_synthetic_ledger_rejected_outside_disposable_demo(db: str, monkeypatch) -> None:
+    _prepare(db)
+    monkeypatch.delenv("DEMO_DISPOSABLE", raising=False)
+    with pytest.raises(DomainError) as got:
+        _run(db, lambda s: wms_intent.begin_intent(s, _request(), synthetic=True))
+    assert got.value.code == "FORBIDDEN"
+    assert fetch(db, "SELECT count(*) FROM ops.wms_reservation_intent")[0][0] == 0
