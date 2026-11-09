@@ -10,10 +10,11 @@ import hmac
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -116,7 +117,10 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
             raise ValueError("Synthetic relation must be explicitly confirmed and market scoped")
         if (wh, sku) not in seen_rows:
             raise ValueError("Mapped SKU is absent from the declared warehouse inventory")
-        if conn.execute("SELECT unit FROM stock WHERE warehouse=? AND sku=?", (wh, sku)).fetchone()[0] != unit:
+        unit_row = conn.execute(
+            "SELECT unit FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
+        ).fetchone()
+        if unit_row[0] != unit:
             raise ValueError("WMS stock unit does not match confirmed relation")
         key = (market, wh, pos)
         if key in seen_mapping:
@@ -265,7 +269,9 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             return ack
 
     @app.get("/v1/status/{market}/{request_key}")
-    def status(market: str, request_key: str, x_demo_wms_key: str | None = Header(default=None)) -> dict[str, Any]:
+    def status(
+        market: str, request_key: str, x_demo_wms_key: str | None = Header(default=None)
+    ) -> dict[str, Any]:
         authorize(x_demo_wms_key)
         with transaction() as conn:
             row = conn.execute(
@@ -334,7 +340,9 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                 ],
             }
             payload["sha256"] = hashlib.sha256(canonical(payload)).hexdigest()
-            payload["hmac_sha256"] = hmac.new(api_key.encode(), canonical(payload), hashlib.sha256).hexdigest()
+            payload["hmac_sha256"] = hmac.new(
+                api_key.encode(), canonical(payload), hashlib.sha256
+            ).hexdigest()
             return payload
 
     return app
