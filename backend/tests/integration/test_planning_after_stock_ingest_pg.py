@@ -12,8 +12,8 @@ from tests.integration.conftest import execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.test_demo_standard_planning import DISPATCHER
 from tests.integration.test_demo_standard_planning import standard_order as standard_order  # noqa: F401
-from tests.integration.test_ingest_stock import run_stock, snapshot
 from tests.integration.test_ingest_orders import db as db  # noqa: F401
+from tests.integration.test_ingest_stock import run_stock, snapshot
 
 pytestmark = pytest.mark.integration
 
