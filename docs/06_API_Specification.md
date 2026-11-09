@@ -440,9 +440,9 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | Phương thức | Đường dẫn | Vai trò | Hợp đồng mục tiêu |
 |---|---|---|---|
 | POST | `/trips/{id}/positions` | driver (chuyến mình) | Gửi lô vị trí sau mỗi **30 phút** khi trip/shift hợp lệ; suggest max 100 điểm/lô. Offline queue chỉ đồng bộ nếu trip **vẫn on_road** và điểm ghi trong ca; khi hoàn tất/hết ca phải xóa local queue và server từ chối upload muộn; `409 NOT_ON_TRIP`, `403 GPS_DISABLED` giữ tương thích |
-| GET | `/trips/{id}/positions?since=&until=&page=&page_size=` | Dispatcher **được gán trip** | Lịch sử **chỉ trong chuyến và ca đang hoạt động**, không đọc sau trip terminal/hết ca; đề xuất page_size=50/max=500, sort `recorded_at,id` |
+| GET | `/trips/{id}/positions?since=&until=&page=&page_size=` | Dispatcher **được gán trip** | GPS live/ongoing-trip history only during active trip/shift; **case-specific restricted historical access up to 7 days requires a separately reviewed API contract**, không tự cho Dispatcher đọc sau khi trip/ca kết thúc; đề xuất page_size=50/max=500, sort `recorded_at,id` |
 | GET | `/gps/live` | Dispatcher **được gán trip** | Chỉ các chuyến mà Dispatcher được ủy quyền, đang `on_road` trong ca; điểm mới nhất, `recorded_at`, `accuracy_m`, `gps_status=fresh|lost|no_fix`, ETA và risk nếu đã tính; **không** trả toàn market |
-| GET/PUT | `/markets/{code}/gps-settings` | admin | `gps_enabled`, `interval_min=30`, `lost_min=60`, `retention_mode=trip_end_delete` / `retention_days=0` mang nghĩa chuyển tiếp; cài đặt không cho phép vượt scope ca/chuyến; demo DPIA missing vẫn cảnh báo, không GPS người thật trước compliance review |
+| GET/PUT | `/markets/{code}/gps-settings` | admin | `gps_enabled`, `interval_min=30`, `lost_min=60`, legacy `retention_mode=trip_end_delete` / `retention_days=0` **đã bị supersede**, policy mục tiêu là tối đa **7 ngày** lịch sử hợp lệ, runtime/config migration cần review; cài đặt không cho phép vượt scope ca/chuyến; demo DPIA missing vẫn cảnh báo, không GPS người thật trước compliance review |
 | GET/POST/PATCH | `/compliance-records` | admin | DPIA/nhân viên/thông báo GPS; không cho phép admin đọc vị trí qua endpoint này |
 
 ```json
@@ -452,7 +452,7 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 // 202 { "accepted": 1, "eta": { "forecast_eta": "2026-11-13T07:05:00Z", "risk": "ON_TRACK" } }
 ```
 
-**Xóa dữ liệu GPS đã chốt:** khi **trip kết thúc/hủy** hoặc driver hết ca hợp lệ (mốc đến trước), dừng định vị và purge toàn bộ `ops.vehicle_position` của phiên GPS, cache và queue thiết bị; không còn lịch sử GPS để đọc ở endpoint sau khi hoàn tất. Nếu trip có nhiều stop, không kết thúc GPS chỉ vì một stop/đơn đã giao; kết thúc khi trip thực sự terminal. Job cleanup 1 phút chỉ là bù lỗi nếu transaction/event cleanup thất bại; **không** thay bằng retention 30 ngày. Không xóa duty/tachograph records theo quy tắc GPS. `GPS_LOST` chỉ trong ca/trip hợp lệ, sau >60 phút không nhận fix; không tiếp tục GPS ngoài ca. Dữ liệu GPS trong backup cần rà soát riêng theo GDPR, không tuyên bố xóa vật lý tức thời khỏi provider backup.
+**Xóa dữ liệu GPS đã chốt:** khi **trip kết thúc/hủy** hoặc driver hết ca hợp lệ (mốc đến trước), **dừng thu và thu hồi quyền xem live ngay**; xóa queue thiết bị không hợp lệ, còn điểm GPS đã thu hợp lệ chỉ giữ tối đa **7 ngày** trong kho lịch sử bị hạn chế quyền tra soát và có audit; không mở lịch sử cho live Dispatcher sau trip/ca. Nếu trip có nhiều stop, không kết thúc GPS chỉ vì một stop/đơn đã giao; kết thúc khi trip thực sự terminal. Cleanup phải xóa lịch sử hết hạn 7 ngày và các điểm bất hợp lệ (cadence cleanup thực tế còn nằm trong D8 chưa duyệt); **không** lưu 30 ngày. Không xóa duty/tachograph records theo quy tắc GPS. `GPS_LOST` chỉ trong ca/trip hợp lệ, sau >60 phút không nhận fix; không tiếp tục GPS ngoài ca. Dữ liệu GPS trong backup cần rà soát riêng theo GDPR, không tuyên bố xóa vật lý tức thời khỏi provider backup.
 
 **Lưu ý implementation:** DTO/rate limit/assignment scope cần migration/contract tests và cross-review; PR docs này chưa triển khai. IMY Thụy Điển: <https://www.imy.se/verksamhet/dataskydd/dataskydd-pa-olika-omraden/arbetsliv/kontroll-och-overvakning-av-anstallda/>.
 
@@ -472,7 +472,7 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 
 **D2 CSV owner-approved:** schema UTF-8/version/ISO/decimal và SHA-256, retry `failed`, IT review `partial`, trùng `ok` bỏ qua; thao tác nhập nguồn admin-only, CFO không ghi ngược POS. Cần cập nhật OpenAPI/migration/test trước khi coi đã triển khai.
 
-**D5 GDPR owner-approved policy:** raw GPS xóa khi trip/ca hợp lệ chấm dứt (D3 supersedes 30 days); customer/contact/CS 90 ngày, nonfinancial operational order 365 ngày, employee nonstatutory contacts 90 ngày, workforce shifts/attendance 24 tháng (cần pháp lý), logs tech/security 30/90 ngày, staging backup 30 ngày; tachograph/driver working-time và Swedish accounting giữ theo luật áp dụng. DSAR, ROPA, DPIA/GPS, legal holds và retention theo mục đích cần sign-off trước dữ liệu người thật; không xem legacy config `personal=365/order=730` là GDPR compliant. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
+**D5 GDPR owner-approved policy:** raw GPS **ngừng thu/live** khi trip/ca hợp lệ chấm dứt, lịch sử đã thu hợp lệ lưu tối đa **7 ngày** theo DEC-GPS-RET-20261109 (D3 supersedes 30 days); customer/contact/CS 90 ngày, nonfinancial operational order 365 ngày, employee nonstatutory contacts 90 ngày, workforce shifts/attendance 24 tháng (cần pháp lý), logs tech/security 30/90 ngày, staging backup 30 ngày; tachograph/driver working-time và Swedish accounting giữ theo luật áp dụng. DSAR, ROPA, DPIA/GPS, legal holds và retention theo mục đích cần sign-off trước dữ liệu người thật; không xem legacy config `personal=365/order=730` là GDPR compliant. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
 
 ## 11. Nhật ký liên hệ khách (CS)
 
@@ -889,3 +889,6 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 
 **Implementation status:** PR #136 was merged and needs a new Dev 3 fix PR for UI/backend mismatches. #121/#127/#129/#137 and M8 need separate implementation reviews, database/API tests and CI. This contract is not evidence those features operate end-to-end.
 
+### 17.1 GPS retention amendment and D8 clock times — 2026-11-09
+
+**Owner-approved specific amendments:** [DEC-GPS-RET-20261109 and DEC-D8-OPS-20261109](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md). Stop collecting/revoke live read at trip/duty end; keep only previously lawfully captured GPS **up to seven days**, for case-restricted review with reason/access audit, then erase. This does **not** authorize adding unreviewed historical read APIs or showing a closed trip's GPS to an ordinary Dispatcher. The existing `trip_end_delete`/zero-day config and terminal purge assumptions require reviewed new DB/API/service contracts and privacy/legal/DPIA signoff for real employee data. **Operational review at 07:00 and 13:00 Europe/Stockholm only** is approved; full D8 scheduler/job frequency and D6 hosting remain unapproved.
