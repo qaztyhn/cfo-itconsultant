@@ -46,14 +46,14 @@ export const MANUAL_GATE_LABELS: Record<(typeof MANUAL_GATES)[number], string> =
   safety: "Driver hours, mandatory rest and safety",
 };
 export function validId(value: string): boolean {
-  return /^[1-9]\\d*$/.test(value) && Number.isSafeInteger(Number(value));
+  return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
 export function validInstant(value: string): boolean {
-  return /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(value)
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
     && Number.isFinite(Date.parse(value));
 }
 export function allowedDeliveryDate(order: ManualOrder, day: string): boolean {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(day) || new Date(day + "T00:00:00Z").toISOString().slice(0, 10) !== day) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (!Number.isFinite(Date.parse(day + "T00:00:00Z")) || new Date(day + "T00:00:00Z").toISOString().slice(0, 10) !== day)) return false;
   const request = order.date_request;
   if (request.mode === "exact") return day === request.date_to;
   if (day > request.date_to) return false;
