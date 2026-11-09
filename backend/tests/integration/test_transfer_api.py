@@ -474,3 +474,64 @@ def test_T18_1_pending_transfer_inbound_is_never_counted_as_available(transfer_a
     )
     inbound = _run(transfer_api.dsn, lambda s: confirmed_inbound(s, [3], [1]))
     assert [(i.inbound_ref, i.qty) for i in inbound[3]] == [("ERP-1", 5)]
+
+
+def test_T18_concurrent_approvals_with_distinct_keys_create_one_transfer(transfer_api: Api) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    body = selection(transfer_api)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(lambda _: post(transfer_api, "/orders/1/transfers", DISPATCHER, body), range(2))
+        )
+    assert sorted(r.status_code for r in results) == [200, 409], [r.text for r in results]
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.stock_transfer")[0]["n"] == 1
+    assert audit_count(transfer_api, "TRANSFER_APPROVED") == 1
+
+
+def test_T18_concurrent_source_confirmation_creates_exactly_one_inbound(transfer_api: Api) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    transfer_id = approved(transfer_api)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _: post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE),
+                range(2),
+            )
+        )
+    assert sorted(r.status_code for r in results)[0] == 200, [r.text for r in results]
+    assert fetch(transfer_api.dsn, "SELECT count(*) AS n FROM ops.inbound_shipment")[0]["n"] == 1
+    assert audit_count(transfer_api, "TRANSFER_CONFIRMED") == 1
+
+
+def test_T18_duplicate_or_missing_inbound_proof_blocks_receipt(transfer_api: Api) -> None:
+    transfer_id = approved(transfer_api)
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    execute(
+        transfer_api.dsn,
+        "INSERT INTO ops.inbound_shipment (inbound_ref,warehouse_id,global_product_id,qty,eta_date,"
+        "confirmed,received,source,transfer_id) VALUES ('DUP-1',3,1,40,'2026-11-12',true,false,'transfer',"
+        f"{transfer_id})",
+    )
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "RESOURCE_CONFLICT")
+    execute(transfer_api.dsn, "DELETE FROM ops.inbound_shipment")
+    assert_error(post(transfer_api, f"/transfers/{transfer_id}/receive", 7), 409, "RESOURCE_CONFLICT")
+    assert fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]["status"] == "source_confirmed"
+    assert audit_count(transfer_api, "TRANSFER_RECEIVED") == 0
+
+
+def test_T18_1_destination_snapshot_replacement_never_adds_or_receives_transfer_stock(
+    transfer_api: Api,
+) -> None:
+    """A newer destination snapshot (as_of alone) is not proof: no auto-receipt, no inbound change."""
+    transfer_id = approved(transfer_api)
+    assert post(transfer_api, f"/transfers/{transfer_id}/confirm-source", WAREHOUSE).status_code == 200
+    execute(
+        transfer_api.dsn,
+        "UPDATE ops.stock_snapshot SET on_hand=60, as_of='2026-11-04T09:30:00Z' WHERE warehouse_id=3",
+    )
+    row = fetch(transfer_api.dsn, "SELECT status FROM ops.stock_transfer")[0]
+    assert row["status"] == "source_confirmed"
+    inbound = fetch(transfer_api.dsn, "SELECT confirmed, received FROM ops.inbound_shipment")
+    assert [(i["confirmed"], i["received"]) for i in inbound] == [(True, False)]

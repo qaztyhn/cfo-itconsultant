@@ -630,9 +630,10 @@ async def receive(
             .with_for_update()
         )
     ).all()
-    if not lines or {(i.global_product_id, i.qty) for i in inbound} != {
+    # Multiset comparison: a duplicated inbound row for the same product/qty must not pass as proof.
+    if not lines or sorted((i.global_product_id, i.qty) for i in inbound) != sorted(
         (line.global_product_id, line.qty) for line in lines
-    }:
+    ):
         raise _error("RESOURCE_CONFLICT", "Transfer inbound rows are missing or inconsistent.")
     before = _out(transfer)
     for row in inbound:

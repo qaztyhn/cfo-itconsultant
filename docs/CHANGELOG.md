@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [T18 — receipt cần inbound đúng một-một] — 2026-11-09 — Dev 1 (#127)
+
+- `receive` so khớp inbound với dòng chuyển kho theo **multiset**: dòng inbound trùng (cùng sản phẩm/số lượng) không còn được coi là bằng chứng hợp lệ (trước đây so bằng set nên bị gộp). Thêm test đồng thời (hai lần duyệt khác key, hai lần xác nhận kho nguồn), inbound trùng/thiếu, snapshot kho đích bị thay không tự nhận hàng.
+
 ## [T18-1/T18-2 — inbound chuyển kho & lead time mặc định] — 2026-11-09 — Dev 1 (#127)
 
 - T18-1: `planning_context.confirmed_inbound()` **không** tính inbound `source='transfer'` đang chờ (không có bằng chứng WMS đích đã chứa đúng lô hàng chuyển; `snapshot.as_of` đơn thuần không đủ). Warehouse Manager `receive` vẫn là bước đóng nghiệp vụ; không tự nhận hàng theo timestamp. Định danh đối soát transfer–batch–warehouse–SKU chờ thống nhất với Dev 2 (chưa có schema).
