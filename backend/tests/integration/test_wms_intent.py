@@ -204,8 +204,7 @@ def test_disposable_stock_refresh_and_no_double_count(db: str, monkeypatch) -> N
             ack,
             known_batch_id=1,
             validate=lambda batch: (
-                batch.item_count == len(batch.items) == 1
-                or (_ for _ in ()).throw(ValueError("incomplete"))
+                batch.item_count == len(batch.items) == 1 or (_ for _ in ()).throw(ValueError("incomplete"))
             ),
         )
     )
@@ -223,7 +222,9 @@ def test_disposable_stock_refresh_and_no_double_count(db: str, monkeypatch) -> N
     _run(
         db,
         lambda session: wms_intent.mark_refreshed(
-            session, request.idempotency_key, batch_id=result.snapshot.batch_id,
+            session,
+            request.idempotency_key,
+            batch_id=result.snapshot.batch_id,
             inclusion_proven=result.included,
         ),
     )
