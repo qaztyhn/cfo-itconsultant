@@ -42,7 +42,7 @@ const trip: DriverTrip = {
   }],
 };
 
-beforeEach(() => { vi.mocked(assignedTrip).mockReset(); vi.mocked(stopScopedPodEnabled).mockReset().mockReturnValue(false); });
+beforeEach(() => { vi.mocked(assignedTrip).mockReset(); vi.mocked(stopScopedPodEnabled).mockReset().mockReturnValue(true); });
 
 describe("Driver assigned-trip revalidation", () => {
   it("allows only matching trip and stop identities", async () => {
@@ -67,6 +67,7 @@ describe("Driver assigned-trip revalidation", () => {
     expect(await eligibleForReplay({
       ...event, event: { ...event.event, payload: { trip_id: 99, trip_stop_id: 41, recipient_name: "Demo" } },
     })).toBe(false);
+    vi.mocked(stopScopedPodEnabled).mockReturnValue(false);
     expect(await eligibleForReplay({
       ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } },
     })).toBe(true);
@@ -87,6 +88,12 @@ describe("Driver assigned-trip revalidation", () => {
     expect(await eligibleForReplay({
       ...event, event: { ...event.event, payload: { trip_id: 21, recipient_name: "Legacy" } },
     })).toBe(false);
+  });
+
+  it("blocks a queued stop-scoped POD after the BE-05 feature flag is turned off", async () => {
+    vi.mocked(assignedTrip).mockResolvedValue(trip);
+    vi.mocked(stopScopedPodEnabled).mockReturnValue(false);
+    expect(await eligibleForReplay(event)).toBe(false);
   });
 
   it("rejects a mismatched terminal POD outcome", async () => {
