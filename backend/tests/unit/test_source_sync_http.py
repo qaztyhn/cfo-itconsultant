@@ -11,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.adapters.order_wire import SourceCancellation, SourceOrder
+from app.adapters.order_wire import SourceOrder
 from app.adapters.rest_adapter import RestMarketAdapter, SourceReadError
 from app.api.v1 import source_sync
 from app.core.errors import DomainError, install_error_handlers
@@ -50,34 +50,18 @@ def setup(
     monkeypatch.setenv("DEMO_SOURCE_KEY", "synthetic-only-key")
     reads: list[str] = []
 
-    async def pages(
-        self: RestMarketAdapter,
-        entity: str,
-        since: object,
-        model: type[SourceOrder] | type[SourceCancellation],
-        *,
-        key_fields: tuple[str, ...],
-        page_size: int,
-        filters: dict[str, str],
-    ):
-        del self, since, key_fields, page_size
-        assert entity == "orders"
-        reads.append(filters["status"])
-        if failure:
+    async def fetch(self: RestMarketAdapter, external_ref: str) -> SourceOrder | None:
+        del self
+        reads.append(external_ref)
+        if failure or source_status == "conflict":
             raise SourceReadError("Remote Source returned secret-only-error")
-        if model is SourceOrder and source_status in {"submitted", "conflict"}:
-            yield SourceOrder.model_validate(order("POS-SE-123"))
-        if model is SourceCancellation and source_status in {"cancelled", "conflict"}:
-            yield SourceCancellation.model_validate(
-                {
-                    "id": "POS-SE-123",
-                    "version": 2,
-                    "status": "CANCELLED",
-                    "updated_at": "2026-11-04T09:06:00Z",
-                }
-            )
+        if source_status in {"missing", "cancelled"}:
+            return None
+        if source_status == "submitted":
+            return SourceOrder.model_validate(order("POS-SE-123"))
+        raise AssertionError("Unexpected source test state")
 
-    monkeypatch.setattr(RestMarketAdapter, "_pages", pages)
+    monkeypatch.setattr(RestMarketAdapter, "fetch_order_for_sync", fetch)
     calls: list[tuple[object, ...]] = []
 
     async def accept(session: object, user: object, source: SourceOrder, key: str) -> dict[str, object]:
@@ -114,7 +98,7 @@ def test_US_INT_01_AC2_exact_trusted_source_passed_to_DB_transaction(
         "sync_status": "synced",
         "already_decided": False,
     }
-    assert reads == ["SUBMITTED_FOR_PLANNING", "CANCELLED"]
+    assert reads == ["POS-SE-123"]
     assert len(calls) == 1
     assert calls[0][2].id == "POS-SE-123"
     assert calls[0][3] == str(UUID(KEY))
