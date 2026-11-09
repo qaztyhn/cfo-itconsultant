@@ -18,7 +18,6 @@ function describeError(error: unknown): string {
     if (error.status === 403 || error.code === "FORBIDDEN") return "You are not allowed to do this for this order.";
     return `${error.message} (${error.code})`;
   }
-  if (error instanceof Error && error.message.startsWith("The newest")) return error.message;
   if (error instanceof Error && error.message.startsWith("Invalid planning history")) return error.message;
   return "Could not reach the server. Check the order status before retrying.";
 }
@@ -46,17 +45,19 @@ export function OrderAction({ order }: { order: QueueOrder }) {
     }
   };
 
-  if (order.status === "PLANNED" || order.status === "SUBMITTED") {
-    const planned = order.status === "PLANNED";
-    const label = planned ? "Plan review" : "Run planning";
+  if (order.status === "PLANNED" || order.status === "SUBMITTED" || order.status === "NO_FEASIBLE_DATE") {
+    const submitted = order.status === "SUBMITTED";
+    const noFeasible = order.status === "NO_FEASIBLE_DATE";
+    const label = submitted ? "Run planning" : noFeasible ? "Review diagnostics" : "Plan review";
     return (
       <div className="flex flex-col items-start gap-1">
         <button type="button" disabled={pending} aria-label={`${label} for order ${order.orderNo}`} className={button}
-          onClick={() => void (planned
-            ? run(() => findLatestRunId(order.id), "No planning run was found for this order. Refresh the queue and try again.")
-            : run(() => startPlanning(order.id), "The server did not return a planning run. Refresh the queue to check the order."))}>
+          onClick={() => void (submitted
+            ? run(() => startPlanning(order.id), "The server did not return a planning run. Refresh the queue to check the order.")
+            : run(() => findLatestRunId(order.id), "No planning run was found for this order. Refresh the queue or review Exceptions."))}>
           {pending ? "Working…" : label}
         </button>
+        {noFeasible && <Link to={`${PATHS.dispatcherExceptions}?tab=no-feasible`} className="text-xs font-semibold text-pine underline">Exceptions</Link>}
         {error && <span role="alert" className="max-w-[16rem] text-xs text-risk-predictedLate-fg">{error}</span>}
       </div>
     );
