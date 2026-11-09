@@ -50,6 +50,8 @@
 | [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md) | **WMS là nguồn sự thật duy nhất về xuất/nhập/chuyển kho và tồn thực tế**; CFO chỉ đọc batch tồn kho đầy đủ/mới, quản lý hold/committed reservations của riêng CFO, không đối soát chứng từ vật lý hay có hàng đợi đối soát WMS riêng | 09/11 | Owner: “cfo chỉ lấy dữ liệu từ wms nhé. sao phải quản lý mấy cái này” | Đã chốt ranh giới; Dev 1/2 phải sửa contract/PR #127 trước khi merge |
 | [DEC-T18-WMS-RECON-20261109](decisions/DEC_STOCK_BOOTSTRAP_AND_WMS_RECON_20261109.md) | **Đã thay thế**: trước đó đề xuất CFO tự đối soát chứng từ WMS; Owner làm rõ chỉ WMS quản lý chuyển kho, CFO đọc snapshot và không đếm trùng | 09/11 | Owner: “đồng ý” với Q2 | **Superseded** bởi DEC-WMS-READONLY-20261109 |
 
+| [ASM-WMS-RESERVATION-20261109](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md) | Owner cho phép **giả định WMS cũ hỗ trợ giữ hàng (reservation)**; giữ hàng làm giảm available, không giảm on-hand cho đến khi WMS xuất thực | 09/11 | Owner: “assume là có đi” khi được hỏi WMS có reservation không | **Giả định đã chốt; API thực tế chưa xác minh; CFO→WMS ghi reservation CHƯA được duyệt** |
+
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
 ### Cách ghi nhận quyết định mới — bắt buộc
@@ -554,3 +556,10 @@
 - Quy trình transfer do CFO đề xuất trong #127 cần review lại: chỉ có thể giữ phần gợi ý/yêu cầu không mang thẩm quyền WMS; các xác nhận xuất/nhập hoặc reconciliation CFO không được triển khai như nguồn sự thật tồn kho khi chưa đổi hợp đồng.
 - **Không còn cần Owner duyệt Q3 cảnh báo 24 giờ cho 'chuyển kho chưa đối soát' trong CFO**; việc WMS có lệch chứng từ thuộc WMS. Giữ cảnh báo stale stock / failed sync ở tích hợp.
 - [Biên bản chi tiết](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). Q1 về Stock Admin chỉ quản trị scope/chứng cứ cấu hình CFO, không điều hành tồn kho vật lý WMS.
+
+## ASM-WMS-RESERVATION-20261109 — Giả định WMS có chức năng giữ hàng
+
+- **Chốt giả định bởi Owner ngày 09/11/2026:** WMS cũ hỗ trợ giữ hàng theo đơn (reservation). WMS vẫn là nguồn sự thật về lượng tồn vật lý và lượng đã giữ; chỉ trừ **available** khi reserve, chỉ giảm **on-hand** khi WMS xuất hàng thật.
+- CFO **không được trừ hai lần** reservation đã phản ánh trong WMS available. Khi WMS đã giữ 60 từ 100, số khả dụng WMS là 40, không phải 40 trừ tiếp 60. Tạm giữ nội bộ CFO cần có ranh giới/đối chiếu với WMS để tránh cam kết trùng.
+- Owner mới đặt câu hỏi về phương án CFO **gửi yêu cầu reservation sang WMS**; đây sẽ là **ngoại lệ ghi dữ liệu** so với [DEC-WMS-READONLY-20261109](decisions/DEC_WMS_READ_ONLY_STOCK_AUTHORITY_20261109.md). **Chưa được coi là phê duyệt write API.** Dev 1/2 phải kiểm chứng WMS có API và đề xuất hợp đồng reserve/confirm/release, ACK tức thời, idempotency, timeout và rollback/compensation; không cho phép CFO xuất hàng hoặc sửa tồn vật lý.
+- [Biên bản](decisions/ASM_WMS_RESERVATION_ASSUMED_20261109.md). Không triển khai code/lấy credential/migration trước review và xác nhận quyền ghi cụ thể.
