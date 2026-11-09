@@ -5,20 +5,22 @@ a persisted dispatcher-to-trip assignment, which is not yet in the approved DB:
 the APIs therefore fail closed, never fall back to market-wide access.
 """
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.actions import Action
+from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.config import MarketConfig
 from app.core.errors import DomainError
 from app.domain.models.ops import Alert, DeliveryTrip, VehiclePosition
 from app.domain.models.ref import ComplianceRecord, Location, Market
 from app.services import alert_service
-from app.services.gps_duty import active_duty
+from app.services.gps_duty import active_duty, trip_collection_windows
 
 
 def _aware(value: datetime) -> datetime:
@@ -210,44 +212,131 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
     raise DomainError("FORBIDDEN", "Verified dispatcher-to-trip assignment is unavailable.")
 
 
-async def purge_trip_on_terminal(session: AsyncSession, trip_id: int, *, now: datetime | None = None) -> int:
-    """Dev 1 hook: after terminal transition, before transaction commit.
-
-    Also allows cleanup when the driver shift ended or GPS is disabled;
-    refuses to delete an actively authorized session by mistake.
-    """
-    when = _aware(now if now is not None else clock.now())
-    trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
-    if trip is None:
-        raise DomainError("NOT_FOUND", "Trip not found.")
-    if trip_id in await active_duty(session, now=when):
-        raise DomainError("NOT_ON_TRIP", "Cannot purge an active GPS tracking session.")
-    removed = await session.scalars(
-        delete(VehiclePosition).where(VehiclePosition.trip_id == trip_id).returning(VehiclePosition.id)
-    )
-    return len(removed.all())
+RETENTION = timedelta(days=7)  # DEC-GPS-RET-20261109: absolute 7 x 24 h, never wall-clock/DST based
 
 
-async def purge_expired(*, session: AsyncSession | None = None, now: datetime | None = None) -> int:
-    """D3 compensating cleanup: invalid duty points are purged immediately, not after 30 days."""
-    if session is None:
-        raise DomainError("PLAN_NOT_APPROVABLE", "GPS cleanup requires a transaction.")
-    when = _aware(now if now is not None else clock.now())
-    duty = await active_duty(session, now=when)
-    authorized = or_(
+def _valid_points(windows: Mapping[int, tuple[datetime, datetime]]) -> ColumnElement[bool]:
+    return or_(
         False,
         *(
             and_(
                 VehiclePosition.trip_id == trip_id,
                 VehiclePosition.recorded_at >= start,
                 VehiclePosition.recorded_at < end,
-                VehiclePosition.recorded_at <= when,
             )
-            for trip_id, (start, end) in duty.items()
+            for trip_id, (start, end) in windows.items()
         ),
     )
-    removed = await session.scalars(delete(VehiclePosition).where(~authorized).returning(VehiclePosition.id))
+
+
+async def close_trip_collection(session: AsyncSession, trip_id: int, *, now: datetime | None = None) -> int:
+    """Terminal hook for Dev 1 (replaces the immediate raw-GPS delete): runs in the completion transaction.
+
+    Locks the trip row (serialising a late offline upload), refuses an active session, and removes only
+    INVALID points (outside the verified collection window). Valid points stay for the 7-day retention and
+    are no longer readable live: live read is already tied to an active duty session. Idempotent.
+    """
+    when = _aware(now if now is not None else clock.now())
+    trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
+    if trip is None:
+        raise DomainError("NOT_FOUND", "Trip not found.")
+    if trip_id in await active_duty(session, now=when):
+        raise DomainError("NOT_ON_TRIP", "Cannot close an active GPS tracking session.")
+    windows = await trip_collection_windows(session, [trip_id])
+    removed = await session.scalars(
+        delete(VehiclePosition)
+        .where(VehiclePosition.trip_id == trip_id, ~_valid_points(windows))
+        .returning(VehiclePosition.id)
+    )
     return len(removed.all())
+
+
+async def purge_expired(*, session: AsyncSession | None = None, now: datetime | None = None) -> int:
+    """Idempotent cleanup: (1) points older than 7 days, (2) invalid points immediately.
+
+    Invalid = outside the verified duty/trip window of the point's trip (also for finished trips).
+    Valid points of finished trips are kept until `recorded_at + 7 days`, which is never later than
+    the collection-window end + 7 days. POD, milestones and duty/rest evidence are never touched.
+    """
+    if session is None:
+        raise DomainError("PLAN_NOT_APPROVABLE", "GPS cleanup requires a transaction.")
+    when = _aware(now if now is not None else clock.now())
+    expired = await session.scalars(
+        delete(VehiclePosition)
+        .where(VehiclePosition.recorded_at < when - RETENTION)
+        .returning(VehiclePosition.id)
+    )
+    count = len(expired.all())
+    trip_ids = [t for (t,) in (await session.execute(select(VehiclePosition.trip_id).distinct())).all()]
+    windows = await trip_collection_windows(session, trip_ids)
+    invalid = await session.scalars(
+        delete(VehiclePosition).where(~_valid_points(windows)).returning(VehiclePosition.id)
+    )
+    return count + len(invalid.all())
+
+
+HistoryAuthorizer = Callable[[AsyncSession, object, DeliveryTrip], Awaitable[bool]]
+
+
+async def _deny(_session: AsyncSession, _actor: object, _trip: DeliveryTrip) -> bool:
+    return False
+
+
+async def read_history(
+    session: AsyncSession,
+    actor: object,
+    trip_id: int,
+    *,
+    case_ref: str,
+    reason: str,
+    authorizer: HistoryAuthorizer = _deny,
+    now: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Restricted post-trip investigation read (DEC-GPS-RET-20261109); NOT the live dispatcher path.
+
+    Needs an explicit case and reason, an authorised reviewer for that market/trip, and writes an immutable
+    audit row (no coordinates) in the same transaction. The reviewer-authority source is not approved yet,
+    so the default authorizer DENIES: nothing is readable until a reviewed authorizer is wired in.
+    """
+    when = _aware(now if now is not None else clock.now())
+    user_id = getattr(actor, "id", None)
+    if not isinstance(user_id, int) or not case_ref.strip() or not reason.strip():
+        raise DomainError("VALIDATION_ERROR", "A case reference and a reason are required.")
+    row = (
+        await session.execute(
+            select(DeliveryTrip, Market)
+            .join(Location, Location.id == DeliveryTrip.warehouse_id)
+            .join(Market, Market.id == Location.market_id)
+            .where(DeliveryTrip.id == trip_id)
+        )
+    ).one_or_none()
+    if row is None or row[1].code.strip() != str(getattr(actor, "market", "")).strip():
+        raise DomainError("NOT_FOUND", "Trip not found.")
+    trip = row[0]
+    if not await authorizer(session, actor, trip):
+        raise DomainError("FORBIDDEN", "Historical GPS review is not authorized.")
+    points = (
+        await session.scalars(
+            select(VehiclePosition)
+            .where(VehiclePosition.trip_id == trip_id, VehiclePosition.recorded_at >= when - RETENTION)
+            .order_by(VehiclePosition.recorded_at)
+        )
+    ).all()
+    await record_decision(
+        session,
+        Action.GPS_HISTORY_ACCESSED,
+        "trip",
+        str(trip_id),
+        reason_code="investigation",
+        reason_text=reason.strip(),
+        snapshot={"case_ref": case_ref.strip(), "points": len(points)},
+        actor_user_id=user_id,
+        actor_employee_id=getattr(actor, "employee_id", None),
+        actor_role=next(iter(getattr(actor, "roles", ())), None),
+    )
+    return [
+        {"recorded_at": p.recorded_at.isoformat(), "lat": float(p.lat), "lon": float(p.lon)} for p in points
+    ]
 
 
 def _lost_key(trip_id: int) -> str:

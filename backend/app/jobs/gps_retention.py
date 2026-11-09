@@ -1,37 +1,22 @@
-"""D3 / US-GPS-03 AC2: retain raw GPS only within a currently authorized on-road duty session.
+"""D3 / US-GPS-03 AC2 (DEC-GPS-RET-20261109): raw GPS retention job.
 
-Repair/cleanup callable, not a promise of immediate terminal-workflow integration. Dev 1 must call
-cleanup in the completion transaction; scheduler D8 and device/backup erasure are separate handoffs.
+Invalid points (outside the verified duty/trip window) are removed immediately; valid collected points are
+kept at most 7 days (absolute 168 h) and then deleted. Idempotent; the schedule itself (D8) stays unapproved,
+so nothing here activates a production cron. Device/offline-queue and backup erasure are separate handoffs.
 """
 
 from datetime import datetime
 
-from sqlalchemy import and_, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock
 from app.core.db import get_sessionmaker
 from app.core.logging import log_event
-from app.domain.models.ops import VehiclePosition
-from app.services.gps_duty import active_duty
+from app.services import gps_service
 
 
 async def purge_positions(session: AsyncSession, *, now: datetime) -> int:
-    duty = await active_duty(session, now=now)
-    authorized = or_(
-        False,
-        *(
-            and_(
-                VehiclePosition.trip_id == trip_id,
-                VehiclePosition.recorded_at >= begins,
-                VehiclePosition.recorded_at < ends,
-                VehiclePosition.recorded_at <= now,
-            )
-            for trip_id, (begins, ends) in duty.items()
-        ),
-    )
-    deleted = await session.scalars(delete(VehiclePosition).where(~authorized).returning(VehiclePosition.id))
-    return len(deleted.all())
+    return await gps_service.purge_expired(session=session, now=now)
 
 
 async def run() -> int:

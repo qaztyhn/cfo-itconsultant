@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [GPS — lưu raw tối đa 7 ngày thay cho xóa ngay (DEC-GPS-RET-20261109)] — 2026-11-09 — Dev 2 (#137)
+
+- `gps_service.close_trip_collection()` thay `purge_trip_on_terminal`: hook cuối chuyến (Dev 1 gọi trong transaction hoàn tất) khóa chuyến, chặn upload muộn, **chỉ xóa điểm không hợp lệ** (ngoài ca chính thức/ngoài khoảng chuyến); điểm hợp lệ được giữ để tra soát tối đa 7 ngày. **Dev 1 cần bỏ lệnh `DELETE vehicle_position` trực tiếp ở `execution_service` (#129) và gọi hook này.**
+- `gps_service.purge_expired()` / job `gps_retention`: idempotent; xóa điểm cũ hơn 7×24 giờ tuyệt đối (không theo giờ treo tường/DST) và điểm không hợp lệ ngay lập tức, kể cả chuyến đã kết thúc. Không đụng POD, milestone, duty/rest, audit. Không bật cron production (D8 chưa duyệt).
+- `gps_service.read_history()`: đọc lịch sử chỉ để tra soát — bắt buộc `case_ref` + `reason`, người duyệt được ủy quyền, ghi `GPS_HISTORY_ACCESSED` (không có tọa độ) cùng transaction. **Nguồn quyền người duyệt chưa được duyệt nên mặc định TỪ CHỐI; chưa có route HTTP.** Đọc live vẫn fail closed (chờ gán Dispatcher–chuyến của Dev 1/G1). `raw_gps` trong retention policy: 7 ngày.
+- Chưa làm: xóa hàng đợi offline phía thiết bị, backup/cache/export, privacy/DPIA/legal sign-off cho GPS người thật.
+
 
 
 ## [DEC-WMS-RESERVE-SYNC-20261109] — 2026-11-09 — owner-approved business workflow, docs-only
