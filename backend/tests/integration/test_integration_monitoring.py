@@ -4,18 +4,18 @@ The api fixture applies Alembic to an isolated database and authenticates
 against database-backed user roles; no SQLite/mock database substitutes.
 """
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 import asyncpg
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.deps import CurrentUser
 from app.services import integration_monitor_service as monitor
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
-from tests.integration.api_harness import Api, api as api_fixture, assert_error
-from tests.integration.conftest import async_url, execute, fetch
 from tests.integration import rows
+from tests.integration.api_harness import Api, assert_error
+from tests.integration.api_harness import api as api_fixture
+from tests.integration.conftest import async_url, execute
 
 pytestmark = pytest.mark.integration
 
