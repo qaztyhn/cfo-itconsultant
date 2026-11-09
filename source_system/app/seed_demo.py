@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import create_engine
-from app.models import Address, Inbound, Order, OrderLine, Product, VehicleCalendar
+from app.models import Address, Customer, Inbound, Order, OrderLine, Product, VehicleCalendar
 from app.seed_reference import (
     seed_catalog,
     seed_customers,
@@ -71,7 +71,7 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
     inserted = 0
     for spec in data["orders"] + data["completed_orders"]:
         key = str(spec["id"])
-        customer = await session.get(__import__("app.models", fromlist=["Customer"]).Customer, spec["customer_id"])
+        customer = await session.get(Customer, spec["customer_id"])
         address = await session.get(Address, spec["address_id"])
         if customer is None or address is None or address.customer_id != customer.id:
             raise ValueError("Unknown/mismatched demo customer and address")
@@ -113,7 +113,9 @@ async def _orders(session: AsyncSession, data: dict[str, Any], now: datetime) ->
             product = await session.get(Product, line["sku"])
             if product is None:
                 raise ValueError(f"Missing SKU for demo order: {key}")
-            expected.append((int(line["line_no"]), product.sku, Decimal(str(line["qty"])), product.unit_price))
+            expected.append(
+                (int(line["line_no"]), product.sku, Decimal(str(line["qty"])), product.unit_price)
+            )
         if existing is not None:
             if [(v.line_no, v.sku, v.qty, v.unit_price) for v in actual] != expected:
                 raise ValueError(f"Conflicting source order lines: {key}")
