@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock
+from app.core.config import MarketConfig
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
 from app.domain.models.hr import (
@@ -37,11 +38,19 @@ from app.domain.models.ops import (
     TripStop,
 )
 from app.domain.models.plan import FulfilmentPlan, PlanVehicle
-from app.domain.models.ref import Location, Market, Vehicle
+from app.domain.models.ref import Location, Market, MarketHoliday, Vehicle
 from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
-from app.engine.delivery import LICENCE_RANK
-from app.services import alert_service, gps_service, notify_service, planning_service, risk_service
+from app.engine.delivery import LICENCE_RANK, driver_problem
+from app.engine.types import DriverCtx, VehicleCtx
+from app.services import (
+    alert_service,
+    driver_history,
+    gps_service,
+    notify_service,
+    planning_service,
+    risk_service,
+)
 
 WAREHOUSE_EVENTS = frozenset(
     {
@@ -362,6 +371,7 @@ async def _driver_gate(
         )
     ).all()
     valid_shift = False
+    shift_intervals: list[tuple[datetime, datetime]] = []
     for row, template in rows:
         start = row.start_time or (template.start_time if template else None)
         end = row.end_time or (template.end_time if template else None)
@@ -373,25 +383,68 @@ async def _driver_gate(
         finish = datetime.combine(row.work_date + timedelta(days=int(end < start)), end, zone)
         if any(t.replace(fold=0).utcoffset() != t.replace(fold=1).utcoffset() for t in (begin, finish)):
             continue
+        shift_intervals.append((begin, finish))
         if begin <= local < finish:
             valid_shift = True
     if not valid_shift:
         raise DomainError("PLAN_NOT_APPROVABLE", "Event is outside the verified official driver shift.")
-    history = (
+    # Same verified-history proof and the same engine rules as planning and T16 approval (D7-2/D7-3):
+    # complete 56-day evidence, then official shift, 11 h rest, working-time and driving limits.
+    proof = await driver_history.load_proof(session, employee.id, market.code.strip(), zone, occurred_at)
+    if not proof.complete:
+        raise DomainError(
+            "PLAN_NOT_APPROVABLE",
+            "Driver 56-day history completeness is not verified: " + ",".join(proof.reasons),
+        )
+    logged = (
         await session.scalars(
             select(DriverDutyLog).where(
                 DriverDutyLog.employee_id == employee.id,
-                DriverDutyLog.duty_end >= occurred_at - timedelta(days=56),
+                DriverDutyLog.duty_end >= occurred_at - timedelta(days=1),
                 DriverDutyLog.duty_start < occurred_at,
             )
         )
     ).all()
-    if history and any(0 <= (occurred_at - duty.duty_end).total_seconds() < 11 * 3600 for duty in history):
-        raise DomainError("PLAN_NOT_APPROVABLE", "Required 11-hour driver rest is not verified.")
-    # Database stores observed duty intervals, but has no evidence that the
-    # last 56 days were reported completely (see planning_inputs.py §Q12b).
-    # A nonempty duty log is *not* permission to drive.
-    raise DomainError("PLAN_NOT_APPROVABLE", "Driver 56-day history completeness is not verified.")
+    today_driving = sum(
+        log.driving_min for log in logged if log.duty_start.astimezone(zone).date() >= local.date()
+    )
+    logged_duty = {(log.duty_start, log.duty_end) for log in logged}
+    ctx = DriverCtx(
+        employee_id=employee.id,
+        licence_class=driver.licence_class,  # type: ignore[arg-type]
+        licence_expires_on=driver.licence_expires_on,
+        available_days=frozenset({local.date()}),
+        booked_hours_by_day={},
+        busy=(),
+        shifts=tuple(sorted(shift_intervals)),
+        duty_history=tuple(sorted({*proof.duty_history, *logged_duty})),
+        driving_min_by_day={**proof.driving_min_by_day, local.date(): today_driving},
+        driving_min_week=proof.driving_min_week + today_driving,
+        driving_min_fortnight=proof.driving_min_fortnight + today_driving,
+        history_complete=True,
+    )
+    veh = VehicleCtx(
+        id=vehicle.id,
+        code=vehicle.code,
+        capacity_kg=vehicle.capacity_kg,
+        capacity_m3=vehicle.capacity_m3,
+        capabilities=frozenset(),
+        required_licence=vehicle.required_licence,  # type: ignore[arg-type]
+        allowed_group_codes=frozenset(),
+        busy=(),
+        regulation_561={"in_scope": True, "out_of_scope": False}.get(vehicle.regulation_561_scope),
+    )
+    holidays = (
+        await session.scalars(
+            select(MarketHoliday.holiday_date).where(
+                MarketHoliday.market_id == market.id, MarketHoliday.holiday_date == local.date()
+            )
+        )
+    ).all()
+    cfg = planning_service.engine_config(MarketConfig.model_validate(market.config or {}), holidays)
+    problem = driver_problem(ctx, veh, occurred_at, occurred_at, cfg, 0)
+    if problem is not None:
+        raise DomainError("PLAN_NOT_APPROVABLE", f"Driver is not eligible to operate ({problem}).")
 
 
 async def record_event(
