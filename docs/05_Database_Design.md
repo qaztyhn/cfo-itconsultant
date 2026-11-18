@@ -1154,11 +1154,22 @@ All rows also have `created_at` and `updated_at`; migration 0014 owns constraint
 ### 13.1 Enum và ràng buộc
 
 ```sql
--- R3-DB-1: check-in tài xế chỉ gửi trạng thái (DEC-R3-01)
-ALTER TYPE ops.event_type ADD VALUE IF NOT EXISTS 'DRIVER_STATUS';
--- payload DRIVER_STATUS: {"trip_id": int, "status": "ON_SCHEDULE"|"DELAYED"|"AT_STOP", "delay_min": int|null}
---   delay_min bắt buộc và trong 1..480 khi status = DELAYED, phải null ở trạng thái khác.
---   Không có khóa vị trí: service từ chối payload chứa lat/lon/latitude/longitude/position/coords/accuracy.
+-- R3-DB-1: vị trí do tài xế chủ động gửi + báo sự cố (DEC-R3-01, sửa lần 2)
+ALTER TYPE ops.event_type ADD VALUE IF NOT EXISTS 'DRIVER_INCIDENT';
+-- payload DRIVER_INCIDENT: {"trip_id": int, "reason": "vehicle_breakdown"|"traffic_or_accident"|"site_inaccessible"|"other", "note": text|null}
+--   note bắt buộc khi reason = 'other'. Tọa độ KHÔNG nằm trong payload milestone/audit/notification (quy tắc D3);
+--   vị trí kèm theo (nếu có) ghi vào ops.vehicle_position trong cùng transaction.
+ALTER TABLE ops.vehicle_position DROP CONSTRAINT IF EXISTS vehicle_position_source_check;
+ALTER TABLE ops.vehicle_position ADD CONSTRAINT vehicle_position_source_check
+  CHECK (source IN ('device','simulator','driver_tap','driver_incident','driver_completion'));
+ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS remaining_km numeric(7,1);   -- tính lúc nhận, tới điểm giao
+ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS remaining_min int;
+ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS route_source text CHECK (route_source IN ('ors','haversine_estimate'));
+-- Mỗi DELIVERED/FAILED phải có đúng một dòng source='driver_completion' cho chuyến đó (kiểm ở service, cùng transaction).
+-- Xóa vị trí sau tối đa 7 ngày (job retention), như DEC-GPS-RET-20261109.
+ALTER TABLE ops.proof_of_delivery ADD COLUMN IF NOT EXISTS site_distance_m int;        -- khoảng cách vị trí lúc hoàn tất tới địa chỉ giao
+ALTER TABLE ops.delivery_trip ADD COLUMN IF NOT EXISTS assigned_dispatcher_employee_id bigint REFERENCES hr.employee(id);
+-- Quy tắc gán Dispatcher cho chuyến: CHỜ OWNER CHỐT. NULL = không ai xem vị trí của chuyến (fail-closed).
 -- PREP_PAUSED, PREP_RESUMED vẫn còn trong enum nhưng service từ chối ghi mới (DEC-R3-08).
 
 -- R3-DB-2: chỉ email (DEC-R3-02). Giữ giá trị 'sms_sim' trong enum; chặn dòng mới.
@@ -1257,4 +1268,4 @@ ALTER TABLE audit.improvement_log ADD COLUMN IF NOT EXISTS order_to_commit_min i
 - `approval_path` = vai trò của người duyệt kế hoạch hiện hành (từ `decision_log`); kế hoạch tay luôn `dispatcher`.
 - `prep_actual_min = GOODS_READY − START_PREP` (DEC-R3-08); `labour_segments` không còn được ghi mới.
 - `audit.kpi_baseline` không nhận `eta_error_min` (KPI tuyệt đối).
-- Snapshot ETA: mỗi lần tính lại vẫn là một dòng `ops.eta_forecast`; `trigger` thêm giá trị `event:DRIVER_STATUS`, bỏ `gps`.
+- Snapshot ETA: mỗi lần tính lại vẫn là một dòng `ops.eta_forecast`; `trigger` dùng `position` (tài xế gửi vị trí) và `event:DRIVER_INCIDENT`; không có trigger theo chu kỳ.
