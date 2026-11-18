@@ -6,7 +6,7 @@
   `planning_run.kind` thêm `remaining_replan` + `remaining_lines`; bảng mới `hr.warehouse_day_capacity`,
   `hr.driver_availability`, `hr.driver_vehicle_eligibility`; `improvement_log.approval_path`, `order_to_commit_min`.
   Không DROP bảng/enum cũ; cần forward migration mới.
-- `06` mục 19: ma trận quyền Sales trong phạm vi (rank 1–3, chạy lại, thỏa thuận ngày; không manual/tight/replan sau thực thi/DELAY);
+- `06` mục 19: ma trận quyền Sales trong phạm vi (rank 1–3, chạy lại, thỏa thuận ngày; chỉ cần khả thi, không tick lịch sát; không manual/replan sau thực thi/DELAY);
   sự kiện `DRIVER_STATUS` (cấm trường vị trí), bỏ `PREP_PAUSED`/`PREP_RESUMED`; FAILED/VEHICLE_ISSUE chỉ alert
   (`DELIVERY_FAILED`), `replan` có `scope=remaining`; `/warehouses/{id}/day-capacity`; nguồn `/fleet/driver-availability`,
   `/fleet/driver-eligibility`; email-only + cờ `NOTIFY_DISPATCHED_ENABLED`; KPI 5 metric + `by_path`;

@@ -990,7 +990,7 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 | Lập kế hoạch, **đổi tiêu chí/chạy lại** (`POST /orders/{id}/plan` có body) | **W** | **W** (đơn cửa hàng mình, trước duyệt) | — | — | — |
 | Duyệt rank 1–3 (`POST /plans/{id}/approve`) | **W** | **W** (đơn cửa hàng mình; rank 2–3 bắt buộc `reason_code`) | — | — | — |
 | Thương lượng ngày (`/orders/{id}/date-negotiations`, apply agreed date) | **W** | **W** (đơn cửa hàng mình, trước duyệt) | — | — | — |
-| Kế hoạch tay, override, chấp nhận lịch sát (`accept_tight`) | **W** | — (403) | — | — | — |
+| Kế hoạch tay, override | **W** | — (403) | — | — | — |
 | `POST /orders/{id}/replan` (mọi `scope`), `POST /orders/{id}/cancel` sau duyệt | **W** | — (403) | — | — | — |
 | Gửi/bỏ `DELAY` | **W** | — (403) | — | — | — |
 | `POST /orders/{id}/events` `DRIVER_STATUS` | — | — | — | **W** (chuyến mình) | — |
@@ -1007,7 +1007,7 @@ Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành độ
 { "reason_code": "customer_prefers_earlier_slot", "reason_text": "…", "accept_tight": false }
 ```
 - Rank 1: `reason_*` tùy chọn. Rank 2–3: thiếu `reason_code` → `422 REASON_REQUIRED` (cả hai vai trò).
-- Sales: `accept_tight=true` → `403 FORBIDDEN`; phương án cần chấp nhận lịch sát → `409 PLAN_NOT_APPROVABLE`. Phương án nhiều xe được phép.
+- Sales: phương án qua đủ 5 gate là duyệt được, kể cả lịch sát; server bỏ qua yêu cầu `accept_tight` khi người duyệt là Sales và response cho Sales không hiển thị nhãn "tight" (chỉ khả thi/không khả thi). Phương án nhiều xe được phép.
 - Các lỗi còn lại như §6.3: `HOLD_EXPIRED`, `RESOURCE_CONFLICT`, `IDEMPOTENCY_CONFLICT`. `decision_log PLAN_APPROVED` ghi `actor_role`, `rank`, `reason_code`.
 
 ### 19.3 Sự kiện thực thi (thay một phần §8.1)
