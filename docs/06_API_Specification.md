@@ -1004,10 +1004,10 @@ Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành độ
 ### 19.2 `POST /plans/{id}/approve` (thay §6.3a)
 
 ```json
-{ "reason_code": "customer_prefers_earlier_slot", "reason_text": "…", "accept_tight": false }
+{ "reason_code": "customer_prefers_earlier_slot", "reason_text": "…" }
 ```
 - Rank 1: `reason_*` tùy chọn. Rank 2–3: thiếu `reason_code` → `422 REASON_REQUIRED` (cả hai vai trò).
-- Sales: phương án qua đủ 5 gate là duyệt được, kể cả lịch sát; server bỏ qua yêu cầu `accept_tight` khi người duyệt là Sales và response cho Sales không hiển thị nhãn "tight" (chỉ khả thi/không khả thi). Phương án nhiều xe được phép.
+- **Không còn `accept_tight`** cho mọi vai trò: phương án qua đủ 5 gate là duyệt được, kể cả `reserve_class = tight`; trường `accept_tight` trong request bị bỏ qua. `reserve_class` vẫn được tính để xếp hạng và theo dõi rủi ro, không phải điều kiện duyệt. Phương án nhiều xe được phép cho cả hai vai trò.
 - Các lỗi còn lại như §6.3: `HOLD_EXPIRED`, `RESOURCE_CONFLICT`, `IDEMPOTENCY_CONFLICT`. `decision_log PLAN_APPROVED` ghi `actor_role`, `rank`, `reason_code`.
 
 ### 19.3 Sự kiện thực thi (thay một phần §8.1)
@@ -1026,7 +1026,7 @@ Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành độ
 - Chuyến không phải của mình → `404`; chuyến không `on_road` → `409 NOT_ON_TRIP`. `Idempotency-Key` bắt buộc; trùng → kết quả cũ, không thêm snapshot.
 - Sau khi ghi: `RiskService.recalculate(trigger="event:DRIVER_STATUS")` và trả `risk` như §8.1.
 
-ETA (pure engine `forecast`): gốc = `depart_actual_at` (DISPATCHED) + thời gian tuyến của chuyến; `ON_SCHEDULE` → giữ ETA gần nhất; `DELAYED X` → ETA gần nhất + X phút; `AT_STOP` → `occurred_at` + thời gian dỡ hàng kế hoạch. ETA đơn = ETA muộn nhất trong các chuyến chưa kết thúc. Mỗi lần tính lưu một `eta_forecast`.
+ETA (pure engine `forecast`): gốc = `depart_actual_at` (DISPATCHED) + thời gian tuyến của chuyến; `ON_SCHEDULE` → giữ ETA gần nhất; `DELAYED X` → ETA gần nhất + X phút; `AT_STOP` → `occurred_at` + thời gian dỡ hàng kế hoạch. ETA đơn = ETA muộn nhất trong các chuyến chưa kết thúc. Mỗi lần tính lưu một `eta_forecast`. **ETA chỉ tính lại khi có sự kiện mới** (duyệt, mốc kho, `DISPATCHED`, `DRIVER_STATUS`, `DELIVERED`/`FAILED`, nguồn sửa đơn); không có trigger theo giờ (`morning_check`) hay GPS. Job quá hạn chỉ tạo alert `OVERDUE` khi ETA hoặc mốc đã qua mà chưa có sự kiện, không ghi `eta_forecast` mới.
 
 `FAILED` và `VEHICLE_ISSUE` **không** tạo `replan_suggestion` (thay §6.6 và đoạn cuối §8.1):
 - `FAILED` theo chuyến: lưu POD `failed`. Khi **mọi chuyến của kế hoạch đã kết thúc và có ít nhất một chuyến failed** → đơn `FAILED` qua `transition()`, email `FAILED` cho khách, alert `DELIVERY_FAILED` (`level=critical`, `target_roles={dispatcher}`, `dedupe_key = 'DELIVERY_FAILED:<order_id>:<plan_id>'`, `details.trips = [{trip_id, result, failure_reason}]`).

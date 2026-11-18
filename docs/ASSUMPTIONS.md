@@ -712,7 +712,7 @@
 > **Superseded 2026-11-18:** chủ dự án chốt khác đề xuất (CFO tự gửi email, CS lookup ở CFO, Sales Cloud cơ bản). Xem [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md). Giữ nội dung dưới đây để truy vết.
 
 - **Ngày:** 2026-11-18 · **Người đề xuất:** nhóm Dev · **Người duyệt:** _chưa có_ · **Tình trạng triển khai:** chưa triển khai.
-- **Chi tiết:** [docs/proposals/CR_CRM_BUDGET_CUT_20261118.md](proposals/CR_CRM_BUDGET_CUT_20261118.md).
+- **Chi tiết:** bản đề xuất đã bị xóa ngày 18/11/2026 vì lỗi thời; quyết định có hiệu lực ở [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md).
 - **ASM-010 (proposed):** CRM mới là nguồn chuẩn khách hàng/liên hệ/địa điểm/giờ nhận hàng/consent; CFO đọc qua `CrmAdapter` (polling 5' + Sync now), lưu bản sao tối thiểu, khớp qua `ref.customer_xref`.
 - **ASM-011 (proposed):** Ngoại lệ ghi ra hệ thống ngoài: CFO chỉ phát sự kiện trạng thái đơn (CONFIRMED/DISPATCHED/DELIVERED/FAILED/DELAY_SENT/DATE_CHANGED) sang CRM qua outbox, idempotent, không GPS/điểm rủi ro/chi phí; CRM gửi email/SMS. Không thay đổi quy tắc không ghi POS/ERP/WMS.
 - **ASM-012 (proposed):** Hoãn GPS live (C1) và phát triển thêm WMS reserve/release (C2); ETA từ mốc + ma trận tuyến.

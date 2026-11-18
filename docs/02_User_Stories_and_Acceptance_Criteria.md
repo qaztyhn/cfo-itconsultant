@@ -267,7 +267,7 @@
 - AC4. *Given* hai dispatcher duyệt đồng thời hai đơn tranh một xe, *Then* đúng một thành công.
 - AC5. *Given* gửi lại cùng `Idempotency-Key`, *Then* trả kết quả cũ, không duyệt hai lần.
 - AC6. *Given* duyệt phương án rank > 1 mà không có `reason_code`, *Then* `422 REASON_REQUIRED`; ghi `ALT_SELECTED`.
-- AC7. *Given* `reserve_class = tight`, *Then* UI buộc dispatcher tick xác nhận rủi ro trước khi duyệt.
+- AC7. *(R3)* *Given* `reserve_class = tight` và phương án qua đủ 5 gate, *Then* Dispatcher hoặc Sales duyệt bình thường; không có tick xác nhận lịch sát.
 - AC8. *Given* ngày cam kết khác ngày khách đã đồng ý, *Then* cần `date_negotiation_id` (`agreed`), thiếu → `409 DATE_AGREEMENT_REQUIRED`.
 
 **US-APR-02 — Kế hoạch tay** · Là *dispatcher*, tôi tự lập khi hệ thống không phù hợp. · BR-APR-02

@@ -143,7 +143,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Banner gợi ý lập lại (v1.2):** khi mở Plan review từ alert `REPLAN_SUGGESTED`, đầu trang có banner nền `#FFF4EE`: "Suggested replan · <lý do: source change / stock changed / vehicle issue / delivery failed>. The current plan is ignored when computing this suggestion." Bên dưới tóm tắt kế hoạch hiện tại (kho, xe, ngày, ETA) để so sánh. Nút: **"Plan Again to approve"** (tạo run mới có hold, không duyệt trực tiếp suggestion) và **"Keep current plan"** (chỉ khi server hỗ trợ, cần lý do). `replan_suggestion` không có hold và không được Approve trực tiếp.
 - **Decision bar:** "**Approve the recommended plan** — Reserves 4 stock lines, 148 prep minutes at Göteborg on Tue 10 Nov and GBG-12-03 from 10:48 to 13:40 in one transaction (đơn nhiều xe: "…and 2 trucks (GBG-18-01, GBG-12-03)…"). The customer gets a confirmation; every decision is logged." Nút `apricot` **"Approve #1"** (bỏ số tiền). Khi chọn phương án khác trong card #2/#3: thanh đổi thành "Approve plan #2…" và mở modal lý do bắt buộc.
 - **Bộ đếm hold:** chip "Hold expires in 11:42" (mono), nút "Extend (+15 min, 2 left)". Hết hạn: chip cảnh báo, **khóa Approve**, chỉ cho Plan Again để tạo run/hold mới trên cùng order (DEC-HOLD-001).
-- **Khi `reserve_class = tight`:** hộp tick "I accept the tight schedule" bắt buộc trước khi Approve.
+- **Khi `reserve_class = tight` (R3):** không có tick xác nhận; người duyệt chỉ thấy khả thi/không khả thi.
 - **Khi duyệt `409 RESOURCE_CONFLICT`:** toast giữ lại + nút "Re-run plan".
 
 ### 5.3 — 03 No feasible date (dispatcher)

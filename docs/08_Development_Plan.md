@@ -63,7 +63,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 
 ### M5 — Giữ chỗ, duyệt, chuyển kho (phụ thuộc M4)
 - **A:** `ReservationService` (hold 15 phút, gia hạn ≤ 2, `hold_expiry`, **không khóa khi tạo giữ chỗ**), `ApprovalService` (transaction, khóa theo `04` mục 7 quy tắc 8 chỉ khi duyệt, kiểm tra lại, mỗi xe một trip/stop, `eta_forecast` v1, thông báo `CONFIRMED`), kế hoạch tay nhiều xe, **gợi ý lập lại tự động** (`replan_suggestion`, `keep-current`), lập lại/hủy **đóng kế hoạch cũ** (`superseded`, `released`, trip/stop `cancelled`), thương lượng ngày; `Idempotency-Key`; chuyển kho (`stock_transfer` và API).
-- **C:** nút Approve, `DecisionBar`, modal lý do, bộ đếm hold, Extend, tick "accept tight", kế hoạch tay nhiều xe, `VehicleList`, banner gợi ý lập lại; **Transfers** (5.A4); danh sách Plan review, Exceptions.
+- **C:** nút Approve, `DecisionBar`, modal lý do, bộ đếm hold, Extend, kế hoạch tay nhiều xe, `VehicleList`, banner gợi ý lập lại; **Transfers** (5.A4); danh sách Plan review, Exceptions.
 - **B:** thử tải đồng thời (hai dispatcher tranh xe, tranh cùng SKU, tranh cùng ngày công suất), seed cho kịch bản 5, 6, 9, 14.
 - **Xong khi:** AC của US-RES-01, US-APR-01..04, US-ATP-02/03, US-PLN-07, US-ORD-05 pass; test đồng thời đúng một bên thắng (xe, SKU, ngày công suất); EXCLUDE chặn đơn khác nhưng cho phép cùng đơn; lập lại sau duyệt rồi duyệt lại không bị `ux_one_approved_plan` chặn.
 
@@ -117,11 +117,11 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 Lệnh: `make seed` (`backend/app/seed/generate_data.py`, random seed cố định `20261104`). Đồng hồ demo: `APP_NOW=2026-11-04T10:05:00+01:00` (Thứ Tư 4/11/2026, Europe/Stockholm).
 
 ### 5.1 Hạ tầng
-- **Market SE:** timezone `Europe/Stockholm`, `currency SEK`, `locale en`, `gps_enabled = true` (demo), `shadow_mode = false`, `config` mặc định ở `04` mục 8. Ngày lễ Thụy Điển từ thư viện `holidays`.
-- **3 kho:** Göteborg DC (`GBG`, 57.7089, 11.9746, cut-off 15:00), Stockholm DC (`STO`, 59.3293, 18.0686, cut-off 15:00), Malmö DC (`MLM`, 55.6050, 13.0038, cut-off 15:00).
-- **25 cửa hàng** (`ST-001…ST-025`) quanh ba vùng (ví dụ Store Göteborg Väst, Store Uppsala, Store Malmö City…) với toạ độ gần đúng; `type = store`; owner mặc định là quản lý cửa hàng.
+- **Market SE:** timezone `Europe/Stockholm`, `currency SEK`, `locale en`, `gps_enabled = false` (R3), `shadow_mode = false`, `config` mặc định ở `04` mục 8. Ngày lễ Thụy Điển từ thư viện `holidays`.
+- **2 kho (R3):** Göteborg DC (`GBG`, 57.7089, 11.9746, cut-off 15:00), Stockholm DC (`STO`, 59.3293, 18.0686, cut-off 15:00). Malmö DC không còn trong pilot.
+- **10 cửa hàng (R3)** (`ST-001…ST-010`) quanh hai vùng Göteborg và Stockholm, toạ độ gần đúng; `type = store`; owner mặc định là quản lý cửa hàng.
 - **Trụ sở và điều phối:** 1 `dispatch_center`, 1 `head_office`.
-- **Ca mẫu mỗi kho** (T2–T6): Ca 1 06:00–14:00 (6–8 người), Ca 2 14:00–22:00 (4–6 người); `useful_hours_per_staff = 7.0` (ca 8 giờ).
+- **Công suất ngày mỗi kho (R3):** seed `hr.warehouse_day_capacity` đã xác nhận cho T2–T6: ca AM 06:00–14:00 (6–8 người), ca PM 14:00–22:00 (4–6 người), 7,0 giờ hữu ích/người. Không seed lịch từng nhân viên, không điểm danh.
 - **Thiết bị kho:** không seed (ngoài MVP v1.1); giả định mọi kho đủ thiết bị. Năng lực cẩu/ben nằm ở xe (mục 5.3).
 
 ### 5.2 Sản phẩm (~100 SKU)
@@ -131,7 +131,7 @@ SKU thiết kế dùng làm mẫu: SE-BRD-GYP-13 (Gypsum board 13 × 900 × 2500
 ### 5.3 Xe và tài xế
 8–10 xe, mã dạng `<KHO>-<tải>-<số>`: Van có **khối lượng tối đa được phép 3.500 kg** (thông số tải hàng `capacity_kg` phải nhỏ hơn và có căn cứ synthetic về khối lượng xe rỗng; không còn mặc định xe chở 3.500 kg hàng); Truck 12 t (`max_permissible_mass_kg=12000`, ví dụ GBG-12-03, STO-12-04, MLM-12-02), Truck 18 t (`18000`, GBG-18-01, MLM-18-01), Truck 26 t (`26000`, GBG-26-01), Crane truck (STO-CR-01, năng lực `crane`), Tipper (MLM, `dump`, N4). Các thông số ví dụ đều là **synthetic**, tải hàng hợp lý cần được seed riêng từng xe; không suy ra phạm vi Regulation 561 chỉ từ tên loại xe. Bằng lái yêu cầu B/C/CE theo xe. **10 tài xế** (tài khoản `driver1…`), hạng bằng đa dạng; **một tài xế có bằng hết hạn** để test `LICENCE_EXPIRED`.
 
-**D7 đã duyệt (`DEC-DEV2-D7-001`, 08/11/2026):** Dev 2 seed lịch sử **56 ngày** làm việc/lái/nghỉ synthetic theo từng tài xế, phân loại xe `in_scope|out_of_scope|unknown` có tính đến loại vận tải và rơ-moóc, ghi rõ nguồn synthetic, không tự bịa phạm vi khi thiếu căn cứ. Kho/công việc tài xế theo lịch chính thức; nghỉ hằng ngày mặc định 11h và không tự bật ngoại lệ nghỉ 9h; kiểm riêng thời gian làm nhiệm vụ và lái. Các kịch bản golden: đủ điều kiện, thiếu 11h nghỉ, vượt giờ lái, thiếu lịch sử, thiếu ca, bằng hết hạn, xe `unknown`, thay đổi rơ-moóc/phạm vi và ca qua đêm. Seed phải idempotent, không ghi đè lịch do Warehouse Manager chốt. Dev 1 và Dev 2 chịu trách nhiệm nghiệm thu tích hợp; dữ liệu chỉ dành cho demo, không phải chứng nhận tuân thủ pháp luật.
+**Tài xế (R3, thay D7):** seed `hr.driver_availability` và `hr.driver_vehicle_eligibility` với `source = synthetic_demo` (nhãn demo, không phải xác minh pháp lý): mỗi tài xế một khung khả dụng/ngày, `max_driving_min`, quyền lái theo hạng bằng. Kịch bản: đủ điều kiện, thiếu khung khả dụng, quyền lái hết hạn, không được lái loại xe, vượt giờ lái được cung cấp. Không seed lịch sử 56 ngày.
 
 ### 5.4 Nhân sự (~150)
 Mỗi kho: 1 quản lý (`wm.got@cfo.demo` cho Göteborg), 1 phó, 1–2 trưởng ca, 10–12 công nhân. 10 tài xế. 3 dispatcher (`dispatcher@cfo.demo`). 2 CS (`cs@cfo.demo`). 1 IT (`admin@cfo.demo`). 1 Business owner (`owner@cfo.demo`, `viewer`, `kpi_scopes = {revenue_all}`). 1 Project lead (`projectlead@cfo.demo`, `viewer`, `kpi_scopes = {ops}`). Dispatcher và quản lý/phó kho có `{ops}`. Mỗi cửa hàng: 1 quản lý + 3 sales (`sales@cfo.demo` là một sales). Công nhân kho **không có `app_user`**. **Không ghi mật khẩu vào bất kỳ file nào** (README, seed, tài liệu nộp): seed đọc mật khẩu demo từ biến môi trường `SEED_DEMO_PASSWORD`; nhóm chia sẻ mật khẩu riêng cho ban giám khảo.
@@ -156,7 +156,9 @@ Mỗi kho: 1 quản lý (`wm.got@cfo.demo` cho Göteborg), 1 phó, 1–2 trưở
 | SE-2026-000146/149/150/153/155 | Göteborg DC | Hàng đợi chuẩn bị theo thiết kế: 126 / 210 / 45 / 96 / 70 phút; 000155 chuẩn bị xong sau giờ cắt nên lên hàng Thu 06:00 | `APPROVED`/`PREPARING`/`GOODS_READY` |
 | SE-2026-000156 | — | Chứa SKU "Fogbruk grå 5 kg" chưa ánh xạ | `BLOCKED_UNMAPPED_SKU` |
 
-Ngoài ra: ~48 đơn đã đóng trong tuần 3–9/11 cho dashboard KPI (92% đúng hạn, tỷ lệ chấp nhận 81%, sai số chuẩn bị 11 phút, sai số ETA 14 phút, 2 kế hoạch tay, 7 phương án khác được chọn; có đoạn chuẩn bị với `crew_size`, một vài lần tạm dừng; một đơn FAILED rồi giao lại để có hai POD; trải đều cửa hàng và kho cho màn doanh thu; một đơn không có cửa hàng nhận đơn để kiểm "Unassigned store") và một vài thông báo mẫu cho Notification inbox (CONFIRMED, DISPATCHED, DELIVERED, một bản nháp DELAY, một thông báo suppressed).
+**R3:** các đơn kịch bản ở trên dùng kho `MLM` (000123 phương án Malmö, 000137 hàng nhập IN-SE-88213, 000129, 000131) phải được chuyển sang `GBG`/`STO` khi làm lại seed (task T22); kết quả mong đợi giữ ý nghĩa tình huống. Thêm kịch bản: check-in trễ 30 phút; đơn 2 xe một xe FAILED rồi lập lại phần chưa giao; Sales chọn rank 2 tại quầy.
+
+Ngoài ra: ~48 đơn đã đóng trong tuần 3–9/11 cho dashboard 5 KPI (92% đúng hạn, tỷ lệ chấp nhận 81% tách theo đường Sales/Dispatcher, sai số ETA median 14 phút, 2 kế hoạch tay; thời gian chuẩn bị = GOODS_READY − START_PREP; một đơn FAILED rồi giao lại để có hai POD) và một vài thông báo email mẫu (CONFIRMED, DISPATCHED, DELIVERED, FAILED, một bản nháp DELAY).
 Dữ liệu tồn kho, hàng nhập (gồm IN-SE-88213), lịch xe, điểm danh được sinh để các tình huống trên đúng khi chạy engine. **Các con số trong ảnh thiết kế là mục tiêu minh họa**; nếu engine cho kết quả hơi khác (ví dụ điểm số thay cho tiền), chấp nhận miễn đúng quy tắc.
 
 ## 6. Chiến lược kiểm thử
@@ -177,24 +179,24 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 
 | # | Kịch bản | Điểm kiểm |
 |---|---|---|
-| 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched (GPS giả lập) → Delivered | Mọi trạng thái, giữ chỗ → committed, 4 thông báo, KPI cập nhật, decision_log đủ |
+| 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched → check-in → Delivered | Mọi trạng thái, giữ chỗ → committed, email CONFIRMED/DISPATCHED/DELIVERED, ETA theo sự kiện, KPI cập nhật, decision_log đủ |
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
-| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11 và gợi ý chuyển kho **chỉ nếu source stock/ETA xác minh**; ghi `date_negotiation.agreed` **chưa** đổi ngày; Dispatcher explicit **Apply agreed date** có audit/version, sau đó chạy planning mới và toàn bộ gate, không tự approve |
+| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày khả thi sớm nhất; không gợi ý chuyển kho (R3); Dispatcher ghi thỏa thuận ngày rồi Apply, kiểm đủ gate |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
 | 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
 | 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
 | 7 | Cửa sổ nhận hàng không khớp | `OUTSIDE_RECEIVING_HOURS` / dời ngày làm việc kế |
-| 8 | Trễ giữa chừng (đơn 000141) | xanh → vàng → cam → PREDICTED_LATE sau hai lần; bản nháp DELAY; dispatcher sửa và gửi; không gửi lại khi lệch < 30 phút |
+| 8 | Trễ giữa chừng (đơn 000141 hoặc check-in "trễ") | ETA tính lại tại sự kiện; xanh → vàng → cam → PREDICTED_LATE; bản nháp DELAY; Dispatcher sửa và gửi; không gửi lại khi lệch < 30 phút |
 | 9 | Hai dispatcher duyệt cùng lúc tranh một xe | Một thành công, một `409 RESOURCE_CONFLICT` |
 | 10 | Nạp lại cùng dữ liệu; dòng lỗi | Không nhân đôi; reject; `partial` |
 | 11 | SKU chưa ánh xạ (đơn synthetic 000156) | Theo **ASM-005/DEC-ROUTING-002**: Sales kiểm tra CFO trước khi điều phối thủ công; thiếu bất kỳ confirmed mapping ⇒ tuyến **legacy/manual** của hệ thống nguồn, **không** mở FIFO plan/hold trong CFO, IT mapping sau này không tự kéo hồi tố đơn cũ trở lại CFO. Kiểm tra routing immutability và double-fulfilment guard |
-| 12 | Giao thất bại rồi giao lại | `FAILED` + lý do, thông báo FAILED, **gợi ý lập lại tự động** (không giữ chỗ, không tính kế hoạch cũ), dispatcher duyệt (kế hoạch cũ `superseded`, `CONFIRMED` mới), giao thành công; hai POD; doanh thu tính một lần |
-| 13 | GPS | Simulator riêng trên staging → live chỉ Dispatcher được gán chuyến/trong ca; khách/CS/Sales 403; lost >60 phút alert. Kết thúc trip/ca ⇒ dừng thu/live ngay; lịch sử hợp lệ giữ tối đa 7 ngày, chỉ privacy/compliance reviewer theo case/audit (real-driver legal/DPIA/notice gate); test xóa khi hết hạn |
+| 12 | Giao thất bại rồi giao lại | Chuyến FAILED + lý do; đơn FAILED khi mọi chuyến kết thúc; email FAILED; cảnh báo `DELIVERY_FAILED`, **không** tự lập lại; Dispatcher hẹn lại hoặc lập lại chỉ phần chưa giao; POD đã giao giữ nguyên |
+| 13 | Không có vị trí (R3) | Endpoint GPS 404; check-in gửi kèm `lat`/`lon` → 422; không có dữ liệu vị trí trong DB, log, email |
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
-| 15 | Phân quyền | CS không thấy GPS/điểm; Sales chỉ duyệt rank-1 tiêu chuẩn ở cửa hàng mình, không được duyệt ngoại lệ/plan khác; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
+| 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
-| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
-| 18 | Tạm dừng chuẩn bị | Start prep (3 người) → Pause → Resume (2 người) → Goods ready; `improvement_log` có giờ nhân công thực tế và giờ/đơn vị theo nhóm |
+| 17 | Đổi CRM (R3) | Đổi `crm.provider` giữa `d365_mock` và `salesforce_mock` → cùng kết quả lập kế hoạch và cùng nội dung email; khách chưa khớp → email `suppressed` + cảnh báo |
+| 18 | Công suất ngày (R3) | Kho chưa xác nhận công suất ngày → gate công suất fail; Warehouse Manager xác nhận → phương án khả thi; sửa ngày đã qua cần lý do |
 
 ## 7. Definition of Done
 
@@ -229,14 +231,14 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 ## 10. Nghiệm thu MVP
 
 - [ ] `docker compose up` + `make migrate seed` dựng toàn bộ hệ thống từ trống; seed lặp lại cho kết quả giống nhau.
-- [ ] 18 kịch bản E2E (mục 6.3) pass; toàn bộ AC ở `02` pass.
-- [ ] Mọi hàng ma trận quyền `06` mục 3 có test cho đường cho phép và bị cấm; CS/khách/sales không bao giờ nhận GPS.
+- [ ] Các kịch bản E2E trọng yếu (mục 6.3) có kết quả PASS/FAIL/BLOCKED kèm bằng chứng; AC liên quan ở `02` pass.
+- [ ] Mọi hàng ma trận quyền `06` mục 3 và §19.1 có test cho đường cho phép và bị cấm; không vai trò nào nhận dữ liệu vị trí.
 - [ ] Không có double-book xe, tài xế, hàng (kiểm bằng test đồng thời); nạp lại idempotent.
 - [ ] Mọi quyết định có `decision_log`; `decision_log`/`milestone_event` bất biến; log kỹ thuật không PII.
-- [ ] Dashboard KPI đủ **10 KPI** + 2 diagnostics `null` khi chưa có nguồn, mặc định 30 ngày/tối đa 366 và System Admin chọn market; ngày theo timezone market, so với baseline. `labour_hours_per_delivery` và `km_per_delivery` tách thành hai số liệu, không hiển thị cost/SEK.
+- [ ] Dashboard đủ **5 KPI** (R3) với phân tách theo đường duyệt cho KPI 1 và 3, KPI 5 median/P90 không baseline; ngày theo timezone market.
 - [ ] Engine ≥ 90% dòng; lập kế hoạch một đơn < 2 giây; bảng đơn < 1 giây với 1.000 đơn.
-- [ ] Giao diện khớp ngôn ngữ hình ảnh và bố cục ở `03`; các điều chỉnh mục 7 của `03` đã áp dụng; driver PWA cài được, offline gửi lại không trùng.
-- [ ] Staging online chạy với ping 5 phút; email qua Mailpit/Brevo; SMS mô phỏng; biểu ngữ DPIA hiện khi GPS bật.
+- [ ] Giao diện khớp ngôn ngữ hình ảnh và bố cục ở `03`; các điều chỉnh mục 7 của `03` đã áp dụng; trang tài xế web online, gửi lại không trùng (cùng idempotency key).
+- [ ] Staging online chạy với ping 5 phút; email qua Mailpit; không SMS, không GPS.
 - [ ] Thêm một nước giả (`add_market.py`) không sửa file nào trong `engine/`.
 - [ ] `README`, hướng dẫn demo và `CHANGELOG` hoàn chỉnh.
 

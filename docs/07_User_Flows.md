@@ -173,7 +173,7 @@ sequenceDiagram
 ```
 
 **Chi tiết bổ sung**
-1. Nếu `reserve_class = tight`: bắt buộc tick "I accept the tight schedule" trước khi Approve.
+1. *(R3)* Không có tick lịch sát: phương án qua đủ 5 gate là duyệt được.
 2. Hold hết hạn: chip đỏ nhạt, khóa Approve của hold cũ, backend từ chối `HOLD_EXPIRED`/409 kể cả nếu UI cũ vẫn gửi request; phải **Plan Again** và kiểm đủ gate trước khi tiếp tục. **Extend** chỉ khi hold còn hợp lệ, tối đa 2 lần mỗi lần 15 phút.
 3. Duyệt phương án rank > 1: modal lý do bắt buộc (`ALT_SELECTED`).
 4. Ngày cam kết khác ngày khách đã đồng ý: cần chọn bản ghi `date_negotiation.agreed`.
