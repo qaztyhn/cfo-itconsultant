@@ -1,5 +1,19 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [R3 — DEC-R3 contract alignment (T01)] — 2026-11-18 — Dev 1 (chỉ tài liệu)
+
+- `05` mục 13: `ops.event_type` thêm `DRIVER_INCIDENT`; `vehicle_position` nhận vị trí tài xế chủ động gửi (`driver_tap`/`driver_incident`/`driver_completion`, `remaining_km/min`); `delivery_trip.assigned_dispatcher_employee_id` gán luân phiên (`hr.dispatcher_staff.in_rotation`); xóa tọa độ khi đơn kết thúc; `proof_of_delivery.site_distance_m`; `ops.notification` chỉ email (`CHECK NOT VALID`) + `skipped_reason`;
+  `planning_run.kind` thêm `remaining_replan` + `remaining_lines`; bảng mới `hr.warehouse_day_capacity`,
+  `hr.driver_availability`, `hr.driver_vehicle_eligibility`; `improvement_log.approval_path`, `order_to_commit_min`.
+  Không DROP bảng/enum cũ; cần forward migration mới.
+- `06` mục 19: ma trận quyền Sales trong phạm vi (rank 1–3, chạy lại, thỏa thuận ngày; chỉ cần khả thi, không tick lịch sát; không manual/replan sau thực thi/DELAY);
+  vị trí tài xế một điểm/lần, bắt buộc khi `DELIVERED`/`FAILED`, `DRIVER_INCIDENT`, không bản đồ — `GET /gps/live` trả một dòng vị trí gần nhất cho Dispatcher được gán, `POST /trips/{id}/handover`, `OVERDUE` sau 30 phút; bỏ `PREP_PAUSED`/`PREP_RESUMED`; FAILED/VEHICLE_ISSUE chỉ alert
+  (`DELIVERY_FAILED`), `replan` có `scope=remaining`; `/warehouses/{id}/day-capacity`; nguồn `/fleet/driver-availability`,
+  `/fleet/driver-eligibility`; email-only + cờ `NOTIFY_DISPATCHED_ENABLED`; KPI 5 metric + `by_path`;
+  `CustomerContactPort` với nguồn giả lập `/crm/d365/contacts`, `/crm/salesforce/contacts`; market DK bằng cấu hình.
+  Contact log không mount. Không thêm mã lỗi mới.
+- Chưa có migration, code hay test cho các thay đổi này (task T02–T24).
+
 ## [BE-02 — CS production phone-search gate and CFO log privacy] — 2026-11-09 — Dev 1
 
 - Non-synthetic production `GET /orders?q=` phone-shaped lookup returns

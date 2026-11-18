@@ -1,5 +1,7 @@
 # CFO — Quyết định sản phẩm: Sales xác nhận giao hàng trong CFO (Cách B)
 
+> **Thay thế một phần (2026-11-18):** §3 và các giới hạn rank-1/một xe/không đổi tiêu chí/không đổi ngày bị thay bởi [DEC-R3-10](decisions/DEC_R3_SCOPE_CRM_20261118.md): Sales được chọn rank 1–3 ở mọi kho (rank 2–3 có mã lý do), chạy lại planner và ghi thỏa thuận ngày cho đơn cửa hàng mình. Luồng Sync now, ApprovalService chung, khóa, audit và quy tắc chuyển Dispatcher khi đơn cũ tranh nguồn lực giữ nguyên.
+
 **Ngày chốt:** 2026-11-07. **Trạng thái:** đặc tả mục tiêu đã được chủ dự án chấp thuận, **chưa triển khai mã**. Tài liệu này cùng các cập nhật 01–10 là cơ sở triển khai, không mô tả khả năng đang chạy.
 
 ## 1. Giữ nguyên hệ thống nguồn

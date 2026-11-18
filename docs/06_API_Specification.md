@@ -67,6 +67,8 @@ Real customer phone lookup stays disabled pending those controls.
 
 ## 3. Ma trận quyền (R = đọc, W = ghi, — = cấm; phạm vi ghi chú)
 
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
+
 | Nhóm endpoint | admin | dispatcher | warehouse | sales | driver | customer_service | viewer |
 |---|---|---|---|---|---|---|---|
 | Đơn (đọc, danh sách, timeline) | R | R (cả market) | R (đơn của kho mình) | R (đơn của cửa hàng mình) | R (đơn trên chuyến mình, rút gọn) | R (rút gọn, không GPS) | — |
@@ -363,6 +365,8 @@ Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `
 
 ### 6.3a Sales approve (mở rộng endpoint đã có)
 
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
+
 `POST /plans/{id}/approve` cho Sales **chỉ** khi đúng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, version/dữ liệu nguồn còn mới, giữ chỗ hợp lệ, không transfer/manual/replan/date change, không làm trễ đơn cũ. Dùng chính ApprovalService, locks/transaction/audit với actor Sales. Thiếu quyền 403; ngoài cửa hàng 404; không đủ điều kiện hoặc đơn đặt trước chưa duyệt có cạnh tranh chưa chứng minh đủ năng lực: 409 `PLAN_NOT_APPROVABLE`; nguồn lực đổi: 409 `RESOURCE_CONFLICT`; hold hết: 409 `HOLD_EXPIRED`. Không auto-approve.
 
 ### 6.4 `POST /orders/{id}/manual-plan`
@@ -389,6 +393,8 @@ Dùng cho đơn `PLANNED` hoặc `NO_FEASIBLE_DATE` (v1.2). Engine vẫn kiểm 
 ```
 
 ### 6.6 Gợi ý lập lại tự động (v1.2)
+
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
 
 Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn sau duyệt, `PLAN_INVALIDATED`, `VEHICLE_ISSUE`, giao `FAILED`), hệ thống tạo `planning_run(kind='replan_suggestion')` (coi như kế hoạch hiện tại của chính đơn không tồn tại, **không giữ chỗ**) và alert `REPLAN_SUGGESTED` với `details.run_id`. Dispatcher xem bằng `GET /planning-runs/{id}` như lần chạy thường.
 
@@ -419,6 +425,8 @@ Khi đơn đã duyệt gặp một trong bốn tín hiệu (nguồn sửa đơn 
 ## 8. Thực thi
 
 ### 8.1 `POST /orders/{id}/events` (Idempotency-Key bắt buộc)
+
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
 
 ```json
 { "event_type": "GOODS_READY", "occurred_at": "2026-11-12T11:05:00Z", "payload": {} }
@@ -456,6 +464,8 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | GET | `/driver/trips/{id}` | Chi tiết chuyến |
 
 ## 9. GPS (DEC-DEV2-D3-001, owner-approved policy, contract implementation pending)
+
+> **Round 3 (DEC-R3-01):** không thu theo chu kỳ, không offline, không bản đồ, không lịch sử; vị trí chỉ do tài xế chủ động gửi (một điểm/lần), bắt buộc khi `DELIVERED`/`FAILED`; Dispatcher được gán luân phiên thấy một dòng vị trí gần nhất; tọa độ xóa khi đơn kết thúc. §19.3 thay các quy tắc dưới đây.
 
 **Quyền/phiên:** đọc GPS chỉ cho Dispatcher **được gán rõ cho trip**, không phải mọi Dispatcher của market. Trip phải `on_road`, `market.gps_enabled=true`, tài xế đúng chuyến và thuộc **ca chính thức đang có hiệu lực**; ngoài ca/trước hoặc sau chuyến không đọc/thu điểm. Driver xác thực JWT, ID tài xế từ server-side assignment; **không nhận driver_id tự khai**. Thiếu mapping Dispatcher–trip thì fail closed, cần Dev 1/2 thống nhất migration/RBAC. Driver chỉ gửi/nhận ack của điểm chuyến mình; CS/Sales/warehouse/admin/customer/viewer không bao giờ thấy tọa độ.
 
@@ -497,6 +507,8 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 **D5 GDPR owner-approved policy:** raw GPS **ngừng thu/live** khi trip/ca hợp lệ chấm dứt, lịch sử đã thu hợp lệ lưu tối đa **7 ngày** theo DEC-GPS-RET-20261109 (D3 supersedes 30 days); customer/contact/CS 90 ngày, nonfinancial operational order 365 ngày, employee nonstatutory contacts 90 ngày, workforce shifts/attendance 24 tháng (cần pháp lý), logs tech/security 30/90 ngày, staging backup 30 ngày; tachograph/driver working-time và Swedish accounting giữ theo luật áp dụng. DSAR, ROPA, DPIA/GPS, legal holds và retention theo mục đích cần sign-off trước dữ liệu người thật; không xem legacy config `personal=365/order=730` là GDPR compliant. Xem `docs/decisions/DEV2_D2_D3_D4_D5_APPROVED_20261108.md`.
 
 ## 11. Nhật ký liên hệ khách (CS)
+
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
 
 ```json
 // POST /orders/{id}/contact-logs   (customer_service)
@@ -658,6 +670,8 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 
 ### 13.2 Điểm danh và công suất (v1.4, Q10; Q11 thay bằng ASM-007)
 
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
+
 `GET /warehouses/{id}/attendance?date=`: warehouse của kho đó, dispatcher và admin trong market; ngoài phạm vi → `404`. Phản hồi của `PUT /warehouses/{id}/attendance` dùng cùng schema:
 ```json
 { "warehouse_id": 1, "date": "2026-11-12",
@@ -678,6 +692,8 @@ Lọc: `home_warehouse_id`, `status`, `capability`. Sắp xếp: `code` (mặc �
 **Nguồn roster và `attendance_gen` (ASM-007, thay Q11 = B):** roster điểm danh lấy từ **lịch phân ca chính thức do Warehouse Manager lập cho từng nhân viên/ngày/ca** (mục 13.0a). `shift_template.expected_staff` chỉ là số dự kiến để so sánh: hệ thống **không** tự chia người vào ca theo số này, **không** đưa người dư vào ca cuối. `attendance_gen` chỉ chép lịch đã được quản lý xác nhận thành dòng `planned`; khi bảng lịch chính thức chưa có (chờ PR migration riêng) thì job **không tạo dòng nào**. `PUT …/attendance` và `all_present` chỉ cập nhật người đã có trong lịch, không tạo ca. Thiếu lịch → công suất chỉ tính từ dòng điểm danh thực có (có thể bằng 0) và phải được cảnh báo là chưa xác minh, không dựng số người giả định.
 
 ## 14. KPI
+
+> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
 
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
@@ -961,3 +977,147 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 - **Q8 Demo seeds:** expected golden scenario outputs stay; synthetic input corrections need independent tests, never override fail-closed.
 - **Q9 CS phone search:** existing GET `q` requires TLS, scoped/rate-limited backend, raw query/phone suppression in server/proxy/APM/access/analytics/error logs and `Referrer-Policy: no-referrer`. **A GET URL may still remain in browser history/network/proxy traces**; stronger URL privacy would require an independently approved POST search contract.
 - **Q10 D8:** staging/manual triggers only using existing resources; no real customer notifications, actual worker GPS, production cron/hosting or paid worker. D8 cadence proposals approved only for staging.
+
+## 19. Round 3 contract changes — DEC-R3 (2026-11-18, owner-approved; code pending)
+
+> Nguồn: [DEC-R3-01…14](decisions/DEC_R3_SCOPE_CRM_20261118.md); DDL ở `05` mục 13. Mục này **thắng** các mục cũ mâu thuẫn
+> (§3, §6.3a, §6.6, §8.1, §9, §11, §13.2, §14). Không thêm mã lỗi mới: chỉ dùng mã đã có ở §1.1. Chưa có code cho mục này.
+
+### 19.1 Ma trận quyền thay đổi
+
+| Nhóm endpoint | dispatcher | sales | warehouse | driver | customer_service |
+|---|---|---|---|---|---|
+| Lập kế hoạch, **đổi tiêu chí/chạy lại** (`POST /orders/{id}/plan` có body) | **W** | **W** (đơn cửa hàng mình, trước duyệt) | — | — | — |
+| Duyệt rank 1–3 (`POST /plans/{id}/approve`) | **W** | **W** (đơn cửa hàng mình; rank 2–3 bắt buộc `reason_code`) | — | — | — |
+| Thương lượng ngày (`/orders/{id}/date-negotiations`, apply agreed date) | **W** | **W** (đơn cửa hàng mình, trước duyệt) | — | — | — |
+| Kế hoạch tay, override | **W** | — (403) | — | — | — |
+| `POST /orders/{id}/replan` (mọi `scope`), `POST /orders/{id}/cancel` sau duyệt | **W** | — (403) | — | — | — |
+| Gửi/bỏ `DELAY` | **W** | — (403) | — | — | — |
+| `POST /trips/{id}/positions` (vị trí tài xế bấm gửi), sự kiện `DRIVER_INCIDENT` | — | — | — | **W** (chuyến mình) | — |
+| Xem dòng vị trí gần nhất (`GET /gps/live`) | R **chỉ chuyến được gán cho mình** và đang `on_road` | — | — | — | — |
+| Bàn giao chuyến (`POST /trips/{id}/handover`) | **W** (trong market) | — | — | — | — |
+| Sự kiện kho `PREP_PAUSED`, `PREP_RESUMED` | không còn hỗ trợ | | | | |
+| Contact log CS (§11) | không mount → `404 NOT_FOUND` | | | | |
+| Công suất ngày (`/warehouses/{id}/day-capacity`) | R | — | **W** (kho mình, `can_approve`) | — | — |
+
+Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành động chỉ của Dispatcher → `403 FORBIDDEN`. Quy tắc "đơn đặt trước chưa duyệt tranh nguồn lực chưa chứng minh đủ → `409 PLAN_NOT_APPROVABLE`, chuyển Dispatcher" giữ nguyên cho Sales. Dispatcher đọc được mọi đơn Sales đã duyệt (`decision_log.actor_role = 'sales'`).
+
+### 19.2 `POST /plans/{id}/approve` (thay §6.3a)
+
+```json
+{ "reason_code": "customer_prefers_earlier_slot", "reason_text": "…" }
+```
+- Rank 1: `reason_*` tùy chọn. Rank 2–3: thiếu `reason_code` → `422 REASON_REQUIRED` (cả hai vai trò).
+- **Không còn `accept_tight`** cho mọi vai trò: phương án qua đủ 5 gate là duyệt được, kể cả `reserve_class = tight`; trường `accept_tight` trong request bị bỏ qua. `reserve_class` vẫn được tính để xếp hạng và theo dõi rủi ro, không phải điều kiện duyệt. Phương án nhiều xe được phép cho cả hai vai trò.
+- Các lỗi còn lại như §6.3: `HOLD_EXPIRED`, `RESOURCE_CONFLICT`, `IDEMPOTENCY_CONFLICT`. `decision_log PLAN_APPROVED` ghi `actor_role`, `rank`, `reason_code`.
+
+### 19.3 Sự kiện thực thi (thay một phần §8.1)
+
+| `event_type` | Ai | Điều kiện | `payload` |
+|---|---|---|---|
+| `START_PREP` | warehouse | `APPROVED` → `PREPARING` | `{ "crew_size": 3 }` |
+| `GOODS_READY` | warehouse | `PREPARING` → `GOODS_READY`; `prep_actual_min = GOODS_READY − START_PREP` | `{}` |
+| `PREP_PAUSED`, `PREP_RESUMED` | — | → `422 VALIDATION_ERROR` (`details.reason = "event_not_supported_r3"`) | — |
+| `DRIVER_INCIDENT` | driver | chuyến của mình đang `on_road`; không đổi trạng thái đơn | `{ "trip_id": 930, "reason": "traffic_or_accident", "note": null, "position": { "lat": 57.70, "lon": 11.97, "accuracy_m": 25, "recorded_at": "…" } }` (`position` tùy chọn) |
+| `DELIVERED` | driver | theo chuyến, như §8.1; **`position` bắt buộc** | `{ "trip_id": 930, "recipient_name": "…", "position": { … } }` |
+| `FAILED` | driver | theo chuyến, như §8.1; **`position` bắt buộc** | `{ "trip_id": 930, "failure_reason": "customer_absent", "note": "…", "position": { … } }` |
+
+**Vị trí tài xế (DEC-R3-01):**
+- `POST /trips/{id}/positions` với **một điểm** `{ "lat", "lon", "accuracy_m", "recorded_at" }`, `Idempotency-Key` bắt buộc, `source='driver_tap'`. Không có chu kỳ, không gửi lô, không hàng đợi offline. Chỉ tài xế của chuyến, chuyến `on_road`, `recorded_at` trong khung khả dụng của tài xế (`05` §13.3); ngược lại `404` (không phải chuyến mình) hoặc `409 NOT_ON_TRIP`.
+- `DELIVERED`/`FAILED` thiếu `position` → `422 VALIDATION_ERROR` (`details.reason = "position_required"`); không có đường xác nhận giao xong khi không có vị trí. Server ghi một dòng `vehicle_position(source='driver_completion')` và `proof_of_delivery.site_distance_m` trong cùng transaction; tọa độ không vào payload milestone, audit hay thông báo.
+- `DRIVER_INCIDENT`: `reason ∈ {vehicle_breakdown, traffic_or_accident, site_inaccessible, other}` (`other` cần `note`); luôn tạo alert `DRIVER_INCIDENT` cho Dispatcher (`level=critical` nếu `vehicle_breakdown`, ngược lại `warning`). Có `position` → ghi `vehicle_position(source='driver_incident')` và tính lại ETA; `vehicle_breakdown` → không tính ETA mới, alert ghi "ETA không xác định"; không tự lập lại kế hoạch.
+- Mỗi lần nhận vị trí: service gọi `RoutingProvider` (ORS, fallback Haversine × 1,3 ở 50 km/h gắn nhãn ước lượng) để lấy `remaining_km`/`remaining_min` tới điểm giao, lưu vào dòng vị trí, rồi gọi `RiskService.recalculate(trigger="position")`. Engine không gọi provider.
+- **Không có bản đồ.** `GET /gps/live` trả cho Dispatcher các chuyến `on_road` có `assigned_dispatcher_employee_id` = chính mình, mỗi chuyến **một dòng**: `{ "trip_id", "order_id", "vehicle_code", "last_position": { "lat", "lon" } | null, "remaining_km", "updated_at", "forecast_eta", "risk": {status, color}, "open_incident": reason | null }`; giao diện hiển thị "Vị trí gần nhất · Giờ cập nhật · ETA". `GET /trips/{id}/positions` (danh sách điểm) không còn mount. Chuyến kết thúc → không còn trong danh sách. Chưa gán Dispatcher → không ai thấy. Khách, CS, Sales: luôn `403`.
+- **Gán luân phiên** (`05` §13.1): khi duyệt kế hoạch, mọi chuyến của đơn nhận cùng một Dispatcher theo vòng. `POST /trips/{id}/handover` `{ "to_employee_id": 42, "reason_text": "…" }` (Dispatcher trong market, người nhận phải `in_rotation`), audit `TRIP_DISPATCHER_HANDOVER`.
+- **Xóa tọa độ** khi đơn `DELIVERED`/`CANCELLED`; đơn `FAILED` chậm nhất 7 ngày. Không có API đọc lịch sử vị trí (thay §9 và §17.1 về lịch sử theo case).
+
+ETA (pure engine `forecast`): gốc = `depart_actual_at` (DISPATCHED) + thời gian tuyến của chuyến; có vị trí mới → `recorded_at` + `remaining_min` + thời gian dỡ hàng kế hoạch. ETA đơn = ETA muộn nhất trong các chuyến chưa kết thúc. Mỗi lần tính lưu một `eta_forecast`. **ETA chỉ tính lại khi có sự kiện mới** (duyệt, mốc kho, `DISPATCHED`, vị trí tài xế gửi, `DRIVER_INCIDENT` có vị trí, `DELIVERED`/`FAILED`, nguồn sửa đơn); không có trigger theo chu kỳ (`morning_check`). Job quá hạn tạo alert `OVERDUE` cho Dispatcher khi đã quá ETA **30 phút** mà chưa có `DELIVERED`/`FAILED`, hoặc mốc kho quá 30 phút; không ghi `eta_forecast` mới. KPI 5 so ETA tại `DISPATCHED` với giờ POD.
+
+`FAILED` và `VEHICLE_ISSUE` **không** tạo `replan_suggestion` (thay §6.6 và đoạn cuối §8.1):
+- `FAILED` theo chuyến: lưu POD `failed`. Khi **mọi chuyến của kế hoạch đã kết thúc và có ít nhất một chuyến failed** → đơn `FAILED` qua `transition()`, email `FAILED` cho khách, alert `DELIVERY_FAILED` (`level=critical`, `target_roles={dispatcher}`, `dedupe_key = 'DELIVERY_FAILED:<order_id>:<plan_id>'`, `details.trips = [{trip_id, result, failure_reason}]`).
+- `VEHICLE_ISSUE`: chỉ alert `EXCEPTION` kèm danh sách đơn đã duyệt dùng xe đó.
+
+### 19.4 Xử lý sau thất bại (Dispatcher)
+
+`POST /orders/{id}/replan` (mở rộng §5 bảng hành động):
+```json
+{ "scope": "remaining", "reason_code": "vehicle_breakdown", "reason_text": "…" }
+```
+- `scope ∈ {full, remaining}`, mặc định `full` (hành vi cũ). `remaining` chỉ hợp lệ khi đơn `FAILED` và có ít nhất một chuyến `delivered`; ngược lại `409 ILLEGAL_TRANSITION`.
+- Một transaction: tính `remaining_lines` (`05` §13.4), đóng kế hoạch cũ như §5, đơn → `SUBMITTED`, tạo `planning_run(kind='remaining_replan', remaining_lines)` và chạy engine **chỉ** với các dòng/số lượng còn lại; ghi `ORDER_REPLAN` (before/after, `scope`). POD đã giao giữ nguyên.
+- Hẹn giao lại khi khách vắng: dùng §6.5 (ghi thỏa thuận) rồi apply agreed date → planning mới. Hủy: `POST /orders/{id}/cancel` (Dispatcher, lý do bắt buộc).
+- Không có đường nào tự chạy planner sau `FAILED`/`VEHICLE_ISSUE`.
+
+### 19.5 Công suất kho theo ngày (thay §13.2)
+
+`GET /warehouses/{id}/day-capacity?date=YYYY-MM-DD` · `PUT /warehouses/{id}/day-capacity` (`Idempotency-Key`):
+```json
+{ "date": "2026-11-20",
+  "shifts": [ { "shift_code": "AM", "start": "07:00", "end": "15:00", "headcount": 8, "productive_hours": 7.0 },
+              { "shift_code": "PM", "start": "15:00", "end": "23:00", "headcount": 5, "productive_hours": 7.0 } ],
+  "change_reason": null }
+```
+- Phản hồi thêm `confirmed_by`, `confirmed_at`, `labour_cap_hours`, `schedule_verified`. PUT thay toàn bộ ca của ngày đó (đóng dòng cũ, thêm dòng mới).
+- Sửa ngày đã có dữ liệu hoặc ngày đã qua mà thiếu `change_reason` → `422 REASON_REQUIRED`. Ngoài kho mình → `404`; thiếu `can_approve` → `403`.
+- `GET /warehouses/{id}/capacity` giữ đường dẫn, `shifts[]` trả `{shift_code, start, end, headcount, productive_hours}` thay cho `present/useful_hours`. `/warehouses/{id}/attendance` không còn mount (`404`).
+
+### 19.6 Dữ liệu tài xế từ đội quản lý tài xế (bổ sung §16)
+
+Nguồn (giả lập trong `source-<cc>`, cùng quy ước API key/`updated_since`/phân trang như §16.1):
+```json
+// GET /fleet/driver-availability?updated_since=…
+{ "items": [ { "source_ref": "AV-2026-11-20-071", "employee_no": "SE-D-071", "work_date": "2026-11-20",
+               "available_from": "2026-11-20T06:00:00+01:00", "available_to": "2026-11-20T16:00:00+01:00",
+               "max_driving_min": 540, "verified_by": "Fleet desk SE", "verified_at": "…", "superseded": false } ],
+  "next_cursor": null }
+// GET /fleet/driver-eligibility?updated_since=…
+{ "items": [ { "source_ref": "EL-071-C", "employee_no": "SE-D-071", "vehicle_code": null, "licence_class": "C",
+               "verified_until": "2027-03-31", "verified_by": "Fleet desk SE", "verified_at": "…", "revoked": false } ],
+  "next_cursor": null }
+```
+CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung giờ ngược, nhân viên không khớp) vào reject log, không đoán. Gate tài xế theo `05` §13.3; thiếu dữ liệu → reason code `DRIVER_NOT_VERIFIED` trong kết quả planning (không phải mã lỗi HTTP).
+
+### 19.7 Thông báo (thay một phần §10)
+
+- Kênh duy nhất `email`. `DISPATCHED` gửi một lần khi chuyến đầu tiên của đơn xuất phát, bật/tắt bằng `NOTIFY_DISPATCHED_ENABLED` (tắt → `suppressed`, `skipped_reason='SKIPPED_FLAG_DISABLED'`).
+- `FAILED` luôn gửi khi đơn chuyển `FAILED`. `DELAY` giữ nguyên quy tắc Dispatcher (§10).
+- Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`; khách chưa khớp được qua `CustomerContactPort` → `suppressed`, `SKIPPED_CUSTOMER_UNMATCHED`, alert `CUSTOMER_UNMATCHED` cho Dispatcher.
+
+### 19.8 KPI (thay §14)
+
+```json
+// GET /kpi/summary?from=&to=&warehouse_id=&store_id=  → 200
+{ "period": { "from": "2026-11-01", "to": "2026-11-30" },
+  "metrics": {
+    "planning_time_min":    { "value": 4.2, "baseline": 15.0, "by_path": { "sales": 2.1, "dispatcher": 6.0 } },
+    "on_time_rate":         { "value": 0.94 },
+    "plan_acceptance_rate": { "value": 0.81, "by_path": { "sales": 0.88, "dispatcher": 0.72 } },
+    "manual_intervention_rate": { "value": 0.09, "baseline": 0.35 },
+    "eta_error_min":        { "median": 18, "p90": 52, "target": { "median": 20, "p90": 60 } } },
+  "supporting": {
+    "order_to_commit_min": { "by_path": { "sales": 6, "dispatcher": 95 } },
+    "counter_commit_rate": { "value": 0.42 },
+    "manual_plan_count":   { "value": 6 } } }
+```
+- Định nghĩa theo DEC-R3-03. `manual_intervention_rate` = đơn có kế hoạch tay hoặc override ÷ đơn được cam kết. `eta_error_min` = |ETA dự báo gần nhất trước `DISPATCHED` − giờ POD| theo chuyến; không có `baseline`.
+- `GET /kpi/daily?metric=` chỉ nhận 5 key trên. `PUT /kpi/baseline/eta_error_min` → `422 VALIDATION_ERROR`. Các metric cũ (`labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `failed_delivery_rate`, `capacity_utilisation`) không còn được trả về.
+
+### 19.9 CRM: `CustomerContactPort` và provider giả lập (DEC-R3-12)
+
+- Cổng nội bộ (không phải endpoint CFO): `get_contacts(external_ids) → [{external_id, email, phone, email_consent, updated_at}]`. Chọn provider bằng cấu hình market `crm.provider ∈ {d365_mock, salesforce_mock}`. Engine không bao giờ gọi cổng này; thông báo và CS lookup lấy liên hệ qua cổng.
+- Nguồn giả lập trong `source-<cc>`, hai hình dạng khác nhau để chứng minh mapping nằm trong adapter:
+```json
+// GET /crm/d365/contacts?external_ids=C-1001,C-1002
+{ "value": [ { "accountnumber": "C-1001", "emailaddress1": "demo+1001@example.test", "telephone1": "+46700000001",
+               "donotbulkemail": false, "modifiedon": "…" } ] }
+// GET /crm/salesforce/contacts?external_ids=C-1001,C-1002
+{ "records": [ { "External_ID__c": "C-1001", "Email": "demo+1001@example.test", "Phone": "+46700000001",
+                 "HasOptedOutOfEmail": false, "LastModifiedDate": "…" } ] }
+```
+- `email_consent = not donotbulkemail` / `not HasOptedOutOfEmail`. Không khớp `external_id` → coi như chưa khớp (19.7). Không log email/điện thoại.
+- Kiểm thử bắt buộc: đổi provider với cùng dữ liệu → cùng `PlanningResult` và cùng nội dung thông báo.
+
+### 19.10 Thị trường Đan Mạch giả lập và AI theo lô (DEC-R3-14)
+
+- `source-dk` dùng đúng hợp đồng §16; CFO thêm market `DK` chỉ bằng cấu hình (múi giờ `Europe/Copenhagen`, ngày lễ, giờ chốt, ngôn ngữ template, `crm.provider`). Không thêm endpoint.
+- AI gợi ý nhóm xử lý chạy theo lô lúc seed, ghi vào `ref.mapping_task.candidates` phần tử `{ "handling_group": "N3", "reason": "ai_batch", "model": "…", "confidence": 0.82 }` (không đổi DDL). Chỉ IT xác nhận qua §12.1; không có lời gọi AI trong request.

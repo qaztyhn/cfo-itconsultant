@@ -10,11 +10,11 @@
 ### v1.2 (06/11/2026)
 1. **Giờ công theo đơn vị nhỏ nhất:** định mức quy về đơn vị cơ sở (bao, tấm…) để dễ scale; hàng không chia nhỏ được thì làm tròn lên (FR-PRP-01, BR-PRP-01).
 2. **Một đơn nhiều xe:** hệ thống tự gợi ý cơ cấu xe (ít xe nhất), xếp lịch nhiều xe cùng kho, tới gần như cùng lúc; bỏ `MANUAL_PLANNING` tự động và lối "xử lý ngoài CFO" (FR-ORD-05, BR-DEL-05, BR-RNK-02).
-3. **Gợi ý lập lại tự động** khi đơn đã duyệt có thay đổi; dispatcher vẫn duyệt (FR-APR-05, BR-APR-04).
+3. **Lập lại do Dispatcher yêu cầu**: không tự chạy planner sau FAILED/sự cố xe; chỉ cảnh báo (FR-APR-05, [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 4. **Giữ chỗ lúc lập kế hoạch được phép vượt**, chỉ chặn khi duyệt (BR-RES-04).
 5. **Hòa điểm:** xe nhỏ hơn mà vẫn đủ chứa thắng (FR-RNK-01, BR-RNK-02).
 6. **Doanh thu** theo đặc tả riêng: hai góc nhìn store/warehouse, `kpi_scopes` (FR-KPI-02, BR-KPI-01).
-7. **Dữ liệu giờ nhân công thực tế** qua bắt đầu/tạm dừng/tiếp tục/xong chuẩn bị (FR-EXE-04).
+7. **Thời gian chuẩn bị thực tế** = GOODS_READY − START_PREP (FR-EXE-04).
 8. **GPS:** cơ sở pháp lý chốt là lợi ích hợp pháp kèm thông báo minh bạch và DPIA.
 
 ### v1.1 (06/11/2026)
@@ -22,7 +22,7 @@
 2. ~~Đơn cần nhiều xe: lối "xử lý ngoài CFO"~~ (thay ở v1.2 bằng xếp lịch nhiều xe).
 3. **Vòng đời kế hoạch**: lập lại/hủy/xếp lại sau thất bại phải đóng kế hoạch cũ trong một transaction (BR-APR-03); POD theo **từng lần giao** (BR-EXE-03); khóa chống giữ chỗ vượt tồn kho và công suất (BR-RES-04).
 4. **KPI và doanh thu**: định nghĩa doanh thu và quyền xem (BR-KPI-01, FR-KPI-02).
-5. **GPS**: ghi rõ giả định cơ sở pháp lý (FR-GPS-01, mục 12).
+5. **Vị trí tài xế**: tài xế chủ động gửi (bắt buộc khi giao xong/thất bại); Dispatcher được gán luân phiên thấy dòng "Vị trí gần nhất · Giờ cập nhật · ETA" ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 6. Đối chiếu với slide proposal ở mục 13 (dùng cho báo cáo).
 
 ---
@@ -33,7 +33,7 @@
 
 **CFO** là một lớp điều phối dùng chung, đặt trên các hệ thống POS/WMS/ERP sẵn có của từng nước. Nó kết hợp tồn kho, công suất kho và đội xe để **đưa ra cam kết giao hàng khả thi**, để Dispatcher hoặc Sales đủ điều kiện duyệt, rồi **theo dõi thực thi và ngoại lệ đến khi khách nhận hàng**, kèm thông báo cho khách và cải tiến dự báo từ dữ liệu thực tế [S].
 
-**MVP** là một **ứng dụng web chạy thật** (không phải bản trình bày), pilot ở Thụy Điển với dữ liệu giả lập: ~100 SKU, 3 kho, 25 cửa hàng [S][C]. Kiến trúc coi mọi nước bình đẳng để mở rộng Bắc Âu mà không sửa lõi.
+**MVP** là một **ứng dụng web chạy thật** (không phải bản trình bày), pilot ở Thụy Điển với dữ liệu giả lập: ~100 SKU, 2 kho, 10 cửa hàng [S][C][R3]. Kiến trúc coi mọi nước bình đẳng để mở rộng Bắc Âu mà không sửa lõi.
 
 ### 1.1 Vấn đề
 Company A là nhà bán lẻ vật liệu xây dựng Đan Mạch với hàng trăm cửa hàng khắp Bắc Âu, phục vụ cả doanh nghiệp và người tiêu dùng. Mỗi nước tối ưu riêng nên có bốn thách thức liên kết: quy trình thủ công, hệ thống phân mảnh, vận hành không nhất quán, và giao hàng & fulfilment, nơi ba cái kia hội tụ (suy luận của nhóm). Khách thấy: ngày giao không đáng tin, hàng sai hoặc thiếu, đơn "mất tích", giao trễ không giải thích [S].
@@ -43,7 +43,7 @@ Company A là nhà bán lẻ vật liệu xây dựng Đan Mạch với hàng tr
 2. **Cam kết đáng tin**: ngày/khung giờ chỉ được cam kết sau khi người có quyền duyệt, nguồn lực được kiểm tra lại và commit thành công.
 3. **Phát hiện trễ sớm** bằng ETA tính lại theo sự kiện và GPS; dispatcher quyết định báo khách.
 4. **Một lõi chung, cấu hình riêng theo nước**: thêm nước = thêm adapter, cấu hình và bảng sản phẩm.
-5. **Chứng minh giá trị đo được** bằng 6 KPI pilot của slide cộng 2 chỉ số bổ sung.
+5. **Chứng minh giá trị đo được** bằng 5 KPI pilot (mục 9, [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 
 ### 1.3 Không phải mục tiêu của MVP
 Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MVP chỉ xếp nhiều xe cho **một** đơn, cùng kho); quản lý và xếp lịch thiết bị kho; ghép đơn; cửa hàng làm nguồn hàng; AI dự đoán hoặc học định mức; trang trạng thái đơn cho khách; app tài xế native; SMS thật; hệ thống thanh toán/ hóa đơn. Xem mục 10 (phần mở rộng).
@@ -79,13 +79,13 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ## 4. Phạm vi MVP
 
-**Trong MVP:** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm; nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; gợi ý chuyển kho bằng quy tắc; công suất kho từ điểm danh; xe, tài xế, bằng lái, lịch xe; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại/lập tay; thực thi (kho + tài xế PWA offline queue); **GPS**; ETA và rủi ro; 4 loại thông báo; nhân sự và phân quyền; nhật ký quyết định; KPI.
+**Trong MVP (R3):** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm (AI gợi ý nhóm xử lý theo lô, người xác nhận); nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; công suất kho theo ngày/ca do Warehouse Manager xác nhận; xe, tài xế với lịch khả dụng và quyền lái do đội quản lý tài xế xác minh; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại (Dispatcher, và Sales cho đơn cửa hàng mình)/lập tay (Dispatcher); thực thi (kho + trang tài xế web online, vị trí do tài xế chủ động gửi, báo sự cố); dòng vị trí gần nhất cho Dispatcher được gán luân phiên; ETA và rủi ro theo sự kiện; 5 loại email; CS tra cứu chỉ đọc; `CustomerContactPort` cho CRM; nhân sự và phân quyền; nhật ký quyết định; 5 KPI. **Hoãn:** GPS thu theo chu kỳ, offline PWA, SMS, contact log CS, chuyển kho, Doanh thu, UI quản trị (thay bằng seed/cấu hình).
 
 **Ngoài MVP (mở rộng):** mục 10.
 
 **Loại trừ theo thiết kế (mọi giai đoạn) [S]:** khách không xem GPS; không tự duyệt thay dispatcher; không tự đổi ngày giao khi khách chưa đồng ý.
 
-**Pilot [S][C]:** Thụy Điển (minh họa); ~100 SKU; 3 kho (Göteborg, Stockholm, Malmö); 25 cửa hàng làm nơi nhận đơn; ~150 nhân viên; 8–10 xe. Mọi nước khác chỉ có bản ghi cấu hình.
+**Pilot [S][C][R3]:** Thụy Điển (minh họa); ~100 SKU; 2 kho (Göteborg, Stockholm); 10 cửa hàng làm nơi nhận đơn; 8–10 xe. Thị trường Đan Mạch giả lập chỉ bằng cấu hình.
 
 ---
 
@@ -123,17 +123,17 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 ### 5.4 Tồn kho, ATP, chuyển kho
 - **FR-ATP-01 (M)** Time-phased ATP theo công thức mục 6; một kho xử lý trọn đơn. [S][C]
 - **FR-ATP-02 (M)** Hàng nhập chưa xác nhận không được tính; hàng đã về không tính hai lần.
-- **FR-ATP-03 (M)** Khi mọi kho thiếu hàng: gợi ý chuyển kho bằng quy tắc; dispatcher duyệt, **kho nguồn xác nhận**, rồi tính như hàng nhập đã xác nhận. [C]
+- **FR-ATP-03 (Hoãn R3)** Gợi ý chuyển kho ngoài phạm vi pilot R3; thiếu hàng mọi kho → `NO_FEASIBLE_DATE` + ngày khả thi sớm nhất, Dispatcher xử lý.
 
 ### 5.5 Chuẩn bị hàng và công suất
 - **FR-PRP-01 (M)** Khối lượng việc = Σ (giờ cố định mỗi dòng + số đơn vị chuẩn bị × giờ/đơn vị) × hệ số cờ + 0,5 giờ kiểm cuối; **giống nhau ở mọi kho**. Số đơn vị tính theo **đơn vị cơ sở nhỏ nhất** (ví dụ 20 bao = 0,5 pallet 40 bao); hàng không chia nhỏ được thì làm tròn lên. [S][C]
-- **FR-PRP-02 (M)** Công suất ngày = số người có mặt (điểm danh) × giờ hữu ích × **90%** tỷ lệ dành cho đơn giao − việc đã đặt. [S][C]
+- **FR-PRP-02 (M, R3)** Công suất ngày = Σ ca (số người × giờ hữu ích do Warehouse Manager xác nhận) × 90% tỷ lệ dành cho đơn giao − việc đã đặt; không có dữ liệu xác nhận = 0. [S][C]
 - **FR-PRP-03 (đã bỏ ở v1.1)** ~~Thiết bị kho được ép buộc~~. Ngoài MVP theo slide; giả định mọi kho có đủ thiết bị [C][A].
 - **FR-PRP-04 (M)** Nếu chuẩn bị xong sau giờ cắt lên hàng, lên hàng ở ca đầu của ngày làm việc kế tiếp. [S]
-- **FR-PRP-05 (M)** Warehouse Manager lập/sửa lịch phân ca chính thức cho **từng nhân viên**; warehouse ghi điểm danh thực tế (có mặt/vắng/nghỉ) trong phạm vi được cấp quyền. `expected_staff` chỉ là số dự kiến, CFO không tự phân/đổi ca. Sửa dữ liệu quá khứ phải có quyền, lý do và audit; công nhân không có tài khoản.
+- **FR-PRP-05 (M, R3)** Warehouse Manager nhập và xác nhận cho mỗi ngày/ca: số người làm và số giờ làm. Không lập lịch từng nhân viên, không điểm danh.
 
 ### 5.6 Xe, giao hàng, gate
-- **FR-DEL-01 (M)** Xe thuộc kho; chọn xe đủ tải/thể tích, được chở nhóm hàng, đủ khả năng, rảnh; tài xế đủ bằng và còn hạn, trong giờ làm. [S][C]
+- **FR-DEL-01 (M, R3)** Xe thuộc kho; chọn xe đủ tải/thể tích, được chở nhóm hàng, đủ khả năng, rảnh; tài xế có lịch khả dụng và quyền lái loại xe đó do đội quản lý tài xế xác minh (còn hạn), chuyến nằm trong khung khả dụng và giới hạn giờ lái được cung cấp. [S][C]
 - **FR-DEL-02 (M)** Thời gian chuyến = lên hàng + lái (OpenRouteService, fallback) + dỡ hàng; tôn trọng cửa sổ nhận hàng của khách. [S]
 - **FR-DEL-03 (M)** Gate 5 check: tồn kho, chuẩn bị, xe, địa điểm/ngày, an toàn; chỉ ứng viên qua cả 5 mới được xếp hạng. [S]
 - **FR-DEL-04 (M)** Dự trữ lập kế hoạch phân loại: an toàn (≥ 2 ngày), sát (0 đến dưới 2 ngày), không khả thi (< 0). [C]
@@ -151,15 +151,15 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ### 5.8 Thực thi và theo dõi
 - **FR-EXE-01 (M)** Nhân viên chỉ nhập sự kiện thực tế, không có bước duyệt: kho (bắt đầu chuẩn bị, hàng sẵn sàng, đã lên xe), tài xế (đã xuất phát, đã giao, thất bại kèm bằng chứng), quản lý (thay đổi ca, ngoại lệ: thiếu hàng, hỏng, sự cố xe). Đơn nhiều xe: lên hàng, xuất phát, giao/thất bại ghi theo từng xe. [S]
-- **FR-EXE-04 (M)** Chuẩn bị hàng có **bắt đầu / tạm dừng / tiếp tục / xong**; mỗi lần bắt đầu hoặc tiếp tục nhập số người làm. Hệ thống tính giờ nhân công thực tế = Σ (số người × thời gian từng đoạn), chia cho từng nhóm hàng theo tỷ lệ giờ kế hoạch rồi chia số đơn vị cơ sở → **giờ nhân công/đơn vị** cho từng nhóm (dữ liệu để AI hiệu chỉnh định mức sau này, không phụ thuộc số người). [C]
-- **FR-EXE-02 (M)** Driver PWA có hàng đợi sự kiện khi mất mạng, dấu thời gian là giờ chạm.
-- **FR-EXE-03 (M)** Giao thất bại có lý do chọn sẵn, đếm riêng; dispatcher xếp lại.
-- **FR-RSK-01 (M)** Tính lại ETA khi có sự kiện, GPS mới, dữ liệu nguồn đổi, mốc quá hạn 30 phút, và 07:00 hằng ngày với đơn nhiều ngày; không tính vô ích. [C]
+- **FR-EXE-04 (M, R3)** Chuẩn bị hàng có **bắt đầu / xong**; thời gian chuẩn bị = GOODS_READY − START_PREP. Không tạm dừng/tiếp tục.
+- **FR-EXE-02 (M, R3)** Trang tài xế web chạy online; gửi lại dùng cùng idempotency key. Nút **Cập nhật vị trí** (một điểm/lần) và **Báo sự cố** (lý do chọn sẵn, kèm vị trí nếu có); xác nhận giao xong/thất bại bắt buộc kèm vị trí.
+- **FR-EXE-03 (M, R3)** Giao thất bại theo chuyến, có lý do chọn sẵn; đơn FAILED khi mọi chuyến kết thúc và có chuyến thất bại; CFO chỉ cảnh báo Dispatcher; Dispatcher hẹn giao lại, yêu cầu lập lại (chỉ phần chưa giao) hoặc hủy.
+- **FR-RSK-01 (M, R3)** ETA chỉ tính lại khi có sự kiện mới: duyệt, mốc kho, xuất phát, tài xế gửi vị trí, báo sự cố có vị trí, giao/thất bại, nguồn sửa đơn. Quá ETA hoặc mốc kho 30 phút mà không có sự kiện → cảnh báo Dispatcher, không tự tính lại ETA. [C]
 - **FR-RSK-02 (M)** Trạng thái rủi ro theo % tiêu hao dự trữ (xanh < 33%, vàng 33–66%, cam > 66%; trễ khi slack âm 2 lần liên tiếp; quá hạn). Cam và trễ báo dispatcher. [C][T]
-- **FR-GPS-01 (M, Owner amendment 09/11)** GPS trong MVP: driver PWA gửi vị trí mỗi **30 phút** chỉ khi trip `on_road` và tài xế đang trong **ca chính thức**, GPS theo market được bật, có notice/ack theo phiên bản cho từng tài xế; không thu ngoài ca. Chỉ **Dispatcher được gán chuyến** xem live trong ca; dừng thu và thu hồi live ngay khi trip/ca kết thúc, xóa offline queue không hợp lệ. Lịch sử GPS đã thu hợp lệ được giữ **tối đa 7 ngày** trong phạm vi bị hạn chế, chỉ **privacy/compliance reviewer có case, lý do, scope và audit** được truy cập; khách/CS/Sales không xem. Mất tín hiệu >60 phút → alert; synthetic simulator tách với người thật. **Chưa bật GPS người thật** khi thiếu review pháp lý, DPIA, thông báo/nghĩa vụ liên quan; không mặc định consent là căn cứ GDPR. [DEC-GPS-RET](decisions/DEC_GPS_7D_AND_D8_REVIEW_TIMES_20261109.md), [Q5](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md). [C][S][A]
+- **FR-GPS-01 (M, R3)** Không thu vị trí theo chu kỳ, không bản đồ. Vị trí chỉ do tài xế chủ động gửi khi đang chạy, khi báo sự cố và bắt buộc khi giao xong/thất bại. Dispatcher được gán luân phiên thấy "Vị trí gần nhất · Giờ cập nhật · ETA" khi chuyến đang chạy; tọa độ xóa khi đơn kết thúc ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 
 ### 5.9 Thông báo
-- **FR-NOT-01 (M)** 4 loại: xác nhận ngày và khung giờ (khi duyệt), đã xuất kho, đã giao (hoặc giao thất bại), báo trễ. Email thật (Mailpit/Brevo), SMS mô phỏng. [C]
+- **FR-NOT-01 (M, R3)** 5 loại email: CONFIRMED, DISPATCHED, DELIVERED, FAILED, DELAY (Dispatcher gửi). Không SMS. Email qua Mailpit/test. [C]
 - **FR-NOT-02 (M)** **Báo trễ do dispatcher bấm gửi**; hệ thống chỉ tạo bản nháp khi cam/trễ. [C]
 - **FR-NOT-03 (M)** Không gửi 21:00–07:00 (trừ báo trễ); chống trùng; thử lại 3 lần.
 - **FR-NOT-04 (M)** Khách chỉ thấy trạng thái và ETA, không toạ độ, không GPS.
@@ -170,10 +170,10 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-EMP-03 (M)** RBAC theo vai trò và phạm vi địa điểm, kiểm ở máy chủ.
 
 ### 5.11 KPI, log, quản trị
-- **FR-KPI-01 (M, 10 KPI owner-approved)** Dashboard vận hành có **10 khóa**: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`; so với baseline nhập tay, market-local cohorts, mặc định 30 ngày/tối đa 366 ngày, System Admin chọn market tường minh. Hai diagnostics `hard_constraint_violations` và `event_to_alert_latency_s_median` phải là `null` khi thiếu nguồn; không bịa dữ liệu/0. [Q6](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md). [S][C]
-- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (**tách khỏi 10 KPI vận hành**): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn cửa hàng/kho **không cộng nhau**; xuất CSV có audit. Chỉ tiền hàng, không thêm phí/giá vốn/lợi nhuận khi chưa được duyệt. [C][A]
+- **FR-KPI-01 (M, R3)** Dashboard vận hành có **5 KPI**: `planning_time_min` (tách theo đường Sales/Dispatcher), `on_time_rate`, `plan_acceptance_rate` (tách theo đường), `manual_intervention_rate`, `eta_error_min` (median/P90, tuyệt đối, không baseline); chỉ số phụ `order_to_commit_min`, `counter_commit_rate`. Định nghĩa ở [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md) và `06` §19.8. [S][C]
+- **FR-KPI-02 (Hoãn R3)** Màn Doanh thu ngoài phạm vi pilot R3.
 - **FR-LOG-01 (M)** Nhật ký quyết định trong DB (chỉ thêm) và log kỹ thuật JSONL; không PII trong log.
-- **FR-ADM-01 (M)** IT xem lịch sử đồng bộ, dòng bị loại, cấu hình market, bật/tắt GPS, ghi nhận DPIA.
+- **FR-ADM-01 (M, R3)** IT xem lịch sử đồng bộ và dòng bị loại; cấu hình market qua file cấu hình/seed.
 
 ---
 
@@ -184,7 +184,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 ### 6.1 Nguyên tắc chung
 - **BR-GEN-01** CFO chạy trên hệ thống sẵn có và chỉ đọc từ chúng. [S]
 - **BR-GEN-02** Lõi quyết định dùng chung; quy tắc từng nước là dữ liệu cấu hình, không có mã riêng nước trong lõi. [S][C]
-- **BR-GEN-03** Hệ thống đề xuất, Dispatcher quyết định các ca đầy đủ/ngoại lệ và Sales được duyệt có điều kiện; không tự duyệt, không tự đổi ngày giao khi khách chưa đồng ý. [S]
+- **BR-GEN-03 (R3)** Hệ thống đề xuất, con người quyết định: Sales duyệt mọi phương án khả thi (rank 1–3) cho đơn cửa hàng mình; Dispatcher điều phối mọi trường hợp còn lại và ngoại lệ; không tự duyệt, không tự đổi ngày giao khi khách chưa đồng ý.
 - **BR-GEN-04** Mọi quyết định được ghi `decision_log`; chọn phương án khác, đổi tiêu chí, kế hoạch tay, từ chối ánh xạ, hủy/lập lại đơn bắt buộc có lý do. [S][C]
 - **BR-GEN-05** Mọi dữ kiện có nguồn và độ tươi; dữ liệu cũ hiển thị cờ cảnh báo. [T]
 
@@ -206,20 +206,20 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-ATP-02** Hàng nhập chưa xác nhận không được tính. [S]
 - **BR-ATP-03** Một kho xử lý trọn đơn; không tách đơn. [S][C]
 - **BR-ATP-04** Kho không đủ hàng trong 14 ngày bị loại (`STOCK_SHORT`). [A]
-- **BR-ATP-05** Thiếu hàng mọi kho → gợi ý chuyển kho bằng quy tắc (kho nguồn còn đủ hàng sẵn có, lead time ngắn nhất, gần nhất); dispatcher duyệt; kho nguồn xác nhận; mới tính là hàng nhập đã xác nhận. [C]
+- **BR-ATP-05 (Hoãn R3)** Gợi ý chuyển kho ngoài phạm vi pilot R3.
 
 ### 6.4 Chuẩn bị hàng
 - **BR-PRP-01** Khối lượng việc theo công thức FR-PRP-01; giờ công của một đơn như nhau ở mọi kho. [S][C]
-- **BR-PRP-02** Công suất ngày = Σ ca (người có mặt × giờ hữu ích) × 90% − việc đã đặt; bỏ ngày nghỉ và ngày lễ. [S][C]
+- **BR-PRP-02 (R3)** Công suất ngày = Σ ca (số người × giờ hữu ích đã xác nhận) × 90% − việc đã đặt; bỏ ngày nghỉ và ngày lễ; thiếu dữ liệu xác nhận = 0. [S][C]
 - **BR-PRP-03 (đã bỏ ở v1.1)** ~~Ép buộc giờ thiết bị~~. Không có mã `PREP_NO_EQUIPMENT` trong MVP. [C]
 - **BR-PRP-04** Quá giờ cắt lên hàng thì lên hàng ca đầu ngày làm việc kế. [S]
 - **BR-PRP-05** Một nhân viên tại một thời điểm chỉ ở một nơi; manager/supervisor mặc định không tính vào công suất nhặt hàng. [C]
 
-- **BR-PRP-06** Lịch làm việc chính thức do Warehouse Manager nhập/xác nhận, không suy ra từ `shift_template.expected_staff`. Công suất theo từng ngày/ca sử dụng lịch người–ca và điểm danh thực tế; lịch tương lai chưa có danh sách nhân viên thì không được tự dựng ca giả. Thay đổi lịch/điểm danh có audit; sửa hồi tố cần lý do.
+- **BR-PRP-06 (R3)** Số người và giờ làm theo ngày/ca do Warehouse Manager nhập và xác nhận; sửa phải có lý do và audit.
 
 ### 6.5 Giao hàng và gate
 - **BR-DEL-01** Xe phải đủ tải trọng và thể tích, được chở nhóm hàng, đủ khả năng (crane, dump…) và rảnh. [S]
-- **BR-DEL-02** Tài xế cùng kho, có mặt, bằng đủ hạng và còn hạn, tổng giờ trong ngày ≤ 9 giờ [A], không trùng chuyến.
+- **BR-DEL-02 (R3)** Tài xế cùng kho, có lịch khả dụng và quyền lái loại xe do đội quản lý tài xế xác minh, chuyến trong khung khả dụng, tổng giờ lái ≤ giới hạn được cung cấp, không trùng chuyến; thiếu dữ liệu xác minh → không đủ điều kiện.
 - **BR-DEL-03** Thời gian chuyến = lên hàng + lái + dỡ; ETA phải nằm trong cửa sổ nhận hàng của ngày giao. [S]
 - **BR-DEL-04** Phân loại dự trữ lập kế hoạch: `planning_reserve = đóng cửa sổ nhận hàng của ngày cuối được chấp nhận − ETA khả thi sớm nhất`; an toàn ≥ 2 ngày, sát 0 đến < 2 ngày, không khả thi < 0. Hạn khả thi không bị trừ buffer nên không loại oan phương án giao được. [C]
 - **BR-DEL-05** Một xe chỉ chở **một đơn** trong một chuyến (không ghép đơn). Một đơn được dùng **nhiều xe** cùng kho; hàng chia theo tải và thể tích (một dòng có thể tách qua nhiều xe); các xe tới trong cùng cửa sổ, chênh nhau không quá 30 phút [A]; đơn `DELIVERED` khi mọi xe giao xong. [C]
@@ -253,7 +253,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-NOT-01** Khách nhận: ngày và khung giờ đã xác nhận, đã xuất kho, đã giao/giao thất bại, báo trễ. [S]
 - **BR-NOT-02** Chỉ báo trễ khi thay đổi có ý nghĩa: lệch ≥ 30 phút so với khung đã thông báo. [S][A]
 - **BR-NOT-03** Không gửi 21:00–07:00 giờ địa phương, trừ báo trễ. [A]
-- **BR-GPS-01 (sửa 09/11)** Live GPS chỉ Dispatcher được gán trip đang on-road trong ca chính thức; khách/CS/Sales không xem. Dừng thu/live khi trip hoặc ca kết thúc; lịch sử hợp lệ tối đa **7 ngày** chỉ dành privacy/compliance reviewer được chỉ định theo case và audit sau privacy/legal sign-off. Mất tín hiệu >60 phút → alert; demo hiện cảnh báo khi thiếu DPIA. [C][S]
+- **BR-GPS-01 (R3)** Chỉ Dispatcher được gán chuyến (luân phiên, bàn giao có audit) xem vị trí khi chuyến đang chạy; khách/CS/Sales không bao giờ xem. Chuyến kết thúc thì dừng quyền xem; tọa độ xóa khi đơn DELIVERED/CANCELLED (FAILED: tối đa 7 ngày); không có lịch sử. Dùng với tài xế thật cần DPIA và tham vấn nhân viên trước.
 
 ### 6.9 Nhân sự và quyền
 - **BR-EMP-01** Mỗi nhân viên `active` có đúng một phân công đang hiệu lực. [C]
@@ -278,16 +278,13 @@ Hiệu năng (lập kế hoạch 1 đơn < 2 s; bảng đơn < 1 s với 1.000 �
 
 ## 9. KPI thành công của pilot
 
-| KPI | Định nghĩa ngắn | Mục tiêu |
+| KPI | Định nghĩa | Hướng |
 |---|---|---|
-| Thời gian lập kế hoạch mỗi đơn | Từ nộp đơn tới duyệt | Giảm so với baseline thủ công |
-| Giao đúng hạn | Giao trong khung cam kết / đơn đã giao (thất bại tính riêng) | Tăng |
-| Giờ công và km mỗi lần giao | Trung bình của kế hoạch đã duyệt | Theo dõi, không quy tiền |
-| Sai số chuẩn bị | |thực tế − kế hoạch| | Giảm |
-| Sai số ETA | |giao thực − ETA đầu| | Giảm |
-| Tỷ lệ chấp nhận kế hoạch | Duyệt đúng phương án 1, không đổi / số duyệt | Tăng |
-| Tỷ lệ giao thất bại | FAILED / (DELIVERED + FAILED) | Theo dõi |
-| Mức dùng công suất | Giờ đã giữ `committed` / giờ khả dụng | Theo dõi |
+| Thời gian lập kế hoạch/đơn | Thời gian người xử lý thao tác trên mỗi đơn, so baseline thủ công từ shadow pilot; tách theo đường Sales/Dispatcher. Phụ: thời gian từ đơn vào CFO đến CONFIRMED, tách theo đường | Giảm |
+| Giao đúng hạn | % đơn giao trong cửa sổ đã hứa | Tăng |
+| Tỷ lệ chấp nhận phương án | % rank-1 được duyệt không sửa (Dispatcher hoặc Sales), báo cáo tách theo đường. Phụ: % đơn cam kết ngay tại quầy | Tăng |
+| Can thiệp thủ công/đơn | % đơn phải lập tay hoặc override | Giảm |
+| Sai số ETA | Phút chênh giữa ETA dự báo lúc xuất phát và giờ POD; median và P90; chỉ số tuyệt đối có mục tiêu, không baseline | Giảm |
 
 Không công bố con số lợi ích trước khi đo baseline. Điều kiện **go/no-go để mở rộng** [S]: cải thiện đo được so với baseline đã thống nhất; tổng chi phí và tính khả thi vận hành chấp nhận được; dữ liệu đáng tin, trách nhiệm rõ, ngoại lệ kiểm soát được. Bước tiếp theo trước khi cam kết pilot: xác nhận dữ liệu baseline, ước tính chi phí, chủ sở hữu và tiêu chí thành công.
 
@@ -369,7 +366,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | Dữ liệu cho AI | Học từ thực tế | Giờ nhân công/đơn vị cơ sở theo nhóm, thu qua bắt đầu/tạm dừng/tiếp tục/xong |
 | Vai trò | Không tách CSKH | Thêm Customer service tách khỏi sales |
 | Ngày yêu cầu | Một ngày | Ba dạng: exact / range / latest |
-| Phạm vi pilot | 2–3 kho, 20–30 cửa hàng, ~100 SKU | 3 kho, 25 cửa hàng, ~100 SKU (khớp) |
+| Phạm vi pilot | 2–3 kho, 20–30 cửa hàng, ~100 SKU | R3: 2 kho, 10 cửa hàng, ~100 SKU |
 
 **Giữ nguyên như slide:** khách không thấy GPS; không tự duyệt thay dispatcher; không tự đổi ngày khi khách chưa đồng ý; một kho xử lý trọn đơn; gate 5 check; best + 2 alternatives kèm lý do; nhật ký mọi quyết định; chạy bóng (shadow mode); nước mới = adapter mới + cấu hình.
 
