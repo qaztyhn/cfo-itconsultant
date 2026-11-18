@@ -43,7 +43,7 @@ describe("OrdersTable (read-only)", () => {
     expect(row.getByText("N2 · Boards, sheets & tiles")).toBeInTheDocument();
     expect(row.getByText("N1 · Small items & accessories")).toBeInTheDocument();
     expect(row.getByText("130 min")).toBeInTheDocument();
-    expect(row.getByText("06:00 → 08:10")).toBeInTheDocument();
+    expect(row.getByText("Not recorded → 08:10")).toBeInTheDocument();
     expect(row.getByText("08:30 · GBG-12-03")).toBeInTheDocument();
     expect(row.getByText("APPROVED")).toBeInTheDocument();
   });

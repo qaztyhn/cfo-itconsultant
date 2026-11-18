@@ -46,7 +46,7 @@ function signInWarehouse() {
   signInAs(userByEmail("wm.got@cfo.demo"));
 }
 
-describe("PrepQueue screen (read-only)", () => {
+describe("PrepQueue screen", () => {
   it("shows the header, capacity card and orders table for the warehouse manager's warehouse", async () => {
     const seen = vi.fn();
     server.use(prepQueueSuccess(buildPrepQueueFixture("verified"), seen));
@@ -62,13 +62,18 @@ describe("PrepQueue screen (read-only)", () => {
     expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 
-  it("has no write buttons in PR 1", async () => {
+  it("offers only status-eligible warehouse actions and per-vehicle loading", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
 
     await screen.findByRole("table", { name: "Orders to prepare" });
-    expect(screen.queryByRole("button", { name: /start prep|pause|resume|goods ready|mark loaded/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start preparation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pause preparation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Resume preparation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Mark loaded · GBG-18-05" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Mark loaded · GBG-18-04" })).toBeNull();
   });
 
   it("test_US_WH_03_AC1_shows_no_equipment_row", async () => {
