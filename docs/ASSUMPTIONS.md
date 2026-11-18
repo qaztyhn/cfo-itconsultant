@@ -690,3 +690,15 @@
 - **Tính toàn vẹn giao dịch:** lý do Manual Plan bắt buộc, lưu snapshot và audit `MANUAL_PLAN_CREATED`; re-check dữ liệu mới, khóa/idempotency/concurrency, chuyển trạng thái và commit reservations nguyên tử sau khi pass. Lỗi phải trả mã rõ ràng; rollback không để lại kế hoạch/giữ chỗ/audit giả. Không tự cho quyền Sales hoặc Warehouse thực hiện hành động Dispatcher.
 - **Phạm vi kỹ thuật còn mở:** PR #183 mới là proposal, chưa có `verify_manual`/adapter hay API hoạt động; `approval_service.manual_plan()` hiện từ chối `409 PLAN_NOT_APPROVABLE` cho đến khi code hoàn chỉnh. **Dev 1** triển khai adapter/service và PostgreSQL tests; **Dev 2** đảm bảo dữ liệu chứng cứ lịch sử tài xế D7; **Dev 3** nối UI/mapping mã lỗi 422. Tài liệu `docs/06`, `docs/02`, `docs/04`, `AGENTS.md` phải được làm rõ nếu cách diễn đạt 'no automatic approval' bị hiểu là phải có hai bước; không nới lỏng invariant bảo vệ.
 - **Tình trạng:** **Owner-approved business decision; implementation, integration, migration (nếu phát sinh), regression và review vẫn pending.** Không suy diễn rằng PR #183 đã merge hay hệ thống hiện duyệt được Manual Plan.
+
+## ASM-010…ASM-015 — CR cắt giảm 30% ngân sách và tích hợp CRM thay Dynamics 365 (Dev đề xuất; **chưa duyệt**)
+
+- **Ngày:** 2026-11-18 · **Người đề xuất:** nhóm Dev · **Người duyệt:** _chưa có_ · **Tình trạng triển khai:** chưa triển khai.
+- **Chi tiết:** [docs/proposals/CR_CRM_BUDGET_CUT_20261118.md](proposals/CR_CRM_BUDGET_CUT_20261118.md).
+- **ASM-010 (proposed):** CRM mới là nguồn chuẩn khách hàng/liên hệ/địa điểm/giờ nhận hàng/consent; CFO đọc qua `CrmAdapter` (polling 5' + Sync now), lưu bản sao tối thiểu, khớp qua `ref.customer_xref`.
+- **ASM-011 (proposed):** Ngoại lệ ghi ra hệ thống ngoài: CFO chỉ phát sự kiện trạng thái đơn (CONFIRMED/DISPATCHED/DELIVERED/FAILED/DELAY_SENT/DATE_CHANGED) sang CRM qua outbox, idempotent, không GPS/điểm rủi ro/chi phí; CRM gửi email/SMS. Không thay đổi quy tắc không ghi POS/ERP/WMS.
+- **ASM-012 (proposed):** Hoãn GPS live (C1) và phát triển thêm WMS reserve/release (C2); ETA từ mốc + ma trận tuyến.
+- **ASM-013 (proposed):** CS làm việc trong CRM; CFO cung cấp API trạng thái chỉ-đọc cho vai trò `crm_integration`; hoãn module CS/contact log trong CFO (C4).
+- **ASM-014 (proposed):** Hoãn chuyển kho (C5), Revenue dashboard (C6), màn quản trị CRUD và lịch từng người (C7, cần sửa DEC-SHIFTS-001/ASM-007), offline queue PWA (C8).
+- **ASM-015 (proposed):** Pilot thu hẹp: 2 kho, ~10 cửa hàng, shadow pilot 1 tuần (C9).
+- **Ràng buộc:** không mục nào được triển khai, và không DEC hiện hành nào bị coi là thay thế, cho tới khi chủ dự án duyệt và ghi `DEC-…` kèm nguồn.
