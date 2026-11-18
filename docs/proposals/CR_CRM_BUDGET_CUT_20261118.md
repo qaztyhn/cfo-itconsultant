@@ -1,5 +1,7 @@
 # CR-2026-11-18 — Cắt giảm 30% ngân sách và tích hợp CRM mới (thay Microsoft Dynamics 365)
 
+> **ĐÃ LỖI THỜI (2026-11-18).** Chủ dự án chốt khác đề xuất này: CFO tự gửi email (không qua CRM), CS lookup giữ trong CFO, Salesforce Sales Cloud cơ bản, giữ multi-truck, Sales có quyền trong phạm vi. Quyết định có hiệu lực: [DEC-R3](../decisions/DEC_R3_SCOPE_CRM_20261118.md). File giữ lại để truy vết lập luận.
+
 > **Trạng thái:** `proposed` — đề xuất của nhóm Dev, **chưa phải quyết định của chủ dự án**. Không có mục nào ở đây được
 > triển khai trước khi chủ dự án duyệt và ghi `DEC-…` vào `docs/ASSUMPTIONS.md`. Các mã đề xuất ASM-010…ASM-015 bên dưới
 > đã được ghi ở trạng thái *proposed* trong sổ.

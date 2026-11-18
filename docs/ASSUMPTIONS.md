@@ -1,6 +1,6 @@
 # Assumptions (ASM-xxx)
 
-## Sổ quyết định đã chốt (cập nhật 2026-11-09)
+## Sổ quyết định đã chốt (cập nhật 2026-11-18)
 
 **Mục đích:** đây là nơi tập trung ghi nhận **tất cả assumption/quyết định nghiệp vụ đã được chủ dự án hoặc nhóm có thẩm quyền xác nhận**, không chỉ những chỗ còn mơ hồ. Giữ nguyên mã `ASM-xxx` cũ; các quyết định sản phẩm liên chủ đề dùng mã `DEC-xxx` để tránh trùng với ASM do Dev đề xuất (như ASM-008 ở PR #55).
 
@@ -72,6 +72,22 @@
 | [DEC-INT-CS-GET-PRIVACY-20261109](#dec-int-cs-get-privacy-20261109--bảo-vệ-số-điện-thoại-trong-get-q) | Giữ GET q; HTTPS, rate-limit, log redaction, no-referrer; còn rủi ro URL/browser history | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; backend/privacy tests pending |
 | [DEC-INT-D8-STAGING-EXEC-20261109](#dec-int-d8-staging-exec-20261109--d8-chỉ-test-stagingmanual) | D8 chỉ chạy trên staging hiện có hoặc manual test, không bật/mua prod worker | 09/11 | Owner “các phần còn lại tôi đồng ý”, Q2–Q10; [biên bản](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md) | Approved policy; Dev 2 staging tests pending |
 | [DEC-MANUAL-PLAN-20261109](#dec-manual-plan-20261109--dispatcher-xác-nhận-kế-hoạch-thủ-công-là-phê-duyệt) | **Phương án A:** Dispatcher có quyền chủ động gửi Manual Plan; thao tác gửi chính là phê duyệt sau khi qua đủ 5 gate; không có bước duyệt thứ hai, không cho hệ thống tự duyệt | 09/11 | Owner chọn “A” khi xem [PR #183](https://github.com/qaztyhn/cfo-itconsultant/pull/183) và [comment xác nhận](https://github.com/qaztyhn/cfo-itconsultant/pull/183#issuecomment-6735806644) | **Business decision approved; `verify_manual`/service/API/tests chưa triển khai** |
+| [DEC-R3-01](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Hoãn GPS/Leaflet/offline PWA; ETA từ DISPATCHED + tuyến; check-in web một chạm chỉ gửi trạng thái, không vị trí | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-02](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Bỏ SMS; email CONFIRMED/DISPATCHED/DELIVERED/FAILED/DELAY; FAILED luôn giữ | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-03](decisions/DEC_R3_SCOPE_CRM_20261118.md) | 5 KPI; KPI 1 và 3 tách theo đường duyệt; KPI 5 tuyệt đối, không baseline | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-04](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Pilot 2 kho, 10 cửa hàng | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-05](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Bỏ contact log CS; CS lookup chỉ đọc giữ | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-06](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Công suất kho theo ngày/ca (số người × giờ), không lịch từng người/điểm danh; thiếu = 0 | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-07](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Lịch khả dụng và quyền lái xe do đội quản lý tài xế xác minh; CFO không tự tính lịch sử 56 ngày | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-08](decisions/DEC_R3_SCOPE_CRM_20261118.md) | prep_time = GOODS_READY − START_PREP; bỏ PAUSE/RESUME | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-09](decisions/DEC_R3_SCOPE_CRM_20261118.md) | FAILED và sự cố xe chỉ cảnh báo Dispatcher; lập lại chỉ phần chưa giao, do Dispatcher yêu cầu | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-10](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Sales ngang Dispatcher trong phạm vi đơn cửa hàng mình trước khi duyệt: rank 1–3 mọi kho, chạy lại, thỏa thuận ngày | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-11](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Hoãn chuyển kho, Revenue; UI quản trị → cấu hình; WMS reserve chỉ ACK mô phỏng; giữ multi-truck | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-12](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Track CRM: Sales Cloud cơ bản, CustomerContactPort, mock D365/Salesforce, cutover tuần 5 | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-13](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Ngân sách 46/20/4 và thang cắt có thứ tự | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+| [DEC-R3-14](decisions/DEC_R3_SCOPE_CRM_20261118.md) | Adapter Đan Mạch bằng cấu hình; AI gợi ý nhóm xử lý theo lô, người xác nhận | 18/11 | Chủ dự án chốt trong phiên làm việc 18/11/2026 | Đã duyệt; **chưa triển khai** (chờ T01 hợp đồng 05/06) |
+
+**Bị thay thế một phần bởi DEC-R3 (18/11/2026):** DEC-GPS-RET-20261109, DEC-INT-GPS-HISTORY-20261109 (GPS trong pilot R3); DEC-NOTIFY-001 (kênh SMS); DEC-INT-CS-GET-PRIVACY-20261109 (contact log); ASM-007, DEC-SHIFTS-001 phần kho, DEC-M6-PREP-QUEUE-20261109 phần roster; DEC-DEV2-D7-001, DEC-DRIVER-001 phần CFO tự kiểm lịch sử lái/nghỉ; DEC-SALES-001; DEC-INT-TRANSFER-BOUNDARY-20261109. Chi tiết phần bị thay ở [DEC-R3 §3](decisions/DEC_R3_SCOPE_CRM_20261118.md). Các dòng cũ giữ nguyên để truy vết; khi mâu thuẫn, DEC-R3 thắng.
 
 **Không nằm trong bảng đã duyệt:** [ASM-004](#asm-004--mã-lỗi-cho-lỗi-kỹ-thuật-ngoài-danh-sách-06-mục-11) đang được file này ghi **chờ phê duyệt hợp đồng**; không ngầm chuyển sang “đã chốt”. ASM-008 của Dev 3 trong PR #55 cũng là **đề xuất chưa duyệt**. Câu hỏi hoặc phương án do Dev tự nêu không mặc nhiên trở thành quyết định đã chốt.
 
@@ -691,7 +707,9 @@
 - **Phạm vi kỹ thuật còn mở:** PR #183 mới là proposal, chưa có `verify_manual`/adapter hay API hoạt động; `approval_service.manual_plan()` hiện từ chối `409 PLAN_NOT_APPROVABLE` cho đến khi code hoàn chỉnh. **Dev 1** triển khai adapter/service và PostgreSQL tests; **Dev 2** đảm bảo dữ liệu chứng cứ lịch sử tài xế D7; **Dev 3** nối UI/mapping mã lỗi 422. Tài liệu `docs/06`, `docs/02`, `docs/04`, `AGENTS.md` phải được làm rõ nếu cách diễn đạt 'no automatic approval' bị hiểu là phải có hai bước; không nới lỏng invariant bảo vệ.
 - **Tình trạng:** **Owner-approved business decision; implementation, integration, migration (nếu phát sinh), regression và review vẫn pending.** Không suy diễn rằng PR #183 đã merge hay hệ thống hiện duyệt được Manual Plan.
 
-## ASM-010…ASM-015 — CR cắt giảm 30% ngân sách và tích hợp CRM thay Dynamics 365 (Dev đề xuất; **chưa duyệt**)
+## ASM-010…ASM-015 — CR cắt giảm 30% ngân sách và tích hợp CRM thay Dynamics 365 (Dev đề xuất; **đã bị thay thế bởi DEC-R3-01…14**)
+
+> **Superseded 2026-11-18:** chủ dự án chốt khác đề xuất (CFO tự gửi email, CS lookup ở CFO, Sales Cloud cơ bản). Xem [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md). Giữ nội dung dưới đây để truy vết.
 
 - **Ngày:** 2026-11-18 · **Người đề xuất:** nhóm Dev · **Người duyệt:** _chưa có_ · **Tình trạng triển khai:** chưa triển khai.
 - **Chi tiết:** [docs/proposals/CR_CRM_BUDGET_CUT_20261118.md](proposals/CR_CRM_BUDGET_CUT_20261118.md).
