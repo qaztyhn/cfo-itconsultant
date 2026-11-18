@@ -21,6 +21,8 @@
 
 ## 2. Khởi tạo, schema, enum
 
+> **Round 3 (DEC-R3, 18/11/2026):** xem [mục 13](#13-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-migration-pending) cho thay đổi enum sự kiện, kênh thông báo, công suất kho theo ngày và dữ liệu tài xế đã xác minh.
+
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -240,6 +242,8 @@ CREATE TABLE ref.compliance_record (            -- DPIA, tham vấn nhân viên,
 ```
 
 ## 4. Schema `hr` — nhân sự **[C]**
+
+> **Round 3 (DEC-R3, 18/11/2026):** xem [mục 13](#13-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-migration-pending) cho thay đổi enum sự kiện, kênh thông báo, công suất kho theo ngày và dữ liệu tài xế đã xác minh.
 
 Một bảng `employee` + **5 bảng con**: `warehouse_staff`, `sales_staff`, `dispatcher_staff`, `driver_staff`, `cs_staff`. Admin chỉ là quyền (`app_user.roles`), giao cho nhân viên IT. Business owner và Project Lead là nhân viên không có bảng con, chỉ có quyền `viewer`; hai người phân biệt bằng `ref.app_user.kpi_scopes` (Business owner `{revenue_all}`, Project Lead `{ops}`). Không thêm vai trò mới. Công nhân kho không có tài khoản. Mỗi người **chỉ có một phân công đang hiệu lực** (một nơi tại một thời điểm).
 
@@ -1140,3 +1144,117 @@ CREATE TABLE ops.wms_reservation_intent (
 ```
 
 All rows also have `created_at` and `updated_at`; migration 0014 owns constraints, indexes and triggers. States: pending, unknown, acked, refreshed, rejected, released. Only a verified matching ACK can advance to acked; a matching batch-inclusion proof can advance to refreshed. **Refreshed is not APPROVED**; ApprovalService remains fail closed pending an audited, double-count-safe finalization contract.
+
+## 13. Round 3 contract changes — DEC-R3 (2026-11-18, owner-approved; migration pending)
+
+> Nguồn: [DEC-R3-01…14](decisions/DEC_R3_SCOPE_CRM_20261118.md). Mục này **thắng** các DDL/ghi chú cũ mâu thuẫn ở trên. Mọi thay đổi là
+> **forward migration mới**; không sửa migration đã có, không DROP bảng/enum cũ (giữ để truy vết và để có thể bật lại sau).
+> Chưa có migration/code nào cho mục này tại thời điểm ghi.
+
+### 13.1 Enum và ràng buộc
+
+```sql
+-- R3-DB-1: check-in tài xế chỉ gửi trạng thái (DEC-R3-01)
+ALTER TYPE ops.event_type ADD VALUE IF NOT EXISTS 'DRIVER_STATUS';
+-- payload DRIVER_STATUS: {"trip_id": int, "status": "ON_SCHEDULE"|"DELAYED"|"AT_STOP", "delay_min": int|null}
+--   delay_min bắt buộc và trong 1..480 khi status = DELAYED, phải null ở trạng thái khác.
+--   Không có khóa vị trí: service từ chối payload chứa lat/lon/latitude/longitude/position/coords/accuracy.
+-- PREP_PAUSED, PREP_RESUMED vẫn còn trong enum nhưng service từ chối ghi mới (DEC-R3-08).
+
+-- R3-DB-2: chỉ email (DEC-R3-02). Giữ giá trị 'sms_sim' trong enum; chặn dòng mới.
+ALTER TABLE ops.notification ADD CONSTRAINT ck_notification_email_only_r3 CHECK (channel = 'email') NOT VALID;
+ALTER TABLE ops.notification ADD COLUMN IF NOT EXISTS skipped_reason text
+  CHECK (skipped_reason IS NULL OR skipped_reason IN ('SKIPPED_NO_CHANNEL','SKIPPED_FLAG_DISABLED','SKIPPED_CUSTOMER_UNMATCHED'));
+-- 'suppressed' (notif_status có sẵn) + skipped_reason dùng khi không gửi; không log địa chỉ email.
+
+-- R3-DB-3: lập lại cho phần chưa giao (DEC-R3-09)
+ALTER TABLE plan.planning_run DROP CONSTRAINT IF EXISTS planning_run_kind_check;
+ALTER TABLE plan.planning_run ADD CONSTRAINT planning_run_kind_check
+  CHECK (kind IN ('initial','rerun','replan_suggestion','remaining_replan'));
+ALTER TABLE plan.planning_run ADD COLUMN IF NOT EXISTS remaining_lines jsonb;   -- chỉ khi kind='remaining_replan': [{line_no, qty_base}]
+-- 'replan_suggestion' không còn được tạo bởi FAILED hoặc VEHICLE_ISSUE; chỉ còn tín hiệu nguồn sửa đơn sau duyệt / PLAN_INVALIDATED.
+```
+
+### 13.2 Công suất kho theo ngày/ca (DEC-R3-06)
+
+```sql
+CREATE TABLE hr.warehouse_day_capacity (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  warehouse_id bigint NOT NULL REFERENCES ref.location(id),
+  work_date date NOT NULL,
+  shift_code text NOT NULL CHECK (shift_code ~ '^[A-Z0-9_]{1,16}$'),
+  start_time time NOT NULL, end_time time NOT NULL CHECK (end_time <> start_time),  -- end < start = qua nửa đêm
+  headcount smallint NOT NULL CHECK (headcount BETWEEN 0 AND 500),
+  productive_hours numeric(4,2) NOT NULL CHECK (productive_hours > 0 AND productive_hours <= 12),  -- giờ hữu ích/người/ca
+  confirmed_by bigint NOT NULL REFERENCES hr.employee(id),
+  confirmed_at timestamptz NOT NULL DEFAULT now(),
+  change_reason text,            -- bắt buộc khi thay một dòng đã xác nhận hoặc khi work_date < hôm nay (market-local)
+  superseded_at timestamptz,     -- sửa = đóng dòng cũ + thêm dòng mới; không UPDATE số liệu, không DELETE
+  superseded_by bigint REFERENCES hr.warehouse_day_capacity(id)
+);
+CREATE UNIQUE INDEX ux_wdc_active ON hr.warehouse_day_capacity (warehouse_id, work_date, shift_code)
+  WHERE superseded_at IS NULL;
+```
+
+- `labour_cap_hours(kho, ngày) = Σ (headcount × productive_hours) × delivery_share` của các dòng còn hiệu lực; `delivery_share` lấy từ cấu hình market (giá trị hiện hành).
+- Ngày lễ market → 0. **Không có dòng còn hiệu lực = 0 (fail-closed)**, trả `capacity.schedule_verified = false`.
+- Planning/approval/prep queue **chỉ** đọc bảng này. `hr.employee_shift_schedule`, `hr.attendance`, job `attendance_gen` không còn tham gia tính công suất (bảng giữ nguyên).
+- Ghi/sửa: `warehouse` có `can_approve` của đúng kho; audit `CAPACITY_CONFIRMED` / `CAPACITY_CHANGED` (before/after) cùng transaction.
+
+### 13.3 Tài xế: dữ liệu khả dụng và quyền lái đã xác minh (DEC-R3-07)
+
+```sql
+CREATE TABLE hr.driver_availability (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  driver_employee_id bigint NOT NULL REFERENCES hr.employee(id),
+  work_date date NOT NULL,                       -- ngày market-local
+  available_from timestamptz NOT NULL, available_to timestamptz NOT NULL CHECK (available_to > available_from),
+  max_driving_min int NOT NULL CHECK (max_driving_min BETWEEN 0 AND 900),   -- đội quản lý tài xế đã tính từ giờ lái/nghỉ
+  verified_by text NOT NULL,                     -- người/đơn vị xác minh phía đội quản lý tài xế
+  verified_at timestamptz NOT NULL,
+  source text NOT NULL CHECK (source IN ('fleet_api','fleet_csv','synthetic_demo')),
+  source_ref text NOT NULL,                      -- id bản ghi/lô phía nguồn, để idempotent
+  superseded_at timestamptz,
+  UNIQUE (source, source_ref)
+);
+CREATE UNIQUE INDEX ux_driver_avail_active ON hr.driver_availability (driver_employee_id, work_date)
+  WHERE superseded_at IS NULL;
+
+CREATE TABLE hr.driver_vehicle_eligibility (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  driver_employee_id bigint NOT NULL REFERENCES hr.employee(id),
+  vehicle_id bigint REFERENCES ref.vehicle(id),          -- được lái đúng xe này, hoặc
+  licence_class ref.licence_class,                        -- mọi xe có required_licence = lớp này
+  verified_until date NOT NULL,
+  verified_by text NOT NULL, verified_at timestamptz NOT NULL,
+  source text NOT NULL CHECK (source IN ('fleet_api','fleet_csv','synthetic_demo')),
+  source_ref text NOT NULL, revoked_at timestamptz,
+  CHECK ((vehicle_id IS NULL) <> (licence_class IS NULL)),
+  UNIQUE (source, source_ref)
+);
+```
+
+Quy tắc gate tài xế (thay bằng chứng lịch sử 56 ngày):
+- Tài xế đủ điều kiện cho xe `v` ngày `d` khi: có `driver_availability` còn hiệu lực cho `d`; khung chuyến (rời kho → về kho) nằm trong `[available_from, available_to]`; tổng thời gian lái các chuyến cam kết trong ngày ≤ `max_driving_min`; và có `driver_vehicle_eligibility` chưa thu hồi, `verified_until ≥ d`, khớp `vehicle_id = v` hoặc `licence_class = v.required_licence`.
+- Thiếu/hết hạn/thu hồi → không đủ điều kiện (fail-closed), reason code `DRIVER_NOT_VERIFIED`.
+- `source = 'synthetic_demo'` chỉ được chấp nhận khi `APP_ENV <> 'production'` và luôn hiển thị nhãn *demo, không phải xác minh pháp lý*.
+- `hr.driver_duty_log` và proof 56 ngày không còn tham gia planning/approval/dispatch.
+
+### 13.4 Phần hàng chưa giao (DEC-R3-09)
+
+Không thêm bảng. `remaining_qty_base(line) = order_line.qty_base − Σ load_lines.qty_base` của các `plan.plan_vehicle` thuộc kế hoạch đang đóng mà `trip_stop` tương ứng có `proof_of_delivery.result = 'delivered'`. Được tính trong transaction `POST /orders/{id}/replan` với `scope=remaining` và lưu vào `planning_run.remaining_lines`.
+
+### 13.5 KPI (DEC-R3-03)
+
+`audit.improvement_log` thêm:
+
+```sql
+ALTER TABLE audit.improvement_log ADD COLUMN IF NOT EXISTS approval_path text
+  CHECK (approval_path IS NULL OR approval_path IN ('sales','dispatcher'));
+ALTER TABLE audit.improvement_log ADD COLUMN IF NOT EXISTS order_to_commit_min int;   -- vào CFO → CONFIRMED đầu tiên
+```
+
+- `approval_path` = vai trò của người duyệt kế hoạch hiện hành (từ `decision_log`); kế hoạch tay luôn `dispatcher`.
+- `prep_actual_min = GOODS_READY − START_PREP` (DEC-R3-08); `labour_segments` không còn được ghi mới.
+- `audit.kpi_baseline` không nhận `eta_error_min` (KPI tuyệt đối).
+- Snapshot ETA: mỗi lần tính lại vẫn là một dòng `ops.eta_forecast`; `trigger` thêm giá trị `event:DRIVER_STATUS`, bỏ `gps`.
