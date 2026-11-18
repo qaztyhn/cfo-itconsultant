@@ -22,7 +22,7 @@
 2. ~~Đơn cần nhiều xe: lối "xử lý ngoài CFO"~~ (thay ở v1.2 bằng xếp lịch nhiều xe).
 3. **Vòng đời kế hoạch**: lập lại/hủy/xếp lại sau thất bại phải đóng kế hoạch cũ trong một transaction (BR-APR-03); POD theo **từng lần giao** (BR-EXE-03); khóa chống giữ chỗ vượt tồn kho và công suất (BR-RES-04).
 4. **KPI và doanh thu**: định nghĩa doanh thu và quyền xem (BR-KPI-01, FR-KPI-02).
-5. **Vị trí tài xế**: tài xế chủ động gửi (bắt buộc khi giao xong/thất bại), Dispatcher được gán chuyến xem bản đồ ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
+5. **Vị trí tài xế**: tài xế chủ động gửi (bắt buộc khi giao xong/thất bại); Dispatcher được gán luân phiên thấy dòng "Vị trí gần nhất · Giờ cập nhật · ETA" ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 6. Đối chiếu với slide proposal ở mục 13 (dùng cho báo cáo).
 
 ---
@@ -79,7 +79,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ## 4. Phạm vi MVP
 
-**Trong MVP (R3):** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm (AI gợi ý nhóm xử lý theo lô, người xác nhận); nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; công suất kho theo ngày/ca do Warehouse Manager xác nhận; xe, tài xế với lịch khả dụng và quyền lái do đội quản lý tài xế xác minh; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại (Dispatcher, và Sales cho đơn cửa hàng mình)/lập tay (Dispatcher); thực thi (kho + trang tài xế web online, vị trí do tài xế chủ động gửi, báo sự cố); bản đồ chuyến cho Dispatcher được gán; ETA và rủi ro theo sự kiện; 5 loại email; CS tra cứu chỉ đọc; `CustomerContactPort` cho CRM; nhân sự và phân quyền; nhật ký quyết định; 5 KPI. **Hoãn:** GPS thu theo chu kỳ, offline PWA, SMS, contact log CS, chuyển kho, Doanh thu, UI quản trị (thay bằng seed/cấu hình).
+**Trong MVP (R3):** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm (AI gợi ý nhóm xử lý theo lô, người xác nhận); nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; công suất kho theo ngày/ca do Warehouse Manager xác nhận; xe, tài xế với lịch khả dụng và quyền lái do đội quản lý tài xế xác minh; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại (Dispatcher, và Sales cho đơn cửa hàng mình)/lập tay (Dispatcher); thực thi (kho + trang tài xế web online, vị trí do tài xế chủ động gửi, báo sự cố); dòng vị trí gần nhất cho Dispatcher được gán luân phiên; ETA và rủi ro theo sự kiện; 5 loại email; CS tra cứu chỉ đọc; `CustomerContactPort` cho CRM; nhân sự và phân quyền; nhật ký quyết định; 5 KPI. **Hoãn:** GPS thu theo chu kỳ, offline PWA, SMS, contact log CS, chuyển kho, Doanh thu, UI quản trị (thay bằng seed/cấu hình).
 
 **Ngoài MVP (mở rộng):** mục 10.
 
@@ -156,7 +156,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 - **FR-EXE-03 (M, R3)** Giao thất bại theo chuyến, có lý do chọn sẵn; đơn FAILED khi mọi chuyến kết thúc và có chuyến thất bại; CFO chỉ cảnh báo Dispatcher; Dispatcher hẹn giao lại, yêu cầu lập lại (chỉ phần chưa giao) hoặc hủy.
 - **FR-RSK-01 (M, R3)** ETA chỉ tính lại khi có sự kiện mới: duyệt, mốc kho, xuất phát, tài xế gửi vị trí, báo sự cố có vị trí, giao/thất bại, nguồn sửa đơn. Quá ETA hoặc mốc kho 30 phút mà không có sự kiện → cảnh báo Dispatcher, không tự tính lại ETA. [C]
 - **FR-RSK-02 (M)** Trạng thái rủi ro theo % tiêu hao dự trữ (xanh < 33%, vàng 33–66%, cam > 66%; trễ khi slack âm 2 lần liên tiếp; quá hạn). Cam và trễ báo dispatcher. [C][T]
-- **FR-GPS-01 (M, R3)** Không thu vị trí theo chu kỳ. Vị trí chỉ do tài xế chủ động gửi khi đang chạy, khi báo sự cố và bắt buộc khi giao xong/thất bại. Dispatcher được gán chuyến xem trên bản đồ khi chuyến đang chạy; lưu tối đa 7 ngày ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
+- **FR-GPS-01 (M, R3)** Không thu vị trí theo chu kỳ, không bản đồ. Vị trí chỉ do tài xế chủ động gửi khi đang chạy, khi báo sự cố và bắt buộc khi giao xong/thất bại. Dispatcher được gán luân phiên thấy "Vị trí gần nhất · Giờ cập nhật · ETA" khi chuyến đang chạy; tọa độ xóa khi đơn kết thúc ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)).
 
 ### 5.9 Thông báo
 - **FR-NOT-01 (M, R3)** 5 loại email: CONFIRMED, DISPATCHED, DELIVERED, FAILED, DELAY (Dispatcher gửi). Không SMS. Email qua Mailpit/test. [C]
@@ -253,7 +253,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-NOT-01** Khách nhận: ngày và khung giờ đã xác nhận, đã xuất kho, đã giao/giao thất bại, báo trễ. [S]
 - **BR-NOT-02** Chỉ báo trễ khi thay đổi có ý nghĩa: lệch ≥ 30 phút so với khung đã thông báo. [S][A]
 - **BR-NOT-03** Không gửi 21:00–07:00 giờ địa phương, trừ báo trễ. [A]
-- **BR-GPS-01 (R3)** Chỉ Dispatcher được gán chuyến xem vị trí khi chuyến đang chạy; khách/CS/Sales không bao giờ xem. Chuyến kết thúc thì dừng quyền xem; lịch sử tối đa 7 ngày chỉ reviewer quyền riêng tư theo case. Dùng với tài xế thật cần DPIA và tham vấn nhân viên trước.
+- **BR-GPS-01 (R3)** Chỉ Dispatcher được gán chuyến (luân phiên, bàn giao có audit) xem vị trí khi chuyến đang chạy; khách/CS/Sales không bao giờ xem. Chuyến kết thúc thì dừng quyền xem; tọa độ xóa khi đơn DELIVERED/CANCELLED (FAILED: tối đa 7 ngày); không có lịch sử. Dùng với tài xế thật cần DPIA và tham vấn nhân viên trước.
 
 ### 6.9 Nhân sự và quyền
 - **BR-EMP-01** Mỗi nhân viên `active` có đúng một phân công đang hiệu lực. [C]

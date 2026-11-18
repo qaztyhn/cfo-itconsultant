@@ -106,7 +106,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 | Reservation & approval | Hold, extend, approve, manual nhiều xe, gợi ý lập lại, replan, khóa khi duyệt | US-RES-01, US-APR-01..04, US-ORD-05 |
 | Revenue | Năm endpoint, hai view, phạm vi, CSV, màn A16 | US-REV-01 |
 | Execution | Sự kiện, POD, driver, prep queue | US-WH-04/05, US-EXE-01..04 |
-| GPS | Nhận vị trí, bản đồ, mất tín hiệu, xóa | US-GPS-01..03 |
+| Vị trí (R3) | Nhận vị trí tài xế gửi, dòng vị trí gần nhất, gán luân phiên, xóa khi đơn kết thúc | US-GPS-01..03 (sửa theo DEC-R3-01) |
 | Risk | Forecast, trạng thái, alert | US-RSK-01..03 |
 | Notify | Outbox, mẫu, nháp DELAY, yên lặng | US-NOT-01..03 |
 | KPI & audit | View, dashboard, nhật ký | US-KPI-01/02, US-LOG-01 |
@@ -191,7 +191,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 10 | Nạp lại cùng dữ liệu; dòng lỗi | Không nhân đôi; reject; `partial` |
 | 11 | SKU chưa ánh xạ (đơn synthetic 000156) | Theo **ASM-005/DEC-ROUTING-002**: Sales kiểm tra CFO trước khi điều phối thủ công; thiếu bất kỳ confirmed mapping ⇒ tuyến **legacy/manual** của hệ thống nguồn, **không** mở FIFO plan/hold trong CFO, IT mapping sau này không tự kéo hồi tố đơn cũ trở lại CFO. Kiểm tra routing immutability và double-fulfilment guard |
 | 12 | Giao thất bại rồi giao lại | Chuyến FAILED + lý do; đơn FAILED khi mọi chuyến kết thúc; email FAILED; cảnh báo `DELIVERY_FAILED`, **không** tự lập lại; Dispatcher hẹn lại hoặc lập lại chỉ phần chưa giao; POD đã giao giữ nguyên |
-| 13 | Vị trí tài xế (R3) | Tài xế bấm gửi vị trí → ETA tính lại; Dispatcher được gán chuyến thấy trên bản đồ, Dispatcher khác/Sales/CS 403; chuyến kết thúc → 403 ngay; DELIVERED không có vị trí → 422; báo hỏng xe → cảnh báo, không tự lập lại; quá ETA 30 phút → OVERDUE |
+| 13 | Vị trí tài xế (R3) | Tài xế bấm gửi vị trí → ETA tính lại; Dispatcher được gán luân phiên thấy dòng vị trí gần nhất, Dispatcher khác/Sales/CS 403; bàn giao có audit; chuyến kết thúc → biến mất; đơn DELIVERED → tọa độ bị xóa; DELIVERED không có vị trí → 422; báo hỏng xe → cảnh báo, không tự lập lại; quá ETA 30 phút → OVERDUE |
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |

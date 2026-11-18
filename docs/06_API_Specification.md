@@ -465,7 +465,7 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 
 ## 9. GPS (DEC-DEV2-D3-001, owner-approved policy, contract implementation pending)
 
-> **Round 3 (DEC-R3-01):** không thu theo chu kỳ 30 phút, không offline; vị trí chỉ do tài xế chủ động gửi (một điểm/lần) và bắt buộc khi `DELIVERED`/`FAILED`. Quyền xem và lưu trữ giữ như dưới đây. Xem §19.3.
+> **Round 3 (DEC-R3-01):** không thu theo chu kỳ, không offline, không bản đồ, không lịch sử; vị trí chỉ do tài xế chủ động gửi (một điểm/lần), bắt buộc khi `DELIVERED`/`FAILED`; Dispatcher được gán luân phiên thấy một dòng vị trí gần nhất; tọa độ xóa khi đơn kết thúc. §19.3 thay các quy tắc dưới đây.
 
 **Quyền/phiên:** đọc GPS chỉ cho Dispatcher **được gán rõ cho trip**, không phải mọi Dispatcher của market. Trip phải `on_road`, `market.gps_enabled=true`, tài xế đúng chuyến và thuộc **ca chính thức đang có hiệu lực**; ngoài ca/trước hoặc sau chuyến không đọc/thu điểm. Driver xác thực JWT, ID tài xế từ server-side assignment; **không nhận driver_id tự khai**. Thiếu mapping Dispatcher–trip thì fail closed, cần Dev 1/2 thống nhất migration/RBAC. Driver chỉ gửi/nhận ack của điểm chuyến mình; CS/Sales/warehouse/admin/customer/viewer không bao giờ thấy tọa độ.
 
@@ -994,7 +994,8 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 | `POST /orders/{id}/replan` (mọi `scope`), `POST /orders/{id}/cancel` sau duyệt | **W** | — (403) | — | — | — |
 | Gửi/bỏ `DELAY` | **W** | — (403) | — | — | — |
 | `POST /trips/{id}/positions` (vị trí tài xế bấm gửi), sự kiện `DRIVER_INCIDENT` | — | — | — | **W** (chuyến mình) | — |
-| Xem vị trí/bản đồ (`GET /gps/live`, `GET /trips/{id}/positions`) | R **chỉ khi được gán chuyến** và chuyến `on_road` | — | — | — | — |
+| Xem dòng vị trí gần nhất (`GET /gps/live`) | R **chỉ chuyến được gán cho mình** và đang `on_road` | — | — | — | — |
+| Bàn giao chuyến (`POST /trips/{id}/handover`) | **W** (trong market) | — | — | — | — |
 | Sự kiện kho `PREP_PAUSED`, `PREP_RESUMED` | không còn hỗ trợ | | | | |
 | Contact log CS (§11) | không mount → `404 NOT_FOUND` | | | | |
 | Công suất ngày (`/warehouses/{id}/day-capacity`) | R | — | **W** (kho mình, `can_approve`) | — | — |
@@ -1026,7 +1027,9 @@ Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành độ
 - `DELIVERED`/`FAILED` thiếu `position` → `422 VALIDATION_ERROR` (`details.reason = "position_required"`); không có đường xác nhận giao xong khi không có vị trí. Server ghi một dòng `vehicle_position(source='driver_completion')` và `proof_of_delivery.site_distance_m` trong cùng transaction; tọa độ không vào payload milestone, audit hay thông báo.
 - `DRIVER_INCIDENT`: `reason ∈ {vehicle_breakdown, traffic_or_accident, site_inaccessible, other}` (`other` cần `note`); luôn tạo alert `DRIVER_INCIDENT` cho Dispatcher (`level=critical` nếu `vehicle_breakdown`, ngược lại `warning`). Có `position` → ghi `vehicle_position(source='driver_incident')` và tính lại ETA; `vehicle_breakdown` → không tính ETA mới, alert ghi "ETA không xác định"; không tự lập lại kế hoạch.
 - Mỗi lần nhận vị trí: service gọi `RoutingProvider` (ORS, fallback Haversine × 1,3 ở 50 km/h gắn nhãn ước lượng) để lấy `remaining_km`/`remaining_min` tới điểm giao, lưu vào dòng vị trí, rồi gọi `RiskService.recalculate(trigger="position")`. Engine không gọi provider.
-- **Bản đồ Dispatcher:** `GET /gps/live` và `GET /trips/{id}/positions` (§9) chỉ trả cho Dispatcher có `delivery_trip.assigned_dispatcher_employee_id` = chính mình khi chuyến `on_road`: vị trí mới nhất, `recorded_at`, `remaining_km`, `remaining_min`, ETA, risk, kho, điểm giao. Chuyến kết thúc → `403 FORBIDDEN` ngay. Chưa gán Dispatcher → không ai xem. Khách, CS, Sales: luôn `403`. Lịch sử sau chuyến chỉ theo quyền reviewer riêng tư (§17.1). Xóa sau tối đa 7 ngày.
+- **Không có bản đồ.** `GET /gps/live` trả cho Dispatcher các chuyến `on_road` có `assigned_dispatcher_employee_id` = chính mình, mỗi chuyến **một dòng**: `{ "trip_id", "order_id", "vehicle_code", "last_position": { "lat", "lon" } | null, "remaining_km", "updated_at", "forecast_eta", "risk": {status, color}, "open_incident": reason | null }`; giao diện hiển thị "Vị trí gần nhất · Giờ cập nhật · ETA". `GET /trips/{id}/positions` (danh sách điểm) không còn mount. Chuyến kết thúc → không còn trong danh sách. Chưa gán Dispatcher → không ai thấy. Khách, CS, Sales: luôn `403`.
+- **Gán luân phiên** (`05` §13.1): khi duyệt kế hoạch, mọi chuyến của đơn nhận cùng một Dispatcher theo vòng. `POST /trips/{id}/handover` `{ "to_employee_id": 42, "reason_text": "…" }` (Dispatcher trong market, người nhận phải `in_rotation`), audit `TRIP_DISPATCHER_HANDOVER`.
+- **Xóa tọa độ** khi đơn `DELIVERED`/`CANCELLED`; đơn `FAILED` chậm nhất 7 ngày. Không có API đọc lịch sử vị trí (thay §9 và §17.1 về lịch sử theo case).
 
 ETA (pure engine `forecast`): gốc = `depart_actual_at` (DISPATCHED) + thời gian tuyến của chuyến; có vị trí mới → `recorded_at` + `remaining_min` + thời gian dỡ hàng kế hoạch. ETA đơn = ETA muộn nhất trong các chuyến chưa kết thúc. Mỗi lần tính lưu một `eta_forecast`. **ETA chỉ tính lại khi có sự kiện mới** (duyệt, mốc kho, `DISPATCHED`, vị trí tài xế gửi, `DRIVER_INCIDENT` có vị trí, `DELIVERED`/`FAILED`, nguồn sửa đơn); không có trigger theo chu kỳ (`morning_check`). Job quá hạn tạo alert `OVERDUE` cho Dispatcher khi đã quá ETA **30 phút** mà chưa có `DELIVERED`/`FAILED`, hoặc mốc kho quá 30 phút; không ghi `eta_forecast` mới. KPI 5 so ETA tại `DISPATCHED` với giờ POD.
 

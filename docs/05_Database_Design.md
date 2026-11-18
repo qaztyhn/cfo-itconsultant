@@ -1166,10 +1166,15 @@ ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS remaining_km numeric(7
 ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS remaining_min int;
 ALTER TABLE ops.vehicle_position ADD COLUMN IF NOT EXISTS route_source text CHECK (route_source IN ('ors','haversine_estimate'));
 -- Mỗi DELIVERED/FAILED phải có đúng một dòng source='driver_completion' cho chuyến đó (kiểm ở service, cùng transaction).
--- Xóa vị trí sau tối đa 7 ngày (job retention), như DEC-GPS-RET-20261109.
+-- Xóa mọi vị trí của đơn khi đơn chuyển DELIVERED hoặc CANCELLED (cùng transaction với transition hoặc job ngay sau);
+--   đơn FAILED chưa xử lý xong: job retention xóa chậm nhất 7 ngày sau chuyến cuối. Không có bảng lưu lịch sử vị trí.
 ALTER TABLE ops.proof_of_delivery ADD COLUMN IF NOT EXISTS site_distance_m int;        -- khoảng cách vị trí lúc hoàn tất tới địa chỉ giao
 ALTER TABLE ops.delivery_trip ADD COLUMN IF NOT EXISTS assigned_dispatcher_employee_id bigint REFERENCES hr.employee(id);
--- Quy tắc gán Dispatcher cho chuyến: CHỜ OWNER CHỐT. NULL = không ai xem vị trí của chuyến (fail-closed).
+ALTER TABLE hr.dispatcher_staff ADD COLUMN IF NOT EXISTS in_rotation boolean NOT NULL DEFAULT true;
+-- Gán luân phiên (DEC-R3-01): khi duyệt kế hoạch, mọi delivery_trip của đơn nhận cùng một Dispatcher = người có in_rotation,
+--   employee status 'active', cùng market, có lần được gán gần nhất cũ nhất (chưa từng gán coi là cũ nhất; hòa → employee_id nhỏ).
+--   Tính trong transaction duyệt. Bàn giao: Dispatcher hiện tại hoặc Dispatcher khác trong market cập nhật cột này, audit TRIP_DISPATCHER_HANDOVER.
+--   Không có ai in_rotation → NULL → không ai xem vị trí (fail-closed), alert NO_DISPATCHER_IN_ROTATION.
 -- PREP_PAUSED, PREP_RESUMED vẫn còn trong enum nhưng service từ chối ghi mới (DEC-R3-08).
 
 -- R3-DB-2: chỉ email (DEC-R3-02). Giữ giá trị 'sms_sim' trong enum; chặn dòng mới.
