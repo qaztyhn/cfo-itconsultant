@@ -218,8 +218,19 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
             # The actual Dispatcher explicitly acknowledges a tight plan.
             # This is not an automatic approval or a bypass of backend recheck.
             tight.check()
-        action = page.get_by_role("region", name="Decision").get_by_role("button", name="Approve #1")
-        expect(action).to_be_enabled(timeout=15000)
+        decision = page.get_by_role("region", name="Decision")
+        action = decision.get_by_role("button", name="Approve #1")
+        try:
+            expect(action).to_be_enabled(timeout=10000)
+        except AssertionError:
+            # The decision-region text is a known safe generic UI reason;
+            # never export the whole page/customer data or guess an API code.
+            why = decision.locator("p").first.inner_text()[:300]
+            screenshot(page, out, "03-dispatcher-disabled.png")
+            mark(report, "4", "BLOCKED", "Dispatcher UI rejected Approve before POST",
+                 ui_reason=why, http=None, task="E1, E4, T12")
+            report["last_verified"] = "Sales Sync+Check; Dispatcher showed disabled Approve"
+            return []
         screenshot(page, out, "03-dispatcher-proposed.png")
         action.click()
         dialog = page.get_by_role("dialog", name="Approve plan #1")
