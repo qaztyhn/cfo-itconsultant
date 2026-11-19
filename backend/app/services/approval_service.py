@@ -34,6 +34,7 @@ from app.domain.models.ops import (
     DeliveryTrip,
     EtaForecast,
     IdempotencyKey,
+    Notification,
     OrderRouting,
     StockSnapshot,
     TripStop,
@@ -48,7 +49,7 @@ from app.domain.models.plan import (
 )
 from app.domain.models.ref import Market, Vehicle
 from app.domain.transitions import transition
-from app.services import alert_service, reservation_service
+from app.services import alert_service, notify_service, reservation_service
 
 
 @dataclass(frozen=True)
@@ -598,8 +599,18 @@ async def _approve(
         snapshot={"run_id": run.id, "order_version": order.version, "source_version": order.source_version},
         after={"status": "approved", "trip_ids": trips, "committed_date": plan.target_date.isoformat()},
     )
-    # Notification app/outbox is owned by T23. No direct SMTP/SMS or
-    # arbitrary text here; T23 must enqueue the CONFIRMED template once per plan.
+    # T21 (historical T23 handoff): stage exactly one CONFIRMED in this
+    # approval transaction after the order has its committed plan and window.
+    # The E2 worker owns delivery after commit; never connect to SMTP here.
+    notification_id = await notify_service.enqueue(order.id, "CONFIRMED", plan.id, session=session)
+    notification = await session.get(Notification, notification_id)
+    if (
+        notification is None
+        or notification.order_id != order.id
+        or notification.plan_id != plan.id
+        or notification.template != "CONFIRMED"
+    ):
+        raise _fail("PLAN_NOT_APPROVABLE", "Approved CONFIRMED notification is missing or inconsistent.")
     response: dict[str, object] = {
         "order": {
             "id": order.id,
@@ -612,7 +623,9 @@ async def _approve(
         },
         "plan": {"id": plan.id, "status": "approved", "rank": plan.rank},
         "trip_ids": trips,
-        "notifications": [],
+        "notifications": [
+            {"id": notification.id, "template": notification.template, "status": notification.status}
+        ],
     }
     identity.response_status = 200
     identity.response_body = response
