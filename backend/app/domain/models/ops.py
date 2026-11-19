@@ -216,6 +216,7 @@ class DeliveryTrip(TimestampMixin, Base):
     warehouse_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.location.id"))
     vehicle_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.vehicle.id"))
     driver_employee_id: Mapped[int] = mapped_column(BigInteger, _fk("hr.employee.id"))
+    assigned_dispatcher_employee_id: Mapped[int | None] = mapped_column(BigInteger, _fk("hr.employee.id"))
     status: Mapped[str] = mapped_column(TRIP_STATUS, server_default=text("'planned'"))
     depart_planned_at: Mapped[datetime] = mapped_column(TSTZ)
     depart_actual_at: Mapped[datetime | None] = mapped_column(TSTZ)
@@ -269,6 +270,7 @@ class ProofOfDelivery(TimestampMixin, Base):
     recipient_name: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     failure_reason: Mapped[str | None] = mapped_column(Text)
+    site_distance_m: Mapped[int | None] = mapped_column(Integer)
 
 
 class EtaForecast(TimestampMixin, Base):
@@ -327,6 +329,7 @@ class Notification(TimestampMixin, Base):
     sent_at: Mapped[datetime | None] = mapped_column(TSTZ)
     created_by_employee_id: Mapped[int | None] = mapped_column(BigInteger, _fk("hr.employee.id"))
     suppressed_reason: Mapped[str | None] = mapped_column(Text)
+    skipped_reason: Mapped[str | None] = mapped_column(Text)
     plan_id: Mapped[int | None] = mapped_column(BigInteger)  # 05: không có khóa ngoài
     dedupe_key: Mapped[str] = mapped_column(Text)
 
@@ -346,7 +349,7 @@ class CustomerContactLog(TimestampMixin, Base):
 
 
 class VehiclePosition(TimestampMixin, Base):
-    """GPS: chỉ dispatcher đọc (09 bất biến 4); xóa sau retention_days."""
+    """R3: chỉ Dispatcher được gán xem điểm gần nhất của chuyến đang chạy."""
 
     __tablename__ = "vehicle_position"
     __table_args__ = SCHEMA
@@ -360,6 +363,9 @@ class VehiclePosition(TimestampMixin, Base):
     recorded_at: Mapped[datetime] = mapped_column(TSTZ)
     received_at: Mapped[datetime] = mapped_column(TSTZ, server_default=text("now()"))
     source: Mapped[str] = mapped_column(Text)
+    remaining_km: Mapped[Decimal | None] = mapped_column(Numeric(7, 1))
+    remaining_min: Mapped[int | None] = mapped_column(Integer)
+    route_source: Mapped[str | None] = mapped_column(Text)
 
 
 class IdempotencyKey(TimestampMixin, Base):

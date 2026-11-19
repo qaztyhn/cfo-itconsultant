@@ -117,6 +117,7 @@ class DispatcherStaff(TimestampMixin, Base):
 
     employee_id: Mapped[int] = mapped_column(BigInteger, _employee_fk(), primary_key=True)
     can_send_delay_notice: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    in_rotation: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
 
 class DriverStaff(TimestampMixin, Base):
@@ -214,3 +215,55 @@ class DriverDutyLog(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(Text)
     trip_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ops.delivery_trip.id"))
     recorded_by: Mapped[int | None] = mapped_column(BigInteger, _employee_fk())
+
+
+class WarehouseDayCapacity(TimestampMixin, Base):
+    __tablename__ = "warehouse_day_capacity"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("ref.location.id"))
+    work_date: Mapped[date] = mapped_column(Date)
+    shift_code: Mapped[str] = mapped_column(Text)
+    start_time: Mapped[time] = mapped_column(Time)
+    end_time: Mapped[time] = mapped_column(Time)
+    headcount: Mapped[int] = mapped_column(SmallInteger)
+    productive_hours: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    confirmed_by: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    confirmed_at: Mapped[datetime] = mapped_column(TSTZ, server_default=text("now()"))
+    change_reason: Mapped[str | None] = mapped_column(Text)
+    superseded_at: Mapped[datetime | None] = mapped_column(TSTZ)
+    superseded_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("hr.warehouse_day_capacity.id"))
+
+
+class DriverAvailability(TimestampMixin, Base):
+    __tablename__ = "driver_availability"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    driver_employee_id: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    work_date: Mapped[date] = mapped_column(Date)
+    available_from: Mapped[datetime] = mapped_column(TSTZ)
+    available_to: Mapped[datetime] = mapped_column(TSTZ)
+    max_driving_min: Mapped[int] = mapped_column(Integer)
+    verified_by: Mapped[str] = mapped_column(Text)
+    verified_at: Mapped[datetime] = mapped_column(TSTZ)
+    source: Mapped[str] = mapped_column(Text)
+    source_ref: Mapped[str] = mapped_column(Text)
+    superseded_at: Mapped[datetime | None] = mapped_column(TSTZ)
+
+
+class DriverVehicleEligibility(TimestampMixin, Base):
+    __tablename__ = "driver_vehicle_eligibility"
+    __table_args__ = SCHEMA
+
+    id: Mapped[int] = bigint_pk()
+    driver_employee_id: Mapped[int] = mapped_column(BigInteger, _employee_fk())
+    vehicle_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ref.vehicle.id"))
+    licence_class: Mapped[str | None] = mapped_column(LICENCE_CLASS)
+    verified_until: Mapped[date] = mapped_column(Date)
+    verified_by: Mapped[str] = mapped_column(Text)
+    verified_at: Mapped[datetime] = mapped_column(TSTZ)
+    source: Mapped[str] = mapped_column(Text)
+    source_ref: Mapped[str] = mapped_column(Text)
+    revoked_at: Mapped[datetime | None] = mapped_column(TSTZ)
