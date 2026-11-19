@@ -17,10 +17,12 @@ from app.adapters.wms_reservation import (
     WmsTimeout,
     WmsUnavailable,
 )
+from app.audit.actions import Action
 from app.core import clock
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
+from app.domain.models.audit import DecisionLog
 from app.domain.models.ops import CustomerOrder, StockWriteRun
 from app.domain.models.plan import FulfilmentPlan, PlanningRun
 from app.domain.models.ref import Market, ProductSE
@@ -53,6 +55,8 @@ async def reserve_simulated(order_id: int, plan_id: int) -> str:
         intent = await begin_intent(db, built.request, synthetic=True)
         if intent.status in ("acked", "refreshed"):
             return "acked"
+        if intent.status in ("rejected", "released"):
+            raise DomainError("RESOURCE_CONFLICT", "WMS reservation has been closed.")
         request = built.request
         source_version = built.source_version
         source_ref = built.source_ref
@@ -218,34 +222,58 @@ async def refresh_simulated(order_id: int, plan_id: int) -> None:
 
 
 async def release_invalid_plan(plan_id: int) -> None:
-    """Release a verified WMS hold only when the plan can no longer commit."""
+    """Compensate only a verified hold for a permanently invalid, unused plan."""
     settings = get_settings()
-    async with get_sessionmaker()() as db:
+    if not simulated_enabled() or not settings.synthetic_wms_url or not settings.synthetic_wms_api_key:
+        return
+    async with get_sessionmaker()() as db, db.begin():
         plan = await db.get(FulfilmentPlan, plan_id)
         if plan is None:
             return
-        order = await db.get(CustomerOrder, plan.order_id)
-        market = await db.get(Market, order.market_id) if order else None
-        intent = (
-            await db.scalar(select(WmsReservationIntent).where(WmsReservationIntent.order_id == order.id))
-            if order
-            else None
+        # Match approval's lock order. The order lock waits for any in-flight
+        # approval to commit or roll back before deciding whether to release.
+        order = await db.get(CustomerOrder, plan.order_id, with_for_update=True)
+        if order is None or order.approved_plan_id == plan_id:
+            return
+        run = await db.get(PlanningRun, plan.run_id, with_for_update=True)
+        await db.refresh(plan, with_for_update=True)
+        if run is None or plan.status in ("approved", "manual"):
+            return
+        intent = await db.scalar(
+            select(WmsReservationIntent).where(WmsReservationIntent.order_id == order.id).with_for_update()
         )
-        if order is None or market is None or intent is None or intent.plan_id != plan_id:
+        if (
+            intent is None
+            or intent.plan_id != plan_id
+            or intent.market_id != order.market_id
+            or not intent.is_synthetic
+            or intent.status not in ("acked", "refreshed")
+            or not intent.reservation_id
+        ):
             return
-        if intent.status not in ("acked", "refreshed") or not intent.reservation_id:
-            return
-        run = await db.get(PlanningRun, plan.run_id)
+        # These conditions cannot make this same intent approvable again after
+        # the locks are released. A different order status alone is reversible.
         invalid = (
-            run is None
-            or order.status != "PLANNED"
-            or plan.status != "proposed"
-            or order.version != intent.order_version
-            or order.source_version != intent.source_version
-            or run.hold_expires_at is None
-            or run.hold_expires_at <= clock.now()
+            plan.status in ("expired", "superseded", "rejected")
+            or order.version > intent.order_version
+            or order.source_version > intent.source_version
+            or (run.hold_expires_at is not None and run.hold_expires_at <= clock.now())
         )
         if not invalid:
+            return
+        # A later replan can clear approved_plan_id and supersede the winner.
+        # The committed approval audit still rules out compensation here.
+        used = await db.scalar(
+            select(DecisionLog.id)
+            .where(
+                DecisionLog.order_id == order.id,
+                DecisionLog.plan_id == plan_id,
+                DecisionLog.action == Action.PLAN_APPROVED.value,
+            )
+            .limit(1)
+        )
+        market = await db.get(Market, order.market_id)
+        if used is not None or market is None:
             return
         key, reservation_id, source_ref, source_version, market_code = (
             intent.request_key,
@@ -254,8 +282,6 @@ async def release_invalid_plan(plan_id: int) -> None:
             intent.source_version,
             market.code,
         )
-    if not settings.synthetic_wms_url or not settings.synthetic_wms_api_key:
-        return
     port = DisposableWmsPort(
         settings.synthetic_wms_url,
         settings.synthetic_wms_api_key,
@@ -263,11 +289,15 @@ async def release_invalid_plan(plan_id: int) -> None:
         source_ref=source_ref,
     )
     ack = await port.release(market_code, reservation_id, key + ":release")
-    if ack.status != "released" or ack.reservation_id != reservation_id:
+    if ack.status != "released" or ack.reservation_id != reservation_id or ack.idempotency_key != key:
         raise DomainError("RESOURCE_CONFLICT", "WMS release outcome is not verified.")
     async with get_sessionmaker()() as db, db.begin():
         intent = await db.scalar(
             select(WmsReservationIntent).where(WmsReservationIntent.request_key == key).with_for_update()
         )
-        if intent is not None and intent.status in ("acked", "refreshed"):
+        if (
+            intent is not None
+            and intent.reservation_id == reservation_id
+            and intent.status in ("acked", "refreshed")
+        ):
             intent.status = "released"

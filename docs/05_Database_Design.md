@@ -750,10 +750,12 @@ CREATE TABLE ops.stock_independence_evidence (   -- S2/S5: Warehouse Manager n�
 CREATE TABLE ops.stock_write_run (               -- S3/S4: ràng buộc lần ghi tồn với scope/evidence version (chỉ thêm)
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   market_id smallint NOT NULL REFERENCES ref.market(id), source_batch_id bigint NOT NULL, as_of timestamptz NOT NULL,
+  source_kind text NOT NULL DEFAULT 'source' CHECK (source_kind IN ('source','wms_synthetic')),
+  ingest_run_id bigint REFERENCES stg.sync_run(id),
   scope_version_id bigint REFERENCES ops.stock_scope_version(id), evidence_ids bigint[] NOT NULL DEFAULT '{}',
   expected_rows int NOT NULL, recorded_rows int NOT NULL,
   status text NOT NULL CHECK (status IN ('accepted','rejected')), reject_code text,
-  UNIQUE (market_id, source_batch_id)
+  CONSTRAINT uq_stock_write_origin_batch UNIQUE (market_id, source_kind, source_batch_id)
 );
 ```
 
@@ -1139,6 +1141,9 @@ CREATE TABLE ops.wms_reservation_intent (
   ack_payload jsonb,
   reflected_in_batch_id bigint,
   refreshed_batch_id bigint,
+  stock_write_run_id bigint REFERENCES ops.stock_write_run(id),
+  verified_batch_payload jsonb,
+  verified_batch_sha256 text CHECK (verified_batch_sha256 IS NULL OR length(verified_batch_sha256)=64),
   is_synthetic boolean NOT NULL
 );
 ```
