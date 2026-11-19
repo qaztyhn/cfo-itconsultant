@@ -1,0 +1,57 @@
+name: T30 Revenue real Chrome / T29 API / PostgreSQL
+on:
+  push:
+    branches: [feat/r3-t30-orders-revenue]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  a16b-t29-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: ./.github/actions/postgres
+      - name: Install real FastAPI/PostgreSQL/Playwright dependencies
+        working-directory: backend
+        run: python -m pip install -e ".[dev]" "playwright>=1.50,<2" tzdata
+      - name: Install Chrome
+        working-directory: backend
+        run: python -m playwright install chrome
+      - name: Install real frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: T30 select period, see 5 groups, drill down and compare SQL
+        working-directory: backend
+        run: python -m tests.e2e.t30_revenue_browser --output ../t30-browser-evidence
+      - name: Summarise verified result and redacted HTTP codes
+        if: always()
+        run: |
+          if [ -f t30-browser-evidence/t30-evidence.json ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path("t30-browser-evidence/t30-evidence.json").read_text())
+          print("T30 REAL CHROME:", d.get("result"), d.get("fixture"), d.get("app_now"))
+          print("PERIOD/GROUPS:", d.get("period_five_groups"))
+          print("DRILLDOWN:", d.get("drilldown"))
+          for row in d.get("http_evidence", []):
+              print(row["path"], row["http"], row["query"])
+          PY
+          fi
+      - name: Upload synthetic screenshots and safe JSON (no credentials)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t30-browser-synthetic-evidence
+          path: |
+            t30-browser-evidence/*.png
+            t30-browser-evidence/t30-evidence.json
+          if-no-files-found: ignore
+          retention-days: 3

@@ -9,11 +9,12 @@ import { Revenue } from "./Revenue";
 import { RevenueChart } from "./RevenueChart";
 
 const mocks = vi.hoisted(() => ({
-  summary: vi.fn(), daily: vi.fn(), locations: vi.fn(), orders: vi.fn(), exportCsv: vi.fn(),
+  summary: vi.fn(), status: vi.fn(), daily: vi.fn(), locations: vi.fn(), orders: vi.fn(), exportCsv: vi.fn(),
 }));
 vi.mock("./revenueApi", async original => {
   const real = await original<typeof import("./revenueApi")>();
-  return { ...real, getRevenueSummary: mocks.summary, getRevenueDaily: mocks.daily,
+  return { ...real, getRevenueSummary: mocks.summary, getRevenueOrderStatus: mocks.status,
+    getRevenueDaily: mocks.daily,
     getRevenueLocations: mocks.locations, getRevenueOrders: mocks.orders,
     downloadRevenueCsv: mocks.exportCsv };
 });
@@ -29,6 +30,17 @@ const summary = {
   currency: "SEK", recognised: "1284500.00", booked_not_delivered: "214300.00",
   orders_delivered: 41, avg_order_value: "31329.27", share_of_market_pct: 8.4,
 };
+const status = {
+  period: { from: "2026-11-01", to: "2026-11-30" }, view: "store", location_id: null,
+  currency: "SEK", total: { orders: 116, amount: "1569100.00" },
+  groups: [
+    { key: "approved", statuses: ["APPROVED"], date_basis: "committed_date", orders: 30, amount: "402100.00" },
+    { key: "in_transit", statuses: ["DISPATCHED"], date_basis: "committed_date", orders: 6, amount: "88400.00" },
+    { key: "completed", statuses: ["DELIVERED"], date_basis: "committed_date", orders: 72, amount: "1012600.00" },
+    { key: "failed", statuses: ["FAILED"], date_basis: "committed_date", orders: 3, amount: "41000.00" },
+    { key: "cancelled", statuses: ["CANCELLED"], date_basis: "cancelled_at", orders: 5, amount: "25000.00" },
+  ],
+};
 const locations = { view: "store", currency: "SEK", rows: [
   { location_id: 21, code: "ST-021", name: "Store 021", orders_delivered: 41,
     recognised: "1284500.00", booked_not_delivered: "214300.00", share_pct: 8.4 },
@@ -39,6 +51,7 @@ const daily = { currency: "SEK", points: [
 ]};
 beforeEach(() => {
   mocks.summary.mockResolvedValue(summary);
+  mocks.status.mockResolvedValue(status);
   mocks.daily.mockResolvedValue(daily);
   mocks.locations.mockResolvedValue(locations);
   mocks.orders.mockResolvedValue({
@@ -81,6 +94,23 @@ describe("US-REV-01 AC1/AC4/AC9 — role and privacy boundaries", () => {
     expect(screen.getByRole("combobox", { name: "Location filter" })).toBeDisabled();
     expect(screen.queryByText("Share of market")).not.toBeInTheDocument();
     expect(mocks.summary).toHaveBeenCalledWith(expect.objectContaining({ view: "store", location_id: 21 }), expect.anything());
+  });
+  it("US-REV-02 AC4 owner with two locations sees both owned choices but not other locations", async () => {
+    const store22 = { ...locations.rows[0], location_id: 22, name: "Store 022" };
+    const outside = { ...locations.rows[0], location_id: 99, name: "Foreign store" };
+    mocks.locations.mockImplementation((filters: { location_id?: number }) => Promise.resolve({
+      ...locations, rows: filters.location_id === 21 ? locations.rows :
+        filters.location_id === 22 ? [store22] : [...locations.rows, store22, outside],
+    }));
+    mount({ ...owner, id: 19, owned_location_ids: [21, 22], location_ids: [21, 22] });
+    expect(await screen.findByText("Recognised revenue")).toBeInTheDocument();
+    const picker = screen.getByRole("combobox", { name: "Location filter" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")).toHaveLength(2));
+    expect(within(picker).getByRole("option", { name: "Store 022" })).toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: "Foreign store" })).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: "22" } });
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledWith(
+      expect.objectContaining({ view: "store", location_id: 22 }), expect.anything()));
   });
 });
 describe("US-REV-01 AC5–AC8 — filters, chart, CSV and errors", () => {
@@ -150,5 +180,45 @@ describe("US-REV-01 AC5–AC8 — filters, chart, CSV and errors", () => {
     render(<RevenueChart data={daily} />);
     expect(screen.getByRole("img", { name: /Recognised daily revenue bars/ })).toBeInTheDocument();
     expect(screen.getByText("Accessible daily figures")).toBeInTheDocument();
+  });
+  it("US-REV-02 AC1/AC5 renders server total, recognised revenue and five keyed status cards", async () => {
+    mount(admin);
+    const cards = await screen.findByRole("region", { name: "Order status groups" });
+    expect(within(screen.getByLabelText("Primary order and revenue metrics")).getByText("116")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Primary order and revenue metrics"))
+      .getByText("Recognised revenue").nextElementSibling?.getAttribute("title"))
+      .toBe("1\u202f284\u202f500 SEK");
+    expect(within(cards).getAllByRole("button")).toHaveLength(5);
+    expect(within(cards).getByRole("button", { name: "Đã duyệt: 30 orders" })).toBeInTheDocument();
+    expect(within(cards).getByText(/402 100 SEK/)).toBeInTheDocument();
+    expect(screen.getByText(/Đã hủy: 4\.3%/)).toBeInTheDocument();
+  });
+  it("US-REV-02 AC1 shows five zero cards and no NaN/Infinity in an empty period", async () => {
+    mocks.status.mockResolvedValue({
+      ...status, total: { orders: 0, amount: "0.00" },
+      groups: status.groups.map(group => ({ ...group, orders: 0, amount: "0.00" })),
+    });
+    mount(admin);
+    const cards = await screen.findByRole("region", { name: "Order status groups" });
+    expect(within(cards).getAllByRole("button", { name: /: 0 orders$/ })).toHaveLength(5);
+    expect(within(cards).getByText(/Không có đơn trong kỳ/)).toBeInTheDocument();
+    expect(within(cards).queryByRole("img")).not.toBeInTheDocument();
+    expect(cards.textContent).not.toMatch(/NaN|Infinity/);
+  });
+  it("US-REV-02 AC6 holds group selection while all locations and resets page on group change", async () => {
+    mount(admin);
+    await screen.findByRole("button", { name: "Đã duyệt: 30 orders" });
+    fireEvent.click(screen.getByRole("button", { name: "Đã duyệt: 30 orders" }));
+    expect(screen.getByText(/Chọn một địa điểm được phép/)).toBeInTheDocument();
+    expect(mocks.orders).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Location filter"), { target: { value: "21" } });
+    await waitFor(() => expect(mocks.orders).toHaveBeenCalledWith(
+      expect.objectContaining({ location_id: 21, from: "2026-11-01", to: "2026-11-30" }),
+      1, expect.anything(), "approved",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Đang vận chuyển: 6 orders" }));
+    await waitFor(() => expect(mocks.orders).toHaveBeenCalledWith(
+      expect.objectContaining({ location_id: 21 }), 1, expect.anything(), "in_transit",
+    ));
   });
 });

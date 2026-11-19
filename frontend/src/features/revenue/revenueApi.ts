@@ -6,6 +6,24 @@ import { useAuthStore } from "../../app/store";
 export type RevenueView = "store" | "warehouse";
 export type RevenueFilters = { view: RevenueView; from?: string; to?: string; location_id?: number };
 export type CurrencyAmount = string;
+/** US-REV-02 / API §19.11: stable group keys, never derived from translated labels. */
+export const REVENUE_STATUS_GROUPS = [
+  { key: "approved", label: "Đã duyệt" },
+  { key: "in_transit", label: "Đang vận chuyển" },
+  { key: "completed", label: "Đã hoàn thành" },
+  { key: "failed", label: "Thất bại" },
+  { key: "cancelled", label: "Đã hủy" },
+] as const;
+export type RevenueStatusGroup = (typeof REVENUE_STATUS_GROUPS)[number]["key"];
+export interface RevenueOrderStatusGroup {
+  key: RevenueStatusGroup; statuses: string[]; date_basis: "committed_date" | "cancelled_at";
+  orders: number; amount: CurrencyAmount;
+}
+export interface RevenueOrderStatus {
+  period: { from: string; to: string }; view: RevenueView; location_id: number | null;
+  currency: string; total: { orders: number; amount: CurrencyAmount };
+  groups: RevenueOrderStatusGroup[];
+}
 export interface RevenueSummary {
   period: { from: string; to: string }; view: RevenueView; location_id: number | null;
   currency: string; recognised: CurrencyAmount; booked_not_delivered: CurrencyAmount;
@@ -32,10 +50,15 @@ export const revenueQueryKeys = {
   summary: (f: RevenueFilters) => ["revenue", "summary", f] as const,
   daily: (f: RevenueFilters) => ["revenue", "daily", f] as const,
   locations: (f: RevenueFilters) => ["revenue", "locations", f] as const,
-  orders: (f: RevenueFilters, page: number) => ["revenue", "orders", f, page] as const,
+  orderStatus: (f: RevenueFilters) => ["revenue", "order-status", f] as const,
+  orders: (f: RevenueFilters, page: number, group: RevenueStatusGroup | null = null) =>
+    ["revenue", "orders", group, f, page] as const,
 };
 export function getRevenueSummary(filters: RevenueFilters, signal?: AbortSignal) {
   return apiGet<RevenueSummary>("/revenue/summary", queryParams(filters), signal);
+}
+export function getRevenueOrderStatus(filters: RevenueFilters, signal?: AbortSignal) {
+  return apiGet<RevenueOrderStatus>("/revenue/order-status", queryParams(filters), signal);
 }
 export function getRevenueDaily(filters: RevenueFilters, signal?: AbortSignal) {
   return apiGet<RevenueDaily>("/revenue/daily", queryParams(filters), signal);
@@ -43,8 +66,15 @@ export function getRevenueDaily(filters: RevenueFilters, signal?: AbortSignal) {
 export function getRevenueLocations(filters: RevenueFilters, signal?: AbortSignal) {
   return apiGet<RevenueLocations>("/revenue/by-location", queryParams(filters), signal);
 }
-export function getRevenueOrders(filters: RevenueFilters & { location_id: number }, page: number, signal?: AbortSignal) {
-  return apiGet<RevenueOrders>("/revenue/orders", { ...queryParams(filters), page, page_size: 25 }, signal);
+export function getRevenueOrders(
+  filters: RevenueFilters & { location_id: number }, page: number,
+  signal?: AbortSignal, statusGroup?: RevenueStatusGroup | null,
+) {
+  return apiGet<RevenueOrders>(
+    "/revenue/orders",
+    { ...queryParams(filters), ...(statusGroup ? { status_group: statusGroup } : {}), page, page_size: 25 },
+    signal,
+  );
 }
 
 /** CSV cannot go through apiFetch<T>: that helper decodes successful responses as JSON.
