@@ -49,6 +49,7 @@ from app.domain.models.plan import (
 from app.domain.models.ref import Market, Vehicle
 from app.domain.transitions import transition
 from app.services import alert_service, reservation_service
+from app.services.wms_mode import require_simulated_or_off
 
 
 @dataclass(frozen=True)
@@ -503,6 +504,7 @@ async def _approve(
     # post-ACK stock refresh and recovery ledger are integrated and verified.
     # Existing isolated unit/PG tests remain backward-compatible solely as
     # pre-WMS internal transaction tests, NOT as evidence of final approval.
+    require_simulated_or_off()  # 409 PLAN_NOT_APPROVABLE nếu mode không hợp lệ hoặc mô phỏng bị cấm
     if get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1":
         # Persisted synthetic ACK by itself is NOT sufficient. Inspect the
         # current ledger under the order lock, then fail closed until an
@@ -620,6 +622,20 @@ async def _approve(
     return response
 
 
+async def _reserve_before_approval(plan_id: int, actor: object) -> None:
+    """Giữ hàng WMS mô phỏng trước transaction duyệt; kiểm tra quyền như _approve."""
+    from app.services.wms_reserve_phase import reserve_simulated
+
+    async with get_sessionmaker()() as db:
+        order, plan, _, market = await _order_and_plan(db, plan_id)
+    roles = _roles(actor)
+    if not roles.intersection({"dispatcher"}):
+        raise _fail("FORBIDDEN", "Approval permission denied.")
+    if getattr(actor, "market", None) != market.code:
+        raise _fail("NOT_FOUND", "Plan not found.")
+    await reserve_simulated(order.id, plan.id)
+
+
 async def approve(
     plan_id: int,
     actor: object,
@@ -636,6 +652,8 @@ async def approve(
     """
     if session is not None:
         return await _approve(session, plan_id, actor, payload, idempotency_key, recheck)
+    if require_simulated_or_off():
+        await _reserve_before_approval(plan_id, actor)
     async with get_sessionmaker()() as db, db.begin():
         return await _approve(db, plan_id, actor, payload, idempotency_key, recheck)
 

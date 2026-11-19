@@ -304,7 +304,7 @@ class RestMarketAdapter:
             if row.id == external_ref:
                 submitted = row
         cancelled = False
-        async for row in self._pages(
+        async for cancel_row in self._pages(
             "orders",
             None,
             SourceCancellation,
@@ -312,7 +312,7 @@ class RestMarketAdapter:
             page_size=200,
             filters={"status": "CANCELLED"},
         ):
-            if row.id == external_ref:
+            if cancel_row.id == external_ref:
                 cancelled = True
         if submitted is not None and cancelled:
             raise SourceReadError("Source changed while verifying the routing candidate")
