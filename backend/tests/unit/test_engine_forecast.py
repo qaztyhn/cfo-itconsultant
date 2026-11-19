@@ -75,6 +75,19 @@ def test_with_gps_uses_recorded_at_plus_remaining() -> None:
     assert fc(state, at(10, 31)) == at(11, 30)  # 11:20 → 11:30
 
 
+def test_US_RSK_01_AC1_position_eta_includes_planned_unload_and_rounds_up() -> None:
+    state = BASE.__class__(
+        **{
+            **BASE.__dict__,
+            "departed_at": at(10),
+            "gps_recorded_at": at(10, 30),
+            "gps_remaining_min": 50,
+            "unload_min": 21,
+        }
+    )
+    assert fc(state, at(10, 31)) == at(11, 45)  # 10:30 + 50 + 21 = 11:41
+
+
 def test_multi_vehicle_order_forecast_is_latest_vehicle() -> None:
     assert order_forecast([at(11), at(11, 30), at(10, 45)]) == at(11, 30)
 

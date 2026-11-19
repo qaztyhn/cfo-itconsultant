@@ -28,6 +28,7 @@ class MilestoneState:
     departed_at: datetime | None = None
     gps_recorded_at: datetime | None = None  # chỉ truyền khi điểm GPS chưa quá gps.lost_min (service lọc)
     gps_remaining_min: int | None = None
+    unload_min: int = 0  # thời gian dỡ theo tải xe và MarketConfig, service truyền vào
     paused: bool = False  # đang PREP_PAUSED
     cutoff_at: datetime | None = None  # giờ cắt lên hàng của ngày lên hàng kế hoạch
     next_shift_start: datetime | None = None  # đầu ca ngày làm việc kế (nếu quá giờ cắt)
@@ -85,14 +86,14 @@ def forecast_eta(state: MilestoneState, now: datetime, eta_round_min: int, after
     _require_aware(now, state.planned_goods_ready, state.planned_depart)
     if state.planned_start_prep is not None:
         _require_aware(state.planned_start_prep)
-    if state.drive_min < 0 or state.loading_min < 0 or after_loaded_min < 0:
+    if state.drive_min < 0 or state.loading_min < 0 or state.unload_min < 0 or after_loaded_min < 0:
         raise ValueError("Forecast durations cannot be negative")
     if (state.gps_recorded_at is None) != (state.gps_remaining_min is None):
         raise ValueError("GPS requires a trusted timestamp and remaining travel minutes")
     if state.gps_remaining_min is not None and state.gps_remaining_min < 0:
         raise ValueError("GPS remaining minutes cannot be negative")
     if state.gps_recorded_at is not None and state.gps_remaining_min is not None:
-        eta = state.gps_recorded_at + timedelta(minutes=state.gps_remaining_min)
+        eta = state.gps_recorded_at + timedelta(minutes=state.gps_remaining_min + state.unload_min)
     elif state.departed_at is not None:
         eta = state.departed_at + timedelta(minutes=state.drive_min)
     else:
