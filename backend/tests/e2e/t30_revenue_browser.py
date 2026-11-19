@@ -56,15 +56,17 @@ def seed_report(dsn: str, password: str) -> None:
         (6, "APPROVED", "606.00", 3, "2026-11-19", None),
     )
     sql = [*SEED]
+    plan_id = 0
     for no, status, amount, store, committed, delivered in records:
         sql.append(_order(no, status, amount, store, committed=committed, delivered=delivered))
         if status != "PLANNED":
+            plan_id += 1
             sql.extend(
                 (
                     rows.run_sql(no, 1),
-                    rows.plan_sql(no, no, 1, "approved"),
-                    f"UPDATE plan.fulfilment_plan SET warehouse_id=4 WHERE id={no}",
-                    f"UPDATE ops.customer_order SET approved_plan_id={no} WHERE id={no}",
+                    rows.plan_sql(plan_id, no, 1, "approved"),
+                    f"UPDATE plan.fulfilment_plan SET warehouse_id=4 WHERE id={plan_id}",
+                    f"UPDATE ops.customer_order SET approved_plan_id={plan_id} WHERE id={no}",
                 )
             )
     execute(dsn, *sql)
@@ -162,21 +164,19 @@ def browser_check(api: str, web: str, password: str, output: Path, evidence: dic
                 parsed = urlsplit(res.url)
                 return parsed.path == "/api/v1/revenue/order-status" and "location_id=2" in parsed.query
 
-            with page.expect_response(scoped) as scoped_status:
-                page.get_by_label("Location filter").select_option("2")
-            status_response = scoped_status.value
-            assert status_response.status == 200
-            scoped_data = status_response.json()
-            scoped_group = next(g for g in scoped_data["groups"] if g["key"] == "approved")
-            assert scoped_data["total"]["orders"] == 5 and scoped_group["orders"] == 1
             with page.expect_response(
                 lambda res: urlsplit(res.url).path == "/api/v1/revenue/orders"
                 and "status_group=approved" in res.url and "location_id=2" in res.url
             ) as selected_orders:
-                # React Query may start orders before test subscribes; explicit
-                # user click on an already-selected group triggers page=1 again.
-                page.get_by_role("button", name="Đã duyệt: 1 orders").click()
+                with page.expect_response(scoped) as scoped_status:
+                    page.get_by_label("Location filter").select_option("2")
+            status_response = scoped_status.value
             listed = selected_orders.value
+            assert status_response.status == 200
+            scoped_data = status_response.json()
+            scoped_group = next(g for g in scoped_data["groups"] if g["key"] == "approved")
+            assert scoped_data["total"]["orders"] == 5 and scoped_group["orders"] == 1
+            page.get_by_role("button", name="Đã duyệt: 1 orders").wait_for()
             assert listed.status == 200, listed.status
             parsed = urlsplit(listed.url)
             query = parse_qs(parsed.query)
