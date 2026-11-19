@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.synthetic_wms import ALLOWED_DEMO_CLOCKS
 from app.adapters.wms_reservation import (
     ReservationAck,
     ReservationRequest,
@@ -34,7 +35,7 @@ def _ensure_synthetic_scope(intent_is_synthetic: bool) -> None:
     settings = get_settings()
     if (
         settings.app_env != "test"
-        or settings.app_now != "2026-11-04T10:05:00+01:00"
+        or settings.app_now not in ALLOWED_DEMO_CLOCKS
         or os.environ.get("DEMO_DISPOSABLE") != "1"
     ):
         raise DomainError("FORBIDDEN", "Synthetic WMS evidence is restricted to the disposable demo.")

@@ -7,7 +7,7 @@ khác (hoặc giá trị mode lạ) bị từ chối bằng 409 PLAN_NOT_APPROVA
 
 import os
 
-from app.adapters.synthetic_wms import DEMO_NOW
+from app.adapters.synthetic_wms import ALLOWED_DEMO_CLOCKS
 from app.core.config import get_settings
 from app.core.errors import DomainError
 
@@ -25,7 +25,7 @@ def simulated_enabled() -> bool:
         _mode() == "simulated"
         and settings.app_env == "test"
         and os.environ.get("DEMO_DISPOSABLE") == "1"
-        and settings.app_now == DEMO_NOW
+        and settings.app_now in ALLOWED_DEMO_CLOCKS
     )
 
 
