@@ -104,8 +104,27 @@ function last(path: string) {
   return requests(path).at(-1)?.params;
 }
 describe("US-REV-02 AC1–AC6 T30 real transport through MSW", () => {
-  beforeAll(() => { /* run-local server lifecycle above */ });
   afterEach(() => { calls.length = 0; });
+  it("API clients send exactly §19.11 filters for status and orders without a synthetic date default", async () => {
+    stubEndpoints();
+    const value = await getRevenueOrderStatus({ view: "warehouse", from: "2026-11-01", to: "2026-11-30",
+      location_id: 31 });
+    expect(value.groups).toHaveLength(5);
+    expect(last("order-status")?.get("view")).toBe("warehouse");
+    expect(last("order-status")?.get("from")).toBe("2026-11-01");
+    expect(last("order-status")?.get("to")).toBe("2026-11-30");
+    expect(last("order-status")?.get("location_id")).toBe("31");
+    const list = await getRevenueOrders(
+      { view: "warehouse", location_id: 31, from: value.period.from, to: value.period.to },
+      2, undefined, "cancelled",
+    );
+    expect(list.total).toBe(5);
+    expect(last("orders")?.get("status_group")).toBe("cancelled");
+    expect(last("orders")?.get("page")).toBe("2");
+    expect(last("orders")?.get("page_size")).toBe("25");
+    expect(last("orders")?.get("location_id")).toBe("31");
+    expect(last("orders")?.get("view")).toBe("warehouse");
+  });
   it("uses server recognised and total.orders from distinct APIs, including exact default filters", async () => {
     stubEndpoints();
     mount();
