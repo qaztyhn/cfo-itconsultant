@@ -25,7 +25,15 @@ async def tick(
     """Run only ready jobs; authentication precedes all job access."""
     settings = get_settings()
     configured = settings.internal_tick_key
-    if not configured or not internal_key or not hmac.compare_digest(configured, internal_key):
+    if not configured or not internal_key:
+        raise DomainError("AUTH_INVALID", "Internal key is missing or invalid.")
+    # compare_digest(str, str) raises TypeError on non-ASCII. Compare only
+    # ASCII-encoded bytes, preserving constant-time comparison for valid keys.
+    try:
+        valid = hmac.compare_digest(configured.encode("ascii"), internal_key.encode("ascii"))
+    except UnicodeEncodeError:
+        valid = False
+    if not valid:
         raise DomainError("AUTH_INVALID", "Internal key is missing or invalid.")
     if settings.app_env not in {"local", "test", "staging"}:
         raise DomainError("FORBIDDEN", "Internal tick is unavailable in this environment.")

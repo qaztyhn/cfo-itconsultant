@@ -66,6 +66,8 @@ services:
       retries: 3
       start_period: 10s
   cfo-worker:
+    # Opt-in: create market rows via migrations/seed before launching scheduler.
+    profiles: ["demo-worker"]
     build: ./backend
     command: ["python", "-m", "app.jobs.scheduler"]
     environment:

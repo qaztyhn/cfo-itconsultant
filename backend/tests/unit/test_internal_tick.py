@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import internal
@@ -23,6 +24,23 @@ def test_US_NOT_01_AC3_tick_rejects_missing_wrong_or_unconfigured_key(monkeypatc
         response = client.post("/api/v1/internal/tick?job=hold_expiry", headers=headers)
         assert response.status_code == 401
         assert response.json()["error"]["code"] == "AUTH_INVALID"
+    handler.assert_not_awaited()
+
+
+@pytest.mark.parametrize("raw_header", [b"bad-\xe9", b"secret-\xff", b"\xc3\xa9"])
+def test_US_NOT_01_AC3_tick_rejects_non_ascii_key_before_handler(monkeypatch, raw_header) -> None:
+    monkeypatch.setattr(
+        internal, "get_settings", lambda: SimpleNamespace(internal_tick_key="secret", app_env="test")
+    )
+    handler = AsyncMock(return_value=1)
+    monkeypatch.setattr(internal.hold_expiry, "run", handler)
+    # Byte-valued header reaches ASGI; httpx can reject Unicode str earlier.
+    response = TestClient(app).post(
+        "/api/v1/internal/tick?job=hold_expiry",
+        headers=[(b"x-internal-key", raw_header)],
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_INVALID"
     handler.assert_not_awaited()
 
 
