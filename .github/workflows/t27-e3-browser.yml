@@ -1,0 +1,45 @@
+name: T27 E3 real-browser acceptance (disposable PostgreSQL)
+on:
+  push:
+    branches: [feat/r3-t27-e2e-evidence]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e3-one-two-trip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
+      - uses: ./.github/actions/postgres
+      - name: Install Python E3 and Playwright dependencies
+        working-directory: backend
+        run: python -m pip install -e ".[dev]" "playwright>=1.50,<2" tzdata
+      - name: Install dedicated Chromium/Chrome
+        working-directory: backend
+        run: python -m playwright install chrome
+      - name: Install web dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run one-trip E3 real browser
+        working-directory: backend
+        run: python -m tests.e2e.prep_queue_browser --trips 1 --output ../t27-e3-one
+      - name: Run two-trip E3 real browser
+        working-directory: backend
+        run: python -m tests.e2e.prep_queue_browser --trips 2 --output ../t27-e3-two
+      - name: Archive synthetic screenshots and sanitized event IDs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t27-e3-browser-evidence
+          path: |
+            t27-e3-one/*.png
+            t27-e3-one/*.json
+            t27-e3-two/*.png
+            t27-e3-two/*.json
+          if-no-files-found: ignore
+          retention-days: 3
