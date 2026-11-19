@@ -1,0 +1,51 @@
+name: E2 post-seed and Mailpit acceptance (diagnostic)
+on:
+  push:
+    branches: [diag/e2-mailpit-postseed-20261119]
+permissions:
+  contents: read
+jobs:
+  mailpit-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: ./.github/actions/postgres
+      - name: Verify Compose opt-in worker profile
+        env:
+          POSTGRES_PASSWORD: ci-synthetic
+          DATABASE_URL: postgresql+asyncpg://cfo:ci-synthetic@postgres:5432/cfo
+          SOURCE_SE_DATABASE_URL: postgresql+asyncpg://cfo:ci-synthetic@postgres:5432/source_se
+          SOURCE_SE_API_KEY: ci-synthetic
+          JWT_SECRET: ci-synthetic
+          INTERNAL_TICK_KEY: ci-synthetic
+        run: |
+          set -euo pipefail
+          base="$(docker compose config --services)"
+          enabled="$(docker compose --profile demo-worker config --services)"
+          if printf "%s\n" "$base" | grep -qx cfo-worker; then echo "FAIL default compose starts worker"; exit 1; fi
+          printf "%s\n" "$enabled" | grep -qx cfo-worker
+          echo "PASS: default Compose excludes cfo-worker; demo-worker profile enables it"
+      - name: Start isolated local Mailpit SMTP
+        run: docker run -d --name e2-mailpit -p 127.0.0.1:8025:8025 -p 127.0.0.1:1025:1025 axllent/mailpit
+      - name: Wait for Mailpit API
+        run: |
+          python - <<'PY'
+          import time,urllib.request
+          for n in range(40):
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:8025/api/v1/messages", timeout=3) as r:
+                      if r.status==200: print("Mailpit HTTP ready"); break
+              except Exception: time.sleep(1)
+          else: raise RuntimeError("Mailpit did not start")
+          PY
+      - name: Install backend tests
+        working-directory: backend
+        run: pip install -e ".[dev]"
+      - name: Run real PostgreSQL, actual Mailpit, scheduler concurrency and tick assertions
+        working-directory: backend
+        env:
+          E2_MAILPIT_URL: http://127.0.0.1:8025
+        run: pytest -q -s tests/integration/test_e2_mailpit.py tests/integration/test_e2_concurrent_tick.py tests/integration/test_ingest_scheduler.py tests/unit/test_internal_tick.py
