@@ -395,7 +395,14 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
         results = []
         actions = [("START_PREP", "Start preparation", {}), ("GOODS_READY", "Goods ready", {}),
                    *[("LOADED", "Mark loaded", {"trip_id": trip}) for trip in trip_ids]]
+        # Business clock is pinned for E1 approval; the real Chrome device
+        # advances 10s, 30s, then 10s/5s between execution milestones.
+        # This is an explicit synthetic five-minute skew allowance (06 §8);
+        # it preserves causal order without changing backend clock/gates.
+        event_seconds = (10, 30, 10, *([5] * (len(trip_ids) - 1)))
         for index, (kind, label, extra) in enumerate(actions, start=1):
+            page.clock.fast_forward(event_seconds[index - 1] * 1000)
+            local_at = f"2026-12-01T10:05:{sum(event_seconds[:index]):02d}"
             button_name = label if kind != "LOADED" else None
             if button_name:
                 row.get_by_role("button", name=button_name, exact=True).click()
@@ -404,7 +411,7 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
                 # rendered vehicle code, never a guessed index.
                 row.get_by_role("button", name=__import__("re").compile("^Mark loaded")).click()
             dialog = page.get_by_role("dialog", name=f"Confirm {label}")
-            dialog.get_by_label("Occurred at (device local time)").fill("2026-12-01T10:05:00")
+            dialog.get_by_label("Occurred at (device local time)").fill(local_at)
             if kind == "START_PREP":
                 dialog.get_by_label("Crew size (people actually working)").fill("3")
             with page.expect_response(lambda r: r.request.method == "POST" and
@@ -457,6 +464,10 @@ def driver(browser, password: str, trip_id: int, order_id: int,
     )
     page = login(browser, "/driver", account, password, out, "Driver")
     try:
+        # Last warehouse event at 10:05:50; driver event must be strictly
+        # after it. PWA device clock moves to 10:06:00, within server's
+        # accepted +5 minute skew without bypassing the official shift gate.
+        page.clock.fast_forward(60_000)
         card = page.get_by_role("article").filter(has_text=f"Trip {trip_id}")
         expect(card).to_be_visible(timeout=16000)
         card.get_by_role("button", name="Review and dispatch").click()
