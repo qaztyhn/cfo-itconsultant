@@ -45,6 +45,11 @@ def spec_tables() -> dict[str, frozenset[str]]:
         items = _top_level_items(_body(text, match.end()))
         columns = {item.split()[0] for item in items if item.split()[0] not in _NOT_COLUMN}
         tables[f"{match.group(1)}.{match.group(2)}"] = frozenset(columns)
+    # §13 ALTER TABLE columns are expressed separately from CREATE TABLE blocks.
+    for name, additions in COLUMNS_ADDED_IN_0015.items():
+        tables[name] |= additions
+    for name, removals in COLUMNS_REMOVED_IN_0016.items():
+        tables[name] -= removals
     return tables
 
 
@@ -64,12 +69,33 @@ TABLES_ADDED_IN_0013 = frozenset(
 )
 TABLES_ADDED_IN_0009 = frozenset({"hr.employee_shift_schedule", "hr.driver_duty_log", "ops.order_routing"})
 COLUMNS_ADDED_IN_0009 = {"ref.vehicle": frozenset({"max_permissible_mass_kg", "regulation_561_scope"})}
+TABLES_ADDED_IN_0015 = frozenset(
+    {"hr.warehouse_day_capacity", "hr.driver_availability", "hr.driver_vehicle_eligibility"}
+)
+COLUMNS_ADDED_IN_0015 = {
+    "ops.vehicle_position": frozenset({"remaining_km", "remaining_min", "route_source"}),
+    "ops.proof_of_delivery": frozenset({"site_distance_m"}),
+    "ops.delivery_trip": frozenset({"assigned_dispatcher_employee_id"}),
+    "hr.dispatcher_staff": frozenset({"in_rotation"}),
+    "ops.notification": frozenset({"skipped_reason"}),
+    "plan.planning_run": frozenset({"remaining_lines"}),
+    "audit.improvement_log": frozenset({"approval_path", "order_to_commit_min"}),
+}
+
+
+COLUMNS_REMOVED_IN_0016 = {
+    "ref.customer": frozenset({"preferred_channel"}),
+    "ops.notification": frozenset({"channel"}),
+}
 
 
 def spec_tables_before_0009(*schemas: str) -> dict[str, frozenset[str]]:
     """spec_tables_in(...) bỏ những gì 0009 thêm — dùng cho test chạy tới revision ≤ 0008."""
+    later_tables = TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013 | TABLES_ADDED_IN_0014 | TABLES_ADDED_IN_0015
     return {
-        name: cols - COLUMNS_ADDED_IN_0009.get(name, frozenset())
+        name: (cols | COLUMNS_REMOVED_IN_0016.get(name, frozenset()))
+        - COLUMNS_ADDED_IN_0009.get(name, frozenset())
+        - COLUMNS_ADDED_IN_0015.get(name, frozenset())
         for name, cols in spec_tables_in(*schemas).items()
-        if name not in TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013 | TABLES_ADDED_IN_0014
+        if name not in later_tables
     }

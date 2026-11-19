@@ -35,6 +35,7 @@ class PlanningRun(TimestampMixin, Base):
     run_no: Mapped[int] = mapped_column(Integer)
     triggered_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ref.app_user.id"))
     kind: Mapped[str] = mapped_column(Text, server_default=text("'initial'"))
+    remaining_lines: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     trigger: Mapped[str | None] = mapped_column(Text)
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=EMPTY_JSON)
     input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)

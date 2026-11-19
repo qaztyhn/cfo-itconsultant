@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.v1.common import PageNo, PageSize
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
+from app.domain.models.ops import Notification
 from app.services import notify_service
 from app.services.notify_service import DelaySendInput, DraftInput
 
@@ -91,4 +92,8 @@ async def manual_delay_notice(
     result = await notify_service.create_delay_draft(
         order_id, payload.model_dump(mode="json"), session=db, actor=user
     )
-    return {"id": result, "status": "draft" if result is not None else "unchanged"}
+    if result is None:
+        return {"id": None, "status": "unchanged"}
+    notification = await db.get(Notification, result)
+    assert notification is not None
+    return {"id": result, "status": notification.status}

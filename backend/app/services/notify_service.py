@@ -139,23 +139,19 @@ async def _order_market(session: AsyncSession, order: CustomerOrder) -> Market:
     return market
 
 
-def _recipient(customer: Customer, *, channel: str) -> tuple[str, str | None]:
-    if channel == "sms_sim":
-        # No real phone numbers in the demo transport or outbox.
-        return "sms-simulator", None
-    address = customer.email or ""
+def _recipient(customer: Customer) -> tuple[str | None, str | None]:
+    address = (customer.email or "").strip()
+    if not address:
+        return None, "SKIPPED_NO_CHANNEL"
     if not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+", address) or not recipient_allowed(
         address, TEST_DOMAINS
     ):
-        # Never persist an external real customer address in a new demo message.
-        return "suppressed@cfo.test", "recipient_not_allowed"
+        return None, "recipient_not_allowed"
     return address, None
 
 
-def _mask(recipient: str, channel: str) -> str:
-    if channel == "sms_sim":
-        return "SMS simulator"
-    if "@" not in recipient:
+def _mask(recipient: str | None) -> str:
+    if recipient is None or "@" not in recipient:
         return "***"
     local, domain = recipient.rsplit("@", 1)
     return local[:1] + "***@" + domain
@@ -195,9 +191,9 @@ def _mask_response(record: Notification) -> dict[str, object]:
         "id": record.id,
         "order_id": record.order_id,
         "template": record.template,
-        "channel": record.channel,
+        "channel": "email" if record.recipient else None,
         "status": record.status,
-        "recipient_masked": _mask(record.recipient, record.channel),
+        "recipient_masked": _mask(record.recipient),
         "scheduled_for": record.scheduled_for.isoformat(),
         "sent_at": record.sent_at.isoformat() if record.sent_at else None,
     }
@@ -248,10 +244,19 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
     order = await session.get(CustomerOrder, record.order_id)
     assert order is not None
     market = await _order_market(session, order)
+    if record.recipient is None:
+        return {
+            **_mask_response(record),
+            "subject": None,
+            "body_html": None,
+            "body_text": "",
+            "eta_window": None,
+            "suppressed_reason": record.suppressed_reason,
+        }
     try:
         rendered = read_snapshot(
             record.eta_window,
-            channel=record.channel,
+            channel="email",
             template=record.template,
             subject=record.subject,
             body=record.body,
@@ -271,7 +276,7 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
                 MessageVariables(public_order_ref=order.order_no, eta_window=window),
                 locale=market.locale,
                 timezone=market.timezone,
-                channel=record.channel,
+                channel="email",
             )
         except (ValueError, KeyError) as exc:
             raise DomainError("PLAN_NOT_APPROVABLE", "Notification preview is unavailable.") from exc
@@ -306,8 +311,7 @@ async def _deduped_insert(
     customer = await session.get(Customer, order.customer_id)
     if customer is None or customer.market_id != order.market_id:
         raise DomainError("PLAN_NOT_APPROVABLE", "Customer channel is not verified.")
-    channel = customer.preferred_channel
-    recipient, suppressed = _recipient(customer, channel=channel)
+    recipient, suppressed = _recipient(customer)
     now = clock.now()
     snapshot = NotificationSnapshot(
         template=template,
@@ -318,9 +322,10 @@ async def _deduped_insert(
         approved_eta=approval,
         reason_code=reason_code,
     )
-    frozen, rendered = freeze_snapshot(snapshot, channel=channel)
-    status = status_override or ("suppressed" if suppressed or market.shadow_mode else "queued")
-    reason = "shadow_mode" if market.shadow_mode else suppressed
+    frozen, rendered = freeze_snapshot(snapshot, channel="email")
+    default_status = "suppressed" if market.shadow_mode else "queued"
+    status = "suppressed" if suppressed else status_override or default_status
+    reason = suppressed or ("shadow_mode" if market.shadow_mode else None)
     schedule = delivery_time(
         now,
         timezone=market.timezone,
@@ -332,7 +337,6 @@ async def _deduped_insert(
         .values(
             order_id=order.id,
             template=template,
-            channel=channel,
             recipient=recipient,
             subject=rendered.subject,
             body=rendered.body,
@@ -343,6 +347,7 @@ async def _deduped_insert(
             plan_id=order.approved_plan_id,
             dedupe_key=dedupe_key,
             suppressed_reason=reason if status == "suppressed" else None,
+            skipped_reason="SKIPPED_NO_CHANNEL" if suppressed == "SKIPPED_NO_CHANNEL" else None,
         )
         .on_conflict_do_nothing(index_elements=[Notification.dedupe_key])
         .returning(Notification.id)
@@ -588,13 +593,18 @@ async def send_draft(
         approved_eta=next_approval,
         reason_code=data.reason_code,
     )
-    frozen, rendered = freeze_snapshot(snapshot, channel=notification.channel)
+    frozen, rendered = freeze_snapshot(snapshot, channel="email")
     # Only mutable until queued; the outbox later validates the frozen content.
     notification.eta_window = frozen
     notification.subject, notification.body = rendered.subject, rendered.body
     notification.created_by_employee_id = employee_id
-    notification.status = "suppressed" if market.shadow_mode else "queued"
-    notification.suppressed_reason = "shadow_mode" if market.shadow_mode else None
+    suppressed_reason = None
+    if notification.recipient is None:
+        suppressed_reason = notification.skipped_reason or "recipient_not_allowed"
+    elif market.shadow_mode:
+        suppressed_reason = "shadow_mode"
+    notification.status = "suppressed" if suppressed_reason else "queued"
+    notification.suppressed_reason = suppressed_reason
     notification.scheduled_for = delivery_time(
         clock.now(),
         timezone=market.timezone,
@@ -602,7 +612,7 @@ async def send_draft(
         delay=True,
     )
     await session.flush()
-    if market.shadow_mode:
+    if suppressed_reason:
         await record_decision(
             session,
             Action.NOTIFICATION_SUPPRESSED,
@@ -613,7 +623,7 @@ async def send_draft(
             actor_user_id=user_id,
             actor_employee_id=employee_id,
             actor_role="dispatcher",
-            reason_code="shadow_mode",
+            reason_code=suppressed_reason,
             after={"status": "suppressed"},
         )
     response: dict[str, object] = {
