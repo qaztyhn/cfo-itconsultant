@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 describe("Round 3 warehouse milestone confirmation", () => {
-  it("test_US_WH_01_AC1_collects_crew_size_at_START_PREP_only", async () => {
+  it("test_US_WH_04_AC1_collects_crew_size_at_START_PREP_only", async () => {
     const { onClose } = open({ order: orderApproved(), type: "START_PREP" });
     const user = userEvent.setup();
     await user.clear(screen.getByRole("spinbutton", { name: /Crew size/ }));
@@ -35,7 +35,7 @@ describe("Round 3 warehouse milestone confirmation", () => {
     expect(vi.mocked(submitPrepEvent).mock.calls[0][0].payload).toEqual({ crew_size: 4 });
   });
 
-  it("test_US_WH_01_AC1_confirms_GOODS_READY_with_empty_payload", async () => {
+  it("test_US_WH_04_AC1_confirms_GOODS_READY_with_empty_payload", async () => {
     open({ order: orderRunning(), type: "GOODS_READY" });
     expect(screen.queryByRole("spinbutton", { name: /Crew size/ })).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: "Confirm Goods ready" }));
@@ -43,14 +43,14 @@ describe("Round 3 warehouse milestone confirmation", () => {
     expect(vi.mocked(submitPrepEvent).mock.calls[0][0].payload).toEqual({});
   });
 
-  it("test_US_WH_01_AC2_loads_the_specified_vehicle_trip", async () => {
+  it("test_US_WH_04_AC2_loads_the_specified_vehicle_trip", async () => {
     open({ order: orderMultiVehicle(), type: "LOADED", tripId: 942, vehicleCode: "GBG-18-05" });
     await userEvent.setup().click(screen.getByRole("button", { name: "Confirm Mark loaded" }));
     await waitFor(() => expect(submitPrepEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(submitPrepEvent).mock.calls[0][0].payload).toEqual({ trip_id: 942 });
   });
 
-  it("test_US_WH_01_AC3_does_not_resend_while_the_first_request_is_pending", async () => {
+  it("test_US_WH_04_AC3_does_not_resend_while_the_first_request_is_pending", async () => {
     let release!: (value: { event_id: number; order_status: string }) => void;
     vi.mocked(submitPrepEvent).mockImplementation(() => new Promise((resolve) => { release = resolve; }));
     const { onClose } = open({ order: orderApproved(), type: "START_PREP" });
@@ -64,7 +64,7 @@ describe("Round 3 warehouse milestone confirmation", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it("test_US_WH_01_AC4_409_never_replays_the_stale_request_without_refresh", async () => {
+  it("test_US_WH_04_AC4_409_never_replays_the_stale_request_without_refresh", async () => {
     vi.mocked(submitPrepEvent).mockRejectedValueOnce(new ApiError("ILLEGAL_TRANSITION", "private details", "c", undefined, 409));
     const { onReload, onClose } = open({ order: orderApproved(), type: "START_PREP" });
     const user = userEvent.setup();
@@ -78,7 +78,7 @@ describe("Round 3 warehouse milestone confirmation", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("test_US_WH_01_AC4_network_retry_reuses_the_same_immutable_event", async () => {
+  it("test_US_WH_04_AC4_network_retry_reuses_the_same_immutable_event", async () => {
     vi.mocked(submitPrepEvent).mockRejectedValueOnce(new ApiError("NETWORK_ERROR", "offline", "c", undefined, 0))
       .mockResolvedValueOnce({ event_id: 50, order_status: "PREPARING" });
     const { onClose } = open({ order: orderApproved(), type: "START_PREP" });
@@ -92,7 +92,7 @@ describe("Round 3 warehouse milestone confirmation", () => {
     expect(events[0]).toBe(events[1]);
   });
 
-  it("test_US_WH_01_AC3_after_ACK_never_reposts_if_refresh_fails", async () => {
+  it("test_US_WH_04_AC3_after_ACK_never_reposts_if_refresh_fails", async () => {
     const { onAcknowledged, onClose } = open({ order: orderApproved(), type: "START_PREP" });
     onAcknowledged.mockRejectedValueOnce(new Error("read failed")).mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
