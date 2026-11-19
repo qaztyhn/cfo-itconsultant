@@ -2,7 +2,7 @@
 
 ## 19/11/2026 — E5 DELAY inbox DTO
 
-- `GET /notifications` includes the public `order_no`; detail includes `order_no`, `market_timezone`, and the approved ETA `version` from the stored snapshot. No database change. Missing version remains unavailable to Send.
+- `GET /notifications` includes the public `order_no`. Detail includes `order_no`, `market_timezone`, the order's `committed_date`, and the approved ETA `version` from the stored snapshot. The inbox requires an agreed date negotiation whenever the proposed market date differs from the commitment. Missing commitment or version blocks Send.
 
 ## 19/11/2026 — Round 3 email-only storage
 

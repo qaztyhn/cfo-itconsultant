@@ -1,5 +1,70 @@
 # Demo MVP — Swedish pilot: reproducible setup
 
+## E2 notification and hold worker
+
+**Required order on a clean demo:** start the base stack → migrate CFO
+and initialize Source → seed the Swedish market/reference data → start the
+dedicated worker **explicitly after seed**. The worker reads existing markets
+only at scheduler startup; running it before the `SE` row exists silently
+misses `notify_outbox:SE` until a restart.
+
+```sh
+# After setting/exporting the disposable demo environment below:
+docker compose up -d --build        # cfo-worker stays off (default profile)
+# Recommended guarded setup handles the DB migrations and source/CFO seed:
+bash tools/demo_setup.sh
+# ONLY when the setup script completed the seed and reference imports:
+docker compose --profile demo-worker up -d --build cfo-worker
+docker compose --profile demo-worker logs --tail=50 cfo-worker
+```
+
+`bash tools/demo_setup.sh` itself already starts the basic services before
+migrating/seeding; the first `docker compose up` is optional if using that
+script. `docker compose config --services` must **exclude** `cfo-worker`;
+`docker compose --profile demo-worker config --services` must include it.
+Do not run two scheduler replicas, enable this in production, or use
+real customer addresses. The API itself does not start APScheduler.
+
+With `SE` seeded, the worker retains the existing ingest jobs, schedules
+`notify_outbox:SE` every minute and schedules global `hold_expiry` every minute.
+Outbox and hold DB locks also protect a concurrent manual tick.
+
+For an immediate test, keep the key in a local environment variable and call:
+
+```powershell
+$headers = @{ 'X-Internal-Key' = $env:INTERNAL_TICK_KEY }
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/internal/tick?job=notify_outbox&market=SE' -Headers $headers
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/internal/tick?job=hold_expiry' -Headers $headers
+```
+
+Check `ops.notification` for `template`, `status`, `sent_at`, and `attempts`,
+and `audit.decision_log` for `NOTIFICATION_SENT`; never dump the recipient or
+body into a shared log. Compare with the single message in Mailpit at
+`http://127.0.0.1:8025` (or its JSON `/api/v1/messages`). The optional
+`backend/tests/integration/test_e2_mailpit.py` creates a temporary PostgreSQL
+database at Alembic `head` and exercises tick, repeated tick, and a scheduled
+run against local Mailpit when `TEST_DATABASE_URL` and `E2_MAILPIT_URL` are set.
+It leaves the main demo database untouched. It uses a due synthetic
+`CONFIRMED` fixture because approval enqueue is still pending E1/T21.
+
+E2 local evidence (2026-11-19): an isolated `cfo-demo-e2` Compose project was
+migrated to `head`, given one due synthetic `CONFIRMED` row, and started with
+`cfo-worker`. Without a tick, DB showed `sent`, `sent_at` set, `attempts=1`,
+one `NOTIFICATION_SENT` audit, and Mailpit held exactly one message containing
+the order reference and delivery window. The Source service was deliberately
+not started in this isolated mail test, so its separate scheduled ingest pass
+logged incomplete; this did not stop the outbox pass. The optional PostgreSQL
+test also verified tick, repeat tick (zero new rows), and an APScheduler pass
+against Mailpit. Approval to email for one real demo order is **BLOCKED** by
+the pending E1/T21 same-transaction enqueue in `approval_service`.
+The PostgreSQL concurrency test pauses the scheduler's email transport while
+an authenticated tick claims the same market; tick processes zero, and the
+single row has one send attempt and one sent audit after the scheduler commits.
+
+The worker only schedules handlers that are implemented and tested:
+`notify_outbox` and `hold_expiry`. `risk_check` and `retention` remain unavailable
+to tick and unscheduled until their T08/T13 handlers and tests exist.
+
 **Status: partial / fail-closed.** The steps below reproduce the synthetic Source,
 CFO reference data, official *demo-only* shift schedule and live HTTP checks on
 one isolated Compose installation. They do **not** presently reproduce a

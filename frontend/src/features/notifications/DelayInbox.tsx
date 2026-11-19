@@ -16,11 +16,13 @@ function instant(value: string): number | null {
   return OFFSET_TIMESTAMP.test(value) && Number.isFinite(time) ? time : null;
 }
 
-function localDate(value: string, timeZone: string): string | null {
+function localDate(time: number, timeZone: string): string | null {
   try {
-    return new Intl.DateTimeFormat("en-CA", {
+    const parts = new Intl.DateTimeFormat("en-US", {
       timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-    }).format(new Date(value));
+    }).formatToParts(time);
+    const get = (type: string) => parts.find((part) => part.type === type)?.value;
+    return `${get("year")}-${get("month")}-${get("day")}`;
   } catch {
     return null;
   }
@@ -73,12 +75,15 @@ export function NotificationInbox() {
   const endTime = instant(end);
   const intervalValid = startTime !== null && endTime !== null && endTime > startTime;
   const changed = Boolean(saved && (start !== saved.start || end !== saved.end));
-  const dateChanged = Boolean(saved && notice && startTime !== null &&
-    localDate(start, notice.marketTimezone) !== localDate(saved.start, notice.marketTimezone));
+  const startDate = notice && startTime !== null ? localDate(startTime, notice.marketTimezone) : null;
+  const endDate = notice && endTime !== null ? localDate(endTime, notice.marketTimezone) : null;
+  const marketDateValid = startDate !== null && startDate === endDate;
+  const dateChanged = Boolean(notice?.committedDate && marketDateValid && startDate !== notice.committedDate);
   const agreement = Number(agreementId);
   const agreementValid = !dateChanged || (Number.isSafeInteger(agreement) && agreement > 0);
   const versionValid = saved?.version !== null && saved?.version !== undefined;
-  const canSend = canAct && notice?.status === "draft" && versionValid && intervalValid && agreementValid && !busy && !pendingSend;
+  const canSend = canAct && notice?.status === "draft" && versionValid && intervalValid &&
+    Boolean(notice.committedDate) && marketDateValid && agreementValid && !busy && !pendingSend;
 
   async function refresh() {
     setEdit(null);
@@ -113,6 +118,7 @@ export function NotificationInbox() {
     setBusy(true);
     setPendingSend(attempt);
     setActionError(null);
+    setActionMessage("");
     try {
       const status = await sendNotice(attempt.id, attempt.payload, attempt.key);
       setPendingSend(null);
@@ -121,7 +127,7 @@ export function NotificationInbox() {
       await refresh();
     } catch (error) {
       setActionError(error);
-      if (isApiError(error) && error.status === 409) {
+      if (isApiError(error) && error.status === 409 && error.code !== "DATE_AGREEMENT_REQUIRED") {
         setPendingSend(null);
         setActionMessage("The draft changed. Review the refreshed version before sending again.");
         await refresh();
@@ -206,6 +212,7 @@ export function NotificationInbox() {
                 {canAct && notice.status === "draft" && <div className="mt-5 space-y-4 border-t border-border pt-4">
                   <h3 className="text-body font-semibold text-ink">Review DELAY notice</h3>
                   {!versionValid && <p role="alert" className="text-body text-risk-predictedLate-fg">Approved ETA version is missing. Reload the draft before Send.</p>}
+                  {!notice.committedDate && <p role="alert" className="text-body text-risk-predictedLate-fg">The order needs an approved delivery commitment. Reload the draft once the commitment is set.</p>}
                   <label className="block text-body text-ink">Proposed start · ISO 8601 with offset
                     <input value={start} onChange={(event) => updateEdit({ start: event.target.value })} disabled={Boolean(pendingSend)}
                       className="mt-1 w-full rounded-control border border-border p-2 font-mono text-body" />
@@ -216,6 +223,7 @@ export function NotificationInbox() {
                   </label>
                   {changed && intervalValid && <p className="text-body text-ink">Proposed window: {windowText(start, end, notice.marketTimezone)}. The saved email preview above still shows the prior window; the server renders the final email on Send.</p>}
                   {!intervalValid && <p role="alert" className="text-body text-risk-predictedLate-fg">Enter offset-aware times with an end after the start.</p>}
+                  {intervalValid && !marketDateValid && <p role="alert" className="text-body text-risk-predictedLate-fg">Choose a start and end on the same date in {notice.marketTimezone}.</p>}
                   <label className="block text-body text-ink">Reason template
                     <select value="PREDICTED_LATE" disabled className="mt-1 w-full rounded-control border border-border p-2 text-body"><option value="PREDICTED_LATE">Predicted late</option></select>
                   </label>
@@ -223,7 +231,7 @@ export function NotificationInbox() {
                     <input value={agreementId} onChange={(event) => updateEdit({ agreementId: event.target.value })} inputMode="numeric" disabled={Boolean(pendingSend)}
                       className="mt-1 w-full rounded-control border border-border p-2 text-body" />
                   </label>}
-                  {dateChanged && !agreementValid && <p role="alert" className="text-body text-risk-predictedLate-fg">A recorded customer date agreement is required.</p>}
+                  {dateChanged && !agreementValid && <p role="alert" className="text-body text-risk-predictedLate-fg">The proposed date {startDate} differs from the committed date {notice.committedDate}. Record the customer&apos;s agreement for this order and enter the date negotiation ID.</p>}
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => void submitSend(false)} disabled={!canSend} className="rounded-control bg-pine px-4 py-2 text-body font-semibold text-white disabled:opacity-50">Send</button>
                     {pendingSend && <button type="button" onClick={() => void submitSend(true)} disabled={busy} className="rounded-control border px-4 py-2 text-body text-ink disabled:opacity-50">Retry same request</button>}

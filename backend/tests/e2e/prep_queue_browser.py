@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -228,7 +229,80 @@ def check_driver(
         page.close()
 
 
-def walkthrough(dsn: str, node: str, trip_count: int, out: Path, report: dict) -> None:
+def order_trip_states(dsn: str) -> tuple[str, list[dict]]:
+    order_status = fetch(dsn, "SELECT status FROM ops.customer_order WHERE id=1")[0]["status"]
+    trips = fetch(
+        dsn,
+        "SELECT t.id AS trip_id, t.status FROM ops.delivery_trip t "
+        "JOIN ops.trip_stop s ON s.trip_id=t.id WHERE s.order_id=1 ORDER BY t.id",
+    )
+    return order_status, [dict(trip) for trip in trips]
+
+
+def verify_warehouse_postgres(dsn: str, trip_count: int, report: dict) -> None:
+    events = fetch(
+        dsn,
+        "SELECT id, event_type, trip_id, occurred_at FROM ops.milestone_event "
+        "WHERE order_id=1 AND event_type IN ('START_PREP','GOODS_READY','LOADED') ORDER BY id",
+    )
+    report["persisted_events"] = [
+        dict(event) | {"occurred_at": event["occurred_at"].isoformat()} for event in events
+    ]
+    matches = [
+        (event["id"], event["event_type"], event["trip_id"], event["occurred_at"]) for event in events
+    ] == [
+        (
+            expected["event_id"],
+            expected["event_type"],
+            expected["payload"].get("trip_id"),
+            datetime.fromisoformat(expected["occurred_at"]),
+        )
+        for expected in report["events"]
+    ]
+    order_status, trips = order_trip_states(dsn)
+    report["warehouse_postgres"] = {
+        "order_status": order_status,
+        "trips": trips,
+        "milestones_match_browser": matches,
+    }
+    assert matches and len(events) == trip_count + 2
+    assert order_status == "LOADED"
+    assert trips == [{"trip_id": trip_id, "status": "loading"} for trip_id in range(1, trip_count + 1)]
+
+
+def verify_dispatch_postgres(dsn: str, trip_count: int, evidence: dict) -> None:
+    dispatched = fetch(
+        dsn,
+        "SELECT id, event_type, trip_id FROM ops.milestone_event "
+        "WHERE order_id=1 AND event_type='DISPATCHED' ORDER BY id",
+    )
+    evidence["persisted_dispatch"] = [dict(item) for item in dispatched]
+    order_status, trips = order_trip_states(dsn)
+    evidence["db_order_status"] = order_status
+    evidence["db_trip_states"] = trips
+    observed = [item for item in evidence["driver"] if item.get("dispatch_status") == "PASS"]
+    matched_events = [(item["id"], item["trip_id"]) for item in dispatched] == [
+        (item["event_id"], item["trip_id"]) for item in observed
+    ]
+    departed = {item["trip_id"] for item in observed}
+    matched_states = order_status == ("DISPATCHED" if departed else "LOADED") and trips == [
+        {"trip_id": trip_id, "status": "on_road" if trip_id in departed else "loading"}
+        for trip_id in range(1, trip_count + 1)
+    ]
+    evidence["postgres_dispatch_matches_browser"] = matched_events and matched_states
+    assert matched_events and matched_states
+
+
+def walkthrough(
+    dsn: str,
+    node: str,
+    trip_count: int,
+    out: Path,
+    report: dict,
+    *,
+    continue_driver_cs: bool = False,
+    chrome_path: Path | None = None,
+) -> None:
     password = secrets.token_urlsafe(24)
     order_no = seed_approved_order(dsn, trip_count, password)
     report["order_no"] = order_no
@@ -266,42 +340,46 @@ def walkthrough(dsn: str, node: str, trip_count: int, out: Path, report: dict) -
         local_service(api_cmd, BACKEND_DIR, api_env, f"{api}/api/v1/health", out / "api.log"),
         local_service(vite_cmd, FRONTEND_DIR, web_env, web, out / "vite.log"),
         sync_playwright() as playwright,
-        closing(playwright.chromium.launch(channel="chrome")) as browser,
+        closing(playwright.chromium.launch(channel="chrome", executable_path=chrome_path)) as browser,
+        ThreadPoolExecutor(max_workers=1) as postgres,
     ):
         report["chrome_version"] = browser.version
         page = browser.new_page(
             timezone_id=TIME_ZONE, viewport={"width": 1440, "height": 1000}, service_workers="block"
         )
         page.set_default_timeout(12_000)
+        report["warehouse_browser_status"] = "FAIL"
         run_warehouse(page, web, api, order_no, password, trip_count, out, report)
         page.close()
-        for trip_id in range(1, trip_count + 1):
-            check_driver(browser, web, api, order_no, trip_id, password, out, report)
+        report["warehouse_browser_status"] = "PASS"
+        # Playwright's synchronous API owns the main thread's event loop.
+        # The PostgreSQL helpers use their own asyncio.run in the worker.
+        postgres.submit(verify_warehouse_postgres, dsn, trip_count, report).result()
+        # The continuation verifies the same assigned trip through its own
+        # driver browser session. Avoid duplicate logins: real auth rate limit
+        # must not be disabled just to exercise the two-trip case.
+        if not continue_driver_cs:
+            for trip_id in range(1, trip_count + 1):
+                check_driver(browser, web, api, order_no, trip_id, password, out, report)
+        if continue_driver_cs:
+            from tests.e2e.t27_driver_cs import run_driver_cs
 
-    events = fetch(
-        dsn,
-        "SELECT id, event_type, trip_id, occurred_at FROM ops.milestone_event WHERE order_id=1 ORDER BY id",
-    )
-    report["persisted_events"] = [
-        dict(event) | {"occurred_at": event["occurred_at"].isoformat()} for event in events
-    ]
-    assert [
-        (event["id"], event["event_type"], event["trip_id"], event["occurred_at"]) for event in events
-    ] == [
-        (
-            expected["event_id"],
-            expected["event_type"],
-            expected["payload"].get("trip_id"),
-            datetime.fromisoformat(expected["occurred_at"]),
-        )
-        for expected in report["events"]
-    ]
+            try:
+                run_driver_cs(browser, web, api, order_no, password, trip_count, out, report)
+            finally:
+                postgres.submit(verify_dispatch_postgres, dsn, trip_count, report["t27"]).result()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trips", type=int, choices=(1, 2), default=1)
+    parser.add_argument(
+        "--continue-driver-cs",
+        action="store_true",
+        help="T27: use the SAME APPROVED fixture for Driver dispatch and CS UI, record Round 3 blockers.",
+    )
     parser.add_argument("--node", default="node")
+    parser.add_argument("--chrome-path", type=Path, help="Path to a local Chrome for Testing binary.")
     parser.add_argument(
         "--output", type=Path, required=True, help="New directory for screenshots and results."
     )
@@ -327,10 +405,18 @@ def main() -> None:
     asyncio.run(_admin_exec(admin_dsn, f'CREATE DATABASE "{name}"'))
     try:
         command.upgrade(alembic_config(dsn), "head")
-        walkthrough(dsn, args.node, args.trips, args.output, report)
+        walkthrough(
+            dsn,
+            args.node,
+            args.trips,
+            args.output,
+            report,
+            continue_driver_cs=args.continue_driver_cs,
+            chrome_path=args.chrome_path,
+        )
         report["result"] = "PASS"
     except Exception as exc:
-        report["failure"] = str(exc)
+        report["failure"] = type(exc).__name__
         raise
     finally:
         try:

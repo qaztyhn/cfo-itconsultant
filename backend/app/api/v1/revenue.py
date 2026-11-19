@@ -1,4 +1,4 @@
-"""Revenue REST endpoints (06 §14.1; US-REV-01).
+"""Revenue REST endpoints (06 §14.1 and §19.11; US-REV-01 and US-REV-02).
 
 Authentication is mandatory. All owner and view restrictions are enforced by
 revenue_service.resolve_revenue_scope(); handlers only validate and serialize.
@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.common import Page, PageNo, PageSize
 from app.deps import AuthUser, DbSession
@@ -22,6 +22,13 @@ FromDate = Annotated[date | None, Query(alias="from")]
 ToDate = Annotated[date | None, Query(alias="to")]
 LocationId = Annotated[int | None, Query(gt=0)]
 RequiredLocation = Annotated[int, Query(gt=0)]
+StatusGroupFilter = Annotated[
+    service.StatusGroup | None,
+    Query(
+        description="Order status group for drill-down, using the same period as /revenue/order-status.",
+        examples=["cancelled"],
+    ),
+]
 
 _ERRORS: dict[int | str, dict[str, object]] = {
     401: {"description": "AUTH_INVALID"},
@@ -50,6 +57,50 @@ class RevenueSummaryOut(BaseModel):
     orders_delivered: int
     avg_order_value: str | None
     share_of_market_pct: float | None
+
+
+class OrderStatusTotalOut(BaseModel):
+    orders: int
+    amount: str
+
+
+class OrderStatusGroupOut(OrderStatusTotalOut):
+    key: service.StatusGroup
+    statuses: tuple[str, ...]
+    date_basis: Literal["committed_date", "cancelled_at"]
+
+
+class RevenueOrderStatusOut(BaseModel):
+    period: PeriodOut
+    view: RevenueView
+    location_id: int | None
+    currency: str
+    total: OrderStatusTotalOut
+    groups: list[OrderStatusGroupOut]
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "period": {"from": "2026-11-01", "to": "2026-11-30"},
+                    "view": "store",
+                    "location_id": 21,
+                    "currency": "SEK",
+                    "total": {"orders": 0, "amount": "0.00"},
+                    "groups": [
+                        {
+                            "key": key,
+                            "statuses": list(statuses),
+                            "date_basis": "cancelled_at" if key == "cancelled" else "committed_date",
+                            "orders": 0,
+                            "amount": "0.00",
+                        }
+                        for key, statuses in service.STATUS_GROUPS.items()
+                    ],
+                }
+            ]
+        }
+    )
 
 
 class RevenuePointOut(BaseModel):
@@ -113,6 +164,38 @@ async def revenue_summary(
         share_of_market_pct=(
             float(result.share_of_market_pct) if result.share_of_market_pct is not None else None
         ),
+    )
+
+
+@router.get("/revenue/order-status", response_model=RevenueOrderStatusOut, responses=_ERRORS)
+async def revenue_order_status(
+    user: AuthUser,
+    db: DbSession,
+    view: RevenueView,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
+    location_id: LocationId = None,
+) -> RevenueOrderStatusOut:
+    market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
+    result = await service.order_status(
+        db, user, market_id=market_id, view=view, location_id=location_id, period=period
+    )
+    return RevenueOrderStatusOut(
+        period=PeriodOut.model_validate({"from": period.start, "to": period.end}),
+        view=view,
+        location_id=location_id,
+        currency=result.currency,
+        total=OrderStatusTotalOut(orders=result.total_orders, amount=_money(result.total_amount)),
+        groups=[
+            OrderStatusGroupOut(
+                key=group.key,
+                statuses=group.statuses,
+                date_basis=group.date_basis,
+                orders=group.orders,
+                amount=_money(group.amount),
+            )
+            for group in result.groups
+        ],
     )
 
 
@@ -184,6 +267,7 @@ async def revenue_orders(
     date_to: ToDate = None,
     page: PageNo = 1,
     page_size: PageSize = 50,
+    status_group: StatusGroupFilter = None,
 ) -> Page[RevenueOrderOut]:
     market_id, period = await service.resolve_market_period(db, user, date_from, date_to)
     records, total = await service.orders(
@@ -195,6 +279,7 @@ async def revenue_orders(
         period=period,
         page=page,
         page_size=page_size,
+        status_group=status_group,
     )
     return Page[RevenueOrderOut](
         items=[RevenueOrderOut.model_validate(row) for row in records],

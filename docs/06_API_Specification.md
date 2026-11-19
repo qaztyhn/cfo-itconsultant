@@ -495,10 +495,13 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 | GET | `/alerts` | dispatcher, warehouse, CS, admin | Lọc `type`, `level`, `resolved`, `order_id` (theo phạm vi) |
 | POST | `/alerts/{id}/ack` | dispatcher, admin | Xác nhận đã xem |
 | GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status`; mỗi item có `order_no` công khai để mở đúng đơn |
+| GET | `/notifications/{id}` | dispatcher, CS, admin | Bản xem trước đã dựng và `committed_date` của đơn mà người gọi có quyền xem. Chi tiết trường ở Phụ lục A |
 | GET | `/orders/{id}/notifications` | dispatcher, CS | Lịch sử thông báo của đơn |
 | POST | `/notifications/{id}/send` | dispatcher | D4: chỉ Send bản nháp `DELAY` với `eta_window` đã validate, `reason_code`/phrase từ template allowlist, `Idempotency-Key`; **không** nhận body/subject free-text. Ghi `NOTIFICATION_SENT` |
 | POST | `/notifications/{id}/discard` | dispatcher | Discard `DELAY` với `reason_text` bắt buộc cho audit nội bộ; **không** chèn reason_text vào thư gửi khách |
 | POST | `/orders/{id}/delay-notice` | dispatcher | Chỉ tạo **draft** từ template đã kiểm tra, không có đường gửi trực tiếp bỏ qua Dispatcher |
+
+Khi Send `DELAY`, cả hai mốc ETA phải cùng một ngày theo `market_timezone`. Nếu ngày đó khác `committed_date` của đơn, Dispatcher phải gửi `date_negotiation_id` trỏ đến thỏa thuận `agreed` của đúng đơn và đúng ngày ETA, kể cả khi gửi khung đã lưu. Khi ETA quay về ngày cam kết, có thể bỏ ID. Gửi nguyên khung dùng phiên bản đã lưu, sửa khung dùng phiên bản mới.
 
 **D4 owner-approved (2026-11-08):** server render `CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `DELAY` theo template có phiên bản. Biến chỉ từ `public_order_ref`, trạng thái/khung đã duyệt, ETA và reason_code thuộc enum/câu mẫu đã duyệt. Tuyệt đối không lấy arbitrary POS/CS/free-text, tên tài xế/nhân viên, tên người nhận, GPS/tọa độ, thông tin riêng tư hoặc risk scores. Trường `body` tự do trước đây **bị thay thế** bởi các biến có kiểu; request chứa body không khớp render phải trả 422, không đưa thẳng tới provider. `DELAY` luôn cần Dispatcher xem trước/duyệt gửi hoặc Discard. Giữ quiet hours market-local 21:00–07:00 (ngoại lệ gửi DELAY do Dispatcher kích hoạt), cap 3 attempts và `DEC-NOTIFY-001`: chỉ Mailpit/test recipient, chưa gửi khách thật. Retry 5/15 phút là đề xuất Dev 2, chưa tự owner-approved; Dev 2 cần trình policy/code review.
 
@@ -751,7 +754,24 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 | GET | `/sync-runs/{id}/rejects` | admin | Dòng bị loại và lý do |
 | GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer có `ops` | Nhật ký quyết định (chỉ đọc) |
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
-| POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
+| POST | `/internal/tick?job=notify_outbox&market=SE` | `X-Internal-Key` | E2 gửi các notification email `queued` đã đến hạn trong market xác định; `market` **bắt buộc**, phải là code hiện có trong `ref.market` |
+| POST | `/internal/tick?job=hold_expiry` | `X-Internal-Key` | E2 xử lý các hold hết hạn **toàn cục**, không nhận tham số `market` |
+
+**Hợp đồng E2 của `POST /internal/tick` (chỉ `local`, `test`, `staging`):** Cần header `X-Internal-Key` bằng secret `INTERNAL_TICK_KEY`; thiếu/sai hoặc chứa ký tự ngoài ASCII ⇒ `401 AUTH_INVALID`, không chạy handler. Key đúng nhưng production ⇒ `403 FORBIDDEN`. Chỉ `notify_outbox` và `hold_expiry` là handler hợp lệ; job sai, `notify_outbox` thiếu hoặc sai market, và `hold_expiry` có `market` (kể cả rỗng) ⇒ `422 VALIDATION_ERROR`. Lỗi handler được chuẩn hóa thành `503 INTERNAL_ERROR` không tiết lộ SMTP/DB/secret.
+
+**Response `200`** trả dữ liệu thực sau khi job hoàn tất (header `X-Correlation-ID` khớp trường `correlation_id`):
+```json
+{
+  "job": "notify_outbox",
+  "market": "SE",
+  "status": "ok",
+  "started_at": "2026-11-19T10:00:00+00:00",
+  "finished_at": "2026-11-19T10:00:01+00:00",
+  "processed": 1,
+  "correlation_id": "example-id"
+}
+```
+Với `hold_expiry`, `market` trong response là `null`. `processed` là số đối tượng do handler xử lý; gọi lại khi không còn việc có thể trả `0`. Timestamps UTC ISO 8601. Endpoint này không kích hoạt scheduler, không tự approve hoặc tự gửi DELAY. Các job khác chưa triển khai phải bị từ chối.
 
 **D8 được owner phê duyệt chỉ để triển khai và kiểm thử staging/demo (DEC-D8-STAGING-SCHEDULE-20261109):** danh sách job/tần suất trong proposal là baseline staging, chưa bật production; tick endpoint/auth/response và mã lỗi vẫn phải review kỹ thuật. Đề xuất tách riêng tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md`: 5 phút ingest/stock/gps-lost/stale/milestone, 1 phút hold expiry/outbox, morning 07:00 và nightly 04:00/04:15 giờ Thụy Điển; bảo vệ DB lock/mỗi job/market, không tác động đến ca/GPS ngoài giờ, không tự approve hay gửi DELAY, D6 hosting chờ owner. Chưa thay route/code trong tài liệu này.
 
@@ -880,7 +900,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 | GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
 | GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
 | GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint **chuẩn** của Prep queue (thay cho `/prep-queue?warehouse_id=&date=`): `capacity { booked_min, total_min, free_min, schedule_verified, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id,at,vehicle_code,after_cutoff,loaded}], prep_state ('running'|'paused'|null), status, next_action}]`. Đơn nhiều xe có nhiều dòng loading. |
-| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ order_no, market_timezone, template, channel, status, recipient_masked, subject, body_html, body_text, eta_window: { start, end, version }, suppressed_reason }` (người nhận đã che; `version` là phiên bản ETA đã duyệt trong snapshot, `null` nếu không có bằng chứng; UI chặn Send khi thiếu) |
+| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ order_no, market_timezone, committed_date, template, channel, status, recipient_masked, subject, body_html, body_text, eta_window: { start, end, version }, suppressed_reason }`. Người nhận đã che. `committed_date` là ngày cam kết của đơn theo múi giờ market (`YYYY-MM-DD` hoặc `null`). `version` là phiên bản ETA đã duyệt trong snapshot, `null` nếu thiếu bằng chứng. UI chặn Send khi thiếu ngày cam kết hoặc phiên bản |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
 
 ### A.1 M6 Prep queue contract alignment (OWNER APPROVED 09/11/2026 — DEC-M6-PREP-QUEUE-20261109; code/E2E pending)

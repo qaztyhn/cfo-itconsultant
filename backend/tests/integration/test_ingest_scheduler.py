@@ -89,9 +89,17 @@ def test_T07_scheduler_build_is_market_scoped_configured_and_has_no_implicit_sta
             )
             assert not scheduler.running
             jobs = {job.id: job for job in scheduler.get_jobs()}
-            assert set(jobs) == {"ingest:SE", "ingest:ZZ"}
+            assert set(jobs) == {
+                "ingest:SE",
+                "ingest:ZZ",
+                "notify_outbox:SE",
+                "notify_outbox:ZZ",
+                "hold_expiry",
+            }
             assert jobs["ingest:SE"].trigger.interval == timedelta(minutes=5)
             assert jobs["ingest:ZZ"].trigger.interval == timedelta(minutes=10)
+            assert jobs["notify_outbox:SE"].trigger.interval == timedelta(minutes=1)
+            assert jobs["hold_expiry"].trigger.interval == timedelta(minutes=1)
             assert str(jobs["ingest:SE"].trigger.timezone) == "Europe/Stockholm"
             assert jobs["ingest:SE"].max_instances == 1 and jobs["ingest:SE"].coalesce
             assert jobs["ingest:SE"].trigger.get_next_fire_time(None, NOW) == NOW + timedelta(minutes=5)

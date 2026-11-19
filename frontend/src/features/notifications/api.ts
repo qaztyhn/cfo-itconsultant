@@ -13,6 +13,7 @@ export interface NoticeSummary {
 
 export interface NoticeDetail extends NoticeSummary {
   marketTimezone: string;
+  committedDate: string | null;
   subject: string | null;
   bodyText: string;
   etaWindow: { start: string; end: string; version: number | null } | null;
@@ -57,11 +58,13 @@ export async function fetchNotice(id: number, signal?: AbortSignal): Promise<Not
   const base = summary(raw);
   const window = raw.eta_window === null ? null : object(raw.eta_window);
   if (typeof raw.market_timezone !== "string" || typeof raw.body_text !== "string" ||
+      (raw.committed_date !== null && (typeof raw.committed_date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(raw.committed_date))) ||
       (window && (typeof window.start !== "string" || typeof window.end !== "string"))) {
     throw new Error("Notification detail is incomplete.");
   }
   return {
-    ...base, marketTimezone: raw.market_timezone,
+    ...base, marketTimezone: raw.market_timezone, committedDate: raw.committed_date,
     subject: typeof raw.subject === "string" ? raw.subject : null,
     bodyText: raw.body_text,
     etaWindow: window ? {

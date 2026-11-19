@@ -11,12 +11,15 @@ const NOTICES_URL = `${API_BASE_URL}/notifications`;
 vi.mock("../../api/locations", () => ({ fetchLocations: vi.fn() }));
 const START = "2026-11-10T09:00:00+01:00";
 const END = "2026-11-10T11:00:00+01:00";
+const MOVED_WINDOW = { start: "2026-11-10T23:15:00Z", end: "2026-11-11T00:15:00Z" };
+const COMMITTED_WINDOW = { start: "2026-11-09T23:15:00Z", end: "2026-11-10T00:15:00Z" };
 const summary = {
   id: 77, order_id: 42, order_no: "SE-2026-000042", template: "DELAY", status: "draft",
   recipient_masked: "s***@cfo.test", scheduled_for: "2026-11-09T08:00:00Z",
 };
 let status = "draft";
 let version: number | null = 1;
+let savedWindow = { start: START, end: END };
 let listCalls = 0;
 let detailCalls = 0;
 let sendCalls: { key: string | null; body: unknown }[] = [];
@@ -32,9 +35,9 @@ const server = setupOrderQueueMsw(
   }),
   http.get(`${NOTICES_URL}/:id`, () => {
     detailCalls += 1;
-    return HttpResponse.json({ ...summary, status, market_timezone: "Europe/Stockholm", subject: "Delivery update",
+    return HttpResponse.json({ ...summary, status, market_timezone: "Europe/Stockholm", committed_date: "2026-11-10", subject: "Delivery update",
       body_text: "Order SE-2026-000042: Delivery timing has changed.", body_html: null,
-      eta_window: { start: START, end: END, version }, suppressed_reason: null });
+      eta_window: { ...savedWindow, version }, suppressed_reason: null });
   }),
   http.post(`${NOTICES_URL}/:id/send`, async ({ request }) => {
     sendCalls.push({ key: request.headers.get("Idempotency-Key"), body: await request.json() });
@@ -53,6 +56,7 @@ beforeEach(() => {
   vi.mocked(fetchLocations).mockResolvedValue([]);
   status = "draft";
   version = 1;
+  savedWindow = { start: START, end: END };
   listCalls = 0;
   detailCalls = 0;
   sendCalls = [];
@@ -105,12 +109,77 @@ describe("US-NOT-02 dispatcher DELAY inbox", () => {
     const start = screen.getByRole("textbox", { name: /Proposed start/ });
     await user.clear(start);
     await user.type(start, "2026-11-11T09:00:00+01:00");
-    expect(screen.getByText(/recorded customer date agreement is required/)).toBeInTheDocument();
+    expect(screen.getByText(/Record the customer's agreement/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: /Agreed date negotiation ID/ }), "19");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(sendCalls).toHaveLength(1));
     expect(sendCalls[0].body).toMatchObject({ version: 2, date_negotiation_id: 19 });
+  });
+
+  it("test_US_NOT_02_AC2_requires_agreement_for_a_saved_window_after_market_midnight", async () => {
+    savedWindow = MOVED_WINDOW;
+    version = 3;
+    renderAt("/notifications");
+    const user = userEvent.setup();
+    const agreement = await screen.findByRole("textbox", { name: /Agreed date negotiation ID/ });
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(screen.getByText(/proposed date 2026-11-11 differs from the committed date 2026-11-10/i)).toBeInTheDocument();
+    expect(send).toBeDisabled();
+    await user.type(agreement, "19");
+    await user.click(send);
+    expect(await screen.findByText(/Queued for delivery/)).toBeInTheDocument();
+    expect(sendCalls).toHaveLength(1);
+    expect(sendCalls[0].body).toEqual({
+      eta_window: MOVED_WINDOW, version: 3, reason_code: "PREDICTED_LATE", date_negotiation_id: 19,
+    });
+  });
+
+  it("test_US_NOT_02_AC2_return_to_committed_market_date_omits_agreement", async () => {
+    savedWindow = MOVED_WINDOW;
+    version = 3;
+    renderAt("/notifications");
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("textbox", { name: /Agreed date negotiation ID/ }), "19");
+    const start = screen.getByRole("textbox", { name: /Proposed start/ });
+    const end = screen.getByRole("textbox", { name: /Proposed end/ });
+    await user.clear(start);
+    await user.type(start, COMMITTED_WINDOW.start);
+    expect(screen.getByText(/Choose a start and end on the same date in Europe\/Stockholm/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.clear(end);
+    await user.type(end, COMMITTED_WINDOW.end);
+    expect(screen.queryByRole("textbox", { name: /Agreed date negotiation ID/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText(/Queued for delivery/)).toBeInTheDocument();
+    expect(sendCalls).toHaveLength(1);
+    expect(sendCalls[0].body).toEqual({
+      eta_window: COMMITTED_WINDOW, version: 4, reason_code: "PREDICTED_LATE",
+    });
+  });
+
+  it("test_US_NOT_02_AC2_agreement_rejection_keeps_edited_window_for_correction", async () => {
+    const message = "Enter the ID of an agreed date negotiation for this order and the proposed delivery date.";
+    server.use(http.post(`${NOTICES_URL}/:id/send`, () => HttpResponse.json({
+      error: { code: "DATE_AGREEMENT_REQUIRED", message, correlation_id: "test-ref" },
+    }, { status: 409 })));
+    renderAt("/notifications");
+    const user = userEvent.setup();
+    const start = await screen.findByRole("textbox", { name: /Proposed start/ });
+    const end = screen.getByRole("textbox", { name: /Proposed end/ });
+    await user.clear(start);
+    await user.type(start, MOVED_WINDOW.start);
+    await user.clear(end);
+    await user.type(end, MOVED_WINDOW.end);
+    const agreement = screen.getByRole("textbox", { name: /Agreed date negotiation ID/ });
+    await user.type(agreement, "20");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(start).toHaveValue(MOVED_WINDOW.start);
+    expect(end).toHaveValue(MOVED_WINDOW.end);
+    expect(agreement).toBeEnabled();
+    expect(screen.queryByText(/The draft changed/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry same request" })).toBeNull();
   });
 
   it("test_US_NOT_02_AC3_discard_requires_reason_and_refreshes_status", async () => {
@@ -160,8 +229,8 @@ describe("US-NOT-02 dispatcher DELAY inbox", () => {
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
-  it("test_US_NOT_02_AC5_read_only_for_cs_and_admin", async () => {
-    signInAs(userByEmail("cs@cfo.demo"));
+  it.each(["cs@cfo.demo", "admin@cfo.demo"])("test_US_NOT_02_AC5_read_only_for_%s", async (email) => {
+    signInAs(userByEmail(email));
     renderAt("/notifications");
     expect(await screen.findByText(/Saved preview window/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send" })).toBeNull();

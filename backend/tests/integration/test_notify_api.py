@@ -13,6 +13,7 @@ from sqlalchemy.pool import NullPool
 from app.deps import get_current_user, get_db
 from app.main import create_app
 from app.services import notify_service
+from tests.integration import rows
 from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.test_notify_backend import WINDOW, actor, prepare
@@ -71,6 +72,13 @@ def test_US_NOT_02_AC5_send_auth_and_free_text_rejected(
     roles["actor"] = actor("customer_service")
     denied = client.post(url, json=payload, headers={"Idempotency-Key": str(uuid4())})
     assert denied.status_code == 403
+    roles["actor"] = actor("admin")
+    assert client.get(f"/api/v1/notifications/{draft}").status_code == 200
+    assert client.post(url, json=payload, headers={"Idempotency-Key": str(uuid4())}).status_code == 403
+    assert (
+        client.post(f"/api/v1/notifications/{draft}/discard", json={"reason_text": "Read-only"}).status_code
+        == 403
+    )
     roles["actor"] = actor("dispatcher", market="NO")
     hidden = client.post(url, json=payload, headers={"Idempotency-Key": str(uuid4())})
     assert hidden.status_code == 404
@@ -135,6 +143,73 @@ def test_US_NOT_02_AC2_draft_detail_exposes_approved_version(
     assert detail.json()["eta_window"] == {**WINDOW, "version": 3}
     assert detail.json()["order_no"] == "ZZ-000001"
     assert detail.json()["market_timezone"] == "Europe/Stockholm"
+    assert detail.json()["committed_date"] == "2026-11-10"
+
+
+@pytest.mark.parametrize("return_to_commitment", [False, True], ids=["saved_move", "return_to_commitment"])
+def test_US_NOT_02_AC2_send_uses_committed_market_date(
+    notifications_api: tuple[TestClient, dict[str, SimpleNamespace], str],
+    return_to_commitment: bool,
+) -> None:
+    client, _, dsn = notifications_api
+    execute(
+        dsn,
+        rows.order_sql(2),
+        "INSERT INTO ops.date_negotiation(order_id,proposed_date,outcome,channel,contacted_at,recorded_by)"
+        " VALUES (1,'2026-11-11','agreed','phone','2026-11-09T09:00Z',1),"
+        "(2,'2026-11-11','agreed','phone','2026-11-09T09:00Z',1),"
+        "(1,'2026-11-11','declined','phone','2026-11-09T09:00Z',1),"
+        "(1,'2026-11-12','agreed','phone','2026-11-09T09:00Z',1)",
+    )
+    # Start's UTC date differs from its Stockholm date in both windows.
+    moved = {"start": "2026-11-10T23:15:00Z", "end": "2026-11-11T00:15:00Z"}
+    draft = transact(
+        dsn,
+        lambda session: notify_service.create_delay_draft(
+            1, {**moved, "version": 3, "date_negotiation_id": 1}, session=session, actor=actor()
+        ),
+    )
+    detail = client.get(f"/api/v1/notifications/{draft}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["committed_date"] == "2026-11-10"
+    assert detail.json()["eta_window"]["version"] == 3
+    url = f"/api/v1/notifications/{draft}/send"
+    if return_to_commitment:
+        committed = {"start": "2026-11-09T23:15:00Z", "end": "2026-11-10T00:15:00Z"}
+        payload: dict[str, object] = {"eta_window": committed, "version": 4}
+    else:
+        for invalid_agreement in (
+            {},
+            {"date_negotiation_id": 2},
+            {"date_negotiation_id": 3},
+            {"date_negotiation_id": 4},
+        ):
+            rejected = client.post(
+                url,
+                json={"eta_window": moved, "version": 3, **invalid_agreement},
+                headers={"Idempotency-Key": str(uuid4())},
+            )
+            assert rejected.status_code == 409
+            assert rejected.json()["error"]["code"] == "DATE_AGREEMENT_REQUIRED"
+            assert (
+                "date negotiation ID" in rejected.text or "ID of an agreed date negotiation" in rejected.text
+            )
+        payload = {"eta_window": moved, "version": 3, "date_negotiation_id": 1}
+
+    headers = {"Idempotency-Key": str(uuid4())}
+    sent = client.post(url, json=payload, headers=headers)
+    assert sent.status_code == 200, sent.text
+    result = sent.json()
+    assert (result["id"], result["template"], result["status"], result["version"]) == (
+        draft,
+        "DELAY",
+        "queued",
+        payload["version"],
+    )
+    assert client.post(url, json=payload, headers=headers).json() == result
+    queued = client.get(f"/api/v1/notifications/{draft}").json()
+    assert queued["committed_date"] == "2026-11-10"
+    assert queued["eta_window"]["version"] == payload["version"]
 
 
 def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(
@@ -170,3 +245,4 @@ def test_US_NOT_02_no_email_reports_suppressed_instead_of_a_sendable_draft(
         None,
         "SKIPPED_NO_CHANNEL",
     )
+    assert client.get("/api/v1/notifications/1").json()["committed_date"] == "2026-11-10"
