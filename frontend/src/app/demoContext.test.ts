@@ -5,7 +5,8 @@ import { DEFAULT_DEMO_CONTEXT, demoContextFor } from "./demoContext";
 describe("demoContextFor", () => {
   it("picks the sentence by top-level section, including child routes", () => {
     expect(demoContextFor("/dispatcher/orders")).toMatch(/synthetic/i);
-    expect(demoContextFor("/notifications")).toMatch(/simulated/i);
+    expect(demoContextFor("/notifications")).toMatch(/local Mailpit demo inbox/i);
+    expect(demoContextFor("/notifications/77?tab=detail")).toBe(demoContextFor("/notifications"));
     expect(demoContextFor("/it/users?tab=1")).toMatch(/Integrations are simulated/);
   });
 
