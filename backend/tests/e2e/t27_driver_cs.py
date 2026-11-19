@@ -146,7 +146,9 @@ def _cs_lookup(
             page.get_by_role("button", name="Sign in", exact=True).click()
         stage["http"].append(_metadata(login.value))
         require_ok(login.value)
-        assert login.value.json()["user"]["roles"] == ["customer_service"]
+        login_body = login.value.json()
+        assert login_body["user"]["roles"] == ["customer_service"]
+        cs_token = login_body["access_token"]  # In memory only; never persisted to evidence
 
         page.goto(f"{web}/cs/orders")
         page.get_by_role("searchbox", name="Search orders").fill(order_no)
@@ -194,11 +196,10 @@ def _cs_lookup(
             # The UI currently displays a network-style error for this stub.
             # Verify actual HTTP/error.code via the SAME authenticated CS session,
             # without storing its JWT anywhere in shared evidence.
-            token = login.value.json()["access_token"]
             try:
                 probe = page.request.get(
                     f"{api}{eta_path}",
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={"Authorization": f"Bearer {cs_token}"},
                     timeout=10_000,
                 )
             except Error:
@@ -236,7 +237,10 @@ def _cs_lookup(
             else:
                 stage["eta_history"] = "HTTP responded; versioned API/DB rows not yet correlated"
                 stage["status"] = "NOT VERIFIED"
-        page.screenshot(path=output / "t27-cs-eta-history.png")
+        try:
+            page.screenshot(path=output / "t27-cs-eta-history.png")
+        except Error:
+            stage["eta_screenshot_unavailable"] = True
         return stage
     except (AssertionError, BrowserTimeout, Error, KeyError, ValueError, TypeError) as exc:
         stage["http"].extend(
