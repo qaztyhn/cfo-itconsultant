@@ -213,13 +213,18 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
     page = login(browser, f"/dispatcher/plan-review/{run_id}", account, password, out, "Dispatcher")
     try:
         expect(page.get_by_role("heading", name="Plan review")).to_be_visible()
-        tight = page.get_by_role("checkbox", name="I accept the tight schedule")
-        if tight.count():
-            # The actual Dispatcher explicitly acknowledges a tight plan.
-            # This is not an automatic approval or a bypass of backend recheck.
-            tight.check()
+        # PlanReview header mounts before its async planning-run detail.
+        # Await the actual DecisionBar before looking for the conditional
+        # tight-schedule checkbox; otherwise .count() races and misses it.
         decision = page.get_by_role("region", name="Decision")
         action = decision.get_by_role("button", name="Approve #1")
+        expect(action).to_be_visible(timeout=15000)
+        tight = page.get_by_role("checkbox", name="I accept the tight schedule")
+        if tight.count():
+            # Real UI user acknowledges the documented tight schedule,
+            # without disabling any server-side approval or WMS gate.
+            tight.check()
+            expect(tight).to_be_checked()
         try:
             expect(action).to_be_enabled(timeout=10000)
         except AssertionError:
