@@ -17,6 +17,7 @@ Dev 2's Source/WMS stock writer must call before it may publish a batch.
 """
 
 import hashlib
+import os
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -29,8 +30,9 @@ from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.errors import DomainError
+from app.domain.models.hr import Employee
 from app.domain.models.ops import StockIndependenceEvidence, StockScopeVersion, StockWriteRun
-from app.domain.models.ref import Market, ProductSE, StockAdminGrant
+from app.domain.models.ref import AppUser, Market, ProductSE, StockAdminGrant
 
 MAX_EVIDENCE_DAYS = 30
 CAPABILITIES = ("scope", "evidence")
@@ -119,6 +121,34 @@ async def _lock_market(session: AsyncSession, market_id: int) -> None:
     await session.execute(text("SELECT pg_advisory_xact_lock(:ns, :key)"), {"ns": 2026, "key": market_id})
 
 
+def _require_owner_delegated_operator(actor: object) -> None:
+    """Deployment must bind the reviewed Owner delegation to one exact operator account."""
+    configured = os.environ.get("STOCK_GRANT_SYSTEM_ADMIN_USER_ID", "")
+    authorization = os.environ.get("STOCK_GRANT_OWNER_AUTHORIZATION_REF", "")
+    market = os.environ.get("STOCK_GRANT_AUTHORIZED_MARKET", "")
+    if not configured.isdecimal() or not authorization.strip() or _user_id(actor) != int(configured):
+        raise _error("FORBIDDEN", "Owner-delegated System Admin required for stock grants.")
+    if market != getattr(actor, "market", None):
+        raise _error("FORBIDDEN", "Owner delegation does not cover this market.")
+    if "admin" not in _roles(actor):
+        raise _error("FORBIDDEN", "Owner-delegated System Admin must have an active Admin role.")
+
+
+async def _require_market_admin_account(session: AsyncSession, user_id: int, market_id: int) -> AppUser:
+    account = await session.get(AppUser, user_id)
+    employee = await session.get(Employee, account.employee_id) if account and account.employee_id else None
+    if (
+        account is None
+        or not account.is_active
+        or "admin" not in account.roles
+        or employee is None
+        or employee.market_id != market_id
+        or employee.status != "active"
+    ):
+        raise _error("FORBIDDEN", "Grant account must be an active Admin in the authorized market.")
+    return account
+
+
 # --- S1: grants ------------------------------------------------------------------------------------------
 
 
@@ -132,17 +162,37 @@ async def grant_admin(
     valid_from: datetime | None = None,
     valid_to: datetime | None = None,
 ) -> StockAdminGrant:
-    """An existing active grant holder grants another Admin; the very first grant is a runbook step."""
+    """Only the configured Owner-delegated System Admin may issue a grant."""
     market = await _market(session, actor)
+    _require_owner_delegated_operator(actor)
+    await _require_market_admin_account(session, _user_id(actor), market.id)
     if capability not in CAPABILITIES or not reason_text.strip():
         raise _error("VALIDATION_ERROR", "Capability and reason are required.")
-    await _require_admin_grant(session, actor, market, capability)
+    await _lock_market(session, market.id)
     if user_id == _user_id(actor):
         raise _error("FORBIDDEN", "A grant cannot be self-issued.")
-    start = _aware(valid_from) if valid_from is not None else clock.now()
+    # Recipient account eligibility is checked directly, including first-time recipients.
+    await _require_market_admin_account(session, user_id, market.id)
+    now = clock.now()
+    start = _aware(valid_from) if valid_from is not None else now
+    if start < now:
+        raise _error("VALIDATION_ERROR", "Grant activation cannot be backdated.")
     end = _aware(valid_to) if valid_to is not None else None
     if end is not None and end <= start:
         raise _error("VALIDATION_ERROR", "Grant window is invalid.")
+    duplicate = await session.scalar(
+        select(StockAdminGrant.id)
+        .where(
+            StockAdminGrant.market_id == market.id,
+            StockAdminGrant.user_id == user_id,
+            StockAdminGrant.capability == capability,
+            StockAdminGrant.revoked_at.is_(None),
+            (StockAdminGrant.valid_to.is_(None) | (StockAdminGrant.valid_to > now)),
+        )
+        .limit(1)
+    )
+    if duplicate is not None:
+        raise _error("RESOURCE_CONFLICT", "An unrevoked grant already exists for this capability.")
     row = StockAdminGrant(
         market_id=market.id,
         user_id=user_id,
@@ -159,7 +209,18 @@ async def grant_admin(
         Action.STOCK_GRANT_CREATED,
         "stock_admin_grant",
         str(row.id),
-        after={"user_id": user_id, "capability": capability, "market_id": market.id},
+        reason_text=reason_text.strip(),
+        before={},
+        after={
+            "user_id": user_id,
+            "capability": capability,
+            "market_id": market.id,
+            "granted_by": _user_id(actor),
+            "reason_text": reason_text.strip(),
+            "valid_from": start.isoformat(),
+            "valid_to": end.isoformat() if end else None,
+            "owner_authorization_ref": os.environ["STOCK_GRANT_OWNER_AUTHORIZATION_REF"],
+        },
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
         actor_role="admin",
@@ -169,6 +230,9 @@ async def grant_admin(
 
 async def revoke_grant(session: AsyncSession, actor: object, grant_id: int, reason_text: str) -> None:
     market = await _market(session, actor)
+    _require_owner_delegated_operator(actor)
+    await _require_market_admin_account(session, _user_id(actor), market.id)
+    await _lock_market(session, market.id)
     grant = await session.scalar(
         select(StockAdminGrant)
         .where(StockAdminGrant.id == grant_id, StockAdminGrant.market_id == market.id)
@@ -176,7 +240,6 @@ async def revoke_grant(session: AsyncSession, actor: object, grant_id: int, reas
     )
     if grant is None:
         raise _error("NOT_FOUND", "Grant not found.")
-    await _require_admin_grant(session, actor, market, grant.capability)
     if grant.revoked_at is not None:
         raise _error("ILLEGAL_TRANSITION", "Grant is already revoked.")
     if not reason_text.strip():
@@ -193,7 +256,13 @@ async def revoke_grant(session: AsyncSession, actor: object, grant_id: int, reas
         "stock_admin_grant",
         str(grant.id),
         reason_text=reason_text.strip(),
-        before={"user_id": grant.user_id, "capability": grant.capability},
+        before={"user_id": grant.user_id, "capability": grant.capability, "revoked_at": None},
+        after={
+            "revoked_at": grant.revoked_at.isoformat(),
+            "revoked_by": _user_id(actor),
+            "revoke_reason": reason_text.strip(),
+            "owner_authorization_ref": os.environ["STOCK_GRANT_OWNER_AUTHORIZATION_REF"],
+        },
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
         actor_role="admin",
