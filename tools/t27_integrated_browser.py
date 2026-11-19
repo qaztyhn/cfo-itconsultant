@@ -468,16 +468,27 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
         report["last_verified"] = "CS UI looked up same order; detail matches API"
         # Separate API contract, distinct from the CS order projection.
         # HTTP500 is a failure unless correlated backend logs prove a known T14 stub.
-        probe = httpx.get(API + f"/api/v1/orders/{order_id}/eta-forecasts", timeout=8)
-        code = None
+        token = page.evaluate("localStorage.getItem('cfo_token')")
+        if not isinstance(token, str) or not token:
+            raise RuntimeError("CS authenticated browser session did not expose a token")
+        # Same authorized CS session, but this is a separate API probe, NOT a
+        # customer-visible UI action or a test of history rendering.
         try:
-            code = probe.json().get("error", {}).get("code")
-        except (ValueError, AttributeError):
-            pass
-        report["eta_history"] = {"http": probe.status_code, "error_code": code,
-                                 "status": "NOT VERIFIED" if probe.status_code == 200 else "BLOCKED"}
-        mark(report, "11", "BLOCKED", "CS UI order lookup PASS; ETA history API is separate and not verified",
-             cs_lookup="PASS", eta_history=report["eta_history"], task="T03, T14")
+            probe = page.request.get(API + f"/api/v1/orders/{order_id}/eta-forecasts",
+                                     headers={"Authorization": "Bearer " + token}, timeout=10_000)
+        except Error:
+            report["eta_history"] = {"http": None, "error_code": None, "transport_error": True}
+        else:
+            code = None
+            if not probe.ok:
+                try:
+                    code = probe.json().get("error", {}).get("code")
+                except (ValueError, AttributeError, Error):
+                    pass
+            report["eta_history"] = {"http": probe.status, "error_code": code,
+                                     "status": "NOT VERIFIED" if probe.ok else "BLOCKED"}
+        mark(report, "11", "BLOCKED", "CS UI lookup/detail matched same order; ETA history separately probed using CS auth",
+             cs_lookup="PASS", eta_history=report["eta_history"], task="T14")
     finally:
         page.close()
 
