@@ -37,7 +37,7 @@ services:
       start_period: 10s
   cfo-api:
     build: ./backend
-    environment:
+    environment: &cfo_environment
       DATABASE_URL: "${DATABASE_URL:?set in environment or .env}"
       JWT_SECRET: "${JWT_SECRET:?set in environment or .env}"
       INTERNAL_TICK_KEY: "${INTERNAL_TICK_KEY:?set in environment or .env}"
@@ -65,6 +65,18 @@ services:
       timeout: 6s
       retries: 3
       start_period: 10s
+  cfo-worker:
+    # Opt-in: create market rows via migrations/seed before launching scheduler.
+    profiles: ["demo-worker"]
+    build: ./backend
+    command: ["python", "-m", "app.jobs.scheduler"]
+    environment:
+      <<: *cfo_environment
+    depends_on:
+      postgres: {condition: service_healthy}
+      source-se: {condition: service_healthy}
+      mailpit: {condition: service_started}
+    restart: unless-stopped
   cfo-web:
     build: ./frontend
     environment:

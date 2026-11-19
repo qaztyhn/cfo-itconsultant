@@ -21,10 +21,22 @@ docs/           01..10
 
 ## Chạy local
 ```bash
-cp .env.example .env   # điền bí mật và SEED_DEMO_PASSWORD; không commit .env
-docker compose up -d && make migrate seed
+cp .env.example .env  # điền bí mật, SEED_DEMO_PASSWORD, INTERNAL_TICK_KEY; không commit .env
+docker compose up -d --build    # chỉ stack cơ bản, không bật cfo-worker
+make migrate
+make seed                       # generator demo có thể exit 2 (partial/blocked), không tính E2E PASS
+# CHỈ SAU KHI migrate/seed dữ liệu market đã hoàn tất:
+docker compose --profile demo-worker up -d --build cfo-worker
 # web http://localhost:5173 · API http://localhost:8000/docs · Mailpit :8025 · POS :8100
 ```
+
+`cfo-worker` ở Compose profile `demo-worker`, nên `docker compose up -d` mặc định
+không chạy worker. APScheduler đọc danh sách market **một lần lúc khởi động**;
+nếu bật trước seed sẽ thiếu `notify_outbox:SE`. Với demo Swedish sạch, hãy dùng
+quy trình có guard `bash tools/demo_setup.sh` trong [DEMO_SETUP](docs/DEMO_SETUP.md),
+rồi bật worker bằng lệnh `--profile demo-worker` trên **sau khi script hoàn tất**.
+Không coi exit 2 của seed generator là kết quả thành công hoặc bật worker trước
+khi dữ liệu market sẵn sàng. Không dùng worker với dữ liệu thật/production.
 
 ## Kiểm tra
 ```bash

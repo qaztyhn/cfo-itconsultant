@@ -1,4 +1,4 @@
-"""T07 explicit ingest-only APScheduler worker. No unapproved D8/internal-tick schedule."""
+"""Dedicated demo/staging worker for ingest, outbox delivery, and hold expiry."""
 
 import asyncio
 from collections.abc import Callable
@@ -17,6 +17,7 @@ from app.core.config import MarketConfig, get_settings
 from app.core.db import get_engine, get_sessionmaker
 from app.core.logging import configure_logging, log_event
 from app.domain.models.ref import Market
+from app.jobs import hold_expiry, outbox
 from app.jobs.ingest import IngestBatchError, run_market
 from app.services.ingest_types import ReplanSource, SourceRisk, aware
 
@@ -29,9 +30,9 @@ async def create_scheduler(
     replan: ReplanSource | None = None,
     risk: SourceRisk | None = None,
 ) -> AsyncIOScheduler:
-    """Build, do not auto-start. One ingest job/market; cross-process safety lives in DB leases.
+    """Build, do not auto-start. DB leases/row locks protect concurrent workers and ticks.
 
-    Cadence is the existing 04/06 MarketConfig sync interval, not D8's proposed extra jobs.
+    Ingest uses MarketConfig; D8 outbox and hold expiry run once per minute.
     Config changes require rebuilding this worker; a second replica cannot bypass feed leases.
     """
     factory = maker or get_sessionmaker()
@@ -71,11 +72,36 @@ async def create_scheduler(
                 max_instances=1,
                 replace_existing=False,
             )
+            scheduler.add_job(
+                outbox.run,
+                trigger=IntervalTrigger(
+                    minutes=1,
+                    timezone=zone,
+                    start_date=(timestamp + timedelta(minutes=1) if timestamp else None),
+                ),
+                id=f"notify_outbox:{market.code}",
+                kwargs={"market_code": market.code},
+                coalesce=True,
+                max_instances=1,
+                replace_existing=False,
+            )
+    scheduler.add_job(
+        hold_expiry.run,
+        trigger=IntervalTrigger(
+            minutes=1,
+            timezone=UTC,
+            start_date=(timestamp + timedelta(minutes=1) if timestamp else None),
+        ),
+        id="hold_expiry",
+        coalesce=True,
+        max_instances=1,
+        replace_existing=False,
+    )
     return scheduler
 
 
 async def run() -> int:
-    """One explicitly requested ingestion tick; no HTTP endpoint/extended D8 contract is added."""
+    """One explicitly requested ingestion pass."""
     from app.jobs.ingest import run as ingest_once
 
     return await ingest_once()
@@ -83,13 +109,15 @@ async def run() -> int:
 
 async def serve() -> None:
     settings = get_settings()
+    if settings.app_env not in {"local", "test", "staging"}:
+        raise RuntimeError("Scheduler is enabled only for demo and staging")
     clock.init_from_settings(settings.app_now)
     configure_logging(Path("logs") if settings.app_env == "local" else None)
     scheduler = None
     try:
         scheduler = await create_scheduler()
         scheduler.start()
-        log_event("scheduler", "ingestion_scheduler_started", jobs=len(scheduler.get_jobs()))
+        log_event("scheduler", "scheduler_started", jobs=len(scheduler.get_jobs()))
         await asyncio.Event().wait()
     finally:
         if scheduler is not None and scheduler.running:
@@ -103,7 +131,7 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     except Exception:
-        log_event("scheduler", "ingestion_scheduler_failed", level="error")
+        log_event("scheduler", "scheduler_failed", level="error")
         return 1
     return 0
 
