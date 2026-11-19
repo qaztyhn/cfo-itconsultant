@@ -11,8 +11,6 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from tools.e1_demo_accept import fixture, scenario
-
 CLOCK = "2026-12-01T10:05:00+01:00"
 
 
@@ -32,6 +30,11 @@ def main() -> None:
         parser.error("Private E0-04 Compose database URL required")
     # Same disposable database, host access only. Never rewrite any stock.
     os.environ["DATABASE_URL"] = database.replace("@postgres:5432/", "@127.0.0.1:5432/")
+    # Import only AFTER replacing the URL: app.main/settings can cache the
+    # connection at import time, otherwise this host process connects to
+    # the Docker-only hostname and yields a false WMS fixture failure.
+    from tools.e1_demo_accept import fixture, scenario
+
     actual = asyncio.run(scenario())
     if (actual["order_status"], actual["plan_status"]) != ("PLANNED", "proposed"):
         parser.error("Browser must have left the plan proposed")
