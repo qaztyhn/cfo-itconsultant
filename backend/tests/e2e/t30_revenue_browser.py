@@ -3,6 +3,7 @@
 Uses synthetic *T29-style* grouped order rows, not the official T26 demo seed.
 No mock handlers, no credentials/tokens/customer names persisted to evidence.
 """
+
 import argparse
 import asyncio
 import json
@@ -93,8 +94,10 @@ def seed_report(dsn: str, password: str) -> None:
 
     run(dsn, cancel)
     updated = fetch(
-        dsn, "UPDATE ref.app_user SET password_hash=$1 WHERE email=$2 RETURNING id",
-        hash_password(password), VIEWER,
+        dsn,
+        "UPDATE ref.app_user SET password_hash=$1 WHERE email=$2 RETURNING id",
+        hash_password(password),
+        VIEWER,
     )
     assert len(updated) == 1
 
@@ -102,8 +105,9 @@ def seed_report(dsn: str, password: str) -> None:
 def browser_check(api: str, web: str, password: str, output: Path, evidence: dict) -> None:
     with sync_playwright() as playwright, closing(playwright.chromium.launch(channel="chrome")) as browser:
         evidence["chrome"] = browser.version
-        page = browser.new_page(timezone_id=ZONE, viewport={"width": 1440, "height": 1080},
-                                service_workers="block")
+        page = browser.new_page(
+            timezone_id=ZONE, viewport={"width": 1440, "height": 1080}, service_workers="block"
+        )
         page.set_default_timeout(15_000)
         safe_requests = []
 
@@ -111,30 +115,35 @@ def browser_check(api: str, web: str, password: str, output: Path, evidence: dic
             parsed = urlsplit(res.url)
             if parsed.path.startswith("/api/v1/revenue/"):
                 params = parse_qs(parsed.query)
-                safe_requests.append({
-                    "path": parsed.path,
-                    "http": res.status,
-                    "query": {
-                        key: params[key][0]
-                        for key in ("view", "from", "to", "location_id", "status_group", "page")
-                        if key in params
-                    },
-                })
+                safe_requests.append(
+                    {
+                        "path": parsed.path,
+                        "http": res.status,
+                        "query": {
+                            key: params[key][0]
+                            for key in ("view", "from", "to", "location_id", "status_group", "page")
+                            if key in params
+                        },
+                    }
+                )
 
         page.on("response", save_response)
         try:
             page.goto(f"{web}/login")
             page.locator('input[type="email"]').fill(VIEWER)
             page.get_by_label("Password", exact=True).fill(password)
-            with page.expect_response(lambda res: res.request.method == "POST"
-                                     and urlsplit(res.url).path == "/api/v1/auth/login") as auth:
+            with page.expect_response(
+                lambda res: res.request.method == "POST" and urlsplit(res.url).path == "/api/v1/auth/login"
+            ) as auth:
                 page.get_by_role("button", name="Sign in", exact=True).click()
             assert auth.value.status == 200, auth.value.status
             page.goto(f"{web}/revenue")
             page.get_by_role("heading", name="Đơn hàng & doanh thu").wait_for()
             page.get_by_label("From date").fill(PERIOD["from"])
-            with page.expect_response(lambda res: urlsplit(res.url).path == "/api/v1/revenue/order-status"
-                                      and "to=2026-11-30" in res.url) as grouped:
+            with page.expect_response(
+                lambda res: urlsplit(res.url).path == "/api/v1/revenue/order-status"
+                and "to=2026-11-30" in res.url
+            ) as grouped:
                 page.get_by_label("To date").fill(PERIOD["to"])
             all_groups = grouped.value
             assert all_groups.status == 200, all_groups.status
@@ -143,8 +152,11 @@ def browser_check(api: str, web: str, password: str, output: Path, evidence: dic
             assert {g["key"]: g["orders"] for g in agg["groups"]} == GROUP_COUNTS, agg
             for group in agg["groups"]:
                 label = {
-                    "approved": "Đã duyệt", "in_transit": "Đang vận chuyển",
-                    "completed": "Đã hoàn thành", "failed": "Thất bại", "cancelled": "Đã hủy",
+                    "approved": "Đã duyệt",
+                    "in_transit": "Đang vận chuyển",
+                    "completed": "Đã hoàn thành",
+                    "failed": "Thất bại",
+                    "cancelled": "Đã hủy",
                 }[group["key"]]
                 page.get_by_role("button", name=f"{label}: {group['orders']} orders").wait_for()
             assert "303 SEK" in page.get_by_label("Primary order and revenue metrics").inner_text()
@@ -166,7 +178,8 @@ def browser_check(api: str, web: str, password: str, output: Path, evidence: dic
 
             with page.expect_response(
                 lambda res: urlsplit(res.url).path == "/api/v1/revenue/orders"
-                and "status_group=approved" in res.url and "location_id=2" in res.url
+                and "status_group=approved" in res.url
+                and "location_id=2" in res.url
             ) as selected_orders:
                 with page.expect_response(scoped) as scoped_status:
                     page.get_by_label("Location filter").select_option("2")
@@ -219,16 +232,24 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     db_name = "cfo_t30_" + secrets.token_hex(6)
     dsn = _with_database(dsn_admin, db_name)
-    evidence = {"result": "FAIL", "task": "T30 / T27 step 12b",
-                "fixture": "T29-style synthetic six order seed, NOT official T26",
-                "app_now": APP_NOW, "market_timezone": ZONE, "period": PERIOD}
+    evidence = {
+        "result": "FAIL",
+        "task": "T30 / T27 step 12b",
+        "fixture": "T29-style synthetic six order seed, NOT official T26",
+        "app_now": APP_NOW,
+        "market_timezone": ZONE,
+        "period": PERIOD,
+    }
     asyncio.run(_admin_exec(dsn_admin, f'CREATE DATABASE "{db_name}"'))
     try:
         command.upgrade(alembic_config(dsn), "head")
         password = secrets.token_urlsafe(22)
         seed_report(dsn, password)
-        ledger = fetch(dsn, "SELECT status, count(*) AS n FROM ops.customer_order "
-                       "WHERE market_id=1 GROUP BY status ORDER BY status")
+        ledger = fetch(
+            dsn,
+            "SELECT status, count(*) AS n FROM ops.customer_order "
+            "WHERE market_id=1 GROUP BY status ORDER BY status",
+        )
         evidence["postgres"] = {
             "status_counts": {row["status"]: row["n"] for row in ledger},
             "orders_all": sum(row["n"] for row in ledger),
@@ -239,14 +260,33 @@ def main() -> None:
         api_port, web_port = loopback_port(), loopback_port()
         api, web = f"http://127.0.0.1:{api_port}", f"http://127.0.0.1:{web_port}"
         api_env = os.environ | {
-            "APP_ENV": "test", "APP_NOW": APP_NOW, "DATABASE_URL": async_url(dsn),
-            "JWT_SECRET": secrets.token_urlsafe(32), "CORS_ORIGINS": json.dumps([web]),
+            "APP_ENV": "test",
+            "APP_NOW": APP_NOW,
+            "DATABASE_URL": async_url(dsn),
+            "JWT_SECRET": secrets.token_urlsafe(32),
+            "CORS_ORIGINS": json.dumps([web]),
         }
         web_env = os.environ | {"VITE_API_URL": f"{api}/api/v1", "VITE_USE_MOCKS": "false"}
-        api_cmd = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
-                   "--port", str(api_port), "--no-access-log"]
-        vite_cmd = ["node", str(FRONTEND_DIR / "node_modules/vite/bin/vite.js"),
-                    "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"]
+        api_cmd = [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(api_port),
+            "--no-access-log",
+        ]
+        vite_cmd = [
+            "node",
+            str(FRONTEND_DIR / "node_modules/vite/bin/vite.js"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(web_port),
+            "--strictPort",
+        ]
         with (
             local_service(api_cmd, BACKEND_DIR, api_env, f"{api}/api/v1/health", args.output / "api.log"),
             local_service(vite_cmd, FRONTEND_DIR, web_env, web, args.output / "vite.log"),
