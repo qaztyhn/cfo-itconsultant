@@ -15,7 +15,7 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: black --check .
+      - run: black --check --diff .
       - run: mypy app/engine
       - run: lint-imports
       - run: pytest
@@ -45,7 +45,7 @@ jobs:
       - uses: ./.github/actions/postgres
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: black --check .
+      - run: black --check --diff .
       - run: mypy app
       - run: pytest tests/unit tests/integration
       - name: Check source contract artifact availability
