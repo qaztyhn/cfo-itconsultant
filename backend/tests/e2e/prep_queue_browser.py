@@ -310,16 +310,14 @@ def walkthrough(
             "WHERE order_id=1 AND event_type='DISPATCHED' ORDER BY id",
         )
         report["t27"]["persisted_dispatch"] = [dict(item) for item in dispatched]
-        observed = [
-            item for item in report["t27"]["driver"] if item.get("dispatch_status") == "PASS"
-        ]
+        observed = [item for item in report["t27"]["driver"] if item.get("dispatch_status") == "PASS"]
         assert [(item["id"], item["trip_id"]) for item in dispatched] == [
             (item["event_id"], item["trip_id"]) for item in observed
         ]
         report["t27"]["postgres_dispatch_matches_browser"] = True
-        report["t27"]["db_order_status"] = fetch(
-            dsn, "SELECT status FROM ops.customer_order WHERE id=1"
-        )[0][0]
+        report["t27"]["db_order_status"] = fetch(dsn, "SELECT status FROM ops.customer_order WHERE id=1")[0][
+            0
+        ]
 
 
 def main() -> None:

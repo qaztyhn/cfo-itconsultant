@@ -3,6 +3,7 @@
 Never fabricates the missing Round 3 location/ETA contracts. Only sanitized HTTP
 status/error.code, synthetic order/trip/event IDs and safe screenshots enter evidence.
 """
+
 from __future__ import annotations
 
 import re
@@ -53,7 +54,10 @@ def _driver_dispatch(
     browser: Browser, web: str, api: str, trip_id: int, order_no: str, password: str, output: Path
 ) -> dict[str, object]:
     stage: dict[str, object] = {
-        "trip_id": trip_id, "order_no": order_no, "status": "NOT VERIFIED", "http": []
+        "trip_id": trip_id,
+        "order_no": order_no,
+        "status": "NOT VERIFIED",
+        "http": [],
     }
     page = browser.new_page(
         timezone_id=TIME_ZONE, viewport={"width": 430, "height": 932}, service_workers="block"
