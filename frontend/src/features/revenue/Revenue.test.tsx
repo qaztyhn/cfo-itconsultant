@@ -169,10 +169,11 @@ describe("US-REV-01 AC5–AC8 — filters, chart, CSV and errors", () => {
     const cards = await screen.findByRole("region", { name: "Order status groups" });
     expect(within(screen.getByLabelText("Primary order and revenue metrics")).getByText("116")).toBeInTheDocument();
     expect(within(screen.getByLabelText("Primary order and revenue metrics"))
-      .getByTitle("1\u202f284\u202f500 SEK")).toBeInTheDocument();
+      .getByText("Recognised revenue").nextElementSibling?.getAttribute("title"))
+      .toBe("1\u202f284\u202f500 SEK");
     expect(within(cards).getAllByRole("button")).toHaveLength(5);
     expect(within(cards).getByRole("button", { name: "Đã duyệt: 30 orders" })).toBeInTheDocument();
-    expect(within(cards).getByText(/402\u202f100 SEK/)).toBeInTheDocument();
+    expect(within(cards).getByText(/402 100 SEK/)).toBeInTheDocument();
     expect(screen.getByText(/Đã hủy: 4\.3%/)).toBeInTheDocument();
   });
   it("US-REV-02 AC1 shows five zero cards and no NaN/Infinity in an empty period", async () => {
