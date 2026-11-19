@@ -139,6 +139,17 @@ def test_US_NOT_03_AC4_concurrent_outbox_workers_send_one_queued_row_once(empty_
     email.send.assert_awaited_once()
 
 
+def test_US_NOT_01_AC3_market_tick_only_claims_its_market(empty_db: str) -> None:
+    prepare(empty_db)
+    add_notification(empty_db)
+    email = AsyncMock()
+    noon = datetime(2026, 11, 4, 11, tzinfo=UTC)
+    assert transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email, market_code="ZZ")) == 0
+    assert fetch(empty_db, "SELECT status FROM ops.notification")[0][0] == "queued"
+    assert transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email, market_code="SE")) == 1
+    assert fetch(empty_db, "SELECT status FROM ops.notification")[0][0] == "sent"
+
+
 def test_DEC_NOTIFY_001_staging_suppresses_real_recipient_without_calling_smtp(empty_db: str) -> None:
     prepare(empty_db)
     for i, recipient in enumerate(("anna.customer@gmail.com", "synthetic@cfo.test")):

@@ -17,23 +17,33 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from io import StringIO
-from typing import Protocol
+from typing import Literal, Protocol
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import ColumnElement, Date, Table, and_, cast, func, or_, select
+from sqlalchemy import ColumnElement, Date, Select, Table, Text, and_, case, cast, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.errors import DomainError
+from app.domain.models.audit import DecisionLog
 from app.domain.models.ops import CustomerOrder
 from app.domain.models.plan import FulfilmentPlan
 from app.domain.models.ref import Customer, Location, Market
 from app.domain.models.views import v_revenue_daily, v_revenue_pending
 
 VIEWS = ("store", "warehouse")
-BOOKED_STATUSES = ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
+APPROVED_STATUSES = ("APPROVED", "PREPARING", "GOODS_READY", "LOADED")
+BOOKED_STATUSES = (*APPROVED_STATUSES, "DISPATCHED")
+StatusGroup = Literal["approved", "in_transit", "completed", "failed", "cancelled"]
+STATUS_GROUPS: dict[StatusGroup, tuple[str, ...]] = {
+    "approved": APPROVED_STATUSES,
+    "in_transit": ("DISPATCHED",),
+    "completed": ("DELIVERED",),
+    "failed": ("FAILED",),
+    "cancelled": ("CANCELLED",),
+}
 DEFAULT_DAYS = 30
 MAX_DAYS = 366
 UNASSIGNED_STORE = "Unassigned store"
@@ -128,6 +138,23 @@ class RevenueByLocation:
     view: str
     currency: str
     rows: tuple[RevenueRow, ...]
+
+
+@dataclass(frozen=True)
+class OrderStatusGroup:
+    key: StatusGroup
+    statuses: tuple[str, ...]
+    date_basis: Literal["committed_date", "cancelled_at"]
+    orders: int
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class RevenueOrderStatus:
+    currency: str
+    total_orders: int
+    total_amount: Decimal
+    groups: tuple[OrderStatusGroup, ...]
 
 
 async def resolve_revenue_scope(session: AsyncSession, viewer: RevenueViewer, market_id: int) -> RevenueScope:
@@ -363,6 +390,101 @@ async def resolve_market_period(
     return market.id, Period.resolve(start, end, today)
 
 
+def _status_orders(
+    market_id: int,
+    view: str,
+    period: Period,
+    targets: frozenset[int] | None,
+    status_group: StatusGroup | None = None,
+) -> Select[int, str, Decimal]:
+    """Select each qualifying order once for both the cards and filtered drill-down."""
+    order = CustomerOrder
+    is_cancelled = order.status == "CANCELLED"
+    cancellation = (
+        select(DecisionLog.ts, DecisionLog.before["approved_plan_id"].astext.label("approved_plan_id"))
+        .where(
+            is_cancelled,
+            DecisionLog.order_id == order.id,
+            DecisionLog.action == Action.ORDER_CANCELLED.value,
+        )
+        .order_by(DecisionLog.ts.desc(), DecisionLog.id.desc())
+        .limit(1)
+        .correlate(order)
+        .lateral("cancellation")
+    )
+    cancelled_day = cast(func.timezone(Market.timezone, cancellation.c.ts), Date)
+    group_key = case(*((order.status.in_(statuses), key) for key, statuses in STATUS_GROUPS.items()))
+    statuses = (
+        STATUS_GROUPS[status_group]
+        if status_group is not None
+        else tuple(status for group in STATUS_GROUPS.values() for status in group)
+    )
+    stmt = (
+        select(order.id, group_key.label("group_key"), order.total_amount)
+        .select_from(order)
+        .join(Market, Market.id == order.market_id)
+        .outerjoin(cancellation, true())
+        .where(
+            order.market_id == market_id,
+            order.status.in_(statuses),
+            or_(
+                and_(is_cancelled, cancelled_day.between(period.start, period.end)),
+                and_(~is_cancelled, order.committed_date.between(period.start, period.end)),
+            ),
+        )
+    )
+    if targets is None:
+        return stmt
+    if view == "store":
+        return stmt.where(order.origin_store_id.in_(targets))
+
+    # The cancel transition clears approved_plan_id. Compare audit JSON as text so
+    # an absent or malformed plan reference cannot break the report or match another order.
+    return stmt.join(
+        FulfilmentPlan,
+        and_(
+            FulfilmentPlan.order_id == order.id,
+            or_(
+                and_(is_cancelled, cast(FulfilmentPlan.id, Text) == cancellation.c.approved_plan_id),
+                and_(~is_cancelled, FulfilmentPlan.id == order.approved_plan_id),
+            ),
+        ),
+    ).where(FulfilmentPlan.warehouse_id.in_(targets))
+
+
+async def order_status(
+    session: AsyncSession,
+    viewer: RevenueViewer,
+    *,
+    market_id: int,
+    view: str,
+    location_id: int | None,
+    period: Period,
+) -> RevenueOrderStatus:
+    scope = await resolve_revenue_scope(session, viewer, market_id)
+    targets = await _targets(session, scope, market_id, view, location_id)
+    orders = _status_orders(market_id, view, period, targets).subquery()
+    rows = await session.execute(
+        select(orders.c.group_key, func.count(), func.sum(orders.c.total_amount)).group_by(orders.c.group_key)
+    )
+    totals = {key: (count, amount) for key, count, amount in rows}
+    groups = tuple(
+        OrderStatusGroup(
+            key,
+            statuses,
+            "cancelled_at" if key == "cancelled" else "committed_date",
+            *totals.get(key, (0, Decimal(0))),
+        )
+        for key, statuses in STATUS_GROUPS.items()
+    )
+    return RevenueOrderStatus(
+        await _currency(session, market_id),
+        sum(group.orders for group in groups),
+        sum((group.amount for group in groups), Decimal(0)),
+        groups,
+    )
+
+
 async def orders(
     session: AsyncSession,
     viewer: RevenueViewer,
@@ -373,28 +495,15 @@ async def orders(
     period: Period,
     page: int = 1,
     page_size: int = 50,
+    status_group: StatusGroup | None = None,
 ) -> tuple[list[dict[str, object]], int]:
-    """GET /revenue/orders: only recognised or booked orders in the selected period.
+    """List a status group, or recognised/booked orders when no group is selected.
 
     Never query customer PII for the Business owner. Both time and location filters
     are applied in SQL, before pagination, independent of T07/T14.
     """
     scope = await resolve_revenue_scope(session, viewer, market_id)
     targets = await _targets(session, scope, market_id, view, location_id)
-    local_day = cast(func.timezone(Market.timezone, CustomerOrder.delivered_at), Date)
-    in_period = or_(
-        and_(CustomerOrder.status == "DELIVERED", local_day.between(period.start, period.end)),
-        and_(
-            CustomerOrder.status.in_(BOOKED_STATUSES),
-            CustomerOrder.committed_date.between(period.start, period.end),
-        ),
-    )
-    location_col = CustomerOrder.origin_store_id if view == "store" else FulfilmentPlan.warehouse_id
-    filters = [
-        CustomerOrder.market_id == market_id,
-        in_period,
-        location_col.in_(targets if targets is not None else frozenset({location_id})),
-    ]
     show_customer = "admin" in viewer.roles or (
         not scope.all and location_id in (scope.store_ids if view == "store" else scope.warehouse_ids)
     )
@@ -407,15 +516,30 @@ async def orders(
     ]
     if show_customer:
         fields.append(Customer.name.label("customer_name"))
-    stmt = (
-        select(*fields)
-        .select_from(CustomerOrder)
-        .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
-        .join(Market, Market.id == CustomerOrder.market_id)
-    )
+    if status_group is not None:
+        stmt = _status_orders(market_id, view, period, targets, status_group).with_only_columns(*fields)
+    else:
+        local_day = cast(func.timezone(Market.timezone, CustomerOrder.delivered_at), Date)
+        location_col = CustomerOrder.origin_store_id if view == "store" else FulfilmentPlan.warehouse_id
+        stmt = (
+            select(*fields)
+            .select_from(CustomerOrder)
+            .join(FulfilmentPlan, FulfilmentPlan.id == CustomerOrder.approved_plan_id)
+            .join(Market, Market.id == CustomerOrder.market_id)
+            .where(
+                CustomerOrder.market_id == market_id,
+                location_col.in_(targets if targets is not None else frozenset({location_id})),
+                or_(
+                    and_(CustomerOrder.status == "DELIVERED", local_day.between(period.start, period.end)),
+                    and_(
+                        CustomerOrder.status.in_(BOOKED_STATUSES),
+                        CustomerOrder.committed_date.between(period.start, period.end),
+                    ),
+                ),
+            )
+        )
     if show_customer:
         stmt = stmt.join(Customer, Customer.id == CustomerOrder.customer_id)
-    stmt = stmt.where(*filters)
     total = int(
         (await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
     )
