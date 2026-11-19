@@ -61,6 +61,18 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
   });
   // For the server's default 30-day market-local window, the *status* response
   // supplies the exact dates used in drill-down. Never infer dates from device time.
+  // A manager may own several locations; the active location's breakdown is
+  // scoped, so fetch selectable names independently without an active location.
+  const ownerLocationChoices = useQuery({
+    queryKey: ["revenue", "authorised-owner-locations", view, from, to, ownerIds],
+    queryFn: ({ signal }) => getRevenueLocations({
+      view, ...(from ? { from } : {}), ...(to ? { to } : {}),
+    }, signal),
+    enabled: configured && !fullAccess && ownerIds.length > 1,
+    refetchInterval: REFRESH, refetchIntervalInBackground: false, retry: false,
+  });
+  const selectableLocations = !fullAccess && ownerIds.length > 1
+    ? (ownerLocationChoices.data?.rows ?? []) : (locations.data?.rows ?? []);
   const selectedFilters = selected === null || !status.data ? null : {
     ...filters, from: from || status.data.period.from, to: to || status.data.period.to, location_id: selected,
   };
@@ -74,7 +86,8 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
     enabled: configured && selectedFilters !== null && !status.isError,
     refetchInterval: REFRESH, refetchIntervalInBackground: false, retry: false,
   });
-  const failures = [summary.error, status.error, daily.error, locations.error].filter(Boolean);
+  const failures = [summary.error, status.error, daily.error, locations.error,
+    !fullAccess && ownerIds.length > 1 ? ownerLocationChoices.error : null].filter(Boolean);
   const forbidden = failures.some(error => isApiError(error) && error.status === 403);
   const missing = failures.some(error => isApiError(error) && error.status === 404);
   const currencies = [summary.data?.currency, status.data?.currency, daily.data?.currency,
@@ -83,7 +96,8 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
   const mismatchedPeriod = Boolean(status.data && summary.data && (
     status.data.period.from !== summary.data.period.from || status.data.period.to !== summary.data.period.to
   ));
-  const loading = summary.isPending || status.isPending || daily.isPending || locations.isPending;
+  const loading = summary.isPending || status.isPending || daily.isPending || locations.isPending ||
+    (!fullAccess && ownerIds.length > 1 && ownerLocationChoices.isPending);
   const statusCounts = new Map(status.data?.groups.map(group => [group.key, group]) ?? []);
   const totalOrders = status.data?.total.orders ?? 0;
   const groupLabel = REVENUE_STATUS_GROUPS.find(item => item.key === selectedGroup)?.label ?? "";
@@ -159,10 +173,11 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
           }} />
       </label>
       <label className="flex flex-col gap-1 text-caption">Location
-        <select className={field} aria-label="Location filter" disabled={locations.isPending || (!fullAccess && ownerIds.length <= 1)}
+        <select className={field} aria-label="Location filter" disabled={locations.isPending || (!fullAccess &&
+            (ownerIds.length <= 1 || ownerLocationChoices.isPending || ownerLocationChoices.isError))}
           value={location ?? ""} onChange={e => chooseLocation(e.target.value ? Number(e.target.value) : undefined)}>
           {fullAccess && <option value="">All authorised locations</option>}
-          {(locations.data?.rows ?? []).filter(row => row.location_id !== null &&
+          {selectableLocations.filter(row => row.location_id !== null &&
             (fullAccess || ownerIds.includes(row.location_id))).map(row => (
             <option key={row.location_id} value={row.location_id ?? ""}>{row.name}</option>
           ))}
