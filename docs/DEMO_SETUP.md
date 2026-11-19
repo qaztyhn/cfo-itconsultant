@@ -1,5 +1,47 @@
 # Demo MVP — Swedish pilot: reproducible setup
 
+## E2 notification and hold worker
+
+After preparing the disposable demo database, start the dedicated worker with
+`docker compose --env-file .env up -d cfo-worker`. The API process does not
+start APScheduler. `cfo-worker` retains each market ingest interval and runs
+`notify_outbox` per market plus global `hold_expiry` every minute. Use only
+synthetic recipients in Mailpit. Do not run a second scheduler replica; the
+outbox/hold row locks also protect a concurrent manual tick.
+
+For an immediate test, keep the key in a local environment variable and call:
+
+```powershell
+$headers = @{ 'X-Internal-Key' = $env:INTERNAL_TICK_KEY }
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/internal/tick?job=notify_outbox&market=SE' -Headers $headers
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/internal/tick?job=hold_expiry' -Headers $headers
+```
+
+Check `ops.notification` for `template`, `status`, `sent_at`, and `attempts`,
+and `audit.decision_log` for `NOTIFICATION_SENT`; never dump the recipient or
+body into a shared log. Compare with the single message in Mailpit at
+`http://127.0.0.1:8025` (or its JSON `/api/v1/messages`). The optional
+`backend/tests/integration/test_e2_mailpit.py` creates a temporary PostgreSQL
+database at Alembic `head` and exercises tick, repeated tick, and a scheduled
+run against local Mailpit when `TEST_DATABASE_URL` and `E2_MAILPIT_URL` are set.
+It leaves the main demo database untouched. It uses a due synthetic
+`CONFIRMED` fixture because approval enqueue is still pending E1/T21.
+
+E2 local evidence (2026-11-19): an isolated `cfo-demo-e2` Compose project was
+migrated to `head`, given one due synthetic `CONFIRMED` row, and started with
+`cfo-worker`. Without a tick, DB showed `sent`, `sent_at` set, `attempts=1`,
+one `NOTIFICATION_SENT` audit, and Mailpit held exactly one message containing
+the order reference and delivery window. The Source service was deliberately
+not started in this isolated mail test, so its separate scheduled ingest pass
+logged incomplete; this did not stop the outbox pass. The optional PostgreSQL
+test also verified tick, repeat tick (zero new rows), and an APScheduler pass
+against Mailpit. Approval to email for one real demo order is **BLOCKED** by
+the pending E1/T21 same-transaction enqueue in `approval_service`.
+
+The worker only schedules handlers that are implemented and tested:
+`notify_outbox` and `hold_expiry`. `risk_check` and `retention` remain unavailable
+to tick and unscheduled until their T08/T13 handlers and tests exist.
+
 **Status: partial / fail-closed.** The steps below reproduce the synthetic Source,
 CFO reference data, official *demo-only* shift schedule and live HTTP checks on
 one isolated Compose installation. They do **not** presently reproduce a
