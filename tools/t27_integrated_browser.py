@@ -117,7 +117,13 @@ def sql(query: str, env: dict[str, str]) -> str:
 
 
 def screenshot(page: Page, out: Path, name: str) -> None:
-    page.screenshot(path=out / name, full_page=True, animations="disabled")
+    # Synthetic demo sidebar displays account login addresses. Exclude the
+    # navigation entirely from public evidence instead of exporting usernames.
+    main = page.locator("main").first
+    if main.count():
+        main.screenshot(path=out / name, animations="disabled")
+    else:
+        page.screenshot(path=out / name, full_page=True, animations="disabled")
 
 
 def login(browser, target: str, account: str, password: str, out: Path, label: str) -> Page:
@@ -248,9 +254,36 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
         info = metadata(response)
         report["api"].append(info)
         if not response.ok:
+            try:
+                error = response.json().get("error", {})
+                reason = error.get("message")
+            except (ValueError, AttributeError, Error):
+                reason = None
+            # DomainError contains static, server-owned reasons; never serialize
+            # arbitrary request payloads, headers, native SKU, or recipients.
+            public_reason = reason[:240] if isinstance(reason, str) else "No error detail"
+            diagnostic = {
+                "error_code": info["error_code"],
+                "http": info["http"],
+                "server_reason": public_reason,
+                "order_status": sql(
+                    f"SELECT status FROM ops.customer_order WHERE id={order_id}", env
+                ),
+                "wms_intent_count": sql(
+                    f"SELECT count(*) FROM ops.wms_reservation_intent WHERE plan_id={plan_id}", env
+                ),
+                "wms_reserve_count": compose(
+                    "exec", "-T", "cfo-api", "python", "-c",
+                    "import sqlite3; db=sqlite3.connect('/tmp/t27-wms.sqlite'); "
+                    "print(db.execute('SELECT count(*) FROM reservations').fetchone()[0])",
+                    env=env, capture=True,
+                ),
+            }
+            report["approval_diagnostic"] = diagnostic
+            screenshot(page, out, "04-dispatcher-approval-rejected.png")
             mark(report, "4", "BLOCKED" if response.status in (409, 422, 503) else "FAIL",
-                 "Dispatcher UI clicked Approve, backend rejected without a committed order",
-                 http=info)
+                 "Dispatcher UI clicked Approve; backend rejected, no order commit",
+                 http=info, backend_reason=public_reason, wms_diagnostic=diagnostic)
             report["last_verified"] = "Dispatcher Approve request rejected; Sales feasible is last PASS"
             return []
         result = response.json()
