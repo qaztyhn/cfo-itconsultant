@@ -2,12 +2,32 @@
 
 ## E2 notification and hold worker
 
-After preparing the disposable demo database, start the dedicated worker with
-`docker compose --env-file .env up -d cfo-worker`. The API process does not
-start APScheduler. `cfo-worker` retains each market ingest interval and runs
-`notify_outbox` per market plus global `hold_expiry` every minute. Use only
-synthetic recipients in Mailpit. Do not run a second scheduler replica; the
-outbox/hold row locks also protect a concurrent manual tick.
+**Required order on a clean demo:** start the base stack → migrate CFO
+and initialize Source → seed the Swedish market/reference data → start the
+dedicated worker **explicitly after seed**. The worker reads existing markets
+only at scheduler startup; running it before the `SE` row exists silently
+misses `notify_outbox:SE` until a restart.
+
+```sh
+# After setting/exporting the disposable demo environment below:
+docker compose up -d --build        # cfo-worker stays off (default profile)
+# Recommended guarded setup handles the DB migrations and source/CFO seed:
+bash tools/demo_setup.sh
+# ONLY when the setup script completed the seed and reference imports:
+docker compose --profile demo-worker up -d --build cfo-worker
+docker compose --profile demo-worker logs --tail=50 cfo-worker
+```
+
+`bash tools/demo_setup.sh` itself already starts the basic services before
+migrating/seeding; the first `docker compose up` is optional if using that
+script. `docker compose config --services` must **exclude** `cfo-worker`;
+`docker compose --profile demo-worker config --services` must include it.
+Do not run two scheduler replicas, enable this in production, or use
+real customer addresses. The API itself does not start APScheduler.
+
+With `SE` seeded, the worker retains the existing ingest jobs, schedules
+`notify_outbox:SE` every minute and schedules global `hold_expiry` every minute.
+Outbox and hold DB locks also protect a concurrent manual tick.
 
 For an immediate test, keep the key in a local environment variable and call:
 
