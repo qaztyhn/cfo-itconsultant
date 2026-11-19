@@ -19,7 +19,7 @@ jobs:
       - name: Check repository Ruff and Black
         run: |
           ruff check .
-          black --check .
+          black --check --diff .
       - name: Run real-PostgreSQL approval CONFIRMED acceptance with synthetic ID evidence
         run: pytest -q -s tests/integration/test_approval_service.py -k t21
       - name: Regress existing notification idempotency and email-only outbox
