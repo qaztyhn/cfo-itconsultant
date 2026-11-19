@@ -46,7 +46,7 @@ function signInWarehouse() {
   signInAs(userByEmail("wm.got@cfo.demo"));
 }
 
-describe("PrepQueue screen (read-only)", () => {
+describe("PrepQueue screen (Round 3)", () => {
   it("shows the header, capacity card and orders table for the warehouse manager's warehouse", async () => {
     const seen = vi.fn();
     server.use(prepQueueSuccess(buildPrepQueueFixture("verified"), seen));
@@ -62,13 +62,16 @@ describe("PrepQueue screen (read-only)", () => {
     expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 
-  it("has no write buttons in PR 1", async () => {
+  it("test_US_WH_01_AC1_offers_backend-authorized milestones only", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
-
     await screen.findByRole("table", { name: "Orders to prepare" });
-    expect(screen.queryByRole("button", { name: /start prep|pause|resume|goods ready|mark loaded/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start preparation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Mark loaded · GBG-18-05" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Mark loaded · GBG-18-04" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Pause preparation|Resume preparation|Report shift change/i })).toBeNull();
   });
 
   it("test_US_WH_03_AC1_shows_no_equipment_row", async () => {
@@ -191,16 +194,11 @@ describe("PrepQueue screen (read-only)", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("opens Edit shifts & staff from the keyboard", async () => {
+  it("does not link to the removed Round 2 attendance screen", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
-
-    const link = await screen.findByRole("link", { name: "Edit shifts & staff" });
-    link.focus();
-    expect(link).toHaveFocus();
-    await userEvent.setup().keyboard("{Enter}");
-
-    await waitFor(() => expect(currentPath()).toBe("/warehouse/attendance"));
+    await screen.findByRole("table", { name: "Orders to prepare" });
+    expect(screen.queryByRole("link", { name: "Edit shifts & staff" })).toBeNull();
   });
 });
