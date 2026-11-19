@@ -65,7 +65,12 @@ else
   install -m 600 "$tmpfile" "$ROOT/demo-fixtures.json"
 fi
 docker compose cp "$docker_manifest" source-se:/tmp/cfo-demo-fixtures.json >/dev/null
-docker compose exec -T source-se python -m app.seed_demo --manifest /tmp/cfo-demo-fixtures.json
+if [[ "${COMPOSE_PROJECT_NAME}" == "cfo-demo-t26" ]]; then
+  docker compose exec -T -e APP_ENV=test -e DEMO_DISPOSABLE=1 source-se \
+    python -m app.seed_t26 /tmp/cfo-demo-fixtures.json
+else
+  docker compose exec -T source-se python -m app.seed_demo --manifest /tmp/cfo-demo-fixtures.json
+fi
 # The M0 market seed deliberately leaves Source URL unset; bind only this
 # approved local adapter, refusing any preexisting incompatible configuration.
 docker compose exec -T -e DEMO_DISPOSABLE=1 cfo-api python -m app.demo_configure
