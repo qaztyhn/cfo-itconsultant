@@ -234,7 +234,7 @@ describe("PrepQueue screen (Round 3)", () => {
     signInWarehouse();
     renderAt("/warehouse/prep");
     const user = userEvent.setup();
-    const actions = () => within(screen.getByText(order.order_no).closest("tr") as HTMLElement);
+    const actions = () => within(within(screen.getByRole("table", { name: "Orders to prepare" })).getByText(order.order_no).closest("tr") as HTMLElement);
     await screen.findByRole("table", { name: "Orders to prepare" });
     await user.click(actions().getByRole("button", { name: "Start preparation" }));
     await user.clear(screen.getByRole("spinbutton", { name: /Crew size/ }));
