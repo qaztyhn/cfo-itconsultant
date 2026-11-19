@@ -1,0 +1,61 @@
+name: E0-04 disposable Compose replay (diagnostic only)
+on:
+  push:
+    branches: [diag/e004-compose-replay-20261119]
+permissions:
+  contents: read
+jobs:
+  e0_04:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install replay client dependencies
+        run: python -m pip install -e ./backend python-dotenv tzdata
+      - name: Generate private disposable credentials
+        run: |
+          python - <<'PY'
+          from secrets import token_hex
+          from pathlib import Path
+          import os
+          password=token_hex(24)
+          vals={
+            'POSTGRES_PASSWORD': password,
+            'DATABASE_URL': f'postgresql+asyncpg://cfo:{password}@postgres:5432/cfo',
+            'SOURCE_SE_DATABASE_URL': f'postgresql+asyncpg://cfo:{password}@postgres:5432/source_se',
+            'SOURCE_SE_API_KEY': token_hex(24),
+            'JWT_SECRET': token_hex(24),
+            'SEED_DEMO_PASSWORD': token_hex(24),
+            'INTERNAL_TICK_KEY': token_hex(24),
+            'APP_ENV': 'test',
+            'DEMO_DISPOSABLE': '1',
+            'COMPOSE_PROJECT_NAME': 'cfo-demo-e004',
+            'APP_NOW': '2026-11-04T10:05:00+01:00',
+            'SOURCE_DB_NAME': 'source_se',
+            'SOURCE_SCHEMA': 'src_se',
+            'VITE_API_URL': 'http://localhost:8000/api/v1',
+            'CORS_ORIGINS': '["http://localhost:5173"]',
+          }
+          Path('.env').write_text(''.join(f'{key}={val}\n' for key,val in vals.items()))
+          os.chmod('.env',0o600)
+          print('Disposable credentials generated locally in runner; no values logged.')
+          PY
+      - name: Clean disposable Compose replay and verify proposal
+        run: |
+          set -euo pipefail
+          cleanup() { docker compose --env-file .env -p cfo-demo-e004 down -v --remove-orphans >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          cleanup
+          python tools/e0_04_prepare.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('.e0-04-after.json').read_text())
+          print('E0-04 API evidence:', json.dumps(x, sort_keys=True))
+          assert x['external_ref']=='SE-2026-000249'
+          assert x['result']=='feasible' and x['status']=='proposed'
+          PY
+          docker compose --env-file .env -p cfo-demo-e004 exec -T postgres psql -U cfo -d cfo -Atc "SELECT 'plan_detail',o.external_ref,pr.id,p.id,l.code,p.target_date,p.status FROM ops.customer_order o JOIN plan.fulfilment_plan p ON p.order_id=o.id JOIN plan.planning_run pr ON p.run_id=pr.id JOIN ref.location l ON l.id=p.warehouse_id WHERE o.external_ref='SE-2026-000249';"
