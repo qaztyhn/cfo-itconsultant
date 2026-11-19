@@ -38,6 +38,23 @@ jobs:
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 2 --continue-driver-cs --output ../t27-flow-two
 
+      - name: Generate the complete T27 14-step ledger (no invented PASS)
+        run: |
+          python tools/t27_report.py \
+            --one t27-flow-one/demo-prep-browser-results.json \
+            --two t27-flow-two/demo-prep-browser-results.json \
+            --out t27-evidence
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          status = json.loads(Path("t27-evidence/round3-results.json").read_text())
+          print("EVIDENCE: SHA", status["source_sha"])
+          for line in status["rows"]:
+              print("T27", line["step"], line["status"], line["tasks"])
+          print("EVIDENCE driver matched PG:", status["driver_dispatch_postgres_match"])
+          print("EVIDENCE CS lookup matched API:", status["cs_lookup_api_match"])
+          PY
+
       - name: Archive synthetic screenshots and sanitized event IDs
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,5 +69,7 @@ jobs:
             t27-flow-one/*.json
             t27-flow-two/*.png
             t27-flow-two/*.json
+            t27-evidence/round3-results.json
+            t27-evidence/round3-results.md
           if-no-files-found: ignore
           retention-days: 3

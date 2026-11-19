@@ -49,3 +49,45 @@ database on exit. To reset and run again, use the same command with a new
 
 Vehicle issue depends on the backend's approved-plan `loading[].vehicle_id`
 DTO and T07. Round 3's prep duration calculation is tracked by T05.
+
+
+## T27 same-fixture Driver → CS continuation (Round 3)
+
+Use the **existing** E3 case with a fresh disposable PostgreSQL database, Chrome and
+real Vite/FastAPI. Do not treat it as a POS/Sales/Approve journey: the seed starts
+from `APPROVED`. Before running, install the dependencies and export the loopback
+`TEST_DATABASE_URL` as specified above. The script generates a synthetic password
+at runtime; it must never be written to the report, screenshots, trace or GitHub logs.
+
+```sh
+cd backend
+python -m tests.e2e.prep_queue_browser --trips 1 --continue-driver-cs --output ../t27-flow-one
+python -m tests.e2e.prep_queue_browser --trips 2 --continue-driver-cs --output ../t27-flow-two
+cd ..
+python tools/t27_report.py --one t27-flow-one/demo-prep-browser-results.json --two t27-flow-two/demo-prep-browser-results.json --out t27-evidence
+```
+
+The test verifies warehouse START_PREP/GOODS_READY/LOADED, the first of two LOADED
+keeping the order GOODS_READY, and the final trip setting LOADED. It checks the
+actual `ops.milestone_event` IDs and trip IDs. The continuation uses the same
+assigned driver accounts, freezes browser time to the fixture's APP_NOW for
+chronologically valid actions, clicks the real Driver UI's DISPATCHED action,
+and compares acknowledged events with PostgreSQL. The CS account searches that
+same synthetic order and checks the order-detail GET response; the ETA-history
+HTTP response is captured separately. A missing GPS position control or ETA
+history endpoint is recorded as BLOCKED with the responsible T13/T14/T16 task,
+never substituted with fabricated successful delivery/ETA.
+
+The output ledger contains exactly 14 rows (including 12b), the fixture origin,
+SHA, Stockholm business clock, sanitized HTTP statuses/error codes and the
+furthest verified step. The GitHub workflow `.github/workflows/t27-e3-browser.yml`
+archives only synthetic screenshots and JSON/Markdown evidence for T28. Do not
+publish Playwright traces containing JWTs, raw headers or coordinates; keep any
+such trace in a restricted local store, with access control and limited retention.
+
+For the **separate full** E0-04 candidate `SE-2026-000249`, consult
+`docs/E0_04_DEMO.md`: it currently performs Sync and Plan during preparation,
+so a Sales UI click-through requires a true pre-Sync seed. Match Source+CFO+
+browser to the same `APP_NOW` and `Europe/Stockholm` business date/roster.
+Handoff to T28 must include separate order refs for Plan Review, T26 revenue
+and failed-exception cases; do not reuse the already-approved fixture for them.
