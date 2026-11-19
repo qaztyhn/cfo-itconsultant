@@ -11,10 +11,12 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 
 ## 1. Luồng demo (14 bước) và task cần
 
+**Phạm vi demo:** thao tác trên CFO. Trước buổi demo, chuẩn bị sẵn đơn đã submit trong Source giả lập và mã đơn để Sales đồng bộ từ CFO.
+
 | # | Bước | Vai trò | US/AC | Hiện trạng code | Task |
 |---|---|---|---|---|---|
-| 1 | Tạo đơn trong POS giả lập | Sales | US-SRC-01..03 | Chưa có POS UI, đã thử tạo và submit đơn qua Source API | E0 |
-| 2 | Sync now + Check feasibility | Sales | US-ORD-06, flow 2a | Có | E0 |
+| 1 | Mở **Sync & Check** trong CFO, nhập mã đơn demo | Sales | US-INT-06 AC1, flow 2a | Có màn Sync & Check | E0, T26 |
+| 2 | Bấm **Sync now → Check feasibility** và xem kết quả lập kế hoạch | Sales | US-INT-06 AC1, flow 2a | HTTP 200, có phương án khả thi trong ca E0-04 (#222) | E0 |
 | 3 | 3 phương án; Sales chọn rank 1–3 | Sales | US-APR-05 | Chỉ rank-1 | T19 |
 | 4 | Duyệt → APPROVED, gán Dispatcher luân phiên | Sales/Dispatcher | US-APR-01, US-GPS-02 AC3 | **Chặn**: duyệt luôn lỗi ngoài môi trường test (WMS ACK); gate tài xế cần proof 56 ngày | E1, T12, T15 |
 | 5 | Email CONFIRMED | Hệ thống | US-NOT-01 | **Không gửi**: chỉ job ingest được lên lịch; `/internal/tick` stub | E2, T21 |
@@ -33,7 +35,7 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 ## Đợt 0 — Đo hiện trạng
 
 ### E0 · Chạy thử luồng trên `main` 🔴 — Dev 2 + Dev 3 · S
-- **Việc:** theo `docs/DEMO_SETUP.md`: `docker compose up`, migrate, seed; đi tay 13 bước bằng tài khoản demo.
+- **Việc:** dựng môi trường, migrate và seed theo `docs/DEMO_SETUP.md`. Chuẩn bị mã đơn đã submit ở Source, sau đó chạy tay đủ 14 bước (gồm 12b), bắt đầu tại **Sales → Sync & Check** trong CFO.
 - **Đầu ra:** bảng PASS/FAIL/BLOCKED 14 bước kèm log/ảnh; lỗi mới → task `E0-xx`.
 
 ---
@@ -153,12 +155,14 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 ## Đợt 3 — Dữ liệu, kiểm thử, diễn tập 🔴
 
 ### T26 · Seed demo R3 — Dev 2 · M · cần T09, T12, T15
+- Chuẩn bị sẵn đơn đã submit trong Source giả lập và ghi mã đơn (`external_ref`) để Sales bắt đầu bằng **Sync now** trong CFO.
 - Đơn trải đủ 5 nhóm trạng thái trong kỳ demo (có đơn hủy trước duyệt) cho màn Đơn hàng & doanh thu; 2 kho GBG + STO, 10 cửa hàng; chuyển 4 kịch bản Malmö (000123, 000137, 000129, 000131); đơn journey 20 pallet xi măng + 15 pallet gạch (2 xe); đơn cho Sales chọn rank 2; đơn cho sự cố/FAILED; công suất ngày; tài xế đã xác minh; danh sách Dispatcher luân phiên.
 
 ### T27 · E2E 14 bước — Dev 3/QA · M · cuối
-- Playwright đúng 14 bước ở mục 1 (gồm 12b); PASS/FAIL/BLOCKED kèm trace thật.
+- Dùng mã đơn đã submit từ bộ seed T26. Chạy Playwright đủ 14 bước ở mục 1 (gồm 12b), bắt đầu tại **Sales → Sync & Check** trong CFO. Ghi PASS/FAIL/BLOCKED kèm trace thật.
 
 ### T28 · Runbook + lệnh reset + video dự phòng — Dev 2 · S
+- Ghi cách khôi phục bộ seed, mã đơn đã submit ở Source và màn mở đầu **Sales → Sync & Check** trong CFO.
 
 ### E6 · Kịch bản demo 15 phút + 2 lần diễn tập — Người trình bày + cả nhóm · S
 
