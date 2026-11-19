@@ -37,6 +37,9 @@ logged incomplete; this did not stop the outbox pass. The optional PostgreSQL
 test also verified tick, repeat tick (zero new rows), and an APScheduler pass
 against Mailpit. Approval to email for one real demo order is **BLOCKED** by
 the pending E1/T21 same-transaction enqueue in `approval_service`.
+The PostgreSQL concurrency test pauses the scheduler's email transport while
+an authenticated tick claims the same market; tick processes zero, and the
+single row has one send attempt and one sent audit after the scheduler commits.
 
 The worker only schedules handlers that are implemented and tested:
 `notify_outbox` and `hold_expiry`. `risk_check` and `retention` remain unavailable
