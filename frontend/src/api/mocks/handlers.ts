@@ -714,11 +714,15 @@ export const handlers = [
 
   // Revenue — use the current US-REV-01 read DTOs. Legacy demo responses lacked period/points/rows
   // and could crash the Revenue screen after Business owner signed in (push CI).
-  http.get(`${BASE}/revenue/summary`, () => {
+  http.get(`${BASE}/revenue/summary`, ({ request }) => {
+    const url = new URL(request.url);
     return HttpResponse.json({
-      period: { from: REVENUE_SUMMARY.period_start, to: REVENUE_SUMMARY.period_end },
-      view: "store",
-      location_id: null,
+      period: {
+        from: url.searchParams.get("from") ?? REVENUE_SUMMARY.period_start,
+        to: url.searchParams.get("to") ?? REVENUE_SUMMARY.period_end,
+      },
+      view: url.searchParams.get("view") ?? "store",
+      location_id: Number(url.searchParams.get("location_id")) || null,
       currency: REVENUE_SUMMARY.currency,
       recognised: REVENUE_SUMMARY.recognised_sek,
       booked_not_delivered: REVENUE_SUMMARY.booked_sek,
@@ -726,6 +730,55 @@ export const handlers = [
       avg_order_value: REVENUE_SUMMARY.avg_order_value_sek,
       share_of_market_pct: Number(REVENUE_SUMMARY.share_of_market_pct),
     });
+  }),
+
+  // T30 / A16b synthetic status report, visibly mock-only (not a T26 integrated seed).
+  // Keep the period aligned with summary so default 30-day browser rendering remains coherent.
+  http.get(`${BASE}/revenue/order-status`, ({ request }) => {
+    const url = new URL(request.url);
+    const groups = [
+      { key: "approved", statuses: ["APPROVED", "PREPARING", "GOODS_READY", "LOADED"], orders: 16, amount: "402100.00" },
+      { key: "in_transit", statuses: ["DISPATCHED"], orders: 5, amount: "88400.00" },
+      { key: "completed", statuses: ["DELIVERED"], orders: 48, amount: "1012600.00" },
+      { key: "failed", statuses: ["FAILED"], orders: 2, amount: "41000.00" },
+      { key: "cancelled", statuses: ["CANCELLED"], orders: 3, amount: "25000.00" },
+    ];
+    return HttpResponse.json({
+      period: {
+        from: url.searchParams.get("from") ?? REVENUE_SUMMARY.period_start,
+        to: url.searchParams.get("to") ?? REVENUE_SUMMARY.period_end,
+      },
+      view: url.searchParams.get("view") ?? "store",
+      location_id: Number(url.searchParams.get("location_id")) || null,
+      currency: REVENUE_SUMMARY.currency,
+      total: { orders: 74, amount: "1569100.00" },
+      groups: groups.map(group => ({
+        ...group, date_basis: group.key === "cancelled" ? "cancelled_at" : "committed_date",
+      })),
+    });
+  }),
+
+  http.get(`${BASE}/revenue/orders`, ({ request }) => {
+    const url = new URL(request.url);
+    const group = url.searchParams.get("status_group");
+    const counts: Record<string, number> = {
+      approved: 16, in_transit: 5, completed: 48, failed: 2, cancelled: 3,
+    };
+    const total = group && group in counts ? counts[group] : 74;
+    const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
+    const pageSize = 25;
+    const start = (page - 1) * pageSize;
+    const rows = Array.from({ length: Math.max(0, Math.min(pageSize, total - start)) }, (_, index) => ({
+      order_no: `SE-MOCK-${group ?? "ALL"}-${start + index + 1}`,
+      delivered_at: group === "completed" ? "2026-11-03T10:00:00Z" : null,
+      amount: "100.00",
+      currency: REVENUE_SUMMARY.currency,
+      status: ({
+        approved: "APPROVED", in_transit: "DISPATCHED", completed: "DELIVERED",
+        failed: "FAILED", cancelled: "CANCELLED",
+      } as Record<string, string>)[group ?? ""] ?? "APPROVED",
+    }));
+    return HttpResponse.json({ items: rows, page, page_size: pageSize, total });
   }),
 
   http.get(`${BASE}/revenue/daily`, () => {
