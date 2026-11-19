@@ -396,3 +396,35 @@ def test_US_CS_01_AC1_phone_search_is_throttled_without_echoing_query(od: Api) -
     response = od.get("/orders", CS, q="+46701234567")
     assert response.status_code == 429
     assert "+46701234567" not in response.text
+
+
+def test_US_RSK_01_AC1_stored_eta_history_is_ordered_and_cs_allowlisted(od: Api) -> None:
+    path = "/orders/3/eta-forecasts"
+    dispatcher = od.get(path, DISPATCHER)
+    assert dispatcher.status_code == 200, dispatcher.text
+    assert [row["version"] for row in dispatcher.json()] == [1, 2]
+    assert dispatcher.json()[1] == {
+        "version": 2,
+        "forecast_eta": "2026-11-13T11:30:00Z",
+        "risk_status": "AT_RISK",
+        "risk_color": "orange",
+    }
+    cs = od.get(path, CS)
+    assert cs.status_code == 200, cs.text
+    assert cs.json() == [
+        {"version": row["version"], "forecast_eta": row["forecast_eta"], "risk_status": row["risk_status"]}
+        for row in dispatcher.json()
+    ]
+    assert all(set(row) == {"version", "forecast_eta", "risk_status"} for row in cs.json())
+    assert "position" not in cs.text.lower() and "gps" not in cs.text.lower()
+
+
+def test_US_RSK_01_AC1_eta_history_empty_scope_and_role_guards(od: Api) -> None:
+    for user_id, order_id in ((DISPATCHER, 1), (WAREHOUSE, 2), (CS, 1)):
+        response = od.get(f"/orders/{order_id}/eta-forecasts", user_id)
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+    for user_id in (SALES, DRIVER, VIEWER):
+        assert_error(od.get("/orders/3/eta-forecasts", user_id), 403, "FORBIDDEN")
+    for user_id, order_id in ((WAREHOUSE, 3), (DISPATCHER, 6), (ZZ_WAREHOUSE, 3)):
+        assert_error(od.get(f"/orders/{order_id}/eta-forecasts", user_id), 404, "NOT_FOUND")
