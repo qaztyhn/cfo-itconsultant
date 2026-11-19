@@ -40,7 +40,6 @@ from app.domain.models.types import (
     NEGOTIATION_OUTCOME,
     NOTIF_STATUS,
     NOTIF_TEMPLATE,
-    NOTIFY_CHANNEL,
     ORDER_STATUS,
     RISK_COLOR,
     RISK_STATUS,
@@ -317,8 +316,7 @@ class Notification(TimestampMixin, Base):
     id: Mapped[int] = bigint_pk()
     order_id: Mapped[int] = mapped_column(BigInteger, _fk("ops.customer_order.id"))
     template: Mapped[str] = mapped_column(NOTIF_TEMPLATE)
-    channel: Mapped[str] = mapped_column(NOTIFY_CHANNEL)
-    recipient: Mapped[str] = mapped_column(Text)
+    recipient: Mapped[str | None] = mapped_column(Text)
     subject: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     eta_window: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

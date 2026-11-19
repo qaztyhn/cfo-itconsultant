@@ -81,8 +81,8 @@ def test_US_INT_01_customers_upsert_without_rehydrating_anonymised_contacts(db: 
     first = run_feed(db, "customers", [item("C2")])
     second = run_feed(db, "customers", [item("C2", name="Updated synthetic")])
     assert first.status == second.status == "ok"
-    customer = fetch(db, "SELECT name,preferred_channel FROM ref.customer WHERE external_ref='C2'")[0]
-    assert customer["name"] == "Updated synthetic" and customer["preferred_channel"] == "email"
+    customer = fetch(db, "SELECT name,email FROM ref.customer WHERE external_ref='C2'")[0]
+    assert customer["name"] == "Updated synthetic" and customer["email"] == "private@example.test"
     execute(
         db, "UPDATE ref.customer SET is_anonymised=true,name='Anonymised',email=NULL WHERE external_ref='C2'"
     )

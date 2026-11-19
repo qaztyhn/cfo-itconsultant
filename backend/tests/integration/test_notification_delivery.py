@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from alembic import command
 from app.providers.email_smtp import EmailDeliveryError, SmtpEmailProvider
-from app.providers.sms_sim import SimulatedSmsProvider
 from app.services.notification_delivery import deliver_queued, delivery_time
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, execute, fetch
@@ -17,14 +16,12 @@ pytestmark = pytest.mark.integration
 NOW = datetime(2026, 11, 4, 21, 30, tzinfo=UTC)  # 22:30 Stockholm
 
 
-def add_notification(
-    dsn: str, template: str = "DISPATCHED", channel: str = "email", actor: str = "NULL"
-) -> None:
+def add_notification(dsn: str, template: str = "DISPATCHED", actor: str = "NULL") -> None:
     execute(
         dsn,
-        "INSERT INTO ops.notification(order_id,template,channel,recipient,body,scheduled_for,"
+        "INSERT INTO ops.notification(order_id,template,recipient,body,scheduled_for,"
         "created_by_employee_id,dedupe_key) "
-        f"VALUES (1,'{template}','{channel}','synthetic@cfo.test',"
+        f"VALUES (1,'{template}','synthetic@cfo.test',"
         f"'Status and ETA','2026-11-04T00:00Z',{actor},'test')",
     )
     if template == "DELAY":
@@ -36,15 +33,15 @@ def add_notification(
 
 
 def prepare(dsn: str) -> None:
-    command.upgrade(alembic_config(dsn), "0007")
+    command.upgrade(alembic_config(dsn), "head")
     execute(dsn, *rows.REF_HR, rows.order_sql(1), "UPDATE ref.market SET timezone='Europe/Stockholm'")
 
 
 def test_US_NOT_03_AC1_quiet_hours_and_AC2_explicit_delay_exemption(empty_db: str) -> None:
     prepare(empty_db)
     add_notification(empty_db)
-    email, sms = AsyncMock(), SimulatedSmsProvider()
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 0
+    email = AsyncMock()
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email)) == 0
     assert fetch(empty_db, "SELECT scheduled_for,attempts FROM ops.notification")[0] == (
         datetime(2026, 11, 5, 6, tzinfo=UTC),
         0,
@@ -52,7 +49,7 @@ def test_US_NOT_03_AC1_quiet_hours_and_AC2_explicit_delay_exemption(empty_db: st
     email.send.assert_not_called()
     execute(empty_db, "DELETE FROM ops.notification")
     add_notification(empty_db, "DELAY", actor="1")
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 1
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email)) == 1
     assert fetch(empty_db, "SELECT status,attempts FROM ops.notification")[0] == ("sent", 1)
     email.send.assert_awaited_once()
     assert fetch(empty_db, "SELECT action FROM audit.decision_log")[0][0] == "NOTIFICATION_SENT"
@@ -63,9 +60,8 @@ def test_US_NOT_03_AC3_attempt_cap_and_sanitized_errors(empty_db: str) -> None:
     add_notification(empty_db, "DELAY", actor="1")
     email = AsyncMock()
     email.send.side_effect = EmailDeliveryError("private-body")
-    sms = SimulatedSmsProvider()
     for _ in range(4):
-        transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms))
+        transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email))
     assert email.send.await_count == 3
     assert fetch(empty_db, "SELECT status,attempts,last_error FROM ops.notification")[0] == (
         "failed",
@@ -78,8 +74,8 @@ def test_US_NOT_01_AC4_shadow_mode_suppresses_without_delivery(empty_db: str) ->
     prepare(empty_db)
     add_notification(empty_db)
     execute(empty_db, "UPDATE ref.market SET shadow_mode=true")
-    email, sms = AsyncMock(), SimulatedSmsProvider()
-    transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms))
+    email = AsyncMock()
+    transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email))
     assert fetch(empty_db, "SELECT status,suppressed_reason,attempts FROM ops.notification")[0] == (
         "suppressed",
         "shadow_mode",
@@ -89,17 +85,12 @@ def test_US_NOT_01_AC4_shadow_mode_suppresses_without_delivery(empty_db: str) ->
     email.send.assert_not_called()
 
 
-def test_US_NOT_01_AC3_sms_persists_sent_status_and_draft_is_never_sent(empty_db: str) -> None:
+def test_US_NOT_01_AC3_delay_without_dispatcher_is_never_sent(empty_db: str) -> None:
     prepare(empty_db)
-    add_notification(empty_db, "DELAY", "sms_sim", "1")
-    email, sms = AsyncMock(), SimulatedSmsProvider()
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 1
-    assert len(sms.messages) == 1
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 0
-    execute(empty_db, "DELETE FROM ops.notification")
-    add_notification(empty_db, "DELAY", "sms_sim")
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 0
-    assert len(sms.messages) == 1
+    add_notification(empty_db, "DELAY")
+    email = AsyncMock()
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email)) == 0
+    email.send.assert_not_called()
 
 
 def test_US_NOT_03_AC1_quiet_boundaries_and_dst_end() -> None:
@@ -119,7 +110,7 @@ def test_US_NOT_03_AC1_quiet_boundaries_and_dst_end() -> None:
 def test_US_NOT_03_AC4_concurrent_outbox_workers_send_one_queued_row_once(empty_db: str) -> None:
     prepare(empty_db)
     add_notification(empty_db, "DELAY", actor="1")
-    email, sms = AsyncMock(), SimulatedSmsProvider()
+    email = AsyncMock()
 
     async def race(session: AsyncSession) -> tuple[int, int]:
         entered, release = asyncio.Event(), asyncio.Event()
@@ -133,7 +124,7 @@ def test_US_NOT_03_AC4_concurrent_outbox_workers_send_one_queued_row_once(empty_
 
         async def worker() -> int:
             async with factory() as other, other.begin():
-                return await deliver_queued(other, now=NOW, email=email, sms=sms)
+                return await deliver_queued(other, now=NOW, email=email)
 
         first = asyncio.create_task(worker())
         try:
@@ -153,16 +144,14 @@ def test_DEC_NOTIFY_001_staging_suppresses_real_recipient_without_calling_smtp(e
     for i, recipient in enumerate(("anna.customer@gmail.com", "synthetic@cfo.test")):
         execute(
             empty_db,
-            "INSERT INTO ops.notification(order_id,template,channel,recipient,body,scheduled_for,dedupe_key) "
-            f"VALUES (1,'DISPATCHED','email','{recipient}','Status','2026-11-04T00:00Z','k{i}')",
+            "INSERT INTO ops.notification(order_id,template,recipient,body,scheduled_for,dedupe_key) "
+            f"VALUES (1,'DISPATCHED','{recipient}','Status','2026-11-04T00:00Z','k{i}')",
         )
     email = SmtpEmailProvider("smtp-relay.example.test", 587, sender="demo@cfo.test", app_env="staging")
     noon = datetime(2026, 11, 4, 11, tzinfo=UTC)
     with patch("app.providers.email_smtp.smtplib.SMTP") as smtp:
         smtp.return_value.__enter__.return_value.send_message.return_value = {}
-        processed = transact(
-            empty_db, lambda s: deliver_queued(s, now=noon, email=email, sms=SimulatedSmsProvider())
-        )
+        processed = transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email))
         assert processed == 2
         sent = smtp.return_value.__enter__.return_value.send_message.call_args_list
         assert [m.args[0]["To"] for m in sent] == ["synthetic@cfo.test"]  # khách thật không tới transport
@@ -181,41 +170,27 @@ def test_DEC_NOTIFY_001_staging_suppresses_real_recipient_without_calling_smtp(e
     ]
     # Không thử lại: lần chạy sau không gọi SMTP cho dòng đã suppressed.
     with patch("app.providers.email_smtp.smtplib.SMTP") as smtp:
-        assert (
-            transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email, sms=SimulatedSmsProvider()))
-            == 0
-        )
+        assert transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email)) == 0
         smtp.assert_not_called()
 
 
-@pytest.mark.parametrize("channel", ["email", "sms_sim"])
-def test_D4_outbox_never_forwards_legacy_free_text(empty_db: str, channel: str) -> None:
+def test_D4_outbox_never_forwards_legacy_free_text(empty_db: str) -> None:
     prepare(empty_db)
-    add_notification(empty_db, channel=channel)
+    add_notification(empty_db)
     execute(
         empty_db,
         "UPDATE ops.notification SET subject='private-driver-name',body='private-coordinates-CS-notes',"
-        'eta_window=\'{"start":"untrusted","end":"untrusted"}\'::jsonb',
+        "eta_window = jsonb_build_object('start','untrusted','end','untrusted')",
     )
-    email, sms = AsyncMock(), AsyncMock()
-    assert (
-        transact(
-            empty_db,
-            lambda s: deliver_queued(s, now=datetime(2026, 11, 4, 11, tzinfo=UTC), email=email, sms=sms),
-        )
-        == 1
-    )
+    email = AsyncMock()
+    noon = datetime(2026, 11, 4, 11, tzinfo=UTC)
+    assert transact(empty_db, lambda s: deliver_queued(s, now=noon, email=email)) == 1
     expected = (
         "Order ZZ-000001: Delivery dispatched.\n\n"
         "For questions, contact your store and quote the order number."
-        if channel == "email"
-        else "CFO demo: order ZZ-000001: on its way."
     )
-    if channel == "email":
-        assert email.send.call_args.kwargs["text"] == expected
-        assert email.send.call_args.kwargs["subject"] == "Your order is on its way"
-    else:
-        assert sms.send.call_args.kwargs["body"] == expected
+    assert email.send.call_args.kwargs["text"] == expected
+    assert email.send.call_args.kwargs["subject"] == "Your order is on its way"
     assert fetch(empty_db, "SELECT body FROM ops.notification")[0][0] == expected
 
 
@@ -223,10 +198,9 @@ def test_D4_invalid_delay_variables_fail_closed_without_transport_or_pii_error(e
     prepare(empty_db)
     add_notification(empty_db, "DELAY", actor="1")
     execute(empty_db, 'UPDATE ops.notification SET eta_window=\'{"body":"private-content"}\'::jsonb')
-    email, sms = AsyncMock(), AsyncMock()
-    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email, sms=sms)) == 1
+    email = AsyncMock()
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email)) == 1
     email.send.assert_not_called()
-    sms.send.assert_not_called()
     assert fetch(empty_db, "SELECT status,attempts,last_error FROM ops.notification")[0] == (
         "failed",
         0,

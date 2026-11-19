@@ -48,6 +48,8 @@ def spec_tables() -> dict[str, frozenset[str]]:
     # §13 ALTER TABLE columns are expressed separately from CREATE TABLE blocks.
     for name, additions in COLUMNS_ADDED_IN_0015.items():
         tables[name] |= additions
+    for name, removals in COLUMNS_REMOVED_IN_0016.items():
+        tables[name] -= removals
     return tables
 
 
@@ -81,11 +83,17 @@ COLUMNS_ADDED_IN_0015 = {
 }
 
 
+COLUMNS_REMOVED_IN_0016 = {
+    "ref.customer": frozenset({"preferred_channel"}),
+    "ops.notification": frozenset({"channel"}),
+}
+
+
 def spec_tables_before_0009(*schemas: str) -> dict[str, frozenset[str]]:
     """spec_tables_in(...) bỏ những gì 0009 thêm — dùng cho test chạy tới revision ≤ 0008."""
     later_tables = TABLES_ADDED_IN_0009 | TABLES_ADDED_IN_0013 | TABLES_ADDED_IN_0014 | TABLES_ADDED_IN_0015
     return {
-        name: cols
+        name: (cols | COLUMNS_REMOVED_IN_0016.get(name, frozenset()))
         - COLUMNS_ADDED_IN_0009.get(name, frozenset())
         - COLUMNS_ADDED_IN_0015.get(name, frozenset())
         for name, cols in spec_tables_in(*schemas).items()

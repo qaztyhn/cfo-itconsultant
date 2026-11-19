@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 19/11/2026 — Round 3 email-only storage
+
+- DEC-R3-02 clarified: revision 0016 removes the customer channel preference and outbox channel, retains historical notification rows and suppresses pending SMS. The outbox stores only the email destination when available.
+
 ## [R3 — DEC-R3-15 màn hình & báo cáo đơn hàng] — 2026-11-19 — chỉ tài liệu
 
 - `06` §19.1: không mount `/transfers/*`, `/orders/{id}/transfer-suggestions` và các API ghi quản trị (employees, users, vehicles, market config, shift templates, absences).

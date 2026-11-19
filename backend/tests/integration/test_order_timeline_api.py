@@ -27,8 +27,8 @@ def tl(api: Api) -> Api:  # noqa: F811
         "INSERT INTO ops.milestone_event (order_id, trip_id, event_type, occurred_at, actor_user_id, "
         "idempotency_key, payload) VALUES (3, 1, 'START_PREP', '2026-11-13T05:00Z', 3, 'k-1', "
         '\'{"lat": 57.7, "lon": 11.9}\')',
-        "INSERT INTO ops.notification (order_id, template, channel, recipient, body, status, sent_at, "
-        "dedupe_key) VALUES (3, 'CONFIRMED', 'email', 'secret-recipient@example.test', 'Body', 'sent', "
+        "INSERT INTO ops.notification (order_id, template, recipient, body, status, sent_at, "
+        "dedupe_key) VALUES (3, 'CONFIRMED', 'secret-recipient@example.test', 'Body', 'sent', "
         "'2026-11-02T09:05Z', '3:CONFIRMED:2:sent')",
     )
     return api
