@@ -1,0 +1,28 @@
+name: T30 isolated Black formatter
+on:
+  push:
+    branches: [diag/t30-black-format-20261119]
+permissions:
+  contents: write
+jobs:
+  black:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install black
+      - name: Format only the T30 E2E script on diagnostic branch
+        run: |
+          black backend/tests/e2e/t30_revenue_browser.py
+          black --check backend/tests/e2e/t30_revenue_browser.py
+          git config user.name "T30 Format Diagnostics"
+          git config user.email "t30-formatter@users.noreply.github.com"
+          git add backend/tests/e2e/t30_revenue_browser.py
+          if ! git diff --cached --quiet; then
+            git commit -m "style(t30): apply black to isolated E2E browser fixture"
+            git push origin HEAD:refs/heads/diag/t30-black-format-20261119
+          fi
