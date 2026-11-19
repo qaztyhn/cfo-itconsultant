@@ -7,7 +7,7 @@ import { API_BASE_URL } from "../../api/config";
 import { fetchLocations } from "../../api/locations";
 import { useScopeStore } from "../../app/scope";
 import { currentPath, renderAt, signInAs, userByEmail } from "../../test/utils";
-import { buildPrepQueueFixture, capacityVerified, orderApproved, orderMultiVehicle } from "./prep-queue/fixtures";
+import { buildPrepQueueFixture, capacityVerified, orderApproved, orderMultiVehicle, orderRunning } from "./prep-queue/fixtures";
 import { PREP_QUEUE_URL, prepQueueFailure, prepQueueSuccess } from "./prep-queue/mswHandlers";
 
 vi.mock("../../api/locations", () => ({ fetchLocations: vi.fn() }));
@@ -24,7 +24,10 @@ beforeAll(() => {
   mswFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => mswFetch(input, { ...init, signal: undefined }));
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  vi.useRealTimers();
+  server.resetHandlers();
+});
 afterAll(() => {
   vi.unstubAllGlobals();
   server.close();
@@ -59,7 +62,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(screen.getByText(OVERLINE("Göteborg DC"))).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(1 + 5);
     expect(screen.getByText(/Live · refreshes every 20 s/)).toBeInTheDocument();
-    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: null });
   });
 
   it("test_US_WH_04_AC1_offers_backend-authorized milestones only", async () => {
@@ -357,6 +360,132 @@ describe("PrepQueue screen (Round 3)", () => {
     await screen.findByText("No warehouse is assigned to your account.");
     expect(seen).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Start preparation" })).toBeNull();
+  });
+
+  it.each([92, undefined])("test_US_WH_05_AC2_reports the second assigned vehicle with vehicle_id %s", async (vehicleId) => {
+    const order = orderMultiVehicle();
+    order.loading = [{ ...order.loading[0], vehicle_id: 81 }, { ...order.loading[1], vehicle_id: vehicleId }];
+    const writes = vi.fn();
+    const reads = vi.fn();
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [order] }, reads),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request, params }) => {
+        writes(params.orderId, await request.json(), request.headers.get("Idempotency-Key"));
+        return HttpResponse.json({ event_id: 1, order_status: order.status });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Affected approved order" }), String(order.order_id));
+    await user.click(screen.getByRole("button", { name: "Report vehicle issue" }));
+    const dialog = within(screen.getByRole("dialog"));
+    const picker = dialog.getByRole("combobox", { name: "Assigned vehicle" });
+    expect(within(picker).getAllByRole("option").slice(1).map((option) => option.textContent))
+      .toEqual(["GBG-18-04", "GBG-18-05"]);
+    await user.selectOptions(picker, within(picker).getByRole("option", { name: "GBG-18-05" }));
+    const confirm = dialog.getByRole("button", { name: "Confirm Report vehicle issue" });
+
+    if (vehicleId === undefined) {
+      expect(dialog.getByText(/server has not provided.*vehicle ID/i)).toBeInTheDocument();
+      expect(confirm).toBeDisabled();
+      await user.click(confirm);
+      expect(writes).not.toHaveBeenCalled();
+    } else {
+      await user.type(dialog.getByRole("textbox", { name: "Note (optional)" }), "Flat tyre");
+      await user.click(confirm);
+      await screen.findByText(/Report vehicle issue recorded/);
+      expect(writes).toHaveBeenCalledTimes(1);
+      expect(writes).toHaveBeenCalledWith(String(order.order_id), {
+        event_type: "VEHICLE_ISSUE", occurred_at: expect.any(String), payload: { vehicle_id: 92, note: "Flat tyre" },
+      }, expect.stringMatching(/^[\da-f-]{36}$/i));
+      expect(reads).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("test_US_WH_05_AC1_enables shortage only for PREPARING and sends no writes outside it", async () => {
+    const approved = orderApproved();
+    const preparing = orderRunning();
+    const ready = orderMultiVehicle();
+    const writes = vi.fn();
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [approved, preparing, ready] }),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request, params }) => {
+        writes(params.orderId, await request.json());
+        return HttpResponse.json({ event_id: 1, order_status: "PREPARING" });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    const user = userEvent.setup();
+    const picker = await screen.findByRole("combobox", { name: "Affected approved order" });
+    const shortage = screen.getByRole("button", { name: "Report shortage" });
+    await user.selectOptions(picker, String(approved.order_id));
+    expect(shortage).toBeDisabled();
+    await user.click(shortage);
+    expect(writes).not.toHaveBeenCalled();
+
+    await user.selectOptions(picker, String(preparing.order_id));
+    expect(shortage).toBeEnabled();
+    await user.click(shortage);
+    await user.type(screen.getByRole("textbox", { name: "Local SKU" }), "SE-CEM");
+    await user.click(screen.getByRole("button", { name: "Confirm Report shortage" }));
+    await screen.findByText(/Report shortage recorded/);
+
+    await user.selectOptions(picker, String(ready.order_id));
+    expect(shortage).toBeDisabled();
+    await user.click(shortage);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(String(preparing.order_id), {
+      event_type: "SHORTAGE", occurred_at: expect.any(String), payload: { sku: "SE-CEM", qty_missing: 1 },
+    });
+  });
+
+  it("test_US_WH_04_AC1_sends two default timestamps with distinct seconds in the same minute", async () => {
+    const startedAt = new Date(2026, 10, 10, 10, 5, 10);
+    const readyAt = new Date(2026, 10, 10, 10, 5, 40);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(startedAt);
+
+    const order = orderApproved();
+    const timestamps: string[] = [];
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [order] }),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request }) => {
+        const body = await request.json() as { occurred_at: string };
+        timestamps.push(body.occurred_at);
+        order.status = timestamps.length === 1 ? "PREPARING" : "GOODS_READY";
+        order.next_action = timestamps.length === 1 ? "GOODS_READY" : "LOADED";
+        return HttpResponse.json({ event_id: timestamps.length, order_status: order.status });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Start preparation" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Start preparation" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled());
+
+    vi.setSystemTime(readyAt);
+    await user.click(screen.getByRole("button", { name: "Goods ready" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Goods ready" }));
+    await screen.findByText(/Goods ready recorded/);
+    expect(timestamps).toEqual([startedAt.toISOString(), readyAt.toISOString()]);
+  });
+
+  it("test_US_WH_04_AC1_uses the server business date when its frozen clock differs from the device", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-19T10:05:00Z"));
+    const seen = vi.fn();
+    server.use(prepQueueSuccess({ ...buildPrepQueueFixture("empty"), date: "2026-11-04" }, seen));
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    expect(await screen.findByText("Göteborg DC · Wednesday 4 November")).toBeInTheDocument();
+    expect(screen.getByText("No approved orders to prepare for Wed 4 Nov.")).toBeInTheDocument();
+    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: null });
   });
 
 });

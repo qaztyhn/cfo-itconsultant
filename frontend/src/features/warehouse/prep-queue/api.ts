@@ -10,7 +10,8 @@ import type { Capacity, CapacityShift, LoadingEntry, OrderStatus, PrepQueueOrder
 
 export const prepQueuePath = (warehouseId: number) => `/warehouses/${warehouseId}/prep-queue`;
 
-export const prepQueueKey = (warehouseId: number | null, date: string | null) => ["prep-queue", warehouseId, date] as const;
+export const prepQueueKey = (warehouseId: number | null, date?: string | null) =>
+  ["prep-queue", warehouseId, date === undefined ? "market-today" : date] as const;
 
 type Json = Record<string, unknown>;
 
@@ -57,8 +58,11 @@ function parseCapacity(value: unknown): Capacity {
 
 function parseLoading(value: unknown, field: string): LoadingEntry {
   const entry = rec(value, field);
+  const id = entry.vehicle_id;
+  const vehicleId = typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? id : undefined;
   return {
     trip_id: num(entry.trip_id, `${field}.trip_id`),
+    ...(vehicleId === undefined ? {} : { vehicle_id: vehicleId }),
     at: str(entry.at, `${field}.at`),
     vehicle_code: str(entry.vehicle_code, `${field}.vehicle_code`),
     after_cutoff: bool(entry.after_cutoff, `${field}.after_cutoff`),
@@ -99,7 +103,10 @@ function parseOrder(value: unknown, field: string): PrepQueueOrder {
 
 export function parsePrepQueueResponse(payload: unknown): PrepQueueResponse {
   const root = rec(payload, "response");
+  const date = root.date;
+  if (date !== undefined && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))) invalid("date");
   return {
+    ...(date === undefined ? {} : { date }),
     capacity: parseCapacity(root.capacity),
     orders: arr(root.orders, "orders").map((item, index) => parseOrder(item, `orders[${index}]`)),
   };

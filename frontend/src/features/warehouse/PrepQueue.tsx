@@ -1,7 +1,7 @@
 /**
  * 5.6 Preparation queue (docs/03 §5.6) — approved, server-validated milestones and exception reports.
  * Role access: the route guard (app/access.ts) lets only the warehouse role in; 403/404 from the API shows a denied state.
- * Warehouse and date come from useWarehouseSelection (sidebar scope + warehouse time zone). Polling every 20 s keeps
+ * The warehouse comes from the sidebar scope and the business date comes from the API. Polling every 20 s keeps
  * the current data on screen, so nothing is reset while the queue refreshes.
  * Owner: Dev 3 (stream C) — M6.
  */
@@ -10,6 +10,7 @@ import { isApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { PageHeader } from "../../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState, Skeleton } from "../../components/StateViews";
+import i18n from "../../i18n";
 import { CapacityCard } from "./prep-queue/CapacityCard";
 import { formatClock } from "./prep-queue/format";
 import { OrdersTable } from "./prep-queue/OrdersTable";
@@ -66,8 +67,7 @@ function ScopeNotice({ scope }: { scope: Exclude<PrepQueueScope, { status: "read
   }
 }
 
-function PrepQueueBody({ scope }: { scope: ReadyScope }) {
-  const query = usePrepQueue(scope.warehouseId, scope.date);
+function PrepQueueBody({ scope, query }: { scope: ReadyScope; query: ReturnType<typeof usePrepQueue> }) {
   const { data, error } = query;
   const [choice, setChoice] = useState<ActionChoice | null>(null);
   const [reportOrderId, setReportOrderId] = useState("");
@@ -95,6 +95,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
     );
   }
 
+  const queueDate = data.date ?? scope.date;
   const updated = query.dataUpdatedAt > 0 ? formatClock(new Date(query.dataUpdatedAt).toISOString(), scope.timeZone) : null;
 
   return (
@@ -128,16 +129,16 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
           <p className="text-caption text-inkMuted">Approved plans only · in planned order</p>
         </div>
         {data.orders.length === 0 ? (
-          <EmptyState message={`No approved orders to prepare for ${formatQueueDate(scope.date)}.`} />
+          <EmptyState message={`No approved orders to prepare for ${formatQueueDate(queueDate)}.`} />
         ) : (
-          <OrdersTable orders={data.orders} timeZone={scope.timeZone} queueDate={scope.date}
+          <OrdersTable orders={data.orders} timeZone={scope.timeZone} queueDate={queueDate}
             onAction={chooseAction} canWrite={canWrite} actionPending={choice !== null} />
         )}
       </section>
       <section aria-labelledby="warehouse-reports" className="space-y-3 rounded-card border bg-surface p-5 shadow-card">
         <h2 id="warehouse-reports" className="text-h3 text-ink">Report an exception</h2>
         <p className="text-caption text-inkMuted">
-          Report a shortage or breakage for Dispatcher review. This does not change physical stock.
+          {i18n.t("prepQueue.reportHelp")}
         </p>
         <label className="block max-w-md text-body font-semibold">
           Affected approved order
@@ -147,7 +148,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
             {data.orders.map((order) => <option key={order.order_id} value={order.order_id}>{order.order_no}</option>)}
           </select>
         </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {EXCEPTION_ACTIONS.map((type) => {
             const order = data.orders.find((item) => String(item.order_id) === reportOrderId);
             return (
@@ -161,7 +162,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
           })}
         </div>
       </section>
-      {choice && <PrepActionDialog key={scope.warehouseId + ":" + scope.date + ":" + choice.order.order_id + ":" + choice.type + ":" + (choice.tripId ?? 0)}
+      {choice && <PrepActionDialog key={scope.warehouseId + ":" + queueDate + ":" + choice.order.order_id + ":" + choice.type + ":" + (choice.tripId ?? 0)}
         choice={choice} warehouseId={scope.warehouseId} onClose={() => setChoice(null)}
         onAcknowledged={async () => {
           const refreshed = await query.refetch();
@@ -179,11 +180,14 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
 
 export function PrepQueue() {
   const scope = useWarehouseSelection();
+  // The backend interprets omitted date as today in the market, including with APP_NOW.
+  const query = usePrepQueue(scope.status === "ready" ? scope.warehouseId : null);
+  const queueDate = scope.status === "ready" ? query.data?.date ?? scope.date : undefined;
 
   return (
     <section data-screen="PrepQueue" className="flex flex-col gap-6">
-      <Header overline={scope.status === "ready" ? `${scope.warehouse.name} · ${formatQueueDate(scope.date, "long")}` : undefined} />
-      {scope.status === "ready" ? <PrepQueueBody scope={scope} /> : <ScopeNotice scope={scope} />}
+      <Header overline={scope.status === "ready" && queueDate ? `${scope.warehouse.name} · ${formatQueueDate(queueDate, "long")}` : undefined} />
+      {scope.status === "ready" ? <PrepQueueBody key={`${scope.warehouseId}:${queueDate}`} scope={scope} query={query} /> : <ScopeNotice scope={scope} />}
     </section>
   );
 }

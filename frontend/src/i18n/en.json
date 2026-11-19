@@ -19,5 +19,15 @@
   "planManually": "Plan manually",
   "reasonRequired": "A reason is required",
   "reasonLabel": "Reason",
-  "noteLabel": "Notes (optional)"
+  "noteLabel": "Notes (optional)",
+  "prepQueue": {
+    "reportHelp": "Report stock or vehicle issues for Dispatcher review.",
+    "vehicleIssue": {
+      "action": "Report vehicle issue",
+      "vehicle": "Assigned vehicle",
+      "choose": "Choose a vehicle from the approved plan",
+      "missingId": "The server has not provided a vehicle ID for this assigned vehicle. Refresh the queue before reporting the issue.",
+      "noVehicles": "The server has not provided any vehicles for the approved plan. Refresh the queue before reporting the issue."
+    }
+  }
 }

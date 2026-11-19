@@ -19,15 +19,15 @@ export function errorBody(code: string, message: string, correlationId: string) 
   return { error: { code, message, details: {}, correlation_id: correlationId } };
 }
 
-/** Returns `response` for a valid query; 422 when the warehouse id or `date` is missing or malformed (docs/06 §1.1). */
+/** Returns `response` for a valid query; `date` is optional (docs/06 Appendix A.1). */
 export function prepQueueSuccess(response: PrepQueueResponse = buildPrepQueueFixture("verified"), onRequest?: (request: PrepQueueRequest) => void) {
   return http.get(PREP_QUEUE_URL, ({ request, params }) => {
     const rawId = typeof params.warehouseId === "string" ? params.warehouseId : null;
     const date = new URL(request.url).searchParams.get("date");
     const warehouseId = rawId !== null && /^\d+$/.test(rawId) ? Number(rawId) : null;
     onRequest?.({ warehouse_id: warehouseId, date });
-    if (warehouseId === null || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return HttpResponse.json(errorBody("VALIDATION_ERROR", "A numeric warehouse id and date (YYYY-MM-DD) are required", "corr-prep-422"), { status: 422 });
+    if (warehouseId === null || (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+      return HttpResponse.json(errorBody("VALIDATION_ERROR", "Use a numeric warehouse id and YYYY-MM-DD when supplying a date", "corr-prep-422"), { status: 422 });
     }
     return HttpResponse.json(response);
   });

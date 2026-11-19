@@ -2,9 +2,10 @@
  * No automatic confirmation, schedule edit, or inferred capacity occurs here.
  */
 import { apiPost, isApiError, newIdempotencyKey } from "../../../api/client";
+import i18n from "../../../i18n";
 import type { PrepQueueOrder } from "./types";
 
-export type PrepEventType = "START_PREP" | "GOODS_READY" | "LOADED" | "SHORTAGE" | "BREAKAGE";
+export type PrepEventType = "START_PREP" | "GOODS_READY" | "LOADED" | "SHORTAGE" | "BREAKAGE" | "VEHICLE_ISSUE";
 
 export type EventPayload = Record<string, string | number>;
 export interface EventRequest {
@@ -16,13 +17,14 @@ export interface EventRequest {
 export interface PreparedEvent extends EventRequest { key: string }
 export interface EventAck { event_id: number; order_status: string; risk?: unknown; actual_labour_hours?: string }
 
-export const EXCEPTION_ACTIONS = ["SHORTAGE", "BREAKAGE"] as const;
+export const EXCEPTION_ACTIONS = ["SHORTAGE", "BREAKAGE", "VEHICLE_ISSUE"] as const;
 export const ACTION_NAMES: Record<PrepEventType, string> = {
   START_PREP: "Start preparation",
   GOODS_READY: "Goods ready",
   LOADED: "Mark loaded",
   SHORTAGE: "Report shortage",
   BREAKAGE: "Report breakage",
+  VEHICLE_ISSUE: i18n.t("prepQueue.vehicleIssue.action"),
 };
 
 /** Read-only UI eligibility; server still verifies roles, warehouse, plan, time and transitions. */
@@ -35,8 +37,9 @@ export function canPerform(order: PrepQueueOrder, type: PrepEventType, tripId?: 
     case "LOADED": return order.next_action === type &&
       (order.status === "GOODS_READY" || order.status === "LOADED") &&
       order.loading.some((entry) => entry.trip_id === tripId && !entry.loaded);
-    case "SHORTAGE":
+    case "SHORTAGE": return order.status === "PREPARING";
     case "BREAKAGE": return ["APPROVED", "PREPARING", "GOODS_READY"].includes(order.status);
+    case "VEHICLE_ISSUE": return ["APPROVED", "PREPARING", "GOODS_READY", "LOADED"].includes(order.status);
   }
 }
 
@@ -46,7 +49,7 @@ export function eventDraft(orderId: number, event_type: PrepEventType, occurred_
   if (!/^(?:.+)(?:Z|[+-]\d\d:\d\d)$/.test(occurred_at) || Number.isNaN(instant.getTime())) {
     throw new Error("Use a valid date/time with an explicit UTC offset.");
   }
-  if (instant.getTime() > Date.now() + 5 * 60_000) throw new Error("The event cannot be more than five minutes in the future.");
+  // The server validates future events against its own clock, which APP_NOW can freeze independently of the device.
   const positive = (field: string) => {
     const n = payload[field];
     if (typeof n !== "number" || !Number.isSafeInteger(n) || n <= 0) throw new Error(`Enter a positive whole number for ${field}.`);
@@ -56,6 +59,8 @@ export function eventDraft(orderId: number, event_type: PrepEventType, occurred_
       positive("crew_size"); break;
     case "LOADED":
       positive("trip_id"); break;
+    case "VEHICLE_ISSUE":
+      positive("vehicle_id"); break;
     case "SHORTAGE":
     case "BREAKAGE":
       if (typeof payload.sku !== "string" || !payload.sku.trim()) throw new Error("Local SKU is required.");
@@ -90,23 +95,17 @@ export async function submitPrepEvent(event: PreparedEvent): Promise<EventAck> {
 
 /** Convert an explicitly entered device-local clock instant to the API's offset-aware UTC instant. */
 export function localOccurredAt(value: string): string {
-  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(value)) throw new Error("Select when this event happened.");
+  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?$/.test(value)) throw new Error("Select when this event happened.");
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) throw new Error("Invalid device-local timestamp.");
   // Reject nonexistent DST times instead of silently shifting the requested wall time.
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const date = String(parsed.getDate()).padStart(2, "0");
-  const hours = String(parsed.getHours()).padStart(2, "0");
-  const mins = String(parsed.getMinutes()).padStart(2, "0");
-  if (`${year}-${month}-${date}T${hours}:${mins}` !== value) throw new Error("The selected local time does not exist.");
+  if (nowLocal(parsed).slice(0, value.length) !== value) throw new Error("The selected local time does not exist.");
   return parsed.toISOString();
 }
 
-export function nowLocal(): string {
-  const now = new Date();
+export function nowLocal(now = new Date()): string {
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  return local.toISOString().slice(0, 19);
 }
 
 /** No raw upstream message or PII is reflected to warehouse staff. */
