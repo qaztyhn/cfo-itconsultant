@@ -1,7 +1,7 @@
 name: T30 Revenue real Chrome / T29 API / PostgreSQL
 on:
   push:
-    branches: [feat/r3-t30-orders-revenue]
+    branches: [feat/r3-t30-orders-revenue, feat/r3-t27-integrated-e004]
   workflow_dispatch:
 permissions:
   contents: read
