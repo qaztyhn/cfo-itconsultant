@@ -49,3 +49,13 @@ jobs:
         env:
           E2_MAILPIT_URL: http://127.0.0.1:8025
         run: pytest -q -s tests/integration/test_e2_mailpit.py tests/integration/test_e2_concurrent_tick.py tests/integration/test_ingest_scheduler.py tests/unit/test_internal_tick.py
+
+  compose-worker-after-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Real disposable Compose post-seed worker and Mailpit acceptance
+        run: python tools/e2_worker_compose_diag.py
