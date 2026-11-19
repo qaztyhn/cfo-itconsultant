@@ -999,6 +999,8 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 | Sự kiện kho `PREP_PAUSED`, `PREP_RESUMED` | không còn hỗ trợ | | | | |
 | Contact log CS (§11) | không mount → `404 NOT_FOUND` | | | | |
 | Công suất ngày (`/warehouses/{id}/day-capacity`) | R | — | **W** (kho mình, `can_approve`) | — | — |
+| Chuyển kho (`/orders/{id}/transfer-suggestions`, `/transfers/*`) | không mount (`404`) mọi vai trò (DEC-R3-15) | | | | |
+| Ghi dữ liệu quản trị (`POST /employees`, `/users*`, `POST /vehicles`, `/markets/{code}/config`, `/warehouses/{id}/shift-templates`, `/absences`) | không mount (`404`); dữ liệu từ seed/file cấu hình (DEC-R3-15) | | | | |
 
 Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành động chỉ của Dispatcher → `403 FORBIDDEN`. Quy tắc "đơn đặt trước chưa duyệt tranh nguồn lực chưa chứng minh đủ → `409 PLAN_NOT_APPROVABLE`, chuyển Dispatcher" giữ nguyên cho Sales. Dispatcher đọc được mọi đơn Sales đã duyệt (`decision_log.actor_role = 'sales'`).
 
@@ -1103,3 +1105,24 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 - `GET /kpi/daily?metric=` chỉ nhận 5 key trên. `PUT /kpi/baseline/eta_error_min` → `422 VALIDATION_ERROR`. Các metric cũ (`labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `failed_delivery_rate`, `capacity_utilisation`) không còn được trả về.
 
 > §19.9 (CRM) và §19.10 (Đan Mạch, AI theo lô) đã bị gỡ ngày 19/11/2026 do Owner hủy DEC-R3-12 và DEC-R3-14.
+
+### 19.11 Đơn hàng & doanh thu — nhóm trạng thái (DEC-R3-15)
+
+`GET /revenue/order-status?view=store|warehouse&location_id=&from=&to=` — cùng quyền, tham số và lỗi với `/revenue/*` (§14.1, §3.1): Business owner mọi nơi; owner cửa hàng/kho chỉ nơi mình (nơi khác → `404`); admin tất cả; vai trò khác → `403`; `view` không khớp loại địa điểm → `422`; kỳ tối đa 366 ngày (vượt → `422`).
+
+```json
+{ "period": { "from": "2026-11-01", "to": "2026-11-30" }, "view": "store", "location_id": 21, "currency": "SEK",
+  "date_basis": "committed_date_or_requested_date",
+  "total": { "orders": 128, "amount": "1712300.00" },
+  "groups": [
+    { "key": "awaiting_approval", "statuses": ["SUBMITTED","PLANNED","NO_FEASIBLE_DATE"], "orders": 12, "amount": "143200.00" },
+    { "key": "approved", "statuses": ["APPROVED","PREPARING","GOODS_READY","LOADED"], "orders": 30, "amount": "402100.00" },
+    { "key": "in_transit", "statuses": ["DISPATCHED"], "orders": 6, "amount": "88400.00" },
+    { "key": "completed", "statuses": ["DELIVERED"], "orders": 72, "amount": "1012600.00" },
+    { "key": "failed", "statuses": ["FAILED"], "orders": 3, "amount": "41000.00" },
+    { "key": "cancelled", "statuses": ["CANCELLED"], "orders": 5, "amount": "25000.00" } ] }
+```
+- Đơn được tính vào kỳ theo `committed_date`; đơn chưa có `committed_date` dùng `date_to` (ngày giao khách yêu cầu). Mỗi đơn chỉ thuộc một nhóm theo trạng thái hiện tại. `BLOCKED_UNMAPPED_SKU` (legacy) không được tính.
+- `amount` = tổng `total_amount` của đơn trong nhóm (giá trị đơn, **không** phải doanh thu ghi nhận). Doanh thu ghi nhận vẫn lấy từ `/revenue/summary` theo ngày giao thực tế (BR-KPI-01).
+- Không trả tên, điện thoại, địa chỉ khách. Góc nhìn store và warehouse không cộng nhau.
+- `/revenue/orders` nhận thêm `status_group=<key>` để liệt kê đơn của một nhóm (phân trang, cùng quy tắc trường như hiện tại).

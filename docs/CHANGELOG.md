@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [R3 — DEC-R3-15 màn hình & báo cáo đơn hàng] — 2026-11-19 — chỉ tài liệu
+
+- `06` §19.1: không mount `/transfers/*`, `/orders/{id}/transfer-suggestions` và các API ghi quản trị (employees, users, vehicles, market config, shift templates, absences).
+- `06` §19.11: `GET /revenue/order-status` (6 nhóm trạng thái, lọc theo `committed_date`, fallback `date_to`) và `status_group` cho `/revenue/orders`. Không đổi DDL.
+
 ## [R3 — gỡ hợp đồng CRM/Đan Mạch/AI] — 2026-11-19 — chỉ tài liệu
 
 - Owner hủy DEC-R3-11 → DEC-R3-14: gỡ `06` §19.9–19.10 (`CustomerContactPort`, mock D365/Salesforce, market DK, AI theo lô) và `SKIPPED_CUSTOMER_UNMATCHED` khỏi `05` §13. Chuyển kho, Doanh thu, UI quản trị trở lại theo đặc tả cũ.

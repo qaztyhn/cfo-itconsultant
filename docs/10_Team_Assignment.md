@@ -19,7 +19,8 @@
 | Chuẩn bị hàng (DEC-R3-08) | Bỏ PAUSE/RESUME, `prep_time = GOODS_READY − START_PREP` | — | Prep Queue không Pause/Resume |
 | Thất bại & sự cố (DEC-R3-09) | Bỏ gợi ý lập lại sau FAILED/VEHICLE_ISSUE, alert `DELIVERY_FAILED`, `replan scope=remaining` | — | Màn xử lý FAILED cho Dispatcher |
 | Sales (DEC-R3-10) | ApprovalService: Sales rank 1–3, chạy lại, thỏa thuận ngày; bỏ tick lịch sát | Test đồng thời Sales/Dispatcher | Sales chọn 1 trong 3 phương án; bỏ tick lịch sát |
-| Bị thay | Pause/Resume, proof 56 ngày, gợi ý lập lại sau FAILED | GPS 30 phút, `gps_simulator`, SMS, `attendance_gen`, D7 seed 56 ngày | Bản đồ Leaflet, offline IndexedDB, Attendance & shifts, tick "accept tight" |
+| Màn hình & báo cáo (DEC-R3-15) | API `/revenue/order-status`, `status_group`; không mount transfers và API ghi quản trị | Seed thay cho dữ liệu quản trị | Màn Đơn hàng & doanh thu (6 nhóm); gỡ Transfers, Users, Vehicles, Employees, Market config |
+| Bị thay | Chuyển kho, Pause/Resume, proof 56 ngày, gợi ý lập lại sau FAILED | GPS 30 phút, `gps_simulator`, SMS, `attendance_gen`, D7 seed 56 ngày | Bản đồ Leaflet, offline IndexedDB, Attendance & shifts, tick "accept tight" |
 
 ## 1. Ba vai
 

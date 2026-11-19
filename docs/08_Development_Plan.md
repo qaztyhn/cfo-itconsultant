@@ -100,7 +100,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 | Routing | ORS, fallback, cache, `route_matrix` | US-INT-05 |
 | Mapping | Task, ứng viên, confirm/reject, mở khóa đơn | US-PRD-01..05 |
 | Orders | Danh sách, chi tiết, timeline, hủy/lập lại | US-ORD-01..05 |
-| ATP & transfer | ATP theo thời gian, gợi ý và vòng đời chuyển kho | US-ATP-01..03 |
+| ATP | ATP theo thời gian (R3: không chuyển kho) | US-ATP-01 |
 | Capacity & HR | Điểm danh, ca, phân công, quản lý | US-WH-01/02, US-EMP-01..04 |
 | Engine | Workload, schedule, delivery, gate, scoring, explain | US-PLN-01..08 |
 | Reservation & approval | Hold, extend, approve, manual nhiều xe, gợi ý lập lại, replan, khóa khi duyệt | US-RES-01, US-APR-01..04, US-ORD-05 |
@@ -181,7 +181,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 |---|---|---|
 | 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched → tài xế gửi vị trí → Delivered (kèm vị trí) | Mọi trạng thái, giữ chỗ → committed, email CONFIRMED/DISPATCHED/DELIVERED, ETA theo sự kiện, KPI cập nhật, decision_log đủ |
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
-| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11 và gợi ý chuyển kho **chỉ nếu source stock/ETA xác minh**; ghi `date_negotiation.agreed` **chưa** đổi ngày; Dispatcher explicit **Apply agreed date** có audit/version, sau đó chạy planning mới và toàn bộ gate, không tự approve |
+| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày khả thi sớm nhất; không gợi ý chuyển kho (DEC-R3-15); Dispatcher ghi thỏa thuận ngày rồi Apply, kiểm đủ gate, không tự approve |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
 | 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
 | 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
@@ -195,7 +195,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
-| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
+| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày; màn Đơn hàng & doanh thu trả 6 nhóm trạng thái lọc theo ngày cam kết giao, tổng nhóm = tổng đơn (DEC-R3-15) |
 | 18 | Công suất ngày (R3) | Kho chưa xác nhận công suất ngày → gate công suất fail; Warehouse Manager xác nhận → phương án khả thi; sửa ngày đã qua cần lý do |
 
 ## 7. Definition of Done
@@ -268,7 +268,7 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 | 8 | Đơn lớn hơn một xe | Xếp lịch nhiều xe cùng kho, ít xe nhất, không giới hạn số xe, không ghép đơn |
 | 9 | Doanh thu | Theo `05` mục 8 và `06` mục 14.1: tiền hàng của đơn DELIVERED, hai góc nhìn, `kpi_scopes` + owner |
 | 10 | Đồng hồ | `APP_NOW` chỉ để test/demo lặp lại được; thời gian thực hiện không cố định |
-| 11 | Gợi ý chuyển kho | Giữ trong MVP (quy tắc, không AI) |
+| 11 | Gợi ý chuyển kho | R3: hoãn (DEC-R3-15) |
 | 12 | Hòa điểm cuối cùng | Xe nhỏ hơn mà vẫn đủ chứa (tổng tải nhỏ hơn), rồi mới tới mã xe |
 | 13 | Giữ chỗ đồng thời | Cho vượt lúc lập kế hoạch, chỉ chặn khi duyệt |
 | 14 | Lập lại sau duyệt | Hệ thống tự gợi ý; dispatcher duyệt |

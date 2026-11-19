@@ -277,7 +277,7 @@ consumption%  = max(0, (forecast_eta − planned_eta) / reserve_total × 100)
 
 **Báo khách trễ là quyết định của dispatcher [C].** Hệ thống tạo `notification(status='draft', template='DELAY')` với khung ETA mới đề xuất; dispatcher sửa và bấm gửi. Sau khi đã gửi, chỉ tạo bản nháp mới khi `forecast_eta` lệch ≥ 30 phút so với khung đã thông báo.
 
-### 6.4 Đề xuất chuyển kho bằng quy tắc [C]
+### 6.4 Đề xuất chuyển kho bằng quy tắc [C] — *Hoãn trong pilot (DEC-R3-15); nội dung dưới đây là lịch sử*
 
 Khi kho đích `w` thiếu hàng (mọi kho đều `STOCK_SHORT`): chỉ từ WMS availability đã xác minh, trả tối đa ba **gợi ý/yêu cầu chuyển kho** cho Dispatcher, xếp theo lead time/đường đi như hợp đồng engine. CFO có thể ghi yêu cầu `approved` và audit, nhưng **không có bước CFO xác nhận xuất/nhập vật lý** hoặc tự tạo confirmed inbound; WMS là hệ thống duy nhất thực hiện transfer và cập nhật tồn. CFO đọc lại dữ liệu WMS có provenance; không replan trên nền “hàng đã về” chỉ vì request đã được duyệt. [Q3](decisions/DEC_INTEGRATION_UNBLOCK_Q2_Q10_20261109.md).
 

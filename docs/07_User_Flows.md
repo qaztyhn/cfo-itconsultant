@@ -122,7 +122,7 @@ flowchart TD
   X3 --> Z
   X4 --> Z
   X5 --> Z
-  Z -- "Không" --> N["Tìm ngày sớm nhất tối đa 14 ngày, gợi ý chuyển kho"]
+  Z -- "Không" --> N["Tìm ngày sớm nhất tối đa 14 ngày (R3: không gợi ý chuyển kho)"]
   N --> Q["Đơn NO_FEASIBLE_DATE"]
 ```
 
@@ -189,8 +189,8 @@ sequenceDiagram
 flowchart TD
   A["Đơn NO_FEASIBLE_DATE"] --> B["Xem check hỏng theo kho và ngày sớm nhất"]
   B --> C{"Do thiếu hàng?"}
-  C -- "Có" --> D["Xem gợi ý chuyển kho"]
-  D --> E["DISP gửi yêu cầu chuyển kho (CFO)"]
+  C -- "Có" --> D["(R3, DEC-R3-15: không có chuyển kho)"]
+  D --> E["DISP thương lượng ngày hoặc lập tay"]
   E --> F["WMS thực hiện và ghi nhận xuất/nhập vật lý"]
   F --> G["CFO đọc batch tồn WMS đã xác minh, không tự cộng inbound"] --> H
   C -- "Không" --> H["DISP liên hệ khách đề xuất ngày mới"]
@@ -451,13 +451,13 @@ stateDiagram-v2
 | Vai trò | Sau đăng nhập | Việc thường gặp nhất | Bước tiếp thường dẫn đến |
 |---|---|---|---|
 | Dispatcher | Order queue | Mở đơn `PLANNED` → Plan review → Approve | Danh sách chuyến được gán (dòng vị trí gần nhất) khi có cảnh báo; Exceptions khi có đơn không khả thi |
-| Warehouse | Prep queue | Xác nhận công suất ngày → bấm mốc chuẩn bị → báo ngoại lệ | Công suất ngày, Transfers |
+| Warehouse | Prep queue | Xác nhận công suất ngày → bấm mốc chuẩn bị → báo ngoại lệ | Công suất ngày |
 | Driver | Today's trips | Mark dispatched → Cập nhật vị trí / Báo sự cố → Delivered/Failed (kèm vị trí) | — |
 | Sales | My store orders / Sync & confirm trong CFO | Submit ở POS cũ, sync-now, check feasibility, chọn rank 1–3 và duyệt | Thành công → APPROVED; không khả thi → Dispatcher |
-| Store manager | My store orders | Theo dõi đơn; xem doanh thu cửa hàng mình nếu là owner | Revenue · my location |
+| Store manager | My store orders | Theo dõi đơn; xem Đơn hàng & doanh thu cửa hàng mình nếu là owner | Đơn hàng & doanh thu · my location |
 | Customer service | Order lookup | Tra cứu trạng thái và ETA | — |
-| IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi, nhân sự | Product mapping, Market config |
-| Business owner (`revenue_all`) | Revenue | Xem doanh thu mọi cửa hàng và kho, xuất CSV | — |
+| IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi | Product mapping, Handling groups |
+| Business owner (`revenue_all`) | Đơn hàng & doanh thu | Doanh thu, số đơn theo 6 nhóm trạng thái, lọc theo kỳ, xuất CSV | — |
 | Project lead (`ops`) | KPIs & decision log | Xem KPI vận hành và nhật ký | — |
 
 ## 19. Tình huống ngoại lệ thường gặp và cách hệ thống phản ứng

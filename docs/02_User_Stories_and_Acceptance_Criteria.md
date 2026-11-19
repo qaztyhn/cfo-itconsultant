@@ -127,7 +127,7 @@
 - AC4. *Given* không kho nào đủ trong 14 ngày, *Then* mọi kho `STOCK_SHORT`.
 - AC5. *Given* hai phương án cùng đơn cùng kho, *Then* hàng chỉ bị giữ một lần.
 
-**US-ATP-02 — Gợi ý chuyển kho** · Là *dispatcher*, tôi nhận gợi ý kho nguồn khi mọi kho thiếu. · BR-ATP-05
+**US-ATP-02 — Gợi ý chuyển kho** · **Hoãn (DEC-R3-15)**: không có trong pilot; các AC dưới đây là lịch sử. · BR-ATP-05
 - AC1. *Given* kho đích thiếu 40 bao, kho nguồn B còn 100 sẵn có, A còn 20, *Then* chỉ B được gợi ý, kèm `lead_days` và khoảng cách.
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
@@ -423,7 +423,7 @@
 - AC3. *Given* mỗi hàng trong ma trận quyền ở `06` mục 3, *Then* có test cho cả đường được phép và bị cấm.
 - AC4. *When* nhân viên `terminated`, *Then* `app_user.is_active = false` và token hiện tại bị từ chối ở lần gọi kế.
 
-**US-EMP-04 — Xe và tài xế** · Là *IT*, tôi quản lý hồ sơ xe, bằng lái.
+**US-EMP-04 — Xe và tài xế** · *(R3, DEC-R3-15: dữ liệu xe/tài xế từ seed và nguồn fleet, không có màn quản lý.)*
 - AC1. *Then* tài xế có hạng bằng và ngày hết hạn; hết hạn trong 30 ngày hiện cảnh báo cho quản lý kho.
 - AC2. *Then* xe có tải, thể tích, năng lực, nhóm hàng chở được, kho gốc.
 
@@ -465,6 +465,14 @@
 - AC10. *Given* đơn giao 23:50 giờ Stockholm, *Then* tính vào ngày đó, không lệch sang UTC.
 - AC11. *Given* đơn giao thất bại rồi giao lại thành công, *Then* chỉ tính một lần, vào ngày giao thành công.
 
+**US-REV-02 — Đơn hàng theo nhóm trạng thái (R3, DEC-R3-15)** · FR-KPI-03, BR-KPI-01
+- AC1. *Given* owner ST-021 chọn 01–30/11, *Then* `GET /revenue/order-status` trả tổng số đơn và 6 nhóm (Chờ duyệt, Đã duyệt, Đang vận chuyển, Đã hoàn thành, Thất bại, Đã hủy) với số đơn và giá trị; tổng các nhóm = tổng số đơn.
+- AC2. *Given* đơn `APPROVED` có `committed_date` 05/12, *Then* không nằm trong kỳ 01–30/11; *Given* đơn `PLANNED` chưa có ngày cam kết, `date_to` 20/11, *Then* nằm trong kỳ, nhóm Chờ duyệt.
+- AC3. *Given* đơn chuyển từ `DISPATCHED` sang `DELIVERED`, *Then* chuyển từ nhóm Đang vận chuyển sang Đã hoàn thành (theo trạng thái hiện tại).
+- AC4. *Then* quyền như US-REV-01: owner nơi khác → `404`; dispatcher, CS, sales không phải owner, tài xế, Project lead → `403`; không có dữ liệu cá nhân khách.
+- AC5. *Then* `amount` là giá trị đơn, khác doanh thu ghi nhận (US-REV-01 AC5 vẫn theo ngày giao thực tế).
+- AC6. *When* chọn một nhóm, *Then* `/revenue/orders?status_group=` liệt kê đúng các đơn của nhóm đó.
+
 **US-KPI-02 — Baseline** · Là *admin*, tôi nhập baseline thủ công.
 - AC1. *When* `PUT /kpi/baseline/planning_time_min {value:15}`, *Then* dashboard so sánh với 15 phút.
 
@@ -482,7 +490,7 @@
 - AC1. *Then* admin xem `sync-runs`, số dòng nạp/lỗi, `data_as_of`; mở được danh sách dòng bị loại kèm lý do.
 - AC2. *When* chạy tay `/sync/orders/run` khi đang chạy, *Then* `409 SYNC_IN_PROGRESS`.
 
-**US-ADM-02 — Cấu hình market** · 
+**US-ADM-02 — Cấu hình market** · **Hoãn màn (DEC-R3-15)**: cấu hình qua file/seed; các AC dưới đây chỉ áp dụng cho giá trị cấu hình. 
 - AC1. *When* `PUT /markets/SE/config` với giá trị sai kiểu (ví dụ `delivery_share = 1,5`), *Then* `422` theo `MarketConfig`.
 - AC2. *Then* thay đổi cấu hình ghi `decision_log`; kế hoạch đang giữ chỗ không đổi.
 
