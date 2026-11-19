@@ -195,25 +195,40 @@ def _cs_lookup(
             # Verify actual HTTP/error.code via the SAME authenticated CS session,
             # without storing its JWT anywhere in shared evidence.
             token = login.value.json()["access_token"]
-            probe = page.request.get(
-                f"{api}{eta_path}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=10_000,
-            )
-            error_code = None
-            if not probe.ok:
-                try:
-                    error_code = probe.json().get("error", {}).get("code")
-                except (ValueError, TypeError, AttributeError):
-                    pass
-            stage["http"].append(
-                {"path": eta_path, "http": probe.status, "error_code": error_code, "via": "CS API probe"}
-            )
-            if probe.ok:
-                stage["eta_history"] = "GET 200; versioned ETA rows not yet compared with PostgreSQL"
-                stage["status"] = "NOT VERIFIED"
+            try:
+                probe = page.request.get(
+                    f"{api}{eta_path}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10_000,
+                )
+            except Error:
+                # Unhandled ETA stub may sever the connection without HTTP.
+                # Do not invent an HTTP status or error.code for a non-response.
+                stage["http"].append(
+                    {
+                        "path": eta_path,
+                        "http": None,
+                        "error_code": None,
+                        "transport_error": True,
+                        "via": "CS API probe",
+                    }
+                )
+                _block(stage, [ETA_STUB_TASK], "ETA history API did not return HTTP; CS lookup passed")
             else:
-                _block(stage, [ETA_STUB_TASK], "CS-authenticated ETA history API rejected request")
+                error_code = None
+                if not probe.ok:
+                    try:
+                        error_code = probe.json().get("error", {}).get("code")
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+                stage["http"].append(
+                    {"path": eta_path, "http": probe.status, "error_code": error_code, "via": "CS API probe"}
+                )
+                if probe.ok:
+                    stage["eta_history"] = "GET 200; versioned ETA rows not yet compared with PostgreSQL"
+                    stage["status"] = "NOT VERIFIED"
+                else:
+                    _block(stage, [ETA_STUB_TASK], "CS-authenticated ETA history API rejected request")
         else:
             stage["http"].append(_metadata(eta_response))
             if not eta_response.ok:
