@@ -137,8 +137,10 @@ def _cs_lookup(
         assert len(target) == 1
         order_id = target[0]["id"]
         stage["order_id"] = order_id
-        with page.expect_response(lambda r: response_for(r, "GET", f"{api}/api/v1/orders/{order_id}")) as details:
-            page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
+        eta_path = f"{api}/api/v1/orders/{order_id}/eta-forecasts"
+        with page.expect_response(lambda r: response_for(r, "GET", eta_path)) as forecast:
+            with page.expect_response(lambda r: response_for(r, "GET", f"{api}/api/v1/orders/{order_id}")) as details:
+                page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
         stage["http"].append(_metadata(details.value))
         require_ok(details.value)
         detail = details.value.json()
@@ -152,15 +154,6 @@ def _cs_lookup(
         stage["last_verified"] = "CS UI result and details match real /orders API"
         page.screenshot(path=output / "t27-cs-order-lookup.png")
 
-        eta_path = f"{api}/api/v1/orders/{order_id}/eta-forecasts"
-        with page.expect_response(lambda r: response_for(r, "GET", eta_path)) as forecast:
-            # Query is triggered when the order detail component mounts.
-            # Already loaded ETA responses may be cached by the page: force
-            # a UI-level Retry to retrieve a fresh, observable API response.
-            if page.get_by_role("button", name="Retry", exact=True).count():
-                page.get_by_role("button", name="Retry", exact=True).first.click()
-            else:
-                page.reload()
         result = forecast.value
         stage["http"].append(_metadata(result))
         if not result.ok:

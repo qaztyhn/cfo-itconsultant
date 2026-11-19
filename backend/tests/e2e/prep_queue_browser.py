@@ -228,7 +228,9 @@ def check_driver(
         page.close()
 
 
-def walkthrough(dsn: str, node: str, trip_count: int, out: Path, report: dict) -> None:
+def walkthrough(
+    dsn: str, node: str, trip_count: int, out: Path, report: dict, *, continue_driver_cs: bool = False
+) -> None:
     password = secrets.token_urlsafe(24)
     order_no = seed_approved_order(dsn, trip_count, password)
     report["order_no"] = order_no
@@ -277,10 +279,15 @@ def walkthrough(dsn: str, node: str, trip_count: int, out: Path, report: dict) -
         page.close()
         for trip_id in range(1, trip_count + 1):
             check_driver(browser, web, api, order_no, trip_id, password, out, report)
+        if continue_driver_cs:
+            from tests.e2e.t27_driver_cs import run_driver_cs
+
+            run_driver_cs(browser, web, api, order_no, password, trip_count, out, report)
 
     events = fetch(
         dsn,
-        "SELECT id, event_type, trip_id, occurred_at FROM ops.milestone_event WHERE order_id=1 ORDER BY id",
+        "SELECT id, event_type, trip_id, occurred_at FROM ops.milestone_event "
+        "WHERE order_id=1 AND event_type IN ('START_PREP','GOODS_READY','LOADED') ORDER BY id",
     )
     report["persisted_events"] = [
         dict(event) | {"occurred_at": event["occurred_at"].isoformat()} for event in events
@@ -296,11 +303,33 @@ def walkthrough(dsn: str, node: str, trip_count: int, out: Path, report: dict) -
         )
         for expected in report["events"]
     ]
+    if continue_driver_cs:
+        dispatched = fetch(
+            dsn,
+            "SELECT id, event_type, trip_id FROM ops.milestone_event "
+            "WHERE order_id=1 AND event_type='DISPATCHED' ORDER BY id",
+        )
+        report["t27"]["persisted_dispatch"] = [dict(item) for item in dispatched]
+        observed = [
+            item for item in report["t27"]["driver"] if item.get("dispatch_status") == "PASS"
+        ]
+        assert [(item["id"], item["trip_id"]) for item in dispatched] == [
+            (item["event_id"], item["trip_id"]) for item in observed
+        ]
+        report["t27"]["postgres_dispatch_matches_browser"] = True
+        report["t27"]["db_order_status"] = fetch(
+            dsn, "SELECT status FROM ops.customer_order WHERE id=1"
+        )[0][0]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trips", type=int, choices=(1, 2), default=1)
+    parser.add_argument(
+        "--continue-driver-cs",
+        action="store_true",
+        help="T27: use the SAME APPROVED fixture for Driver dispatch and CS UI, record Round 3 blockers.",
+    )
     parser.add_argument("--node", default="node")
     parser.add_argument(
         "--output", type=Path, required=True, help="New directory for screenshots and results."
@@ -327,7 +356,9 @@ def main() -> None:
     asyncio.run(_admin_exec(admin_dsn, f'CREATE DATABASE "{name}"'))
     try:
         command.upgrade(alembic_config(dsn), "head")
-        walkthrough(dsn, args.node, args.trips, args.output, report)
+        walkthrough(
+            dsn, args.node, args.trips, args.output, report, continue_driver_cs=args.continue_driver_cs
+        )
         report["result"] = "PASS"
     except Exception as exc:
         report["failure"] = str(exc)

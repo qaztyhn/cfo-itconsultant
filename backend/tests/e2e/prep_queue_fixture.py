@@ -9,6 +9,7 @@ APP_NOW = "2026-11-10T10:06:00+01:00"
 BUSINESS_DATE = APP_NOW[:10]
 TIME_ZONE = "Europe/Stockholm"
 WAREHOUSE_EMAIL = "wm@cfo.test"
+CS_EMAIL = "cs@cfo.test"
 DRIVER_EMAILS = ("driver-placeholder@cfo.test", "e3-driver-two@cfo.test")
 
 
@@ -80,7 +81,7 @@ def seed_approved_order(dsn: str, trip_count: int, password: str) -> str:
         dsn,
         "UPDATE ref.app_user SET password_hash=$1 WHERE email=ANY($2::text[]) RETURNING id",
         hash_password(password),
-        [WAREHOUSE_EMAIL, *DRIVER_EMAILS[:trip_count]],
+        [WAREHOUSE_EMAIL, CS_EMAIL, *DRIVER_EMAILS[:trip_count]],
     )
-    assert len(updated) == 1 + trip_count
+    assert len(updated) == 2 + trip_count
     return order_no
