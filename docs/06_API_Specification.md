@@ -494,11 +494,14 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 |---|---|---|---|
 | GET | `/alerts` | dispatcher, warehouse, CS, admin | Lọc `type`, `level`, `resolved`, `order_id` (theo phạm vi) |
 | POST | `/alerts/{id}/ack` | dispatcher, admin | Xác nhận đã xem |
-| GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status` |
+| GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status`; mỗi item có `order_no` công khai để mở đúng đơn |
+| GET | `/notifications/{id}` | dispatcher, CS, admin | Bản xem trước đã dựng và `committed_date` của đơn mà người gọi có quyền xem. Chi tiết trường ở Phụ lục A |
 | GET | `/orders/{id}/notifications` | dispatcher, CS | Lịch sử thông báo của đơn |
 | POST | `/notifications/{id}/send` | dispatcher | D4: chỉ Send bản nháp `DELAY` với `eta_window` đã validate, `reason_code`/phrase từ template allowlist, `Idempotency-Key`; **không** nhận body/subject free-text. Ghi `NOTIFICATION_SENT` |
 | POST | `/notifications/{id}/discard` | dispatcher | Discard `DELAY` với `reason_text` bắt buộc cho audit nội bộ; **không** chèn reason_text vào thư gửi khách |
 | POST | `/orders/{id}/delay-notice` | dispatcher | Chỉ tạo **draft** từ template đã kiểm tra, không có đường gửi trực tiếp bỏ qua Dispatcher |
+
+Khi Send `DELAY`, cả hai mốc ETA phải cùng một ngày theo `market_timezone`. Nếu ngày đó khác `committed_date` của đơn, Dispatcher phải gửi `date_negotiation_id` trỏ đến thỏa thuận `agreed` của đúng đơn và đúng ngày ETA, kể cả khi gửi khung đã lưu. Khi ETA quay về ngày cam kết, có thể bỏ ID. Gửi nguyên khung dùng phiên bản đã lưu, sửa khung dùng phiên bản mới.
 
 **D4 owner-approved (2026-11-08):** server render `CONFIRMED`, `DISPATCHED`, `DELIVERED`, `FAILED`, `DELAY` theo template có phiên bản. Biến chỉ từ `public_order_ref`, trạng thái/khung đã duyệt, ETA và reason_code thuộc enum/câu mẫu đã duyệt. Tuyệt đối không lấy arbitrary POS/CS/free-text, tên tài xế/nhân viên, tên người nhận, GPS/tọa độ, thông tin riêng tư hoặc risk scores. Trường `body` tự do trước đây **bị thay thế** bởi các biến có kiểu; request chứa body không khớp render phải trả 422, không đưa thẳng tới provider. `DELAY` luôn cần Dispatcher xem trước/duyệt gửi hoặc Discard. Giữ quiet hours market-local 21:00–07:00 (ngoại lệ gửi DELAY do Dispatcher kích hoạt), cap 3 attempts và `DEC-NOTIFY-001`: chỉ Mailpit/test recipient, chưa gửi khách thật. Retry 5/15 phút là đề xuất Dev 2, chưa tự owner-approved; Dev 2 cần trình policy/code review.
 
@@ -897,7 +900,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 | GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
 | GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
 | GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint **chuẩn** của Prep queue (thay cho `/prep-queue?warehouse_id=&date=`): `capacity { booked_min, total_min, free_min, schedule_verified, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id,at,vehicle_code,after_cutoff,loaded}], prep_state ('running'|'paused'|null), status, next_action}]`. Đơn nhiều xe có nhiều dòng loading. |
-| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ template, channel, status, recipient_masked, subject, body_html, body_text, eta_window, suppressed_reason }` (người nhận đã che) |
+| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ order_no, market_timezone, committed_date, template, channel, status, recipient_masked, subject, body_html, body_text, eta_window: { start, end, version }, suppressed_reason }`. Người nhận đã che. `committed_date` là ngày cam kết của đơn theo múi giờ market (`YYYY-MM-DD` hoặc `null`). `version` là phiên bản ETA đã duyệt trong snapshot, `null` nếu thiếu bằng chứng. UI chặn Send khi thiếu ngày cam kết hoặc phiên bản |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
 
 ### A.1 M6 Prep queue contract alignment (OWNER APPROVED 09/11/2026 — DEC-M6-PREP-QUEUE-20261109; code/E2E pending)

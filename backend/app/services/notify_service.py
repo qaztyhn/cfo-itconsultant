@@ -171,11 +171,14 @@ async def _verified_date(
     local_start = window.start.astimezone(ZoneInfo(market.timezone)).date()
     local_end = window.end.astimezone(ZoneInfo(market.timezone)).date()
     if local_start != local_end:
-        raise DomainError("DATE_AGREEMENT_REQUIRED", "Delivery window spans different market dates.")
+        raise DomainError("DATE_AGREEMENT_REQUIRED", "Choose a start and end on the same market date.")
     if local_start == order.committed_date:
         return
     if date_negotiation_id is None:
-        raise DomainError("DATE_AGREEMENT_REQUIRED", "Customer-agreed new date is required.")
+        raise DomainError(
+            "DATE_AGREEMENT_REQUIRED",
+            "Record the customer's agreed date for this order, then enter the date negotiation ID.",
+        )
     agreed = await session.get(DateNegotiation, date_negotiation_id)
     if (
         agreed is None
@@ -183,13 +186,17 @@ async def _verified_date(
         or agreed.outcome != "agreed"
         or agreed.proposed_date != local_start
     ):
-        raise DomainError("DATE_AGREEMENT_REQUIRED", "No matching agreed customer date was recorded.")
+        raise DomainError(
+            "DATE_AGREEMENT_REQUIRED",
+            "Enter the ID of an agreed date negotiation for this order and the proposed delivery date.",
+        )
 
 
-def _mask_response(record: Notification) -> dict[str, object]:
+def _mask_response(record: Notification, *, order_no: str | None = None) -> dict[str, object]:
     return {
         "id": record.id,
         "order_id": record.order_id,
+        "order_no": order_no,
         "template": record.template,
         "channel": "email" if record.recipient else None,
         "status": record.status,
@@ -211,7 +218,7 @@ async def list_notifications(
 ) -> dict[str, object]:
     _require_reader(actor)
     stmt = (
-        select(Notification)
+        select(Notification, CustomerOrder.order_no)
         .join(CustomerOrder, Notification.order_id == CustomerOrder.id)
         .join(Market, Market.id == CustomerOrder.market_id)
     )
@@ -225,14 +232,14 @@ async def list_notifications(
         stmt = stmt.where(Notification.status == status)
     total = await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     rows = (
-        await session.scalars(
+        await session.execute(
             stmt.order_by(Notification.created_at.desc(), Notification.id.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
         )
     ).all()
     return {
-        "items": [_mask_response(item) for item in rows],
+        "items": [_mask_response(item, order_no=order_no) for item, order_no in rows],
         "page": page,
         "page_size": page_size,
         "total": int(total or 0),
@@ -244,14 +251,19 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
     order = await session.get(CustomerOrder, record.order_id)
     assert order is not None
     market = await _order_market(session, order)
+    detail = {
+        **_mask_response(record, order_no=order.order_no),
+        "market_timezone": market.timezone,
+        "committed_date": order.committed_date.isoformat() if order.committed_date else None,
+        "suppressed_reason": record.suppressed_reason,
+    }
     if record.recipient is None:
         return {
-            **_mask_response(record),
+            **detail,
             "subject": None,
             "body_html": None,
             "body_text": "",
             "eta_window": None,
-            "suppressed_reason": record.suppressed_reason,
         }
     try:
         rendered = read_snapshot(
@@ -285,14 +297,14 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
         public_window = {
             "start": str(record.eta_window["start"]),
             "end": str(record.eta_window["end"]),
+            "version": snapshot_version(record.eta_window),
         }
     return {
-        **_mask_response(record),
+        **detail,
         "subject": rendered.subject,
         "body_html": None,
         "body_text": rendered.body,
         "eta_window": public_window,
-        "suppressed_reason": record.suppressed_reason,
     }
 
 

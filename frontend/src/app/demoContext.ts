@@ -12,7 +12,7 @@ const CONTEXT: readonly { prefix: string; text: string }[] = [
   { prefix: "/it", text: "Integrations are simulated; nothing connects to a real ERP, WMS or POS." },
   { prefix: "/kpi", text: "Figures are computed from the demo week, not real operations." },
   { prefix: "/revenue", text: "Revenue figures are synthetic, not real financial data." },
-  { prefix: "/notifications", text: "Emails and SMS are simulated; nothing reaches real customers." },
+  { prefix: "/notifications", text: "Emails go to the local Mailpit demo inbox; nothing reaches real customers." },
 ];
 
 export function demoContextFor(pathname: string): string {
