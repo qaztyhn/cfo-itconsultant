@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 STEPS = (
-    ("1", "POS create and submit", "E0"),
+    ("1", "CFO Sync & Check: enter the pre-submitted order reference", "E0, T26"),
     ("2", "Sales Sync and feasibility", "E0, E1"),
     ("3", "Sales rank 1-3 selection", "T19, T26"),
     ("4", "Approve, WMS ACK, Dispatcher assignment", "E1, T12, T15"),
