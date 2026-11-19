@@ -501,9 +501,7 @@ def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -
     assert notification["order_id"] == order["id"] == first["order"]["id"]
     assert notification["plan_id"] == order["approved_plan_id"] == first["plan"]["id"]
     assert notification["status"] == "queued"
-    assert first["notifications"] == [
-        {"id": notification["id"], "template": "CONFIRMED", "status": "queued"}
-    ]
+    assert first["notifications"] == [{"id": notification["id"], "template": "CONFIRMED", "status": "queued"}]
     assert notification["recipient"] == "confirmed@cfo.test"
     assert notification["skipped_reason"] is None
     assert notification["dedupe_key"] == f"{order['id']}:CONFIRMED:1:APPROVED"
@@ -550,9 +548,7 @@ def test_US_NOT_01_AC1_t21_missing_email_approves_but_suppresses(db: str) -> Non
         "FROM ops.notification WHERE template='CONFIRMED'",
     )[0]
     assert row["id"] > 0 and (row["order_id"], row["plan_id"]) == (1, 1)
-    assert result["notifications"] == [
-        {"id": row["id"], "template": "CONFIRMED", "status": "suppressed"}
-    ]
+    assert result["notifications"] == [{"id": row["id"], "template": "CONFIRMED", "status": "suppressed"}]
     assert (row["status"], row["recipient"], row["skipped_reason"]) == (
         "suppressed",
         None,
