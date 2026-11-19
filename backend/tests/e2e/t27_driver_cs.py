@@ -10,11 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Browser, Error, Page, Response, TimeoutError as BrowserTimeout, expect
+from playwright.sync_api import Browser, Error, Page, Response, expect
+from playwright.sync_api import TimeoutError as BrowserTimeout
 
-from tests.e2e.prep_queue_browser import EVENT_PATH, DRIVER_PATH, require_ok, response_for, sign_in
+from tests.e2e.prep_queue_browser import DRIVER_PATH, EVENT_PATH, require_ok, response_for, sign_in
 from tests.e2e.prep_queue_fixture import APP_NOW, DRIVER_EMAILS, TIME_ZONE, vehicle_code
-from tests.integration.conftest import fetch
 
 CS_ACCOUNT = "cs@cfo.test"
 ETA_STUB_TASK = "T14"
@@ -52,8 +52,12 @@ def _failed(stage: dict[str, object], task: list[str], exc: Exception) -> None:
 def _driver_dispatch(
     browser: Browser, web: str, api: str, trip_id: int, order_no: str, password: str, output: Path
 ) -> dict[str, object]:
-    stage: dict[str, object] = {"trip_id": trip_id, "order_no": order_no, "status": "NOT VERIFIED", "http": []}
-    page = browser.new_page(timezone_id=TIME_ZONE, viewport={"width": 430, "height": 932}, service_workers="block")
+    stage: dict[str, object] = {
+        "trip_id": trip_id, "order_no": order_no, "status": "NOT VERIFIED", "http": []
+    }
+    page = browser.new_page(
+        timezone_id=TIME_ZONE, viewport={"width": 430, "height": 932}, service_workers="block"
+    )
     page.set_default_timeout(15_000)
     try:
         # Driver UI otherwise uses the real machine clock (weeks after the
@@ -73,7 +77,9 @@ def _driver_dispatch(
         expect(page.get_by_role("button", name="Mark dispatched")).to_be_enabled()
         page.screenshot(path=output / f"t27-driver-{trip_id}-before-dispatch.png")
 
-        with page.expect_response(lambda r: response_for(r, "POST", f"{api}{EVENT_PATH}"), timeout=30000) as sent:
+        with page.expect_response(
+            lambda r: response_for(r, "POST", f"{api}{EVENT_PATH}"), timeout=30000
+        ) as sent:
             page.get_by_role("button", name="Mark dispatched").click()
         res = sent.value
         stage["http"].append(_metadata(res))
@@ -110,7 +116,9 @@ def _cs_lookup(
     browser: Browser, web: str, api: str, order_no: str, password: str, output: Path
 ) -> dict[str, object]:
     stage: dict[str, object] = {"order_no": order_no, "status": "NOT VERIFIED", "http": []}
-    page: Page = browser.new_page(timezone_id=TIME_ZONE, viewport={"width": 1440, "height": 1000}, service_workers="block")
+    page: Page = browser.new_page(
+        timezone_id=TIME_ZONE, viewport={"width": 1440, "height": 1000}, service_workers="block"
+    )
     page.set_default_timeout(15_000)
     try:
         page.goto(f"{web}/login")
@@ -139,7 +147,9 @@ def _cs_lookup(
         stage["order_id"] = order_id
         eta_path = f"{api}/api/v1/orders/{order_id}/eta-forecasts"
         with page.expect_response(lambda r: response_for(r, "GET", eta_path)) as forecast:
-            with page.expect_response(lambda r: response_for(r, "GET", f"{api}/api/v1/orders/{order_id}")) as details:
+            with page.expect_response(
+                lambda r: response_for(r, "GET", f"{api}/api/v1/orders/{order_id}")
+            ) as details:
                 page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
         stage["http"].append(_metadata(details.value))
         require_ok(details.value)
