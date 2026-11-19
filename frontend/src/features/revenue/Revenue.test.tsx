@@ -95,6 +95,23 @@ describe("US-REV-01 AC1/AC4/AC9 — role and privacy boundaries", () => {
     expect(screen.queryByText("Share of market")).not.toBeInTheDocument();
     expect(mocks.summary).toHaveBeenCalledWith(expect.objectContaining({ view: "store", location_id: 21 }), expect.anything());
   });
+  it("US-REV-02 AC4 owner with two locations sees both owned choices but not other locations", async () => {
+    const store22 = { ...locations.rows[0], location_id: 22, name: "Store 022" };
+    const outside = { ...locations.rows[0], location_id: 99, name: "Foreign store" };
+    mocks.locations.mockImplementation((filters: { location_id?: number }) => Promise.resolve({
+      ...locations, rows: filters.location_id === 21 ? locations.rows :
+        filters.location_id === 22 ? [store22] : [...locations.rows, store22, outside],
+    }));
+    mount({ ...owner, id: 19, owned_location_ids: [21, 22], location_ids: [21, 22] });
+    expect(await screen.findByText("Recognised revenue")).toBeInTheDocument();
+    const picker = screen.getByRole("combobox", { name: "Location filter" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")).toHaveLength(2));
+    expect(within(picker).getByRole("option", { name: "Store 022" })).toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: "Foreign store" })).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: "22" } });
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledWith(
+      expect.objectContaining({ view: "store", location_id: 22 }), expect.anything()));
+  });
 });
 describe("US-REV-01 AC5–AC8 — filters, chart, CSV and errors", () => {
   it("switches views without combining store/warehouse totals", async () => {
