@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -7,7 +7,7 @@ import { API_BASE_URL } from "../../api/config";
 import { fetchLocations } from "../../api/locations";
 import { useScopeStore } from "../../app/scope";
 import { currentPath, renderAt, signInAs, userByEmail } from "../../test/utils";
-import { buildPrepQueueFixture } from "./prep-queue/fixtures";
+import { buildPrepQueueFixture, capacityVerified, orderApproved, orderMultiVehicle, orderRunning } from "./prep-queue/fixtures";
 import { PREP_QUEUE_URL, prepQueueFailure, prepQueueSuccess } from "./prep-queue/mswHandlers";
 
 vi.mock("../../api/locations", () => ({ fetchLocations: vi.fn() }));
@@ -24,7 +24,10 @@ beforeAll(() => {
   mswFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => mswFetch(input, { ...init, signal: undefined }));
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  vi.useRealTimers();
+  server.resetHandlers();
+});
 afterAll(() => {
   vi.unstubAllGlobals();
   server.close();
@@ -46,7 +49,7 @@ function signInWarehouse() {
   signInAs(userByEmail("wm.got@cfo.demo"));
 }
 
-describe("PrepQueue screen (read-only)", () => {
+describe("PrepQueue screen (Round 3)", () => {
   it("shows the header, capacity card and orders table for the warehouse manager's warehouse", async () => {
     const seen = vi.fn();
     server.use(prepQueueSuccess(buildPrepQueueFixture("verified"), seen));
@@ -59,16 +62,19 @@ describe("PrepQueue screen (read-only)", () => {
     expect(screen.getByText(OVERLINE("Göteborg DC"))).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(1 + 5);
     expect(screen.getByText(/Live · refreshes every 20 s/)).toBeInTheDocument();
-    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: null });
   });
 
-  it("has no write buttons in PR 1", async () => {
+  it("test_US_WH_04_AC1_offers_backend-authorized milestones only", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
-
     await screen.findByRole("table", { name: "Orders to prepare" });
-    expect(screen.queryByRole("button", { name: /start prep|pause|resume|goods ready|mark loaded/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start preparation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Mark loaded · GBG-18-05" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Mark loaded · GBG-18-04" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Pause preparation|Resume preparation|Report shift change/i })).toBeNull();
   });
 
   it("test_US_WH_03_AC1_shows_no_equipment_row", async () => {
@@ -191,16 +197,295 @@ describe("PrepQueue screen (read-only)", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("opens Edit shifts & staff from the keyboard", async () => {
+  it("does not link to the removed Round 2 attendance screen", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
-
-    const link = await screen.findByRole("link", { name: "Edit shifts & staff" });
-    link.focus();
-    expect(link).toHaveFocus();
-    await userEvent.setup().keyboard("{Enter}");
-
-    await waitFor(() => expect(currentPath()).toBe("/warehouse/attendance"));
+    await screen.findByRole("table", { name: "Orders to prepare" });
+    expect(screen.queryByRole("link", { name: "Edit shifts & staff" })).toBeNull();
   });
+
+  it("test_US_WH_04_AC1_E3_one_order_progresses_start_ready_loaded_through_refreshed_backend_state", async () => {
+    const order = orderApproved();
+    let step = 0;
+    const recorded: { type: string; payload: Record<string, unknown>; key: string }[] = [];
+    const eventTypes = ["START_PREP", "GOODS_READY", "LOADED"];
+    server.use(
+      http.get(PREP_QUEUE_URL, () => HttpResponse.json({
+        capacity: capacityVerified(),
+        orders: [{
+          ...order,
+          status: (["APPROVED", "PREPARING", "GOODS_READY", "LOADED"] as const)[step],
+          next_action: (["START_PREP", "GOODS_READY", "LOADED", null] as const)[step],
+          prep_window: { ...order.prep_window, start: step > 0 ? "2026-11-12T06:00:00Z" : null },
+          loading: [{ ...order.loading[0], loaded: step === 3 }],
+        }],
+      })),
+      http.post(API_BASE_URL + "/orders/:orderId/events", async ({ request, params }) => {
+        const body = (await request.json()) as { event_type: string; payload: Record<string, unknown> };
+        const key = request.headers.get("Idempotency-Key") ?? "";
+        expect(params.orderId).toBe("137");
+        expect(key).toMatch(/^[\da-f-]{36}$/i);
+        if (body.event_type !== eventTypes[step]) {
+          return HttpResponse.json({ error: { code: "ILLEGAL_TRANSITION", message: "stale", correlation_id: "e3-conflict" } }, { status: 409 });
+        }
+        recorded.push({ type: body.event_type, payload: body.payload, key });
+        step += 1;
+        return HttpResponse.json({ event_id: step, order_status: (["PREPARING", "GOODS_READY", "LOADED"] as const)[step - 1] });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    const actions = () => within(within(screen.getByRole("table", { name: "Orders to prepare" })).getByText(order.order_no).closest("tr") as HTMLElement);
+    await screen.findByRole("table", { name: "Orders to prepare" });
+    await user.click(actions().getByRole("button", { name: "Start preparation" }));
+    await user.clear(screen.getByRole("spinbutton", { name: /Crew size/ }));
+    await user.type(screen.getByRole("spinbutton", { name: /Crew size/ }), "3");
+    await user.click(screen.getByRole("button", { name: "Confirm Start preparation" }));
+    await waitFor(() => expect(actions().getByRole("button", { name: "Goods ready" })).toBeEnabled());
+
+    await user.click(actions().getByRole("button", { name: "Goods ready" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Goods ready" }));
+    await waitFor(() => expect(actions().getByRole("button", { name: "Mark loaded · GBG-12-03" })).toBeEnabled());
+
+    await user.click(actions().getByRole("button", { name: "Mark loaded · GBG-12-03" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Mark loaded" }));
+    await waitFor(() => expect(actions().getByText("LOADED")).toBeInTheDocument());
+    expect(actions().queryByRole("button", { name: /Mark loaded/ })).toBeNull();
+    expect(recorded.map((e) => e.type)).toEqual(eventTypes);
+    expect(recorded.map((e) => e.payload)).toEqual([{ crew_size: 3 }, {}, { trip_id: 930 }]);
+    expect(new Set(recorded.map((e) => e.key)).size).toBe(3);
+  });
+
+  it("test_US_WH_04_AC2_two_vehicle_loads_send_distinct_trip_ids_and_keys", async () => {
+    const original = orderMultiVehicle();
+    const loaded = new Set<number>();
+    const calls: { trip: number; key: string }[] = [];
+    server.use(
+      http.get(PREP_QUEUE_URL, () => HttpResponse.json({
+        capacity: capacityVerified(),
+        orders: [{
+          ...original,
+          status: loaded.size === 2 ? "LOADED" : "GOODS_READY",
+          next_action: loaded.size === 2 ? null : "LOADED",
+          loading: original.loading.map((trip) => ({ ...trip, loaded: loaded.has(trip.trip_id) })),
+        }],
+      })),
+      http.post(API_BASE_URL + "/orders/:orderId/events", async ({ request }) => {
+        const body = (await request.json()) as { event_type: string; payload: { trip_id: number } };
+        expect(body.event_type).toBe("LOADED");
+        calls.push({ trip: body.payload.trip_id, key: request.headers.get("Idempotency-Key") ?? "" });
+        loaded.add(body.payload.trip_id);
+        return HttpResponse.json({ event_id: calls.length, order_status: loaded.size === 2 ? "LOADED" : "GOODS_READY" });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    await screen.findByRole("table", { name: "Orders to prepare" });
+    await user.click(screen.getByRole("button", { name: "Mark loaded · GBG-18-04" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Mark loaded" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Mark loaded · GBG-18-04" })).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Mark loaded · GBG-18-05" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Mark loaded" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Mark loaded · GBG-18-05" })).toBeNull());
+    expect(calls.map((call) => call.trip)).toEqual([941, 942]);
+    expect(calls[0].key).not.toBe(calls[1].key);
+  });
+
+  it("test_US_WH_04_AC4_after_409_shows_conflict_and_requires_backend_reload", async () => {
+    const order = orderApproved();
+    let stale = false;
+    let sent = 0;
+    server.use(
+      http.get(PREP_QUEUE_URL, () => HttpResponse.json({
+        capacity: capacityVerified(),
+        orders: [{ ...order, status: stale ? "PREPARING" : "APPROVED",
+          next_action: stale ? "GOODS_READY" : "START_PREP",
+          prep_window: { ...order.prep_window, start: stale ? "2026-11-12T06:00:00Z" : null } }],
+      })),
+      http.post(API_BASE_URL + "/orders/:orderId/events", () => {
+        sent++;
+        stale = true;
+        return HttpResponse.json({ error: { code: "ILLEGAL_TRANSITION", message: "out of order", correlation_id: "c" } }, { status: 409 });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Start preparation" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Start preparation" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Refresh the queue/);
+    expect(screen.queryByText("out of order")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Reload queue" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled());
+    expect(sent).toBe(1);
+  });
+
+  it("test_US_WH_04_AC4_retries_an_uncertain_event_with_the_same_key_and_body", async () => {
+    const requests: { body: unknown; key: string | null }[] = [];
+    let success = false;
+    server.use(
+      http.get(PREP_QUEUE_URL, () => HttpResponse.json({
+        capacity: capacityVerified(),
+        orders: [{ ...orderApproved(), status: success ? "PREPARING" : "APPROVED",
+          next_action: success ? "GOODS_READY" : "START_PREP",
+          prep_window: { ...orderApproved().prep_window, start: success ? "2026-11-12T06:00:00Z" : null } }],
+      })),
+      http.post(API_BASE_URL + "/orders/:orderId/events", async ({ request }) => {
+        requests.push({ body: await request.json(), key: request.headers.get("Idempotency-Key") });
+        if (requests.length === 1) return HttpResponse.json({ error: { code: "SERVICE_UNAVAILABLE", message: "down" } }, { status: 503 });
+        success = true;
+        return HttpResponse.json({ event_id: 98, order_status: "PREPARING" });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Start preparation" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Start preparation" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unconfirmed/);
+    await user.click(screen.getByRole("button", { name: "Retry same event" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled());
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toEqual(requests[1]);
+  });
+
+  it("test_US_WH_04_AC5_fails_closed_for_a_warehouse_worker_without_location_scope", async () => {
+    const seen = vi.fn();
+    server.use(prepQueueSuccess(buildPrepQueueFixture("verified"), seen));
+    signInAs({ ...userByEmail("wm.got@cfo.demo"), location_ids: [] });
+    renderAt("/warehouse/prep");
+    await screen.findByText("No warehouse is assigned to your account.");
+    expect(seen).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Start preparation" })).toBeNull();
+  });
+
+  it.each([92, undefined])("test_US_WH_05_AC2_reports the second assigned vehicle with vehicle_id %s", async (vehicleId) => {
+    const order = orderMultiVehicle();
+    order.loading = [{ ...order.loading[0], vehicle_id: 81 }, { ...order.loading[1], vehicle_id: vehicleId }];
+    const writes = vi.fn();
+    const reads = vi.fn();
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [order] }, reads),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request, params }) => {
+        writes(params.orderId, await request.json(), request.headers.get("Idempotency-Key"));
+        return HttpResponse.json({ event_id: 1, order_status: order.status });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Affected approved order" }), String(order.order_id));
+    await user.click(screen.getByRole("button", { name: "Report vehicle issue" }));
+    const dialog = within(screen.getByRole("dialog"));
+    const picker = dialog.getByRole("combobox", { name: "Assigned vehicle" });
+    expect(within(picker).getAllByRole("option").slice(1).map((option) => option.textContent))
+      .toEqual(["GBG-18-04", "GBG-18-05"]);
+    await user.selectOptions(picker, within(picker).getByRole("option", { name: "GBG-18-05" }));
+    const confirm = dialog.getByRole("button", { name: "Confirm Report vehicle issue" });
+
+    if (vehicleId === undefined) {
+      expect(dialog.getByText(/server has not provided.*vehicle ID/i)).toBeInTheDocument();
+      expect(confirm).toBeDisabled();
+      await user.click(confirm);
+      expect(writes).not.toHaveBeenCalled();
+    } else {
+      await user.type(dialog.getByRole("textbox", { name: "Note (optional)" }), "Flat tyre");
+      await user.click(confirm);
+      await screen.findByText(/Report vehicle issue recorded/);
+      expect(writes).toHaveBeenCalledTimes(1);
+      expect(writes).toHaveBeenCalledWith(String(order.order_id), {
+        event_type: "VEHICLE_ISSUE", occurred_at: expect.any(String), payload: { vehicle_id: 92, note: "Flat tyre" },
+      }, expect.stringMatching(/^[\da-f-]{36}$/i));
+      expect(reads).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("test_US_WH_05_AC1_enables shortage only for PREPARING and sends no writes outside it", async () => {
+    const approved = orderApproved();
+    const preparing = orderRunning();
+    const ready = orderMultiVehicle();
+    const writes = vi.fn();
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [approved, preparing, ready] }),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request, params }) => {
+        writes(params.orderId, await request.json());
+        return HttpResponse.json({ event_id: 1, order_status: "PREPARING" });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    const user = userEvent.setup();
+    const picker = await screen.findByRole("combobox", { name: "Affected approved order" });
+    const shortage = screen.getByRole("button", { name: "Report shortage" });
+    await user.selectOptions(picker, String(approved.order_id));
+    expect(shortage).toBeDisabled();
+    await user.click(shortage);
+    expect(writes).not.toHaveBeenCalled();
+
+    await user.selectOptions(picker, String(preparing.order_id));
+    expect(shortage).toBeEnabled();
+    await user.click(shortage);
+    await user.type(screen.getByRole("textbox", { name: "Local SKU" }), "SE-CEM");
+    await user.click(screen.getByRole("button", { name: "Confirm Report shortage" }));
+    await screen.findByText(/Report shortage recorded/);
+
+    await user.selectOptions(picker, String(ready.order_id));
+    expect(shortage).toBeDisabled();
+    await user.click(shortage);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(String(preparing.order_id), {
+      event_type: "SHORTAGE", occurred_at: expect.any(String), payload: { sku: "SE-CEM", qty_missing: 1 },
+    });
+  });
+
+  it("test_US_WH_04_AC1_sends two default timestamps with distinct seconds in the same minute", async () => {
+    const startedAt = new Date(2026, 10, 10, 10, 5, 10);
+    const readyAt = new Date(2026, 10, 10, 10, 5, 40);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(startedAt);
+
+    const order = orderApproved();
+    const timestamps: string[] = [];
+    server.use(
+      prepQueueSuccess({ capacity: capacityVerified(), orders: [order] }),
+      http.post(`${API_BASE_URL}/orders/:orderId/events`, async ({ request }) => {
+        const body = await request.json() as { occurred_at: string };
+        timestamps.push(body.occurred_at);
+        order.status = timestamps.length === 1 ? "PREPARING" : "GOODS_READY";
+        order.next_action = timestamps.length === 1 ? "GOODS_READY" : "LOADED";
+        return HttpResponse.json({ event_id: timestamps.length, order_status: order.status });
+      }),
+    );
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Start preparation" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Start preparation" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Goods ready" })).toBeEnabled());
+
+    vi.setSystemTime(readyAt);
+    await user.click(screen.getByRole("button", { name: "Goods ready" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Goods ready" }));
+    await screen.findByText(/Goods ready recorded/);
+    expect(timestamps).toEqual([startedAt.toISOString(), readyAt.toISOString()]);
+  });
+
+  it("test_US_WH_04_AC1_uses the server business date when its frozen clock differs from the device", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-19T10:05:00Z"));
+    const seen = vi.fn();
+    server.use(prepQueueSuccess({ ...buildPrepQueueFixture("empty"), date: "2026-11-04" }, seen));
+    signInWarehouse();
+    renderAt("/warehouse/prep");
+
+    expect(await screen.findByText("Göteborg DC · Wednesday 4 November")).toBeInTheDocument();
+    expect(screen.getByText("No approved orders to prepare for Wed 4 Nov.")).toBeInTheDocument();
+    expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: null });
+  });
+
 });

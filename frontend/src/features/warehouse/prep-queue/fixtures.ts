@@ -21,11 +21,11 @@ export function orderApproved(): PrepQueueOrder {
       { code: "N1", name: "Small items & accessories" },
     ],
     work_min: 130,
-    prep_window: { start: "06:00", end: "08:10" },
+    prep_window: { start: null, end: "08:10" },
     loading: [{ trip_id: 930, at: "08:30", vehicle_code: "GBG-12-03", after_cutoff: false, loaded: false }],
     prep_state: null,
     status: "APPROVED",
-    next_action: null,
+    next_action: "START_PREP",
   };
 }
 
@@ -38,11 +38,11 @@ export function orderRunning(): PrepQueueOrder {
     weight_kg: 2800,
     handling_mix: [{ code: "N3", name: "Bagged cement & mortar" }],
     work_min: 195,
-    prep_window: { start: "07:00", end: "10:15" },
+    prep_window: { start: "2026-11-12T06:00:00Z", end: "10:15" },
     loading: [{ trip_id: 931, at: "11:00", vehicle_code: "GBG-18-01", after_cutoff: false, loaded: false }],
     prep_state: "running",
     status: "PREPARING",
-    next_action: null,
+    next_action: "GOODS_READY",
   };
 }
 
@@ -55,7 +55,7 @@ export function orderPaused(): PrepQueueOrder {
     weight_kg: 1960,
     handling_mix: [{ code: "N5", name: "Long goods" }],
     work_min: 90,
-    prep_window: { start: "08:00", end: "09:30" },
+    prep_window: { start: "2026-11-12T07:00:00Z", end: "09:30" },
     loading: [{ trip_id: 932, at: "10:30", vehicle_code: "GBG-03-02", after_cutoff: false, loaded: false }],
     prep_state: "paused",
     status: "PREPARING",
@@ -75,14 +75,14 @@ export function orderMultiVehicle(): PrepQueueOrder {
       { code: "N2", name: "Boards, sheets & tiles" },
     ],
     work_min: 320,
-    prep_window: { start: "06:00", end: "11:20" },
+    prep_window: { start: "2026-11-12T05:00:00Z", end: "11:20" },
     loading: [
       { trip_id: 941, at: "12:00", vehicle_code: "GBG-18-04", after_cutoff: false, loaded: true },
       { trip_id: 942, at: "12:15", vehicle_code: "GBG-18-05", after_cutoff: false, loaded: false },
     ],
     prep_state: null,
     status: "GOODS_READY",
-    next_action: null,
+    next_action: "LOADED",
   };
 }
 
@@ -95,11 +95,11 @@ export function orderAfterCutoff(): PrepQueueOrder {
     weight_kg: 640,
     handling_mix: [{ code: "N1", name: "Small items & accessories" }],
     work_min: 45,
-    prep_window: { start: "13:00", end: "13:45" },
+    prep_window: { start: "2026-11-12T12:00:00Z", end: "13:45" },
     loading: [{ trip_id: 950, at: "2026-11-13T05:00:00Z", vehicle_code: "GBG-12-02", after_cutoff: true, loaded: false }],
     prep_state: null,
     status: "GOODS_READY",
-    next_action: null,
+    next_action: "LOADED",
   };
 }
 

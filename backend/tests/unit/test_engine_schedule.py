@@ -40,6 +40,7 @@ def test_fits_in_one_day_goods_ready_within_shift_and_before_cutoff() -> None:
     res = schedule_preparation(Decimal("12.6"), WED, MORNING, _wh(_days(WED, 3)), CFG)
     assert (res.check.code, res.check.passed) == ("PREP_OK", True)
     assert res.prep_by_day == {WED: Decimal("12.6")}
+    assert res.planned_start_prep == datetime(2026, 11, 4, 6, 0, tzinfo=TZ)
     assert res.goods_ready_at == datetime(2026, 11, 4, 8, 0, tzinfo=TZ)
     assert res.loading_start_at == res.goods_ready_at and not res.after_cutoff
     assert res.capacity_fill == Decimal("0.25")
@@ -80,6 +81,13 @@ def test_US_PLN_02_AC2_goods_ready_1420_after_cutoff_1400_loads_next_working_day
     assert res.goods_ready_at == datetime(2026, 11, 4, 14, 20, tzinfo=TZ)
     assert res.after_cutoff and (res.check.code, res.check.passed) == ("PREP_AFTER_CUTOFF", True)
     assert res.loading_start_at == datetime(2026, 11, 5, 6, 0, tzinfo=TZ)
+
+
+def test_US_PLN_02_AC1_planned_prep_start_skips_gap_after_fully_booked_shift() -> None:
+    day = DayCapacity(WED, (_shift(6, 14, 8), _shift(15, 23, 8)), Decimal("50.4"))
+    res = schedule_preparation(Decimal("2.1"), WED, MORNING, _wh({WED: day}, cutoff=time(20)), CFG)
+    assert res.planned_start_prep == datetime(2026, 11, 4, 15, 0, tzinfo=TZ)
+    assert res.goods_ready_at == datetime(2026, 11, 4, 15, 20, tzinfo=TZ)
 
 
 def test_goods_ready_after_cutoff_moves_loading_to_next_working_day() -> None:

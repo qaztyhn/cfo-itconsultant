@@ -69,6 +69,8 @@ export interface PrepWindow {
 /** One entry per vehicle; an order with several vehicles has several entries. */
 export interface LoadingEntry {
   trip_id: number;
+  /** ID of the vehicle assigned to this trip by the approved plan. */
+  vehicle_id?: number;
   /** Planned loading time: `hh:mm` or ISO 8601 with offset. */
   at: string;
   vehicle_code: string;
@@ -95,12 +97,14 @@ export interface PrepQueueOrder {
 }
 
 export interface PrepQueueResponse {
+  /** Business day selected by the server, when returned by the API. */
+  date?: string;
   capacity: Capacity;
   orders: PrepQueueOrder[];
 }
 
 export interface PrepQueueParams {
   warehouse_id: number;
-  /** `YYYY-MM-DD` in the market time zone. */
-  date: string;
+  /** `YYYY-MM-DD` in the market time zone. Omit to use the server's current market day. */
+  date?: string;
 }

@@ -155,6 +155,7 @@ def _feasible(
         route_provenance="ors",
         checks=checks,
         prep_by_day={TARGET: D("1.500")},
+        planned_start_prep=datetime(2026, 11, 10, 5, 0, tzinfo=UTC),
         rank=1,
         reason_codes=("ONLY_FEASIBLE", "STOCK_OK"),
         explanation="One safe feasible option.",
@@ -194,6 +195,9 @@ def test_US_PLN_08_AC1_initial_transaction_persists_plan_vehicle_and_hold(
         "initial",
         "feasible",
         "safe",
+    )
+    assert fetch(db, "SELECT workload->>'planned_start_prep' FROM plan.fulfilment_plan")[0][0] == (
+        "2026-11-10T05:00:00+00:00"
     )
     assert fetch(db, "SELECT count(*) FROM plan.plan_vehicle")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM plan.stock_reservation WHERE status='held'")[0][0] == 1

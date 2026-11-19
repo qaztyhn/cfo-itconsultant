@@ -357,7 +357,7 @@ async def build(
                 "weight_kg": round(sum(w for w, _, _ in lines[order.id]), 3),
                 "handling_mix": [{"code": c, "name": n} for c, n in mix],
                 "work_min": _minutes(Decimal(plan.prep_hours) * SIXTY),
-                # Planned start is not persisted: only an actual START_PREP is a reliable start (else null).
+                # The queue exposes the actual START_PREP milestone once it has been recorded.
                 "prep_window": {
                     "start": started.occurred_at.astimezone(zone).isoformat() if started else None,
                     "end": (ready.occurred_at if ready else plan.goods_ready_at).astimezone(zone).isoformat(),

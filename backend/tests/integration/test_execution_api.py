@@ -206,6 +206,50 @@ def test_US_WH_04_AC2_ordering_and_multi_vehicle_loading(
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 4
 
 
+def test_US_WH_04_AC1_AC2_AC4_frozen_clock_keeps_seconds_and_records_each_trip(
+    execution_api: Api,
+) -> None:
+    clock.init_from_settings("2026-11-10T10:05:00+01:00")
+    execute(
+        execution_api.dsn,
+        "UPDATE ops.customer_order SET promise_end='2026-11-10T13:00Z' WHERE id=1",
+        "UPDATE plan.fulfilment_plan SET workload="
+        "jsonb_build_object('planned_start_prep','2026-11-10T05:00:00Z') WHERE id=1",
+    )
+    queue_path = "/warehouses/1/prep-queue"
+    initial = execution_api.get(queue_path, WAREHOUSE)
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["date"] == "2026-11-10"
+    assert [order["status"] for order in initial.json()["orders"]] == ["APPROVED"]
+    assert initial.json()["orders"][0]["prep_window"]["start"] is None
+
+    steps = (
+        ("START_PREP", "2026-11-10T10:05:10+01:00", {"crew_size": 3}, "PREPARING", []),
+        ("GOODS_READY", "2026-11-10T10:05:40+01:00", {}, "GOODS_READY", []),
+        ("LOADED", "2026-11-10T10:05:50+01:00", {"trip_id": 1}, "GOODS_READY", [1]),
+        ("LOADED", "2026-11-10T10:06:00+01:00", {"trip_id": 2}, "LOADED", [1, 2]),
+    )
+    for version, (kind, at, payload, expected_status, loaded_trips) in enumerate(steps, start=1):
+        response = send(execution_api, WAREHOUSE, kind, at, payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["order_status"] == expected_status
+        assert response.json()["risk"]["version"] == version
+        refreshed = execution_api.get(queue_path, WAREHOUSE)
+        assert refreshed.status_code == 200, refreshed.text
+        order = refreshed.json()["orders"][0]
+        assert order["status"] == expected_status
+        assert [trip["trip_id"] for trip in order["loading"] if trip["loaded"]] == loaded_trips
+
+    events = fetch(
+        execution_api.dsn,
+        "SELECT event_type, occurred_at, trip_id FROM ops.milestone_event "
+        "WHERE order_id = 1 ORDER BY occurred_at, id",
+    )
+    assert [(row["event_type"], row["occurred_at"], row["trip_id"]) for row in events] == [
+        (kind, datetime.fromisoformat(at), payload.get("trip_id")) for kind, at, payload, _, _ in steps
+    ]
+
+
 def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -256,6 +300,7 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
 
 
 def test_US_WH_04_AC4_missing_risk_dependency_rolls_back(execution_api: Api) -> None:
+    execute(execution_api.dsn, "UPDATE ops.customer_order SET promise_end='2026-11-10T17:00Z' WHERE id=1")
     response = send(execution_api, WAREHOUSE, "START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3})
     assert_error(response, 409, "PLAN_NOT_APPROVABLE")
     assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.milestone_event")[0]["n"] == 0

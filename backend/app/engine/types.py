@@ -262,6 +262,7 @@ class PlanCandidate:
     rank: int = 0
     reason_codes: tuple[str, ...] = ()
     explanation: str = ""
+    planned_start_prep: datetime | None = None
 
 
 @dataclass(frozen=True)

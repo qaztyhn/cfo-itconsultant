@@ -14,6 +14,8 @@ describe("prep queue fixtures", () => {
     const { orders } = buildPrepQueueFixture("verified");
     const states = orders.map((o) => `${o.status}/${o.prep_state ?? "-"}`);
     expect(states).toEqual(expect.arrayContaining(["APPROVED/-", "PREPARING/running", "PREPARING/paused", "GOODS_READY/-"]));
+    expect(orders[0].prep_window.start).toBeNull();
+    expect(orders[0].next_action).toBe("START_PREP");
     expect(orders.some((o) => o.loading.length > 1)).toBe(true);
     expect(orders.some((o) => o.loading.some((l) => l.after_cutoff))).toBe(true);
     expect(orders.some((o) => o.loading.some((l) => l.loaded))).toBe(true);
