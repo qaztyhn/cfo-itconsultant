@@ -139,7 +139,7 @@ def main() -> int:
         hold, _ = api("job=hold_expiry")
         assert one["processed"] == two["processed"] == 0
         assert hold["market"] is None and isinstance(hold["processed"], int)
-        assert one["correlation_id"] == header["X-Correlation-ID"]
+        assert one["correlation_id"] == next(value for key, value in header.items() if key.lower() == "x-correlation-id")
         assert mailpit()["total"] == 1
         print(
             "PASS: real post-seed worker SE CONFIRMED queued->sent, 1 audit, "
