@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     source_se_base_url: str = "http://localhost:8100/api/v1"
     source_se_api_key: str = ""
     internal_tick_key: str = ""
+    notify_dispatched_enabled: bool = True
     app_env: str = "local"
     # Production opt-in ONLY after Dev 2 verifies ingress/APM/access-log redaction,
     # browser URL exposure and an effective distributed abuse-control policy (#181).

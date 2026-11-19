@@ -62,27 +62,36 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 
 ## Acceptance boundaries
 
-- **POS creation** is a Source fixture, NOT a POS UI click; step 1 remains
-  NOT VERIFIED for POS UI.
+- **Step 1** passes when Sales opens CFO Sync & Check and enters the
+  pre-submitted Source reference. The Source fixture prepares the submitted
+  order before the session.
 - **Sales**: Sync and Check are two real browser button clicks. The E0
   route-matrix import between them is explicitly recorded as setup and
-  never labelled a UI step.
+  never labelled a UI step. After Sync, the runner reads the CFO `order_no`
+  from the returned `order_id` and uses it in Mailpit, Prep Queue and CS.
 - **Dispatcher**: Approve must be on a still-proposed unexpired plan.
   HTTP 200 must match `APPROVED`, same trip IDs, one queued `CONFIRMED`
   notification ID, synthetic ACK and signed stock batch in PostgreSQL.
   If blocked, preserve HTTP status/error.code and latest verified state.
 - **E2**: same notification ID must be `sent` with one DB audit and
-  exactly one Mailpit message referencing the order and delivery window;
+  exactly one Mailpit message matching the CFO order number and both
+  endpoints of the persisted commitment, formatted in Stockholm time;
   worker begins only after the seed. A synthetic queued email on another
   order does NOT satisfy step 5.
-- **E3/Driver**: every actual UI event ID/trip ID must match
+- **E3/Driver**: after the Mailpit check, stop the Dec 1 worker and recreate
+  only the CFO API at the trip's planned departure on its Stockholm
+  `target_date` (Dec 2). Warehouse and Driver Chrome contexts use that same
+  clock. The database, order, plan and trip remain those from Approve.
+  The Dec 1 D7 attestation stays restricted to Dec 1. Every actual UI event ID/trip ID must match
   `ops.milestone_event`. Unknown/non-verified 56-day D7 history, shifts
   or vehicle context must fail closed; never insert approvals or legal proof
   merely to push Driver forward. A 409 remains BLOCKED with task and reason
   when the specific prerequisite is known.
 - **CS**: same order lookup and ETA version-history are separate checks.
-  An authenticated order-detail 200 does NOT prove ETA history; a 500
-  must not be silently converted to 200.
+  The report records the lookup independently. ETA is `BLOCKED` under T14
+  only when an HTTP 500 `INTERNAL_ERROR` matches a backend
+  `NotImplementedError` for the same route and correlation ID. An unexpected
+  rejection or missing response is `FAIL`.
 - **Other cases** use separate sources: E5 draft DELAY fixture may verify
   Dispatcher Send `draft→queued` but not a real risk-generated draft or
   Mailpit unless worker evidence is recorded; T30 Chrome/T29 fixture already
@@ -93,7 +102,8 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 ## T28 handoff and dependencies
 
 - Run `SE-2026-000249` **only** after the Source pre-Sync fixture exists,
-  and pin the browser and services to `2026-12-01T10:05:00+01:00`.
+  starting Sales/Approve and worker at `2026-12-01T10:05:00+01:00`. The
+  runner advances the CFO API, Warehouse and Driver to the approved plan date.
 - For any failed/rejected action, report **last committed milestone**, HTTP
   status, `error.code` and owning task (E1/E2/T12/T13/T14/T16 etc).
 - When T26 seed is available from Hương, rerun step 12b on the **official

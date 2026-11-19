@@ -1103,7 +1103,7 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 
 ### 19.7 Thông báo (thay một phần §10)
 
-- Kênh duy nhất `email`. `DISPATCHED` gửi một lần khi chuyến đầu tiên của đơn xuất phát, bật/tắt bằng `NOTIFY_DISPATCHED_ENABLED` (tắt → `suppressed`, `skipped_reason='SKIPPED_FLAG_DISABLED'`).
+- Kênh duy nhất `email`. Chuyến đầu tiên xuất phát tạo tối đa một thông báo `DISPATCHED` cho mỗi đơn, kể cả khi đổi plan hoặc có nhiều xe. `NOTIFY_DISPATCHED_ENABLED` mặc định `true`. Khi bật, bản ghi đủ điều kiện gửi vào `queued`. Khi tắt, đơn vẫn chuyển sang `DISPATCHED` và bản ghi được lưu ở `suppressed` với `skipped_reason='SKIPPED_FLAG_DISABLED'`. Bản ghi `DISPATCHED` từ phiên bản cũ vẫn được tính vào giới hạn một bản ghi mỗi đơn.
 - `FAILED` luôn gửi khi đơn chuyển `FAILED`. `DELAY` giữ nguyên quy tắc Dispatcher (§10).
 - CFO lấy email của khách và lưu email đích trong thông báo. DB không lưu kênh gửi hoặc sở thích kênh. Response giữ trường `channel` suy từ đích: `email` nếu có email, `null` nếu không có.
 - Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`, `recipient = NULL`. SMS lịch sử dang dở bị bỏ qua khi gửi.

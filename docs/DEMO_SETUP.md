@@ -29,6 +29,15 @@ With `SE` seeded, the worker retains the existing ingest jobs, schedules
 `notify_outbox:SE` every minute and schedules global `hold_expiry` every minute.
 Outbox and hold DB locks also protect a concurrent manual tick.
 
+Set `NOTIFY_DISPATCHED_ENABLED` in the demo `.env` before starting the stack.
+Compose passes the setting to the API and worker. The API applies it when the
+first trip departs and the order moves to `DISPATCHED`.
+
+| Value | Result on first departure |
+| --- | --- |
+| `NOTIFY_DISPATCHED_ENABLED=true` (default) | One `DISPATCHED` row per order is queued when the customer has a valid email and market policy allows delivery. E2 sends after commit. |
+| `NOTIFY_DISPATCHED_ENABLED=false` | The departure and order transition commit. One `DISPATCHED` row per order is suppressed with `skipped_reason=SKIPPED_FLAG_DISABLED`. E2 sends zero emails for that row. |
+
 For an immediate test, keep the key in a local environment variable and call:
 
 ```powershell
@@ -44,8 +53,8 @@ body into a shared log. Compare with the single message in Mailpit at
 `backend/tests/integration/test_e2_mailpit.py` creates a temporary PostgreSQL
 database at Alembic `head` and exercises tick, repeated tick, and a scheduled
 run against local Mailpit when `TEST_DATABASE_URL` and `E2_MAILPIT_URL` are set.
-It leaves the main demo database untouched. It uses a due synthetic
-`CONFIRMED` fixture because approval enqueue is still pending E1/T21.
+It leaves the main demo database untouched and seeds a due synthetic
+`CONFIRMED` row so that the worker can be checked independently.
 
 E2 local evidence (2026-11-19): an isolated `cfo-demo-e2` Compose project was
 migrated to `head`, given one due synthetic `CONFIRMED` row, and started with
@@ -55,8 +64,8 @@ the order reference and delivery window. The Source service was deliberately
 not started in this isolated mail test, so its separate scheduled ingest pass
 logged incomplete; this did not stop the outbox pass. The optional PostgreSQL
 test also verified tick, repeat tick (zero new rows), and an APScheduler pass
-against Mailpit. Approval to email for one real demo order is **BLOCKED** by
-the pending E1/T21 same-transaction enqueue in `approval_service`.
+against Mailpit. See [T27 step 5](T21_MAILPIT_EVIDENCE.md#t27-bước-5)
+for the shared approval-to-email run on `SE-2026-000249`.
 The PostgreSQL concurrency test pauses the scheduler's email transport while
 an authenticated tick claims the same market; tick processes zero, and the
 single row has one send attempt and one sent audit after the scheduler commits.

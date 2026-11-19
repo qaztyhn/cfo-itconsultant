@@ -9,18 +9,23 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import dotenv_values
-from playwright.sync_api import Error, Page, Response, expect, sync_playwright
+from playwright.sync_api import APIResponse, Error, Page, Response, expect, sync_playwright
 
-REF = "SE-2026-000249"
+from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
+
+SOURCE_REF = "SE-2026-000249"
 NOW = "2026-12-01T10:05:00+01:00"
 ZONE = "Europe/Stockholm"
 API = "http://localhost:8000"
@@ -29,7 +34,7 @@ MAILPIT = "http://127.0.0.1:8025"
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env"), "-p", "cfo-demo-e004"]
 STEPS = (
-    ("1", "POS submit", "E0"),
+    ("1", "Open CFO Sync & Check and enter the Source reference", "E0, T26"),
     ("2", "Sales Sync and feasibility", "E0, E1"),
     ("3", "Sales rank alternatives", "T19, T26"),
     ("4", "Dispatcher Approve + WMS", "E1, T12, T15"),
@@ -51,7 +56,7 @@ def stage_report() -> dict:
         "revision": os.getenv("GITHUB_SHA", "NOT VERIFIED (local commit)"),
         "app_now": NOW,
         "market_timezone": ZONE,
-        "order_reference": REF,
+        "external_ref": SOURCE_REF,
         "origin": "Source SUBMITTED; CFO record ABSENT, pre-Sync fixture",
         "result": "PARTIAL",
         "last_verified": "Source pre-Sync fixture",
@@ -71,7 +76,7 @@ def mark(report: dict, number: str, status: str, evidence: str, **details: objec
     item.update({"status": status, "evidence": evidence, **details})
 
 
-def metadata(response: Response) -> dict[str, object]:
+def metadata(response: Response | APIResponse) -> dict[str, object]:
     code = None
     if not response.ok:
         try:
@@ -126,11 +131,11 @@ def screenshot(page: Page, out: Path, name: str) -> None:
         page.screenshot(path=out / name, full_page=True, animations="disabled")
 
 
-def login(browser, target: str, account: str, password: str, out: Path, label: str) -> Page:
+def login(browser, target: str, account: str, password: str, out: Path, label: str, *, app_now: str = NOW) -> Page:
     page = browser.new_page(timezone_id=ZONE, viewport={"width": 1440, "height": 950},
                             service_workers="block")
     page.set_default_timeout(15_000)
-    page.clock.install(time=datetime.fromisoformat(NOW))
+    page.clock.install(time=datetime.fromisoformat(app_now))
     page.goto(WEB + "/login")
     page.locator('input[type="email"]').fill(account)
     page.get_by_label("Password", exact=True).fill(password)
@@ -147,7 +152,13 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
     page = login(browser, "/store/sync-check", "sales@cfo.demo", password, out, "Sales")
     try:
         expect(page.get_by_role("heading", name="Sync & confirm delivery")).to_be_visible()
-        page.get_by_label("External POS order reference").fill(REF)
+        external_ref = page.get_by_label("External POS order reference")
+        external_ref.fill(SOURCE_REF)
+        expect(external_ref).to_have_value(SOURCE_REF)
+        mark(report, "1", "PASS", f"Sales opened CFO Sync & Check and entered Source reference {SOURCE_REF}")
+        report["last_verified"] = "Sales entered the Source reference in CFO Sync & Check"
+        screenshot(page, out, "01-sales-reference.png")
+        report["active_step"] = "2"
         with page.expect_response(lambda r: r.request.method == "POST" and
                                   urlsplit(r.url).path == "/api/v1/integration/orders/sync-now") as sent:
             page.get_by_role("button", name="Sync & check routing").click()
@@ -155,6 +166,12 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         if sync.get("routing_status") != "cfo" or type(sync.get("order_id")) is not int:
             raise RuntimeError("Sales Sync did not produce authoritative CFO routing")
         order_id = sync["order_id"]
+        order_no = sql(
+            f"SELECT order_no FROM ops.customer_order WHERE id={order_id} AND external_ref='{SOURCE_REF}'", env
+        )
+        if not order_no:
+            raise RuntimeError("Synced order ID did not resolve to a CFO order number for the Source reference")
+        report.update(order_id=order_id, order_no=order_no)
         report["last_verified"] = "Sales UI Sync now"
         screenshot(page, out, "01-sales-sync.png")
         # Route matrix preparation is explicitly SETUP (not a UI action).
@@ -175,7 +192,7 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
             raise RuntimeError("Plan was already approved during setup (not browser tested)")
         expect(page.get_by_role("heading", name="Feasible — not confirmed")).to_be_visible()
         screenshot(page, out, "02-feasible-proposed.png")
-        report["run_id"], report["plan_id"], report["order_id"] = run_id, plan_id, order_id
+        report.update(run_id=run_id, plan_id=plan_id)
         report["last_verified"] = "Sales UI Sync + Check feasibility; proposed plan"
         mark(report, "2", "PASS", "Both Sync and Check clicked through Chrome; two HTTP 200 responses; plan proposed",
              order_id=order_id, run_id=run_id, plan_id=plan_id)
@@ -287,14 +304,16 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
             report["last_verified"] = "Dispatcher Approve request rejected; Sales feasible is last PASS"
             return []
         result = response.json()
-        if result.get("order", {}).get("status") != "APPROVED":
+        if result.get("order", {}).get("id") != order_id or result["order"].get("status") != "APPROVED":
             raise RuntimeError("HTTP 200 without APPROVED is not approval")
         trip_ids = result.get("trip_ids")
         notifications = result.get("notifications")
-        if not isinstance(trip_ids, list) or len(trip_ids) != 1 or not isinstance(notifications, list):
+        if (not isinstance(trip_ids, list) or len(trip_ids) != 1
+            or type(trip_ids[0]) is not int or not isinstance(notifications, list)):
             raise RuntimeError("Missing committed trips or notification metadata")
         confirmed = [item for item in notifications if item.get("template") == "CONFIRMED"]
-        if len(confirmed) != 1 or type(confirmed[0].get("id")) is not int:
+        if (len(confirmed) != 1 or type(confirmed[0].get("id")) is not int
+            or confirmed[0].get("status") != "queued"):
             raise RuntimeError("CONFIRMED ID absent from actual Approve response")
         notify_id = confirmed[0]["id"]
         report["notification_id"] = notify_id
@@ -310,7 +329,10 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
             "JOIN ops.stock_write_run w ON w.id=i.stock_write_run_id "
             f"WHERE o.id={order_id}", env,
         ).split("|")
-        queued = sql(f"SELECT template||'|'||status FROM ops.notification WHERE id={notify_id}", env)
+        queued = sql(
+            "SELECT template||'|'||status FROM ops.notification "
+            f"WHERE id={notify_id} AND order_id={order_id} AND plan_id={plan_id}", env,
+        )
         trips_db = sql(
             "SELECT t.id FROM ops.delivery_trip t JOIN plan.plan_vehicle pv ON pv.id=t.plan_vehicle_id "
             f"WHERE pv.plan_id={plan_id} ORDER BY t.id", env,
@@ -328,16 +350,23 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
 
 
 def mailpit_confirm(report: dict, env: dict[str, str]) -> None:
-    notify_id = report.get("notification_id")
-    if type(notify_id) is not int:
-        return
+    notify_id, order_id, order_no = report["notification_id"], report["order_id"], report["order_no"]
+    window = sql(
+        "SELECT promise_start::text||'|'||promise_end::text "
+        f"FROM ops.customer_order WHERE id={order_id}", env,
+    ).split("|")
+    start, end = (
+        datetime.fromisoformat(value).astimezone(ZoneInfo(ZONE)).isoformat(timespec="minutes")
+        for value in window
+    )
     # Worker intentionally opts-in ONLY after the full seed+migrations.
     compose("--profile", "demo-worker", "up", "-d", "cfo-worker", env=env)
     report["worker_start"] = "After migrate and seed, opt-in demo-worker"
     deadline = time.monotonic() + 95
     while time.monotonic() < deadline:
         row = sql(
-            f"SELECT status||'|'||attempts FROM ops.notification WHERE id={notify_id}", env
+            "SELECT status||'|'||attempts FROM ops.notification "
+            f"WHERE id={notify_id} AND order_id={order_id} AND template='CONFIRMED'", env,
         )
         if row.startswith("sent|"):
             break
@@ -354,8 +383,9 @@ def mailpit_confirm(report: dict, env: dict[str, str]) -> None:
     if response.status_code != 200:
         mark(report, "5", "BLOCKED", "Mailpit API did not respond with HTTP 200")
         return
-    messages = response.json().get("messages") or response.json().get("Messages") or []
-    matching = [msg for msg in messages if REF in str(msg.get("Subject", ""))]
+    messages = response.json().get("messages") or []
+    subject = f"Your delivery is confirmed — order {order_no}"
+    matching = [msg for msg in messages if msg.get("Subject") == subject]
     if len(matching) != 1:
         mark(report, "5", "FAIL", "Mailpit does not contain exactly one matching synthetic CONFIRMED",
              matching_count=len(matching), notification_id=notify_id)
@@ -364,20 +394,53 @@ def mailpit_confirm(report: dict, env: dict[str, str]) -> None:
     # persisting the message body, address, recipient or private email.
     message_id = matching[0].get("ID")
     detail = httpx.get(MAILPIT + f"/api/v1/message/{message_id}", timeout=8, trust_env=False)
-    body_text = detail.text
-    if detail.status_code != 200 or REF not in body_text or "2026-12-02" not in body_text:
-        mark(report, "5", "FAIL", "Mailpit message missing expected order reference or window")
+    body_text = detail.json().get("Text", "") if detail.status_code == 200 else ""
+    if (
+        f"Order {order_no}: Delivery confirmed." not in body_text
+        or f"Delivery window: {start} – {end}." not in body_text
+    ):
+        mark(report, "5", "FAIL", "Mailpit CONFIRMED did not match the CFO order number and exact committed window",
+             order_no=order_no, promise_start=start, promise_end=end)
         return
     audit = sql(
         "SELECT count(*) FROM audit.decision_log WHERE action='NOTIFICATION_SENT' "
-        f"AND order_id={report['order_id']}", env,
+        f"AND order_id={order_id} AND entity_id='{notify_id}'", env,
     )
     if audit != "1":
         mark(report, "5", "FAIL", "CONFIRMED had not exactly one committed NOTIFICATION_SENT audit")
         return
-    mark(report, "5", "PASS", "Approve notification ID matched PostgreSQL queued→sent; worker, 1 audit, exactly 1 Mailpit message",
-         notification_id=notify_id, mailpit_count=1, mailpit_http=200)
+    mark(report, "5", "PASS",
+         f"CONFIRMED #{notify_id} queued → sent; one Mailpit email for {order_no}, {start} – {end}",
+         notification_id=notify_id, mailpit_count=1, mailpit_http=200, mailpit_message_id=message_id,
+         promise_start=start, promise_end=end)
     report["last_verified"] = "CONFIRMED sent with matching ID and exactly one Mailpit email"
+
+
+def start_execution_day(report: dict, env: dict[str, str]) -> dict[str, str]:
+    order_id, plan_id = report["order_id"], report["plan_id"]
+    trip_id = report["trip_ids"][0]
+    query = (
+        "SELECT p.target_date::text||'|'||t.depart_planned_at::text "
+        "FROM ops.customer_order o JOIN plan.fulfilment_plan p ON p.id=o.approved_plan_id "
+        "JOIN plan.plan_vehicle v ON v.plan_id=p.id "
+        "JOIN ops.delivery_trip t ON t.plan_vehicle_id=v.id "
+        f"WHERE o.id={order_id} AND o.status='APPROVED' AND p.id={plan_id} AND t.id={trip_id}"
+    )
+    row = sql(query, env)
+    target_date, planned_departure = row.split("|")
+    execution_at = datetime.fromisoformat(planned_departure).astimezone(ZoneInfo(ZONE))
+    if execution_at.date().isoformat() != target_date:
+        raise RuntimeError("Trip departure and approved plan use different market dates")
+
+    # Keep DB/Source/Mailpit intact. Only the API clock moves; the Dec 1 D7
+    # fixture is not attested for Dec 2, so the regular driver gate fails closed.
+    compose("--profile", "demo-worker", "stop", "cfo-worker", env=env)
+    execution_env = {**env, "APP_NOW": execution_at.isoformat(), "DEMO_D7_FIXTURE_DIR": ""}
+    compose("up", "-d", "--no-deps", "--wait", "--wait-timeout", "90", "cfo-api", env=execution_env)
+    if sql(query, execution_env) != row:
+        raise RuntimeError("Order, approved plan or trip changed during the execution-day rollover")
+    report.update(execution_app_now=execution_env["APP_NOW"], target_date=target_date)
+    return execution_env
 
 
 def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
@@ -387,29 +450,30 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
         "SELECT u.email FROM ref.app_user u JOIN hr.employee e ON e.id=u.employee_id "
         "WHERE e.employee_no='DEMO-STO-W00'", env,
     )
-    page = login(browser, "/warehouse/prep", account, password, out, "Warehouse")
+    page = login(browser, "/warehouse/prep", account, password, out, "Warehouse", app_now=env["APP_NOW"])
     try:
-        row = page.locator("tbody tr").filter(has_text=REF)
+        row = page.locator("tbody tr").filter(has=page.get_by_text(report["order_no"], exact=True))
         expect(row).to_be_visible(timeout=15000)
         report["warehouse_id"] = wh_id
         results = []
         actions = [("START_PREP", "Start preparation", {}), ("GOODS_READY", "Goods ready", {}),
                    *[("LOADED", "Mark loaded", {"trip_id": trip}) for trip in trip_ids]]
-        # Business clock is pinned for E1 approval; the real Chrome device
-        # advances 10s, 30s, then 10s/5s between execution milestones.
+        # The real Chrome device advances within the plan's execution day
+        # between execution milestones.
         # This is an explicit synthetic five-minute skew allowance (06 §8);
         # it preserves causal order without changing backend clock/gates.
         event_seconds = (10, 30, 10, *([5] * (len(trip_ids) - 1)))
         for index, (kind, label, extra) in enumerate(actions, start=1):
             page.clock.fast_forward(event_seconds[index - 1] * 1000)
-            local_at = f"2026-12-01T10:05:{sum(event_seconds[:index]):02d}"
+            at = datetime.fromisoformat(env["APP_NOW"]) + timedelta(seconds=sum(event_seconds[:index]))
+            local_at = at.strftime("%Y-%m-%dT%H:%M:%S")
             button_name = label if kind != "LOADED" else None
             if button_name:
                 row.get_by_role("button", name=button_name, exact=True).click()
             else:
                 # Only one vehicle in E0-04. Use exact assigned trip ID and
                 # rendered vehicle code, never a guessed index.
-                row.get_by_role("button", name=__import__("re").compile("^Mark loaded")).click()
+                row.get_by_role("button", name=re.compile("^Mark loaded")).click()
             dialog = page.get_by_role("dialog", name=f"Confirm {label}")
             dialog.get_by_label("Occurred at (device local time)").fill(local_at)
             if kind == "START_PREP":
@@ -434,6 +498,7 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
                       "order_status": ack["order_status"], "http": info}
             results.append(result)
             report["milestones"].append(result)
+            expect(dialog).to_be_hidden()
             screenshot(page, out, f"0{4+index}-{kind.lower()}.png")
             if kind == "LOADED":
                 expect(row.locator('[data-label="Status"]')).to_have_text("LOADED", timeout=12000)
@@ -448,7 +513,8 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
         ]
         if persisted != expected or sql(f"SELECT status FROM ops.customer_order WHERE id={order_id}", env) != "LOADED":
             raise RuntimeError("Warehouse UI/SQL milestone/trip mismatch")
-        mark(report, "7", "PASS", "Same approved order: warehouse UI START_PREP → GOODS_READY → LOADED, IDs/trip IDs verified in PostgreSQL",
+        mark(report, "7", "PASS",
+             f"{report['order_no']} on {report['target_date']}: START_PREP → GOODS_READY → LOADED, same trip in PostgreSQL",
              events=results)
         report["last_verified"] = "Warehouse UI LOADED and matching PostgreSQL events"
         return True
@@ -462,13 +528,12 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         "SELECT u.email FROM ref.app_user u JOIN ops.delivery_trip t ON t.driver_employee_id=u.employee_id "
         f"WHERE t.id={trip_id}", env
     )
-    page = login(browser, "/driver", account, password, out, "Driver")
+    page = login(browser, "/driver", account, password, out, "Driver", app_now=env["APP_NOW"])
     try:
-        # Last warehouse event at 10:05:50; driver event must be strictly
-        # after it. PWA device clock moves to 10:06:00, within server's
+        # Driver time is after the last warehouse event, within the server's
         # accepted +5 minute skew without bypassing the official shift gate.
         page.clock.fast_forward(60_000)
-        card = page.get_by_role("article").filter(has_text=f"Trip {trip_id}")
+        card = page.get_by_role("article").filter(has_text=re.compile(rf"\bTrip {trip_id}\b"))
         expect(card).to_be_visible(timeout=16000)
         card.get_by_role("button", name="Review and dispatch").click()
         screenshot(page, out, "08-driver-dispatch-ready.png")
@@ -477,8 +542,8 @@ def driver(browser, password: str, trip_id: int, order_id: int,
             page.get_by_role("button", name="Mark dispatched").click()
         info = metadata(posted.value)
         report["api"].append(info)
+        report["dispatch_attempt"] = {**info, "trip_id": trip_id}
         if not posted.value.ok:
-            from tests.e2e.t27_http_evidence import dispatch_rejection
             try:
                 error = posted.value.json().get("error", {})
                 code = error.get("code")
@@ -486,7 +551,9 @@ def driver(browser, password: str, trip_id: int, order_id: int,
             except (ValueError, AttributeError, Error):
                 code, msg = None, None
             classified = dispatch_rejection(posted.value.status, code, msg)
-            mark(report, "8", classified["status"], classified["reason"],
+            reason = f"Driver UI Dispatch HTTP {info['http']} {info['error_code']}. {classified['reason']}"
+            report["dispatch_attempt"]["reason"] = classified["reason"]
+            mark(report, "8", classified["status"], reason,
                  task=", ".join(classified["tasks"]), http=info, trip_id=trip_id)
             report["last_verified"] = "Assigned Driver UI trip visible; DISPATCHED rejected"
             return
@@ -509,34 +576,39 @@ def driver(browser, password: str, trip_id: int, order_id: int,
 
 
 def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict[str, str]) -> None:
+    order_no = report["order_no"]
+    report["eta_history"] = {"status": "NOT VERIFIED"}
     account = sql(
         "SELECT u.email FROM ref.app_user u JOIN hr.employee e ON e.id=u.employee_id "
         "WHERE 'customer_service'=ANY(u.roles) AND e.market_id=1 ORDER BY u.id LIMIT 1", env,
     )
     if not account:
-        mark(report, "11", "BLOCKED", "No authorized market-scoped CS fixture account", task="T03")
+        report["cs_lookup"] = {"status": "BLOCKED"}
+        mark(report, "11", "BLOCKED", "No authorized market-scoped CS fixture account; ETA not tested", task="T03")
         return
-    page = login(browser, "/cs/orders", account, password, out, "CS")
+    report["cs_lookup"] = {"status": "FAIL", "order_id": order_id, "order_no": order_no}
+    page = login(browser, "/cs/orders", account, password, out, "CS", app_now=env["APP_NOW"])
     try:
-        page.get_by_role("searchbox", name="Search orders").fill(REF)
+        page.get_by_role("searchbox", name="Search orders").fill(order_no)
         with page.expect_response(lambda r: r.request.method == "GET" and
                                   urlsplit(r.url).path == "/api/v1/orders" and
                                   "q=" in urlsplit(r.url).query) as listed:
             page.get_by_role("button", name="Search", exact=True).click()
         data = body(listed.value, report)
-        if len([item for item in data.get("items", []) if item.get("order_no") == REF]) != 1:
-            mark(report, "11", "BLOCKED", "CS can search but the same order not in permitted scope",
+        matches = [item for item in data.get("items", []) if item.get("order_no") == order_no]
+        if len(matches) != 1 or matches[0].get("id") != order_id:
+            mark(report, "11", "FAIL", "CS lookup did not return the synced CFO order; ETA not tested",
                  http=metadata(listed.value), task="T03")
             return
         with page.expect_response(lambda r: r.request.method == "GET" and
                                   urlsplit(r.url).path == f"/api/v1/orders/{order_id}") as got:
-            page.get_by_role("button", name=__import__("re").compile(REF)).click()
+            page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
         detail = body(got.value, report)
-        if detail.get("order_no") != REF:
-            raise RuntimeError("CS order reference mismatch")
-        expect(page.get_by_label("Order details").get_by_text(REF, exact=True)).to_be_visible()
+        if detail.get("id") != order_id or detail.get("order_no") != order_no:
+            raise RuntimeError("CS order ID or CFO order number mismatch")
+        expect(page.get_by_label("Order details").get_by_text(order_no, exact=True)).to_be_visible()
         screenshot(page, out, "10-cs-order-lookup.png")
-        report["cs_lookup"] = {"status": "PASS", "order_id": order_id,
+        report["cs_lookup"] = {"status": "PASS", "order_id": order_id, "order_no": order_no,
                                "http": metadata(got.value), "status_from_api": detail.get("status")}
         report["last_verified"] = "CS UI looked up same order; detail matches API"
         # Separate API contract, distinct from the CS order projection.
@@ -546,21 +618,36 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
             raise RuntimeError("CS authenticated browser session did not expose a token")
         # Same authorized CS session, but this is a separate API probe, NOT a
         # customer-visible UI action or a test of history rendering.
+        eta_path = f"/api/v1/orders/{order_id}/eta-forecasts"
         try:
-            probe = page.request.get(API + f"/api/v1/orders/{order_id}/eta-forecasts",
+            probe = page.request.get(API + eta_path,
                                      headers={"Authorization": "Bearer " + token}, timeout=10_000)
         except Error:
-            report["eta_history"] = {"http": None, "error_code": None, "transport_error": True}
+            info = {"path": eta_path, "http": None, "error_code": None, "transport_error": True}
+            status, reason = "FAIL", "ETA request returned no HTTP response"
         else:
-            code = None
-            if not probe.ok:
-                try:
-                    code = probe.json().get("error", {}).get("code")
-                except (ValueError, AttributeError, Error):
-                    pass
-            report["eta_history"] = {"http": probe.status, "error_code": code,
-                                     "status": "NOT VERIFIED" if probe.ok else "BLOCKED"}
-        mark(report, "11", "BLOCKED", "CS UI lookup/detail matched same order; ETA history separately probed using CS auth",
+            info = metadata(probe)
+            report["api"].append(info)
+            correlation_id = probe.headers.get("x-correlation-id")
+            with TemporaryDirectory(prefix="t27-eta-") as temp:
+                log = Path(temp) / "api.log"
+                if (probe.status, info["error_code"]) == (500, "INTERNAL_ERROR") and correlation_id:
+                    try:
+                        api_log = compose("logs", "--no-color", "--no-log-prefix", "--tail", "200",
+                                          "cfo-api", env=env, capture=True)
+                    except RuntimeError:
+                        pass  # Without a matching log the shared classifier returns FAIL.
+                    else:
+                        log.write_text(api_log, encoding="utf-8")
+                status = eta_history_status(probe.status, info["error_code"], log, eta_path, correlation_id)
+            if status == "BLOCKED":
+                reason = "T14 ETA stub confirmed by a correlated backend NotImplementedError"
+            elif status == "FAIL":
+                reason = f"Unexpected ETA response HTTP {info['http']} {info['error_code']}"
+            else:
+                reason = "ETA probe returned HTTP 200; history rendering not verified"
+        report["eta_history"] = {**info, "status": status, "reason": reason}
+        mark(report, "11", status, f"CS lookup PASS for {order_no}. ETA {status}. {reason}.",
              cs_lookup="PASS", eta_history=report["eta_history"], task="T14")
     finally:
         page.close()
@@ -583,14 +670,13 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=False)
     report = stage_report()
     try:
-        if sql(f"SELECT count(*) FROM ops.customer_order WHERE external_ref='{REF}'", env) != "0":
+        if sql(f"SELECT count(*) FROM ops.customer_order WHERE external_ref='{SOURCE_REF}'", env) != "0":
             raise RuntimeError("Pre-Sync fixture invalid: CFO order already present")
         report["start_verified"] = "Source-only pre-Sync (CFO count=0)"
-        mark(report, "1", "NOT VERIFIED", "Source order pre-seeded; POS creation UI not exercised")
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(channel="chrome")
             try:
-                report["active_step"] = "2"
+                report["active_step"] = "1"
                 order_id, run_id, plan_id = sales(browser, password, args.output, report, env)
                 report["active_step"] = "4"
                 start_disposable_wms(env, report)
@@ -599,11 +685,12 @@ def main() -> int:
                     report["active_step"] = "5"
                     mailpit_confirm(report, env)
                     report["active_step"] = "7"
-                    if warehouse(browser, password, order_id, trip_ids, args.output, report, env):
+                    execution_env = start_execution_day(report, env)
+                    if warehouse(browser, password, order_id, trip_ids, args.output, report, execution_env):
                         report["active_step"] = "8"
-                        driver(browser, password, trip_ids[0], order_id, args.output, report, env)
+                        driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env)
                     report["active_step"] = "11"
-                    cs(browser, password, order_id, args.output, report, env)
+                    cs(browser, password, order_id, args.output, report, execution_env)
                 else:
                     # Same order may still be available for CS even when approval
                     # was blocked; do not attempt unauthorized warehouse actions.
@@ -611,9 +698,15 @@ def main() -> int:
                     cs(browser, password, order_id, args.output, report, env)
             finally:
                 browser.close()
-        report["result"] = "PASS_WITH_BLOCKERS" if not any(
-            row["status"] == "FAIL" for row in report["steps"]
-        ) else "FAIL"
+        statuses = {row["step"]: row["status"] for row in report["steps"]}
+        required = ("1", "2", "4", "5", "7")
+        report["result"] = (
+            "PASS_WITH_BLOCKERS"
+            if all(statuses[step] == "PASS" for step in required)
+            and report.get("dispatch_attempt")
+            and "FAIL" not in statuses.values()
+            else "FAIL"
+        )
     except Exception as exc:
         report["result"] = "FAIL"
         report["failure_type"] = type(exc).__name__
@@ -636,7 +729,9 @@ def main() -> int:
         mark(report, "12b", "NOT VERIFIED", "T30 T29 fixture separate; official T26 seed not yet replayed", task="T26, T30")
         (args.output / "t27-integrated.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         rows = ["# T27 integrated attempt — fixture SE-2026-000249",
-                "", f"Commit: {report['revision']}", f"APP_NOW: {NOW} / {ZONE}",
+                "", f"Commit: {report['revision']}", f"Sales/Approve clock: {NOW} / {ZONE}",
+                f"Warehouse/Driver clock: {report.get('execution_app_now', 'NOT VERIFIED')} / {ZONE}",
+                f"Source reference: {SOURCE_REF} / CFO order number: {report.get('order_no', 'NOT VERIFIED')}",
                 f"Origin: {report['origin']}", f"Last verified: {report['last_verified']}",
                 "", "| Step | Status | Evidence | Task |", "|---|---|---|---|"]
         for item in report["steps"]:

@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 19/11/2026 — T21 DISPATCHED email
+
+- `06` §19.7 quy định mặc định `NOTIFY_DISPATCHED_ENABLED=true`. Giới hạn một thông báo `DISPATCHED` theo đơn bao gồm các bản ghi theo khóa cũ. Khi tắt cờ, bản ghi lưu ở `suppressed` với `SKIPPED_FLAG_DISABLED`.
+
 ## [E1 #224 — disposable WMS approval of E0-04 order] — 2026-11-19
 
 - Route the existing Approve API through a transaction-separated WMS intent, status/reserve, ACK, scoped T07 stock refresh, and fail-closed finalization. Keep the default WMS mode disabled; allow only the disposable test clock and loopback service.
