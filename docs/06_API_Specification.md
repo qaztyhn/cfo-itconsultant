@@ -77,7 +77,7 @@ Real customer phone lookup stays disabled pending those controls.
 | Thương lượng ngày | — | **W** | — | — | — | — | — |
 | Chuyển kho: duyệt / hủy | — | **W** | — | — | — | — | — |
 | Chuyển kho: xác nhận kho nguồn / nhận | — | — | **W** (kho nguồn / kho đích, cần `can_approve`) | — | — | — | — |
-| Sự kiện kho (START_PREP, PREP_PAUSED, PREP_RESUMED, GOODS_READY, LOADED, ngoại lệ, SHIFT_CHANGE) | — | — | **W** | — | — | — | — |
+| Sự kiện kho (START_PREP, GOODS_READY, LOADED, ngoại lệ; R3: không còn PREP_PAUSED/PREP_RESUMED; SHIFT_CHANGE không còn tác dụng tính công suất) | — | — | **W** | — | — | — | — |
 | Sự kiện tài xế (DISPATCHED, DELIVERED, FAILED) | — | — | — | — | **W** (chuyến mình) | — | — |
 | GPS: gửi | — | — | — | — | **W** (chuyến mình) | — | — |
 | GPS: xem | — | **R** | — | — | — | **cấm** | — |
@@ -890,7 +890,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 - **Thời gian:** `cutoff` là `HH:mm` theo market; `shifts[].start/end`, `prep_window.start/end`, `loading[].at` là ISO 8601 **có offset** vì biểu thị thời điểm/ca cụ thể (hỗ trợ ca qua ngày và DST). UI luôn hiển thị thành giờ 24h theo `location.timezone`, không theo browser; schema `/warehouses/{id}/capacity` tại §13.2 vẫn dùng giờ ca `HH:mm` cho mục đích riêng.
 - **Dữ liệu tin cậy:** `capacity.schedule_verified` **bắt buộc boolean**; chỉ `true` khi roster ca chính thức do Warehouse Manager/quản lý có thẩm quyền xác nhận và dữ liệu cần thiết để xác minh công suất của ngày đó đã đủ; không suy từ `expected_staff`, seed hoặc ca tự tạo. Khi `false`, server có thể trả **200 read-only** với `total_min=0`, `free_min=0`, `shifts=[]` (hoặc chỉ ca có provenance rõ, không tính capacity), trong khi `booked_min` vẫn phản ánh đặt chỗ thực đã có nếu xác minh được; UI phải hiện `Capacity not verified` và không trình bày 0 như một kết luận rằng có đủ công suất. Quy tắc không phê duyệt kế hoạch khi thiếu lịch, ca tài xế hoặc duty history **vẫn fail closed**.
 - **Tính toán:** `shifts[].minutes` là phút công suất khả dụng ca theo `present × useful_hours × share × 60`, có làm tròn nhất quán; `shifts[].booked` và `capacity.booked_min` là phút đã giữ/đặt thực theo `committed` và `held` trong `/capacity`, không cộng trùng; `free_min=max(0,total_min-booked_min)`. Booked có thể lớn hơn total sau thay đổi lịch; khi đó hiện cảnh báo thiếu công suất, không tạo free âm.
-- **Triển khai (backend):** `schedule_verified=true` chỉ khi mọi dòng `hr.employee_shift_schedule` `scheduled` của kho/ngày do quản lý `can_approve` hiệu lực lúc nhập (`assigned_at` theo ngày market) và dùng được; chia `shifts[].booked` theo tỷ lệ phút ca (largest remainder, tổng khớp `booked_min`); `prep_window.start` là `START_PREP` thực tế hoặc `null` (giờ bắt đầu kế hoạch chưa được lưu), `end` là `GOODS_READY` thực tế hoặc `goods_ready_at` kế hoạch; `next_action` ∈ `START_PREP | PREP_RESUMED | GOODS_READY | LOADED | null`.
+- **Triển khai (backend)** *(R3: `schedule_verified` = có dòng `warehouse_day_capacity` đã xác nhận cho kho/ngày, §19.5; đoạn sau là lịch sử)*: `schedule_verified=true` chỉ khi mọi dòng `hr.employee_shift_schedule` `scheduled` của kho/ngày do quản lý `can_approve` hiệu lực lúc nhập (`assigned_at` theo ngày market) và dùng được; chia `shifts[].booked` theo tỷ lệ phút ca (largest remainder, tổng khớp `booked_min`); `prep_window.start` là `START_PREP` thực tế hoặc `null` (giờ bắt đầu kế hoạch chưa được lưu), `end` là `GOODS_READY` thực tế hoặc `goods_ready_at` kế hoạch; `next_action` ∈ `START_PREP | PREP_RESUMED | GOODS_READY | LOADED | null`.
 - **Orders:** chỉ các đơn với plan đã duyệt và thuộc kho/ngày phù hợp; mỗi xe có một phần tử `loading[]`, giữ `loaded` riêng từng trip; `next_action` lấy từ trạng thái/quyền kiểm tra ở server (nullable khi không có hành động), không suy đoán từ UI. Nếu backend **chưa tính được shape đáng tin cậy**, trả lỗi API chuẩn (không đổi stub `409 PLAN_NOT_APPROVABLE` thành `200` có số giả); `200` thiếu roster là trường hợp hợp lệ khác với service chưa tích hợp.
 - **Tích hợp:** cập nhật OpenAPI/DTO, UI `resolveTimeZone`, test API contract/role-scope, đa xe, ca qua nửa đêm/DST và thiếu lịch xác minh. PR #129 vẫn Draft cho đến khi phụ thuộc execution/risk/notification và các blocker an toàn được giải quyết; riêng API read-only không được coi là chứng minh toàn bộ M6 đã xong.
 
@@ -932,7 +932,7 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 - **S1–5:** future stock-scope/evidence admin routes must require active market-specific grant and separation of creator/approver; warehouse manager supplies WMS proof but cannot approve it. Version after approval by batch `as_of`, expected warehouse × SKU coverage (missing row = reject CFO stock write, zero only if explicit), independence evidence ≤30 pilot days with automatic invalidation on mapping/unit/scope changes. No unreviewed API names/DDL paths are authorized by the policy alone; T07 stock writer stays gated until completion.
 - **T18-1–3:** never count transfer inbound as available unless destination WMS proof shows inclusion; `as_of` alone is insufficient. Fallback lead must be configured/approved with provenance; cancellation/reversal after source confirmation stays `409 ILLEGAL_TRANSITION`.
 - **D7/M6:** trusted 56 market-local daily coverage facts (off-duty vs absent), qualified verifier, independent official shift, 11h rest, licence/Regulation 561/mass checks; one delivered POD per `trip_stop` (forward DB migration pending).
-- **G1–5:** only active assigned primary Dispatcher can read current trip GPS, within actual duty; individual driver notice+ack and privacy/legal proof before real-worker collection. Device upload ≤100 valid positions every 30 min in authorized trip/shift; purge raw points at earliest terminal/duty boundary. Authenticated simulator separate; no 30-day raw retention.
+- **G1–5** *(R3: thay bởi §19.3 — gán luân phiên, vị trí do tài xế bấm, xóa khi đơn kết thúc)*: only active assigned primary Dispatcher can read current trip GPS, within actual duty; individual driver notice+ack and privacy/legal proof before real-worker collection. Device upload ≤100 valid positions every 30 min in authorized trip/shift; purge raw points at earliest terminal/duty boundary. Authenticated simulator separate; no 30-day raw retention.
 - **N1–5:** Dispatcher-approved DELAY `start/end/version`; agreed date negotiation for changed promised date; fixed template version and typed allowlist variables, atomic event/risk/queued notification outbox in caller transaction, external send only after commit, same retry cap and Mailpit/test recipients.
 - **KPI-1/2:** retain all 10 existing published keys: `planning_time_min`, `on_time_rate`, `labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `eta_error_min`, `plan_acceptance_rate`, `failed_delivery_rate`, `capacity_utilisation`, `manual_plan_count`. Unsupported diagnostic keys `hard_constraint_violations`, `event_to_alert_latency_s_median` remain `null` (no guessed 0). Planning cohort date = approved date; delivery cohort = delivery/completion date; capacity cohort = warehouse `work_date`, all in market local timezone. Do not invent other metric cohort formulas.
 
@@ -999,6 +999,8 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 | Sự kiện kho `PREP_PAUSED`, `PREP_RESUMED` | không còn hỗ trợ | | | | |
 | Contact log CS (§11) | không mount → `404 NOT_FOUND` | | | | |
 | Công suất ngày (`/warehouses/{id}/day-capacity`) | R | — | **W** (kho mình, `can_approve`) | — | — |
+| Chuyển kho (`/orders/{id}/transfer-suggestions`, `/transfers/*`) | không mount (`404`) mọi vai trò (DEC-R3-15) | | | | |
+| Ghi dữ liệu quản trị (`POST /employees`, `/users*`, `POST /vehicles`, `/markets/{code}/config`, `/warehouses/{id}/shift-templates`, `/absences`) | không mount (`404`); dữ liệu từ seed/file cấu hình (DEC-R3-15) | | | | |
 
 Sales gọi trên đơn cửa hàng khác → `404 NOT_FOUND`; gọi hành động chỉ của Dispatcher → `403 FORBIDDEN`. Quy tắc "đơn đặt trước chưa duyệt tranh nguồn lực chưa chứng minh đủ → `409 PLAN_NOT_APPROVABLE`, chuyển Dispatcher" giữ nguyên cho Sales. Dispatcher đọc được mọi đơn Sales đã duyệt (`decision_log.actor_role = 'sales'`).
 
@@ -1081,7 +1083,7 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 
 - Kênh duy nhất `email`. `DISPATCHED` gửi một lần khi chuyến đầu tiên của đơn xuất phát, bật/tắt bằng `NOTIFY_DISPATCHED_ENABLED` (tắt → `suppressed`, `skipped_reason='SKIPPED_FLAG_DISABLED'`).
 - `FAILED` luôn gửi khi đơn chuyển `FAILED`. `DELAY` giữ nguyên quy tắc Dispatcher (§10).
-- Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`; khách chưa khớp được qua `CustomerContactPort` → `suppressed`, `SKIPPED_CUSTOMER_UNMATCHED`, alert `CUSTOMER_UNMATCHED` cho Dispatcher.
+- Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`.
 
 ### 19.8 KPI (thay §14)
 
@@ -1102,22 +1104,24 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 - Định nghĩa theo DEC-R3-03. `manual_intervention_rate` = đơn có kế hoạch tay hoặc override ÷ đơn được cam kết. `eta_error_min` = |ETA dự báo gần nhất trước `DISPATCHED` − giờ POD| theo chuyến; không có `baseline`.
 - `GET /kpi/daily?metric=` chỉ nhận 5 key trên. `PUT /kpi/baseline/eta_error_min` → `422 VALIDATION_ERROR`. Các metric cũ (`labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `failed_delivery_rate`, `capacity_utilisation`) không còn được trả về.
 
-### 19.9 CRM: `CustomerContactPort` và provider giả lập (DEC-R3-12)
+> §19.9 (CRM) và §19.10 (Đan Mạch, AI theo lô) đã bị gỡ ngày 19/11/2026 do Owner hủy DEC-R3-12 và DEC-R3-14.
 
-- Cổng nội bộ (không phải endpoint CFO): `get_contacts(external_ids) → [{external_id, email, phone, email_consent, updated_at}]`. Chọn provider bằng cấu hình market `crm.provider ∈ {d365_mock, salesforce_mock}`. Engine không bao giờ gọi cổng này; thông báo và CS lookup lấy liên hệ qua cổng.
-- Nguồn giả lập trong `source-<cc>`, hai hình dạng khác nhau để chứng minh mapping nằm trong adapter:
+### 19.11 Đơn hàng & doanh thu — nhóm trạng thái (DEC-R3-15)
+
+`GET /revenue/order-status?view=store|warehouse&location_id=&from=&to=` — cùng quyền, tham số và lỗi với `/revenue/*` (§14.1, §3.1): Business owner mọi nơi; owner cửa hàng/kho chỉ nơi mình (nơi khác → `404`); admin tất cả; vai trò khác → `403`; `view` không khớp loại địa điểm → `422`; kỳ tối đa 366 ngày (vượt → `422`).
+
 ```json
-// GET /crm/d365/contacts?external_ids=C-1001,C-1002
-{ "value": [ { "accountnumber": "C-1001", "emailaddress1": "demo+1001@example.test", "telephone1": "+46700000001",
-               "donotbulkemail": false, "modifiedon": "…" } ] }
-// GET /crm/salesforce/contacts?external_ids=C-1001,C-1002
-{ "records": [ { "External_ID__c": "C-1001", "Email": "demo+1001@example.test", "Phone": "+46700000001",
-                 "HasOptedOutOfEmail": false, "LastModifiedDate": "…" } ] }
+{ "period": { "from": "2026-11-01", "to": "2026-11-30" }, "view": "store", "location_id": 21, "currency": "SEK",
+  "total": { "orders": 116, "amount": "1569100.00" },
+  "groups": [
+    { "key": "approved", "statuses": ["APPROVED","PREPARING","GOODS_READY","LOADED"], "date_basis": "committed_date", "orders": 30, "amount": "402100.00" },
+    { "key": "in_transit", "statuses": ["DISPATCHED"], "date_basis": "committed_date", "orders": 6, "amount": "88400.00" },
+    { "key": "completed", "statuses": ["DELIVERED"], "date_basis": "committed_date", "orders": 72, "amount": "1012600.00" },
+    { "key": "failed", "statuses": ["FAILED"], "date_basis": "committed_date", "orders": 3, "amount": "41000.00" },
+    { "key": "cancelled", "statuses": ["CANCELLED"], "date_basis": "cancelled_at", "orders": 5, "amount": "25000.00" } ] }
 ```
-- `email_consent = not donotbulkemail` / `not HasOptedOutOfEmail`. Không khớp `external_id` → coi như chưa khớp (19.7). Không log email/điện thoại.
-- Kiểm thử bắt buộc: đổi provider với cùng dữ liệu → cùng `PlanningResult` và cùng nội dung thông báo.
-
-### 19.10 Thị trường Đan Mạch giả lập và AI theo lô (DEC-R3-14)
-
-- `source-dk` dùng đúng hợp đồng §16; CFO thêm market `DK` chỉ bằng cấu hình (múi giờ `Europe/Copenhagen`, ngày lễ, giờ chốt, ngôn ngữ template, `crm.provider`). Không thêm endpoint.
-- AI gợi ý nhóm xử lý chạy theo lô lúc seed, ghi vào `ref.mapping_task.candidates` phần tử `{ "handling_group": "N3", "reason": "ai_batch", "model": "…", "confidence": 0.82 }` (không đổi DDL). Chỉ IT xác nhận qua §12.1; không có lời gọi AI trong request.
+- Bốn nhóm đầu tính vào kỳ theo `committed_date`. Nhóm `cancelled` tính theo ngày hủy = thời điểm chuyển sang `CANCELLED` (`ops.order_transition`/`decision_log ORDER_CANCELLED`), gồm cả đơn hủy trước khi duyệt; không dùng `committed_date` vì hủy đơn xóa trường này (`05` §6). Ngày quy theo timezone market.
+- Đơn chờ duyệt (`SUBMITTED`, `PLANNED`, `NO_FEASIBLE_DATE`) và `BLOCKED_UNMAPPED_SKU` (legacy) **không** nằm trong báo cáo. Mỗi đơn chỉ thuộc một nhóm theo trạng thái hiện tại; `total` = tổng 5 nhóm.
+- `amount` = tổng `total_amount` của đơn trong nhóm (giá trị đơn, **không** phải doanh thu ghi nhận). Doanh thu ghi nhận vẫn lấy từ `/revenue/summary` theo ngày giao thực tế (BR-KPI-01).
+- Không trả tên, điện thoại, địa chỉ khách. Góc nhìn store và warehouse không cộng nhau.
+- `/revenue/orders` nhận thêm `status_group=<key>` để liệt kê đơn của một nhóm (phân trang, cùng quy tắc trường như hiện tại).

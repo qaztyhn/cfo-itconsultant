@@ -1,5 +1,14 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [R3 — DEC-R3-15 màn hình & báo cáo đơn hàng] — 2026-11-19 — chỉ tài liệu
+
+- `06` §19.1: không mount `/transfers/*`, `/orders/{id}/transfer-suggestions` và các API ghi quản trị (employees, users, vehicles, market config, shift templates, absences).
+- `06` §19.11: `GET /revenue/order-status` (5 nhóm trạng thái theo `committed_date`; nhóm hủy theo ngày hủy; không gồm đơn chờ duyệt) và `status_group` cho `/revenue/orders`. Không đổi DDL.
+
+## [R3 — gỡ hợp đồng CRM/Đan Mạch/AI] — 2026-11-19 — chỉ tài liệu
+
+- Owner hủy DEC-R3-11 → DEC-R3-14: gỡ `06` §19.9–19.10 (`CustomerContactPort`, mock D365/Salesforce, market DK, AI theo lô) và `SKIPPED_CUSTOMER_UNMATCHED` khỏi `05` §13. Chuyển kho, Doanh thu, UI quản trị trở lại theo đặc tả cũ.
+
 ## [R3 — DEC-R3 contract alignment (T01)] — 2026-11-18 — Dev 1 (chỉ tài liệu)
 
 - `05` mục 13: `ops.event_type` thêm `DRIVER_INCIDENT`; `vehicle_position` nhận vị trí tài xế chủ động gửi (`driver_tap`/`driver_incident`/`driver_completion`, `remaining_km/min`); `delivery_trip.assigned_dispatcher_employee_id` gán luân phiên (`hr.dispatcher_staff.in_rotation`); xóa tọa độ khi đơn kết thúc; `proof_of_delivery.site_distance_m`; `ops.notification` chỉ email (`CHECK NOT VALID`) + `skipped_reason`;
@@ -10,7 +19,6 @@
   vị trí tài xế một điểm/lần, bắt buộc khi `DELIVERED`/`FAILED`, `DRIVER_INCIDENT`, không bản đồ — `GET /gps/live` trả một dòng vị trí gần nhất cho Dispatcher được gán, `POST /trips/{id}/handover`, `OVERDUE` sau 30 phút; bỏ `PREP_PAUSED`/`PREP_RESUMED`; FAILED/VEHICLE_ISSUE chỉ alert
   (`DELIVERY_FAILED`), `replan` có `scope=remaining`; `/warehouses/{id}/day-capacity`; nguồn `/fleet/driver-availability`,
   `/fleet/driver-eligibility`; email-only + cờ `NOTIFY_DISPATCHED_ENABLED`; KPI 5 metric + `by_path`;
-  `CustomerContactPort` với nguồn giả lập `/crm/d365/contacts`, `/crm/salesforce/contacts`; market DK bằng cấu hình.
   Contact log không mount. Không thêm mã lỗi mới.
 - Chưa có migration, code hay test cho các thay đổi này (task T02–T24).
 

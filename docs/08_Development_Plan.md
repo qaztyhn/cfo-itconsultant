@@ -50,7 +50,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 **M2-S — Sales sync-now (US-INT-06):** Dev 2 làm API sync-now bằng GET adapter nguồn và ingestion idempotent với polling; Dev 1 review contract/scope cửa hàng; Dev 3 màn My store orders → Sync & confirm trong CFO. Không sửa POS/database nguồn. Phụ thuộc M1/M2 core.
 
 ### M3 — Nhân sự, công suất kho (phụ thuộc M0, song song M2)
-- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
+- **A** *(R3: công suất theo ngày/ca thay lịch từng người và điểm danh, DEC-R3-06)*: API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
 - **B:** seed nhân viên, ca mẫu, ngày lễ (thư viện `holidays`), bằng lái.
 - **C:** **Attendance & shifts** (5.A5) có màn Warehouse Manager lập lịch từng nhân viên/ngày/ca, xem chênh lệch dự kiến–thực tế, xem lịch sử, yêu cầu lý do khi chỉnh hồi tố; **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
 - **Xong khi:** Warehouse Manager lập lịch chính thức từng người; không tự chia theo `expected_staff`; "All present" chỉ trên người có lịch; vắng giảm công suất; thiếu lịch không tự dựng nhân viên; đổi quản lý, chuyển/nghỉ việc và chỉnh hồi tố có audit. *Story:* US-WH-01/02/06, US-EMP-01/02/04/05.
@@ -72,12 +72,12 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 ### M6 — Thực thi, driver PWA, GPS (phụ thuộc M5)
 - **A:** `ExecutionService` (sự kiện bất biến, thứ tự, idempotency, POD theo từng `trip_stop`), `GET /driver/trips`, `/warehouses/{id}/prep-queue`; chuyển trạng thái qua `transition()`.
 - **B:** `gps_service` (nhận lô vị trí, kiểm `gps_enabled`, `on_road`), `tools/gps_simulator.py`, `retention_job`, `gps_lost_check`; `compliance_record`.
-- **C:** **Prep queue** (5.6) + báo ngoại lệ; **Driver PWA** (5.10: danh sách, chi tiết, hàng đợi offline IndexedDB, xin quyền vị trí, thông báo riêng tư, Failed + lý do).
+- **C** *(R3: không Pause/Resume, trang tài xế online, vị trí do tài xế bấm, không IndexedDB)*: **Prep queue** (5.6) + báo ngoại lệ; **Driver PWA** (5.10: danh sách, chi tiết, hàng đợi offline IndexedDB, xin quyền vị trí, thông báo riêng tư, Failed + lý do).
 - **Xong khi:** đơn đi hết vòng `APPROVED → … → DELIVERED/FAILED` bằng giao diện; FAILED → xếp lại → giao lại tạo POD thứ hai; offline gửi lại không trùng; GPS lên bản đồ dispatcher (simulator); khách/CS nhận `403` với GPS. *Story:* US-WH-04/05, US-EXE-01..04, US-GPS-01..03.
 
 ### M7 — Rủi ro, cảnh báo, thông báo (phụ thuộc M6)
 - **A:** `engine/forecast.py`, `RiskService` (ETA theo sự kiện/GPS/nguồn/mốc quá hạn/07:00, `eta_forecast`, màu rủi ro, 2 lần liên tiếp), `alert_service`, bản nháp `DELAY`.
-- **B:** `notify_service` (outbox, giờ yên lặng, dedupe, thử lại, Mailpit/Brevo, `sms_sim`, `shadow_mode`), `milestone_overdue_check`, `morning_check`, `stale_data_check`.
+- **B:** `notify_service` (outbox, giờ yên lặng, dedupe, thử lại, Mailpit/Brevo, `shadow_mode`), `milestone_overdue_check`, `morning_check`, `stale_data_check`.
 - **C:** **Tracking & risk** (5.4, gồm Live position), **Notification inbox** (5.8), alerts trên Order queue, A3 Tracking list.
 - **Xong khi:** AC US-RSK-01..03, US-NOT-01..03 pass; kịch bản trễ giữa chừng chạy đủ (cam → đỏ → bản nháp → dispatcher gửi); không tính lại ETA khi không có tín hiệu.
 
@@ -100,7 +100,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 | Routing | ORS, fallback, cache, `route_matrix` | US-INT-05 |
 | Mapping | Task, ứng viên, confirm/reject, mở khóa đơn | US-PRD-01..05 |
 | Orders | Danh sách, chi tiết, timeline, hủy/lập lại | US-ORD-01..05 |
-| ATP & transfer | ATP theo thời gian, gợi ý và vòng đời chuyển kho | US-ATP-01..03 |
+| ATP | ATP theo thời gian (R3: không chuyển kho) | US-ATP-01 |
 | Capacity & HR | Điểm danh, ca, phân công, quản lý | US-WH-01/02, US-EMP-01..04 |
 | Engine | Workload, schedule, delivery, gate, scoring, explain | US-PLN-01..08 |
 | Reservation & approval | Hold, extend, approve, manual nhiều xe, gợi ý lập lại, replan, khóa khi duyệt | US-RES-01, US-APR-01..04, US-ORD-05 |
@@ -181,7 +181,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 |---|---|---|
 | 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched → tài xế gửi vị trí → Delivered (kèm vị trí) | Mọi trạng thái, giữ chỗ → committed, email CONFIRMED/DISPATCHED/DELIVERED, ETA theo sự kiện, KPI cập nhật, decision_log đủ |
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
-| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày khả thi sớm nhất; không gợi ý chuyển kho (R3); Dispatcher ghi thỏa thuận ngày rồi Apply, kiểm đủ gate |
+| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày khả thi sớm nhất; không gợi ý chuyển kho (DEC-R3-15); Dispatcher ghi thỏa thuận ngày rồi Apply, kiểm đủ gate, không tự approve |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
 | 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
 | 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
@@ -195,7 +195,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
-| 17 | Đổi CRM (R3) | Đổi `crm.provider` giữa `d365_mock` và `salesforce_mock` → cùng kết quả lập kế hoạch và cùng nội dung email; khách chưa khớp → email `suppressed` + cảnh báo |
+| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày; màn Đơn hàng & doanh thu trả 5 nhóm trạng thái (lọc theo ngày cam kết giao, nhóm Đã hủy theo ngày hủy, không gồm đơn chờ duyệt), tổng nhóm = tổng đơn (DEC-R3-15) |
 | 18 | Công suất ngày (R3) | Kho chưa xác nhận công suất ngày → gate công suất fail; Warehouse Manager xác nhận → phương án khả thi; sửa ngày đã qua cần lý do |
 
 ## 7. Definition of Done
@@ -268,7 +268,7 @@ Một nhiệm vụ chỉ "xong" khi: (1) mã chạy và đúng **AC** của stor
 | 8 | Đơn lớn hơn một xe | Xếp lịch nhiều xe cùng kho, ít xe nhất, không giới hạn số xe, không ghép đơn |
 | 9 | Doanh thu | Theo `05` mục 8 và `06` mục 14.1: tiền hàng của đơn DELIVERED, hai góc nhìn, `kpi_scopes` + owner |
 | 10 | Đồng hồ | `APP_NOW` chỉ để test/demo lặp lại được; thời gian thực hiện không cố định |
-| 11 | Gợi ý chuyển kho | Giữ trong MVP (quy tắc, không AI) |
+| 11 | Gợi ý chuyển kho | R3: hoãn (DEC-R3-15) |
 | 12 | Hòa điểm cuối cùng | Xe nhỏ hơn mà vẫn đủ chứa (tổng tải nhỏ hơn), rồi mới tới mã xe |
 | 13 | Giữ chỗ đồng thời | Cho vượt lúc lập kế hoạch, chỉ chặn khi duyệt |
 | 14 | Lập lại sau duyệt | Hệ thống tự gợi ý; dispatcher duyệt |

@@ -8,6 +8,8 @@
 
 ---
 
+> **Round 3 ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md), 18–19/11/2026):** các Epic 5, 7, 8, 9, 10, 11, 13, 14 dưới đây đã được viết lại theo DEC-R3-01 → 10. Mã US/AC cũ bị bỏ được giữ dòng "Đã bỏ (R3)" để không đánh số lại.
+
 ## Epic 1 — Tích hợp và hệ thống nguồn
 
 **US-INT-01 — Kéo đơn từ hệ thống nguồn** · Là *hệ thống*, tôi kéo đơn đã qua Sales Validation mỗi 5 phút để dispatcher có việc để lập kế hoạch. · FR-INT-02/04, BR-ORD-01
@@ -125,7 +127,7 @@
 - AC4. *Given* không kho nào đủ trong 14 ngày, *Then* mọi kho `STOCK_SHORT`.
 - AC5. *Given* hai phương án cùng đơn cùng kho, *Then* hàng chỉ bị giữ một lần.
 
-**US-ATP-02 — Gợi ý chuyển kho** · Là *dispatcher*, tôi nhận gợi ý kho nguồn khi mọi kho thiếu. · BR-ATP-05
+**US-ATP-02 — Gợi ý chuyển kho** · **Hoãn (DEC-R3-15)**: không có trong pilot; các AC dưới đây là lịch sử. · BR-ATP-05
 - AC1. *Given* kho đích thiếu 40 bao, kho nguồn B còn 100 sẵn có, A còn 20, *Then* chỉ B được gợi ý, kèm `lead_days` và khoảng cách.
 - AC2. *Given* hai kho nguồn đủ, *Then* xếp theo `lead_days` tăng, rồi khoảng cách tăng; tối đa 3 gợi ý.
 - AC3. *When* dispatcher duyệt gợi ý, *Then* `stock_transfer(approved)`, ghi `TRANSFER_APPROVED`.
@@ -145,45 +147,41 @@
 
 ---
 
-## Epic 5 — Kho: năng lực, điểm danh
+## Epic 5 — Kho: công suất theo ngày/ca (R3)
 
-**US-WH-01 — Điểm danh** · Là *quản lý/trưởng ca kho*, tôi điểm danh nhanh để công suất đúng. · FR-PRP-05, BR-PRP-05
-- AC1. *Given* 12 nhân viên kho của ngày 2026-11-12 ở trạng thái `planned`, *When* tôi bấm "tất cả có mặt", *Then* tất cả `present` trong một lần ghi.
-- AC2. *When* tôi đặt 2 người `absent`, *Then* công suất ngày đó giảm tương ứng và `ATTENDANCE_CHANGED` được ghi.
-- AC3. *Given* nhân viên được phân công cửa hàng, *Then* không xuất hiện ở điểm danh kho (một nơi tại một thời điểm).
-- AC4. *Then* manager/supervisor (`counts_in_capacity = false`) không tính vào công suất nhặt hàng.
+**US-WH-01 — Xác nhận công suất ngày/ca** · Là *Warehouse Manager*, tôi nhập số người và số giờ làm của từng ca để engine tính công suất đúng. · FR-PRP-05, BR-PRP-06, DEC-R3-06
+- AC1. *When* tôi `PUT /warehouses/{id}/day-capacity` cho ngày 2026-11-12 với ca AM 8 người × 7 giờ và ca PM 5 người × 7 giờ, *Then* lưu hai dòng `warehouse_day_capacity` kèm `confirmed_by`, `confirmed_at`, audit `CAPACITY_CONFIRMED`.
+- AC2. *When* tôi sửa ngày đã có dữ liệu hoặc ngày đã qua mà không có `change_reason`, *Then* `422 REASON_REQUIRED`; có lý do → dòng cũ `superseded`, dòng mới hiệu lực, audit `CAPACITY_CHANGED` có before/after.
+- AC3. *Given* tôi là quản lý kho A, *When* gọi cho kho B, *Then* `404`; thiếu `can_approve` → `403`.
+- AC4. *Then* không có lịch ca từng nhân viên, không có điểm danh; `attendance_gen` không chạy.
 
 **US-WH-02 — Công suất ngày** · Là *dispatcher/kho*, tôi xem công suất. · BR-PRP-02
-- AC1. *Given* 8 người present, `useful_hours = 7`, `delivery_share = 0,9`, *Then* `labour_cap = 8 × 7 × 0,9 = 50,4` giờ.
+- AC1. *Given* ca AM 8 người × 7 giờ đã xác nhận, `delivery_share = 0,9`, *Then* `labour_cap = 8 × 7 × 0,9 = 50,4` giờ.
 - AC2. *Given* đã đặt 30 giờ (committed + held đơn khác), *Then* `free = 20,4`.
 - AC3. *Given* ngày lễ, *Then* công suất 0 và không xếp việc vào ngày đó.
+- AC4. *Given* ngày chưa có dòng công suất đã xác nhận, *Then* công suất 0, `schedule_verified = false`, gate công suất fail (không dựng số người giả định).
 
 **US-WH-03 — Thiết bị** · **Đã bỏ ở v1.1** (thiết bị kho ngoài MVP theo slide). Giữ mã để không đánh số lại.
 - AC1. *Then* không có endpoint, bảng hay check nào về thiết bị kho; engine không trả `PREP_NO_EQUIPMENT`.
 
 **US-WH-04 — Ghi mốc chuẩn bị** · Là *quản lý/trưởng ca*, tôi ghi `START_PREP`, `GOODS_READY`, `LOADED` thay cho công nhân. · FR-EXE-01
 - AC1. *Given* đơn `APPROVED`, *When* tôi ghi `START_PREP`, *Then* đơn `PREPARING`, `occurred_at` lưu giờ tôi nhập.
-- AC5. *When* `START_PREP` thiếu `crew_size`, *Then* `422`; `PREP_RESUMED` cũng bắt buộc `crew_size`.
-- AC6. *Given* START_PREP 07:00 (3 người), PREP_PAUSED 09:00, PREP_RESUMED 13:00 (2 người), GOODS_READY 14:30, *Then* `actual_labour_hours = 3×2 + 2×1,5 = 9,0`; đơn ở `PREPARING` suốt lúc tạm dừng.
-- AC7. *Given* đơn có giờ kế hoạch N3 6 giờ và N1 3 giờ (tổng 9) và AC6, *Then* N3 nhận 6,0 giờ thực tế; với 800 bao N3, `group_hours_per_unit.N3.hours_per_unit = 0,0075` giờ/bao (không phụ thuộc số người).
-- AC8. *When* `PREP_PAUSED` khi đang tạm dừng hoặc `PREP_RESUMED` khi đang làm, *Then* `409 ILLEGAL_TRANSITION`.
+- AC5. *When* `START_PREP` thiếu `crew_size`, *Then* `422`.
+- AC6. *(R3)* *Given* START_PREP 07:00, GOODS_READY 09:30, *Then* `prep_actual_min = 150` (= GOODS_READY − START_PREP); không có tạm dừng/tiếp tục.
+- AC7. *(R3)* *When* gửi `PREP_PAUSED` hoặc `PREP_RESUMED`, *Then* `422 VALIDATION_ERROR`.
+- AC8. Đã bỏ (R3).
 - AC2. *When* ghi `LOADED` trước `GOODS_READY`, *Then* `409 ILLEGAL_TRANSITION`.
 - AC3. *When* gửi lại cùng `Idempotency-Key`, *Then* không tạo sự kiện thứ hai.
 - AC4. *Then* sau mỗi mốc, ETA được tính lại (một dòng `eta_forecast` mới).
 
 **US-WH-05 — Báo ngoại lệ kho** · Là *quản lý kho*, tôi báo thiếu hàng, hỏng, sự cố xe, đổi ca. · FR-EXE-01
 - AC1. *When* ghi `SHORTAGE {sku, qty_missing}`, *Then* alert `EXCEPTION` cho dispatcher, ETA tính lại; hệ thống **không** tự sửa tồn kho.
-- AC2. *When* ghi `VEHICLE_ISSUE {vehicle_id}`, *Then* xe đó được cờ khả năng không khả dụng cho dispatcher cân nhắc lập lại; đơn bị ảnh hưởng tính lại ETA.
-- AC3. *When* ghi `SHIFT_CHANGE`, *Then* công suất ngày được tính lại và các đơn có giữ chỗ ngày đó được tính lại ETA.
+- AC2. *(R3)* *When* ghi `VEHICLE_ISSUE {vehicle_id}`, *Then* chỉ tạo alert `EXCEPTION` kèm danh sách đơn đã duyệt dùng xe đó; **không** tự chạy planner hay tạo gợi ý lập lại (DEC-R3-09).
+- AC3. *(R3)* Đổi số người/giờ của ca dùng US-WH-01 (sửa công suất ngày có lý do); sự kiện `SHIFT_CHANGE` không còn dùng để tính công suất.
 
 ---
 
-**US-WH-06 — Warehouse Manager lập lịch làm chính thức từng người (ASM-007/Q11)**
-- AC1. Quản lý kho hợp lệ chọn người, ngày, ca và lưu lịch; danh sách `expected_staff` chỉ hiển thị so sánh, không tự xếp lại người, không tự đưa người dư vào ca cuối.
-- AC2. Người không thuộc kho, đã nghỉ, hoặc bị xếp ca trùng thời gian bị từ chối; thao tác sai kho → 404, sai quyền → 403.
-- AC3. Job `attendance_gen` chỉ sao từ lịch chính thức, không tạo ca dựa vào `expected_staff`. Thiếu lịch → cảnh báo thiếu dữ liệu thay vì tính công suất từ nhân viên giả định.
-- AC4. Warehouse ghi điểm danh hiện diện theo lịch; `all_present` không tạo người mới/đổi ca; vắng/nghỉ giảm công suất. Lưu `SHIFT_CHANGED` và `ATTENDANCE_CHANGED` với actor, before/after.
-- AC5. Sửa lịch/điểm danh trong quá khứ phải có quyền và lý do; không làm mất lịch sử.
+**US-WH-06 — Lịch làm chính thức từng người** · Đã bỏ (R3, DEC-R3-06): thay bằng US-WH-01.
 
 **US-EMP-05 — Ghi lịch sử thay đổi nhân sự (ASM-006)**
 - AC1. Khi quản lý kho/cửa hàng chuyển công tác hoặc nghỉ, hệ thống kiểm có quản lý thay thế trước khi cho thay đổi.
@@ -260,8 +258,8 @@
 - AC6. *Given* kho A còn 100 bao SKU X khả dụng, đơn 1 cần 80 và đơn 2 cần 70, *When* hai dispatcher **lập kế hoạch** đồng thời, *Then* cả hai đều được giữ chỗ `held` tại A (cho phép vượt); *When* hai dispatcher **duyệt** đồng thời, *Then* tổng `committed` của X tại A không vượt 100, đúng một đơn thành công, đơn kia nhận `409 RESOURCE_CONFLICT`.
 - AC7. *Given* kho A ngày D còn 6 giờ công trống, hai đơn mỗi đơn cần 5 giờ trong ngày D, *When* duyệt đồng thời, *Then* tổng giờ `committed` ngày D không vượt công suất; đúng một đơn thành công.
 
-**US-APR-01 — Duyệt kế hoạch** · Là *dispatcher*, tôi duyệt để thành cam kết. · BR-APR-01, FR-APR-03
-- AC1. *When* `POST /plans/{id}/approve` hợp lệ, *Then* plan `approved`, giữ chỗ → `committed`, phương án khác `superseded`/`released`, tạo `delivery_trip` + `trip_stop`, đơn `APPROVED`, đặt `committed_date`, `promise_start/end`, tạo thông báo `CONFIRMED`, ghi `PLAN_APPROVED`.
+**US-APR-01 — Duyệt kế hoạch** · Là *dispatcher* (hoặc *Sales* cho đơn cửa hàng mình, US-APR-05), tôi duyệt để thành cam kết. · BR-APR-01, FR-APR-03
+- AC1. *When* `POST /plans/{id}/approve` hợp lệ, *Then* plan `approved`, giữ chỗ → `committed`, phương án khác `superseded`/`released`, tạo `delivery_trip` + `trip_stop`, mọi chuyến của đơn gán cùng một Dispatcher theo luân phiên (DEC-R3-01), đơn `APPROVED`, đặt `committed_date`, `promise_start/end`, tạo thông báo `CONFIRMED`, ghi `PLAN_APPROVED`.
 - AC2. *Given* hold đã hết hạn nhưng tài nguyên còn trống, *Then* duyệt vẫn thành công nhờ kiểm tra lại.
 - AC3. *Given* trong lúc đó đơn khác đã chiếm xe, *Then* `409 RESOURCE_CONFLICT` (kèm `details.conflict`) và không có thay đổi nào được ghi (rollback).
 - AC4. *Given* hai dispatcher duyệt đồng thời hai đơn tranh một xe, *Then* đúng một thành công.
@@ -282,9 +280,9 @@
 - AC3. *When* dispatcher duyệt kế hoạch mới, *Then* không bị chỉ mục `ux_one_approved_plan` chặn, và một thông báo `CONFIRMED` **mới** được tạo (dedupe theo `plan_id`) với ngày mới.
 - AC4. *Given* đơn `APPROVED`, *When* `cancel` có lý do, *Then* kế hoạch, giữ chỗ, chuyến được đóng như AC2 và đơn `CANCELLED`.
 
-**US-APR-04 — Gợi ý lập lại tự động** · Là *dispatcher*, tôi muốn hệ thống tự đưa phương án mới khi đơn đã duyệt có thay đổi, để tôi chỉ cần duyệt. · FR-APR-05, BR-APR-04
-- AC1. *Given* đơn `APPROVED` và một trong bốn tín hiệu (nguồn sửa đơn sau duyệt, `PLAN_INVALIDATED`, `VEHICLE_ISSUE`, giao `FAILED`), *Then* có `planning_run(kind='replan_suggestion')` và alert `REPLAN_SUGGESTED` kèm `run_id`; đơn giữ nguyên trạng thái.
-- AC2. *Given* kho A còn 0 bao trống nhưng đơn này đang giữ `committed` 80 bao tại A, *When* tạo gợi ý, *Then* engine coi 80 bao đó là khả dụng cho chính đơn này (kế hoạch cũ coi như không tồn tại); tương tự cho giờ công, xe, tài xế.
+**US-APR-04 — Gợi ý lập lại tự động** · Là *dispatcher*, tôi muốn hệ thống tự đưa phương án mới khi **nguồn sửa đơn** đã duyệt. · FR-APR-05, BR-APR-04
+- AC1. *(R3)* *Given* đơn `APPROVED` và một trong hai tín hiệu (nguồn sửa đơn sau duyệt, `PLAN_INVALIDATED`), *Then* có `planning_run(kind='replan_suggestion')` và alert `REPLAN_SUGGESTED` kèm `run_id`; đơn giữ nguyên trạng thái. `VEHICLE_ISSUE` và giao `FAILED` **không** tạo gợi ý (DEC-R3-09).
+- AC2. *Given* kho A còn 0 bao trống nhưng đơn này đang giữ `committed` 80 bao tại A, *When* tạo gợi ý, *Then* engine coi 80 bao đó là khả dụng cho chính đơn này; tương tự cho giờ công, xe, tài xế.
 - AC3. *Then* lần chạy gợi ý **không** tạo dòng giữ chỗ nào.
 - AC4. *When* dispatcher duyệt phương án gợi ý, *Then* trong một transaction: kế hoạch cũ `superseded`, giữ chỗ cũ `released`, chuyến cũ `cancelled`, kế hoạch mới `approved`, giữ chỗ mới `committed`, đơn `APPROVED`, thông báo `CONFIRMED` mới; tài nguyên đã bị chiếm → `409 RESOURCE_CONFLICT`, không thay đổi gì.
 - AC5. *When* dispatcher chọn giữ kế hoạch cũ mà không có lý do, *Then* `422 REASON_REQUIRED`; có lý do → alert đóng, ghi `REPLAN_KEPT`.
@@ -293,10 +291,15 @@
 
 ---
 
-**US-APR-05 — Sales xác nhận phương án giao tiêu chuẩn** · FR-APR-06, BR-APR-05
-- AC1. Sales thuộc cửa hàng nguồn, plan rank 1, năm gate pass, reserve safe, một xe, dữ liệu tươi, hold hợp lệ → bấm Confirm; cùng ApprovalService kiểm lại và commit → `APPROVED`, audit actor, gửi CONFIRMED.
-- AC2. Ngoài cửa hàng 404; sai role 403; rank 2/multi-vehicle/low reserve/stale/đổi ngày/đơn cũ chưa duyệt tranh công suất → 409 và chuyển Dispatcher.
-- AC3. Hai Sales tranh xe/SKU/giờ công không được overcommit; hold hết hạn/Idempotency-Key xử lý đúng; không thông báo khách trước commit.
+**US-APR-05 — Sales duyệt trong phạm vi đơn cửa hàng mình (R3)** · FR-APR-06, BR-GEN-03, DEC-R3-10
+- AC1. *Given* Sales thuộc cửa hàng nguồn, đơn `PLANNED`, hold còn hạn, dữ liệu mới, phương án qua đủ 5 gate, *When* Sales duyệt rank 1, 2 hoặc 3 (kho bất kỳ), *Then* cùng ApprovalService kiểm lại, khóa và commit → `APPROVED`, audit `actor_role = sales`, gửi `CONFIRMED`. Phương án nhiều xe được phép.
+- AC2. *When* Sales duyệt rank 2 hoặc 3 không có `reason_code`, *Then* `422 REASON_REQUIRED`.
+- AC3. *Given* phương án `reserve_class = tight` qua đủ 5 gate, *Then* duyệt bình thường; không có tick xác nhận lịch sát (mọi vai trò).
+- AC4. *When* Sales chạy lại planner với tiêu chí khác hoặc ghi thỏa thuận ngày với khách cho đơn cửa hàng mình (trước duyệt), *Then* được phép, có audit.
+- AC5. *When* Sales gọi kế hoạch tay, override, `replan` sau thực thi, `cancel` sau duyệt, gửi/bỏ `DELAY`, *Then* `403`; đơn cửa hàng khác → `404`.
+- AC6. *Given* đơn đặt trước chưa duyệt đang tranh nguồn lực mà chưa chứng minh đủ cho cả hai, *Then* `409 PLAN_NOT_APPROVABLE`, chuyển Dispatcher.
+- AC7. Hai Sales (hoặc Sales và Dispatcher) tranh xe/SKU/giờ công: đúng một thành công, bên kia `409 RESOURCE_CONFLICT`; không thông báo khách trước commit.
+- AC8. *Then* Dispatcher thấy mọi đơn do Sales duyệt và can thiệp được.
 
 ## Epic 8 — Thực thi và tài xế
 
@@ -308,49 +311,58 @@
 - AC1. *Given* đơn `LOADED`, *When* tôi ghi `DISPATCHED`, *Then* chuyến `on_road`, đơn `DISPATCHED`, thông báo `DISPATCHED` được tạo.
 - AC5. *Given* đơn 2 xe, *When* xe 1 `DISPATCHED`, *Then* đơn `DISPATCHED` và một thông báo `DISPATCHED`; xe 2 `DISPATCHED` không tạo thông báo thứ hai.
 - AC6. *Given* đơn 2 xe, *When* xe 1 `DELIVERED`, *Then* đơn vẫn `DISPATCHED`; *When* xe 2 `DELIVERED`, *Then* đơn `DELIVERED`, hai POD, một thông báo `DELIVERED`.
-- AC7. *Given* đơn 2 xe, xe 1 `DELIVERED`, xe 2 `FAILED`, *Then* đơn `FAILED` có ghi phần đã giao, có gợi ý lập lại (US-APR-04).
-- AC2. *When* `DELIVERED {recipient_name}`, *Then* đơn `DELIVERED`, `proof_of_delivery`, `delivered_at`, thông báo `DELIVERED`, trip `completed`.
-- AC3. *When* `FAILED` thiếu `failure_reason`, *Then* `422`; hợp lệ → đơn `FAILED`, thông báo `FAILED` cho khách, alert dispatcher.
+- AC7. *(R3)* *Given* đơn 2 xe, xe 1 `DELIVERED`, xe 2 `FAILED`, *Then* đơn chuyển `FAILED` chỉ khi cả hai chuyến kết thúc; alert `DELIVERY_FAILED` cho Dispatcher kèm kết quả từng chuyến; **không** có gợi ý lập lại tự động.
+- AC2. *When* `DELIVERED {recipient_name, position}`, *Then* đơn `DELIVERED`, `proof_of_delivery` (kèm `site_distance_m`), `delivered_at`, thông báo `DELIVERED`, trip `completed`.
+- AC8. *(R3)* *When* `DELIVERED` hoặc `FAILED` thiếu `position`, *Then* `422 VALIDATION_ERROR` (`position_required`); không có đường xác nhận khi không có vị trí.
+- AC3. *When* `FAILED` thiếu `failure_reason`, *Then* `422`; hợp lệ → POD `failed` cho chuyến; khi mọi chuyến kết thúc → đơn `FAILED`, thông báo `FAILED` cho khách, alert `DELIVERY_FAILED`.
 - AC4. *Given* tài xế khác cố ghi cho chuyến này, *Then* `403`.
 
-**US-EXE-03 — Hàng đợi offline** · Là *tài xế*, tôi vẫn ghi được khi mất mạng. · FR-EXE-02
-- AC1. *Given* điện thoại offline, *When* tôi bấm "Đã giao", *Then* sự kiện vào IndexedDB với `idempotency_key` và `occurred_at` = giờ chạm, UI báo "đang chờ đồng bộ".
-- AC2. *When* có mạng, *Then* gửi tự động theo thứ tự; trùng key không tạo bản sao; `occurred_at` giữ giờ chạm.
+**US-EXE-03 — Gửi lại khi lỗi mạng (R3)** · FR-EXE-02, DEC-R3-01
+- AC1. *Then* trang tài xế chạy online; không có hàng đợi IndexedDB.
+- AC2. *Given* gửi sự kiện lỗi mạng, *When* tài xế bấm "Thử lại", *Then* dùng lại đúng `Idempotency-Key` cũ; server không tạo sự kiện thứ hai.
 
-**US-EXE-04 — Giao thất bại xếp lại** · Là *dispatcher*, tôi xếp lại đơn giao thất bại. · BR-EXE-02
-- AC1. *Given* đơn `FAILED`, *When* `replan` có lý do, *Then* đơn `SUBMITTED` và chạy lại.
-- AC2. *Then* đơn FAILED không nằm trong mẫu số `on_time_rate`, được tính ở `failed_delivery_rate`.
-- AC3. *Given* đơn FAILED lần 1 (POD `failed`, `customer_absent`), *When* xếp lại, duyệt và giao thành công lần 2, *Then* có **hai** bản ghi `proof_of_delivery` (mỗi `trip_stop` một bản ghi), POD lần 1 không bị ghi đè, đơn `DELIVERED`.
-- AC4. *Then* kế hoạch của lần giao thất bại chuyển `superseded` khi xếp lại (không chặn duyệt kế hoạch mới).
+**US-EXE-04 — Dispatcher xử lý giao thất bại (R3)** · BR-EXE-02, DEC-R3-09
+- AC1. *Given* đơn `FAILED`, *When* Dispatcher `replan` `scope=full` có lý do, *Then* đơn `SUBMITTED` và chạy lại.
+- AC2. *Given* đơn `FAILED` có ít nhất một chuyến `delivered`, *When* `replan` `scope=remaining`, *Then* `planning_run(kind='remaining_replan')` chỉ chứa số lượng chưa giao theo dòng; POD đã giao giữ nguyên.
+- AC3. *Given* khách vắng, *When* Dispatcher ghi thỏa thuận ngày rồi Apply, *Then* lập kế hoạch mới cho ngày đã thỏa thuận; hoặc `cancel` có lý do.
+- AC4. *Given* đơn FAILED lần 1 rồi giao thành công lần 2, *Then* có hai bản ghi `proof_of_delivery`, POD lần 1 không bị ghi đè, đơn `DELIVERED`; kế hoạch lần 1 `superseded`.
+- AC5. *Then* đơn FAILED không nằm trong mẫu số `on_time_rate`.
+- AC6. *When* Sales gọi `replan`/`cancel` cho đơn đã thực thi, *Then* `403`.
+
+**US-EXE-05 — Tài xế báo sự cố (R3)** · DEC-R3-01
+- AC1. *When* tài xế gửi `DRIVER_INCIDENT {reason}` với `reason ∈ {vehicle_breakdown, traffic_or_accident, site_inaccessible, other}`, *Then* alert `DRIVER_INCIDENT` cho Dispatcher (`critical` nếu hỏng xe); `other` thiếu `note` → `422`.
+- AC2. *Given* sự cố kèm vị trí, *Then* ETA tính lại từ vị trí; *Given* `vehicle_breakdown`, *Then* không có ETA mới, alert ghi "ETA không xác định".
+- AC3. *Then* không tự chạy planner hay tạo gợi ý lập lại.
 
 ---
 
-## Epic 9 — GPS
+## Epic 9 — Vị trí tài xế (R3, DEC-R3-01)
 
-**US-GPS-01 — Gửi vị trí** · Là *tài xế*, tôi gửi vị trí khi đang chạy. · FR-GPS-01
-- AC1. *Given* `gps_enabled = true` và chuyến `on_road`, *When* app gửi vị trí mỗi 30 phút, *Then* lưu `vehicle_position` (`source=device`).
-- AC2. *Given* `gps_enabled = false`, *Then* `403 GPS_DISABLED`; chuyến chưa `on_road` → `409 NOT_ON_TRIP`.
-- AC3. *Then* app hiện thông báo quyền riêng tư (mục đích, ai xem, chỉ gửi khi chuyến đang chạy, thời gian lưu) và xin quyền vị trí trước khi gửi.
-- AC5. *Given* chuyến đã `completed` hoặc chưa `on_road` (ngoài giờ chạy chuyến), *Then* app không gửi vị trí và API trả `409 NOT_ON_TRIP`.
-- AC4. *Given* bộ giả lập `gps_simulator.py`, *Then* chỉ producer synthetic có danh tính xác thực **riêng** được gửi nguồn `simulator`; nhãn `source=simulator` từ tài xế không được tin. Kịch bản demo 1–2 phút tách biệt cadence device 30 phút (G5).
+**US-GPS-01 — Tài xế chủ động gửi vị trí** · FR-GPS-01
+- AC1. *Given* chuyến của tôi `on_road`, *When* tôi bấm "Cập nhật vị trí", *Then* gửi **một điểm** (`POST /trips/{id}/positions`), lưu `vehicle_position(source='driver_tap')` kèm `remaining_km`, `remaining_min`; ETA tính lại.
+- AC2. *Then* không có thu vị trí theo chu kỳ, không gửi lô, không hàng đợi offline.
+- AC3. *Given* chuyến không phải của tôi → `404`; chuyến chưa `on_road` hoặc ngoài khung khả dụng → `409 NOT_ON_TRIP`.
+- AC4. *Then* app hiện thông báo quyền riêng tư và xin quyền vị trí trước lần gửi đầu; bị từ chối quyền → không gửi được và nút Giao xong/Thất bại bị khóa (US-EXE-02 AC8).
 
-**US-GPS-02 — Dispatcher xem GPS** · Là *dispatcher*, tôi xem vị trí xe và ETA. · BR-GPS-01
-- AC1. *Then* `GET /gps/live` và `/trips/{id}/positions` **chỉ trả cho Dispatcher chính được phân công rõ cho đúng trip**, còn trong ca tài xế và khi trip `on_road`; Dispatcher khác cùng market hoặc role khác đều không được xem. Quyền phân công do Admin/supervisor có grant theo market và ghi audit (G1/G2).
-- AC2. *Then* không endpoint nào trả GPS dưới dạng tổng hợp theo tài xế (không báo cáo năng suất cá nhân).
-- AC3. *Given* bản demo chưa có DPIA, *Then* UI hiện biểu ngữ "chưa có DPIA, chỉ demo".
+**US-GPS-02 — Dispatcher xem dòng vị trí gần nhất** · BR-GPS-01
+- AC1. *Then* `GET /gps/live` chỉ trả các chuyến `on_road` có `assigned_dispatcher_employee_id` = chính tôi, mỗi chuyến một dòng **Vị trí gần nhất · Giờ cập nhật · ETA** (kèm km còn lại, rủi ro, sự cố mở). Không có bản đồ.
+- AC2. *Then* Dispatcher khác, Sales, CS, khách → `403`; chuyến kết thúc → không còn trong danh sách.
+- AC3. *Given* đơn được duyệt, *Then* mọi chuyến gán cùng một Dispatcher theo luân phiên (người `in_rotation` lâu nhất chưa được gán); `POST /trips/{id}/handover` bàn giao có audit `TRIP_DISPATCHER_HANDOVER`; không ai trong danh sách → không ai xem, alert.
+- AC4. *Then* không endpoint nào trả vị trí tổng hợp theo tài xế.
 
-**US-GPS-03 — Mất tín hiệu và xóa dữ liệu** · 
-- AC1. *Given* chuyến `on_road` không có vị trí quá 60 phút, *Then* alert `GPS_LOST` cho dispatcher.
-- AC2. *Given* trip hoặc ca tài xế kết thúc (mốc đến trước), *Then* **ngừng thu GPS và thu hồi quyền xem live ngay**; queue offline không còn quyền phải bị xóa/chặn replay. Raw GPS hợp lệ đã thu được lưu tối đa **7 ngày** trong kho lịch sử hạn chế quyền tra soát có lý do và audit, sau đó xóa theo expiry. GPS thật vẫn cần privacy/legal/DPIA sign-off (DEC-GPS-RET-20261109).
+**US-GPS-03 — Xóa tọa độ** 
+- AC1. *Given* đơn chuyển `DELIVERED` hoặc `CANCELLED`, *Then* mọi `vehicle_position` của đơn bị xóa; đơn `FAILED` chưa xử lý xong → xóa chậm nhất 7 ngày.
+- AC2. *Then* không có API đọc lịch sử vị trí; tọa độ không xuất hiện trong milestone, audit, thông báo, log.
 
 ---
 
 ## Epic 10 — ETA, rủi ro, cảnh báo
 
 **US-RSK-01 — Tính lại ETA đúng lúc** · FR-RSK-01
-- AC1. *Given* không có sự kiện/GPS/thay đổi nguồn, *Then* không có dòng `eta_forecast` mới (không tính vô ích).
-- AC2. *Given* mốc `GOODS_READY` kế hoạch 11:00 và đến 11:31 chưa có sự kiện, *When* `milestone_overdue_check` chạy, *Then* ETA được tính lại với trigger `overdue_milestone`.
-- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các job/tần suất D8 khác **chỉ được Owner duyệt để triển khai/kiểm thử staging**, không bật production (DEC-D8-STAGING-SCHEDULE-20261109).
+- AC1. *(R3)* *Given* không có sự kiện mới (duyệt, mốc kho, xuất phát, vị trí tài xế, sự cố có vị trí, giao/thất bại, nguồn sửa đơn), *Then* không có dòng `eta_forecast` mới.
+- AC2. *(R3)* *Given* mốc `GOODS_READY` kế hoạch 11:00 và đến 11:31 chưa có sự kiện, *When* job quá hạn chạy, *Then* alert `OVERDUE` cho Dispatcher; **không** tính lại ETA.
+- AC5. *(R3)* *Given* chuyến `on_road`, ETA 10:00, đến 10:31 chưa có `DELIVERED`/`FAILED`, *Then* alert `OVERDUE` cho Dispatcher (dedupe theo chuyến).
+- AC3. *Given* đơn nhiều ngày, *Then* rà soát tổng thể vận hành (chỉ cảnh báo, không tính lại ETA) **07:00 và 13:00 mỗi ngày theo timezone của market** (pilot Europe/Stockholm), không thay thế xử lý sự kiện hay đồng bộ đơn; các job/tần suất D8 khác **chỉ được Owner duyệt để triển khai/kiểm thử staging**, không bật production (DEC-D8-STAGING-SCHEDULE-20261109).
 - AC4. *Given* chậm chuẩn bị nhưng `depart_at` kế hoạch còn dư thời gian hấp thụ, *Then* `forecast_eta = planned_eta`, tiêu hao 0%.
 
 **US-RSK-02 — Trạng thái rủi ro** · BR-RSK-01
@@ -374,7 +386,7 @@
 **US-NOT-01 — Thông báo tự động** · FR-NOT-01
 - AC1. *When* duyệt, *Then* tạo `CONFIRMED` chứa ngày và khung giờ; *When* `DISPATCHED`, *Then* `DISPATCHED`; *When* giao xong `DELIVERED`, thất bại `FAILED`.
 - AC2. *Then* nội dung chỉ có trạng thái và ETA; không toạ độ, không GPS, không dữ liệu nội bộ.
-- AC3. *Given* khách ưa kênh `sms_sim`, *Then* tin được lưu và hiện trong hộp thư mô phỏng; `email` đi qua Mailpit/SMTP.
+- AC3. *(R3)* Chỉ email qua Mailpit/SMTP; khách chọn SMS → gửi email nếu có; không có email → `suppressed` (`SKIPPED_NO_CHANNEL`). Đơn nhiều xe chỉ một `DISPATCHED`; `FAILED` luôn gửi; `DISPATCHED` tắt được bằng cờ `NOTIFY_DISPATCHED_ENABLED`.
 - AC4. *Given* `shadow_mode = true`, *Then* thông báo ở trạng thái `suppressed` (`suppressed_reason = shadow_mode`).
 
 **US-NOT-02 — Báo trễ do dispatcher gửi** · BR-RSK-02, FR-NOT-02
@@ -411,7 +423,7 @@
 - AC3. *Given* mỗi hàng trong ma trận quyền ở `06` mục 3, *Then* có test cho cả đường được phép và bị cấm.
 - AC4. *When* nhân viên `terminated`, *Then* `app_user.is_active = false` và token hiện tại bị từ chối ở lần gọi kế.
 
-**US-EMP-04 — Xe và tài xế** · Là *IT*, tôi quản lý hồ sơ xe, bằng lái.
+**US-EMP-04 — Xe và tài xế** · *(R3, DEC-R3-15: dữ liệu xe/tài xế từ seed và nguồn fleet, không có màn quản lý.)*
 - AC1. *Then* tài xế có hạng bằng và ngày hết hạn; hết hạn trong 30 ngày hiện cảnh báo cho quản lý kho.
 - AC2. *Then* xe có tải, thể tích, năng lực, nhóm hàng chở được, kho gốc.
 
@@ -425,8 +437,7 @@
 - **Owner-approved CS-01 (09/11/2026):** sử dụng `GET /orders?q=` hiện có, tìm cả `external_ref` và số `contact_phone` sau chuẩn hóa ở backend; giới hạn tra cứu ngắn, scope market/role, không lộ phone qua danh sách/log, không thêm param mới.
 - **Owner-approved CS-02:** CS nhận phone/email **masked từ backend**, không có raw phone/email hoặc `delivery.lat/lon`, `receiving_restrictions`/gate code hay score/decision nội bộ trong response; UI không reveal. Chi tiết tên/kiểu DTO riêng cho CS qua contract review. [Biên bản](decisions/DEC_CS_M6_STOCK_D8_OWNER_APPROVED_20261109.md).
 
-**US-CS-02 — Nhật ký liên hệ** · 
-- AC1. *When* `POST /orders/{id}/contact-logs` với `channel`, `reason_code`, *Then* lưu kèm nhân viên và giờ; dispatcher xem được.
+**US-CS-02 — Nhật ký liên hệ** · Đã bỏ (R3, DEC-R3-05): endpoint `contact-logs` không mount (`404`).
 - AC2. *Then* CS không sửa kế hoạch, không gửi báo trễ (`403`).
 
 ---
@@ -434,9 +445,11 @@
 ## Epic 14 — KPI và nhật ký
 
 **US-KPI-01 — Dashboard KPI** · FR-KPI-01
-- AC1. *Then* dashboard hiện **10 KPI vận hành**, có baseline/biến động và biểu đồ theo **ngày market-local**; mặc định 30 ngày, tối đa 366. Hai diagnostics chưa đủ nguồn (`hard_constraint_violations`, `event_to_alert_latency_s_median`) trả `null`, không giả 0; System Admin chọn market rõ trước khi xem.
+- AC1. *(R3)* *Then* dashboard hiện **5 KPI**: thời gian lập kế hoạch/đơn (so baseline, tách theo đường Sales/Dispatcher), giao đúng hạn, tỷ lệ chấp nhận phương án (rank-1 duyệt không sửa, tách theo đường), can thiệp thủ công/đơn (so baseline), sai số ETA (median và P90, có mục tiêu, **không baseline**); biểu đồ theo ngày market-local, mặc định 30 ngày, tối đa 366.
+- AC5. *(R3)* *Then* chỉ số phụ: thời gian từ đơn vào CFO đến `CONFIRMED` (tách theo đường) và % đơn cam kết ngay tại quầy.
+- AC6. *(R3)* *Then* sai số ETA = |ETA dự báo tại `DISPATCHED` − giờ POD| theo chuyến; `PUT /kpi/baseline/eta_error_min` → `422`.
 - AC2. *Given* đơn FAILED, *Then* không nằm trong mẫu số `on_time_rate`.
-- AC3. *Then* "cost per delivery" hiển thị là giờ công và km trung bình mỗi lần giao, không quy ra tiền.
+- AC3. Đã bỏ (R3): giờ công và km mỗi lần giao không còn là KPI.
 - AC4. *Then* `/kpi/*` chỉ cho `admin` hoặc người có `ops`; Business owner (`revenue_all`) nhận `403`.
 
 **US-REV-01 — Doanh thu** · Là *Business owner / owner kho, cửa hàng*, tôi xem doanh thu chỉ đọc. · FR-KPI-02, BR-KPI-01 (mỗi AC thành một test)
@@ -451,6 +464,15 @@
 - AC9. *Then* danh sách đơn của Business owner không chứa tên, điện thoại, địa chỉ khách.
 - AC10. *Given* đơn giao 23:50 giờ Stockholm, *Then* tính vào ngày đó, không lệch sang UTC.
 - AC11. *Given* đơn giao thất bại rồi giao lại thành công, *Then* chỉ tính một lần, vào ngày giao thành công.
+
+**US-REV-02 — Đơn hàng theo nhóm trạng thái (R3, DEC-R3-15)** · FR-KPI-03, BR-KPI-01
+- AC1. *Given* owner ST-021 chọn 01–30/11, *Then* `GET /revenue/order-status` trả tổng số đơn và 5 nhóm (Đã duyệt, Đang vận chuyển, Đã hoàn thành, Thất bại, Đã hủy) với số đơn và giá trị; tổng các nhóm = tổng số đơn.
+- AC2. *Given* đơn `APPROVED` có `committed_date` 05/12, *Then* không nằm trong kỳ 01–30/11; *Given* đơn `PLANNED` chưa duyệt, *Then* không nằm trong báo cáo.
+- AC7. *Given* đơn `PLANNED` bị hủy ngày 15/11 (trước duyệt), *Then* nằm trong nhóm Đã hủy của kỳ 01–30/11 (theo ngày hủy); đơn đã duyệt bị hủy cũng tính theo ngày hủy.
+- AC3. *Given* đơn chuyển từ `DISPATCHED` sang `DELIVERED`, *Then* chuyển từ nhóm Đang vận chuyển sang Đã hoàn thành (theo trạng thái hiện tại).
+- AC4. *Then* quyền như US-REV-01: owner nơi khác → `404`; dispatcher, CS, sales không phải owner, tài xế, Project lead → `403`; không có dữ liệu cá nhân khách.
+- AC5. *Then* `amount` là giá trị đơn, khác doanh thu ghi nhận (US-REV-01 AC5 vẫn theo ngày giao thực tế).
+- AC6. *When* chọn một nhóm, *Then* `/revenue/orders?status_group=` liệt kê đúng các đơn của nhóm đó.
 
 **US-KPI-02 — Baseline** · Là *admin*, tôi nhập baseline thủ công.
 - AC1. *When* `PUT /kpi/baseline/planning_time_min {value:15}`, *Then* dashboard so sánh với 15 phút.
@@ -469,11 +491,12 @@
 - AC1. *Then* admin xem `sync-runs`, số dòng nạp/lỗi, `data_as_of`; mở được danh sách dòng bị loại kèm lý do.
 - AC2. *When* chạy tay `/sync/orders/run` khi đang chạy, *Then* `409 SYNC_IN_PROGRESS`.
 
-**US-ADM-02 — Cấu hình market** · 
+**US-ADM-02 — Cấu hình market** · **Hoãn màn (DEC-R3-15)**: cấu hình qua file/seed; các AC dưới đây chỉ áp dụng cho giá trị cấu hình. 
 - AC1. *When* `PUT /markets/SE/config` với giá trị sai kiểu (ví dụ `delivery_share = 1,5`), *Then* `422` theo `MarketConfig`.
 - AC2. *Then* thay đổi cấu hình ghi `decision_log`; kế hoạch đang giữ chỗ không đổi.
 
 **US-ADM-03 — GPS và tuân thủ** · BR-GPS-01
+- *(R3)* `gps_enabled` chỉ cho phép tài xế **chủ động gửi** vị trí (DEC-R3-01); không có thu theo chu kỳ.
 - AC1. *When* admin bật `gps_enabled` mà chưa có DPIA `approved`, *Then* được phép (bản demo) nhưng phản hồi có `warnings: ["DPIA_MISSING"]`, UI hiện biểu ngữ.
 - AC2. *Then* ghi `GPS_SETTING_CHANGED`.
 

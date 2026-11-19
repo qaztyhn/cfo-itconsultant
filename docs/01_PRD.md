@@ -79,13 +79,13 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ## 4. Phạm vi MVP
 
-**Trong MVP (R3):** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm (AI gợi ý nhóm xử lý theo lô, người xác nhận); nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; công suất kho theo ngày/ca do Warehouse Manager xác nhận; xe, tài xế với lịch khả dụng và quyền lái do đội quản lý tài xế xác minh; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại (Dispatcher, và Sales cho đơn cửa hàng mình)/lập tay (Dispatcher); thực thi (kho + trang tài xế web online, vị trí do tài xế chủ động gửi, báo sự cố); dòng vị trí gần nhất cho Dispatcher được gán luân phiên; ETA và rủi ro theo sự kiện; 5 loại email; CS tra cứu chỉ đọc; `CustomerContactPort` cho CRM; nhân sự và phân quyền; nhật ký quyết định; 5 KPI. **Hoãn:** GPS thu theo chu kỳ, offline PWA, SMS, contact log CS, chuyển kho, Doanh thu, UI quản trị (thay bằng seed/cấu hình).
+**Trong MVP (R3):** tích hợp qua hệ thống nguồn giả lập từng nước; sản phẩm riêng từng nước + ánh xạ sang sản phẩm global do IT làm; nhóm xử lý N1–N6 và cờ đặc biệt; time-phased ATP; giữ chỗ cả 3 phương án; công suất kho theo ngày/ca do Warehouse Manager xác nhận; xe, tài xế với lịch khả dụng và quyền lái do đội quản lý tài xế xác minh; lộ trình OpenRouteService; gate 5 check; xếp hạng; duyệt/chọn khác/chạy lại (Dispatcher, và Sales cho đơn cửa hàng mình)/lập tay (Dispatcher); thực thi (kho + trang tài xế web online, vị trí do tài xế chủ động gửi, báo sự cố); dòng vị trí gần nhất cho Dispatcher được gán luân phiên; ETA và rủi ro theo sự kiện; 5 loại email; CS tra cứu chỉ đọc; báo cáo Đơn hàng & doanh thu; nhân sự (dữ liệu từ seed/cấu hình) và phân quyền; nhật ký quyết định; 5 KPI. **Hoãn:** GPS thu theo chu kỳ, offline PWA, SMS, contact log CS, chuyển kho, các màn Transfers/Users/Vehicles/Employees/Market config (DEC-R3-15).
 
 **Ngoài MVP (mở rộng):** mục 10.
 
 **Loại trừ theo thiết kế (mọi giai đoạn) [S]:** khách không xem GPS; không tự duyệt thay dispatcher; không tự đổi ngày giao khi khách chưa đồng ý.
 
-**Pilot [S][C][R3]:** Thụy Điển (minh họa); ~100 SKU; 2 kho (Göteborg, Stockholm); 10 cửa hàng làm nơi nhận đơn; 8–10 xe. Thị trường Đan Mạch giả lập chỉ bằng cấu hình.
+**Pilot [S][C][R3]:** Thụy Điển (minh họa); ~100 SKU; 2 kho (Göteborg, Stockholm); 10 cửa hàng làm nơi nhận đơn; 8–10 xe. Mọi nước khác chỉ có bản ghi cấu hình.
 
 ---
 
@@ -123,7 +123,7 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 ### 5.4 Tồn kho, ATP, chuyển kho
 - **FR-ATP-01 (M)** Time-phased ATP theo công thức mục 6; một kho xử lý trọn đơn. [S][C]
 - **FR-ATP-02 (M)** Hàng nhập chưa xác nhận không được tính; hàng đã về không tính hai lần.
-- **FR-ATP-03 (Hoãn R3)** Gợi ý chuyển kho ngoài phạm vi pilot R3; thiếu hàng mọi kho → `NO_FEASIBLE_DATE` + ngày khả thi sớm nhất, Dispatcher xử lý.
+- **FR-ATP-03 (Hoãn, DEC-R3-15)** Gợi ý chuyển kho không có trong pilot; thiếu hàng mọi kho → `NO_FEASIBLE_DATE` + ngày khả thi sớm nhất, Dispatcher xử lý.
 
 ### 5.5 Chuẩn bị hàng và công suất
 - **FR-PRP-01 (M)** Khối lượng việc = Σ (giờ cố định mỗi dòng + số đơn vị chuẩn bị × giờ/đơn vị) × hệ số cờ + 0,5 giờ kiểm cuối; **giống nhau ở mọi kho**. Số đơn vị tính theo **đơn vị cơ sở nhỏ nhất** (ví dụ 20 bao = 0,5 pallet 40 bao); hàng không chia nhỏ được thì làm tròn lên. [S][C]
@@ -171,9 +171,10 @@ Thay thế POS/WMS/ERP; tối ưu toàn cục nhiều đơn/nhiều chuyến (MV
 
 ### 5.11 KPI, log, quản trị
 - **FR-KPI-01 (M, R3)** Dashboard vận hành có **5 KPI**: `planning_time_min` (tách theo đường Sales/Dispatcher), `on_time_rate`, `plan_acceptance_rate` (tách theo đường), `manual_intervention_rate`, `eta_error_min` (median/P90, tuyệt đối, không baseline); chỉ số phụ `order_to_commit_min`, `counter_commit_rate`. Định nghĩa ở [DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md) và `06` §19.8. [S][C]
-- **FR-KPI-02 (Hoãn R3)** Màn Doanh thu ngoài phạm vi pilot R3.
+- **FR-KPI-02 (M)** Màn **Doanh thu** chỉ đọc (**tách khỏi 5 KPI vận hành**): doanh thu ghi nhận (đơn DELIVERED, theo ngày giao), đã duyệt chưa giao, số đơn đã giao, giá trị đơn trung bình, tỷ trọng; hai góc nhìn cửa hàng/kho **không cộng nhau**; xuất CSV có audit. Chỉ tiền hàng, không thêm phí/giá vốn/lợi nhuận khi chưa được duyệt. [C][A]
+- **FR-KPI-03 (M, DEC-R3-15)** Màn **Đơn hàng & doanh thu** (mở rộng màn Doanh thu): tổng số đơn và số đơn + giá trị theo 5 nhóm: Đã duyệt (`APPROVED`, `PREPARING`, `GOODS_READY`, `LOADED`) · Đang vận chuyển (`DISPATCHED`) · Đã hoàn thành (`DELIVERED`) · Thất bại (`FAILED`) · Đã hủy (`CANCELLED`); lọc theo ngày cam kết giao, nhóm Đã hủy theo ngày hủy (gồm đơn hủy trước duyệt); đơn chờ duyệt không nằm trong báo cáo; quyền xem như Doanh thu (BR-KPI-01).
 - **FR-LOG-01 (M)** Nhật ký quyết định trong DB (chỉ thêm) và log kỹ thuật JSONL; không PII trong log.
-- **FR-ADM-01 (M, R3)** IT xem lịch sử đồng bộ và dòng bị loại; cấu hình market qua file cấu hình/seed.
+- **FR-ADM-01 (M, R3)** IT xem lịch sử đồng bộ và dòng bị loại. Người dùng, nhân viên, xe, tài xế, cấu hình market quản lý qua seed/file cấu hình, không có màn (DEC-R3-15).
 
 ---
 
@@ -206,7 +207,7 @@ Mỗi quy tắc là một yêu cầu kiểm thử được. Mã dùng làm tên 
 - **BR-ATP-02** Hàng nhập chưa xác nhận không được tính. [S]
 - **BR-ATP-03** Một kho xử lý trọn đơn; không tách đơn. [S][C]
 - **BR-ATP-04** Kho không đủ hàng trong 14 ngày bị loại (`STOCK_SHORT`). [A]
-- **BR-ATP-05 (Hoãn R3)** Gợi ý chuyển kho ngoài phạm vi pilot R3.
+- **BR-ATP-05 (Hoãn, DEC-R3-15)** Gợi ý chuyển kho không có trong pilot.
 
 ### 6.4 Chuẩn bị hàng
 - **BR-PRP-01** Khối lượng việc theo công thức FR-PRP-01; giờ công của một đơn như nhau ở mọi kho. [S][C]
@@ -360,7 +361,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | Tích hợp | API polling ~5 phút, dự phòng CSV qua SFTP | API hệ thống nguồn giả lập; dự phòng tải CSV lên |
 | Công suất kho | Người × giờ năng suất − việc đã đặt | Thêm tỷ lệ 90% dành cho đơn giao |
 | Báo trễ | Gửi khi thay đổi có ý nghĩa | Hệ thống tạo nháp, **dispatcher bấm gửi**; ngưỡng lệch ≥ 30 phút |
-| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; slide đề cập các chỉ số mở rộng | **10 KPI vận hành** theo FR-KPI-01 (bao gồm giờ công và km tách riêng, giao thất bại, sử dụng công suất, manual_plan_count); **2 diagnostics chưa có nguồn = null**; rollout effort/shared component reuse để mở rộng | 30 ngày mặc định, tối đa 366, market rõ; không hiển thị cost/SEK như một giá trị tài chính |
+| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; slide đề cập các chỉ số mở rộng | **5 KPI** theo FR-KPI-01 (R3, DEC-R3-03); bản 10 KPI trước đây (bao gồm giờ công và km tách riêng, giao thất bại, sử dụng công suất, manual_plan_count); **2 diagnostics chưa có nguồn = null**; rollout effort/shared component reuse để mở rộng | 30 ngày mặc định, tối đa 366, market rõ; không hiển thị cost/SEK như một giá trị tài chính |
 | Chuyển kho | Không nhắc | Gợi ý chuyển kho bằng quy tắc (vẫn một kho xử lý trọn đơn) |
 | Giờ công | Theo đơn vị chuẩn bị | Quy về đơn vị cơ sở nhỏ nhất; hàng không chia nhỏ được thì làm tròn lên |
 | Dữ liệu cho AI | Học từ thực tế | Giờ nhân công/đơn vị cơ sở theo nhóm, thu qua bắt đầu/tạm dừng/tiếp tục/xong |
