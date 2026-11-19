@@ -9,14 +9,17 @@ from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from alembic import command
 from app.core import clock
+from app.core.config import MarketConfig
 from app.core.errors import DomainError
 from app.deps import CurrentUser
+from app.domain.models.plan import StockReservation
+from app.domain.models.ref import Market
 from app.services import approval_service, reservation_service
 from app.services.approval_service import RecheckProof
 from app.services.notification_delivery import deliver_queued
@@ -133,7 +136,12 @@ def test_US_APR_01_AC2_changed_request_reusing_key_conflicts(db: str) -> None:
         _run(
             db,
             lambda s: approval_service.approve(
-                1, _actor(), {"note": "changed"}, "same-key", session=s, recheck=_recheck
+                1,
+                _actor(),
+                {"note": "changed"},
+                "same-key",
+                session=s,
+                recheck=_recheck,
             ),
         )
     assert got.value.code == "IDEMPOTENCY_CONFLICT"
@@ -180,7 +188,12 @@ def test_US_APR_01_AC4_sales_wrong_store_hidden(db: str) -> None:
         _run(
             db,
             lambda s: approval_service.approve(
-                1, _actor("sales", (999,)), {}, "wrong-store", session=s, recheck=_recheck
+                1,
+                _actor("sales", (999,)),
+                {},
+                "wrong-store",
+                session=s,
+                recheck=_recheck,
             ),
         )
     assert got.value.code == "NOT_FOUND"
@@ -211,6 +224,40 @@ def test_US_APR_01_AC5_stock_conflict_rolls_back(db: str) -> None:
     assert got.value.details["conflict"] == "stock"
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "held"
     assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
+
+
+def test_US_APR_01_AC5_exact_stock_after_own_wms_reserve(db: str) -> None:
+    _hold(db)
+    execute(
+        db,
+        "UPDATE ops.stock_snapshot SET on_hand=20, wms_reserved=20 WHERE warehouse_id=1",
+    )
+
+    async def check(session: AsyncSession) -> None:
+        market = await session.get(Market, 1)
+        held = (await session.scalars(select(StockReservation).where(StockReservation.run_id == 1))).all()
+        assert market is not None and len(held) == 1
+        await approval_service._stock_available(
+            session,
+            held,
+            1,
+            clock.now(),
+            MarketConfig.model_validate(market.config),
+            sales=False,
+            wms_self_reserved=True,
+        )
+        with pytest.raises(DomainError) as got:
+            await approval_service._stock_available(
+                session,
+                held,
+                1,
+                clock.now(),
+                MarketConfig.model_validate(market.config),
+                sales=False,
+            )
+        assert got.value.code == "RESOURCE_CONFLICT"
+
+    _run(db, check)
 
 
 def test_US_APR_01_AC5_labour_conflict_rolls_back(db: str) -> None:
@@ -263,7 +310,12 @@ def test_US_APR_01_AC7_invalid_role_forbidden(db: str) -> None:
         _run(
             db,
             lambda s: approval_service.approve(
-                1, _actor("customer_service"), {}, "role-no", session=s, recheck=_recheck
+                1,
+                _actor("customer_service"),
+                {},
+                "role-no",
+                session=s,
+                recheck=_recheck,
             ),
         )
     assert got.value.code == "FORBIDDEN"
@@ -372,7 +424,9 @@ def test_US_APR_01_AC11_concurrent_labour_approval_single_winner(db: str) -> Non
     assert fetch(db, "SELECT count(*) FROM plan.prep_reservation WHERE status='committed'")[0][0] == 1
 
 
-def test_T28_concurrent_identical_approval_keys_create_exactly_one_trip(db: str) -> None:
+def test_T28_concurrent_identical_approval_keys_create_exactly_one_trip(
+    db: str,
+) -> None:
     """Two real transactions replay one committed result, never double-approve."""
     _hold(db)
 
@@ -597,7 +651,12 @@ def test_US_NOT_01_AC1_t21_post_enqueue_rollback_is_atomic(db: str) -> None:
 
     async def aborted_approval(session: AsyncSession) -> None:
         response = await approval_service.approve(
-            1, _actor(), {}, "t21-abort-after-enqueue", session=session, recheck=_recheck
+            1,
+            _actor(),
+            {},
+            "t21-abort-after-enqueue",
+            session=session,
+            recheck=_recheck,
         )
         assert response["order"]["status"] == "APPROVED"
         staged = await session.execute(

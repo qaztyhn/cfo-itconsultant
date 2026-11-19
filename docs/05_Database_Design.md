@@ -750,10 +750,12 @@ CREATE TABLE ops.stock_independence_evidence (   -- S2/S5: Warehouse Manager n�
 CREATE TABLE ops.stock_write_run (               -- S3/S4: ràng buộc lần ghi tồn với scope/evidence version (chỉ thêm)
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   market_id smallint NOT NULL REFERENCES ref.market(id), source_batch_id bigint NOT NULL, as_of timestamptz NOT NULL,
+  source_kind text NOT NULL DEFAULT 'source' CHECK (source_kind IN ('source','wms_synthetic')),
+  ingest_run_id bigint REFERENCES stg.sync_run(id),
   scope_version_id bigint REFERENCES ops.stock_scope_version(id), evidence_ids bigint[] NOT NULL DEFAULT '{}',
   expected_rows int NOT NULL, recorded_rows int NOT NULL,
   status text NOT NULL CHECK (status IN ('accepted','rejected')), reject_code text,
-  UNIQUE (market_id, source_batch_id)
+  CONSTRAINT uq_stock_write_origin_batch UNIQUE (market_id, source_kind, source_batch_id)
 );
 ```
 
@@ -1139,11 +1141,16 @@ CREATE TABLE ops.wms_reservation_intent (
   ack_payload jsonb,
   reflected_in_batch_id bigint,
   refreshed_batch_id bigint,
+  stock_write_run_id bigint REFERENCES ops.stock_write_run(id),
+  verified_batch_payload jsonb,
+  verified_batch_sha256 text CHECK (verified_batch_sha256 IS NULL OR length(verified_batch_sha256)=64),
   is_synthetic boolean NOT NULL
 );
 ```
 
 All rows also have `created_at` and `updated_at`; migration 0014 owns constraints, indexes and triggers. States: pending, unknown, acked, refreshed, rejected, released. Only a verified matching ACK can advance to acked; a matching batch-inclusion proof can advance to refreshed. **Refreshed is not APPROVED**; ApprovalService remains fail closed pending an audited, double-count-safe finalization contract.
+
+Migration 0017 binds the disposable WMS stock refresh to the existing T07 writer without confusing it with a Source batch of the same numeric ID. `ops.stock_write_run` adds `source_kind text NOT NULL DEFAULT 'source' CHECK (source_kind IN ('source','wms_synthetic'))` and nullable `ingest_run_id bigint REFERENCES stg.sync_run(id)`. Its unique key becomes `(market_id, source_kind, source_batch_id)`. `ops.wms_reservation_intent` adds nullable `stock_write_run_id bigint REFERENCES ops.stock_write_run(id)`, `verified_batch_payload jsonb`, and `verified_batch_sha256 text CHECK (verified_batch_sha256 IS NULL OR length(verified_batch_sha256)=64)`. An ACK's batch ID alone never proves inclusion: the final gate requires the accepted WMS-origin write, successful ingest run, effective scope, HMAC-verified batch containing the reservation ID, and stock snapshots written by that run. Existing Source writes retain `source_kind='source'`; their nullable `ingest_run_id` is historical and never retroactively inferred. Downgrade after both origins use the same numeric batch ID requires removing Round 3 WMS evidence first because the old unique key cannot represent both rows.
 
 ## 13. Round 3 contract changes — DEC-R3 (2026-11-18, owner-approved; migration pending)
 

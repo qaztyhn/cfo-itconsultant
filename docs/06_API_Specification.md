@@ -973,6 +973,8 @@ Source: [27 owner-approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_
 
 **OpenAPI endpoint/path/DTO, external auth, release/adjust/consume lifecycle, cross-service ACK compensation and transactional patterns require Dev 1/2 contract review and deployment approval.** No actual WMS reserve endpoint, CFO API or code is declared live by this docs update; no WMS physical stock write, POS mutation or CFO transfer reconciliation. Existing Sales approval 5-gate/hold restrictions remain binding.
 
+**E1 disposable demo implementation (migration 0017, PR #224):** the existing `POST /plans/{id}/approve` can use a separate loopback synthetic WMS only with `APP_ENV=test`, `DEMO_DISPOSABLE=1`, an approved demo clock, and explicit `WMS_RESERVATION_MODE=simulated`; the default is disabled and production refuses this mode. The endpoint checks role/market, current order/plan versions, live hold, resources and five gates before committing a durable intent. It sends reserve outside DB locks, stores the verified ACK in a second transaction, then ingests a signed post-ACK batch through T07's scope gate under origin `wms_synthetic`. The final approval transaction checks reservation ID, request, ACK, signed batch inclusion, accepted write and ingest run, current snapshots, and resources before committing order/trips/audit/CONFIRMED together. Retry uses the same immutable WMS request key and checks status before reserve. This synthetic flow does not authorize a production WMS write contract.
+
 
 ### 17.2 Additional owner-approved contracts — CS, Prep Queue, Stock Admin and D8 staging (2026-11-09)
 

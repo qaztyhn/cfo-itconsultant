@@ -1,5 +1,12 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [E1 #224 — disposable WMS approval of E0-04 order] — 2026-11-19
+
+- Route the existing Approve API through a transaction-separated WMS intent, status/reserve, ACK, scoped T07 stock refresh, and fail-closed finalization. Keep the default WMS mode disabled; allow only the disposable test clock and loopback service.
+- Migration 0017 separates Source and WMS batch identity and links a signed WMS batch to its accepted CFO ingest run. Preserve PR #223's transactional CONFIRMED enqueue.
+- Compensation checks the locked order and committed approval audit before release. A concurrent approval failure cannot release the winner's WMS reservation.
+- Exact E0-04 order `SE-2026-000249` approved on PostgreSQL with one trip, one PLAN_APPROVED audit, one CONFIRMED, and same-key replay. See `E1_DEMO.md` for reproduction and evidence.
+
 ## 19/11/2026 — E5 DELAY inbox DTO
 
 - `GET /notifications` includes the public `order_no`. Detail includes `order_no`, `market_timezone`, the order's `committed_date`, and the approved ETA `version` from the stored snapshot. The inbox requires an agreed date negotiation whenever the proposed market date differs from the commitment. Missing commitment or version blocks Send.

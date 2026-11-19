@@ -2,7 +2,15 @@
 
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, SmallInteger, Text, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,4 +36,7 @@ class WmsReservationIntent(TimestampMixin, Base):
     ack_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     reflected_in_batch_id: Mapped[int | None] = mapped_column(BigInteger)
     refreshed_batch_id: Mapped[int | None] = mapped_column(BigInteger)
+    stock_write_run_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ops.stock_write_run.id"))
+    verified_batch_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    verified_batch_sha256: Mapped[str | None] = mapped_column(Text)
     is_synthetic: Mapped[bool] = mapped_column(Boolean)

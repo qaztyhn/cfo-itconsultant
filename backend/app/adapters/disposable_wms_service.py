@@ -21,13 +21,16 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 FROZEN = "2026-11-04T10:05:00+01:00"
+E0_04_FROZEN = "2026-12-01T10:05:00+01:00"
+ALLOWED_CLOCKS = frozenset({FROZEN, E0_04_FROZEN})
 
 
 def permitted() -> bool:
     return (
         os.environ.get("APP_ENV") == "test"
         and os.environ.get("DEMO_DISPOSABLE") == "1"
-        and os.environ.get("APP_NOW") == FROZEN
+        and os.environ.get("APP_NOW") in ALLOWED_CLOCKS
+        and os.environ.get("WMS_RESERVATION_MODE") == "simulated"
         and os.environ.get("WMS_PRODUCTION_ENABLED", "0").lower() in ("", "0", "false")
     )
 
@@ -179,7 +182,16 @@ def _seed(conn: sqlite3.Connection, fixture: dict[str, Any]) -> None:
             seen_lines.add((order_id, line_id))
             conn.execute(
                 "INSERT INTO source_lines VALUES(?,?,?,?,?,?,?,?)",
-                (order_id, plan_id, version, source_ref, line_id, wh, pos_sku, number(quantity)),
+                (
+                    order_id,
+                    plan_id,
+                    version,
+                    source_ref,
+                    line_id,
+                    wh,
+                    pos_sku,
+                    number(quantity),
+                ),
             )
     conn.execute("INSERT INTO meta(key,value) VALUES('fixture_hash',?)", (fingerprint,))
     conn.execute("INSERT INTO meta(key,value) VALUES('batch_id','1')")
@@ -262,7 +274,8 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
         digest = hashlib.sha256(canonical(payload)).hexdigest()
         with transaction() as conn:
             prior = conn.execute(
-                "SELECT digest,ack FROM reservations WHERE request_key=?", (body.idempotency_key,)
+                "SELECT digest,ack FROM reservations WHERE request_key=?",
+                (body.idempotency_key,),
             ).fetchone()
             if prior:
                 if prior["digest"] != digest:
@@ -319,7 +332,8 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                 )
             for (wh, sku), qty in wanted.items():
                 stock = conn.execute(
-                    "SELECT on_hand,reserved FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
+                    "SELECT on_hand,reserved FROM stock WHERE warehouse=? AND sku=?",
+                    (wh, sku),
                 ).fetchone()
                 if stock is None or Decimal(stock["on_hand"]) - Decimal(stock["reserved"]) < qty:
                     _error("WMS_INSUFFICIENT_STOCK")
@@ -330,7 +344,8 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
                         number(
                             Decimal(
                                 conn.execute(
-                                    "SELECT reserved FROM stock WHERE warehouse=? AND sku=?", (wh, sku)
+                                    "SELECT reserved FROM stock WHERE warehouse=? AND sku=?",
+                                    (wh, sku),
                                 ).fetchone()[0]
                             )
                             + qty
@@ -375,7 +390,8 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
         authorize(x_demo_wms_key)
         with transaction() as conn:
             row = conn.execute(
-                "SELECT ack FROM reservations WHERE market=? AND request_key=?", (market, request_key)
+                "SELECT ack FROM reservations WHERE market=? AND request_key=?",
+                (market, request_key),
             ).fetchone()
             if row is None:
                 _error("RESERVATION_NOT_FOUND", 404)
@@ -413,7 +429,11 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             batch = bump(conn)
             ack = json.loads(row["ack"])
             ack.update(
-                {"status": "released", "revision": f"synthetic:{batch}", "reflected_in_batch_id": batch}
+                {
+                    "status": "released",
+                    "revision": f"synthetic:{batch}",
+                    "reflected_in_batch_id": batch,
+                }
             )
             conn.execute(
                 "UPDATE reservations SET status='released',ack=? WHERE request_key=?",
@@ -436,7 +456,7 @@ def create_app(db_path: Path, api_key: str, fixture: dict[str, Any]) -> FastAPI:
             payload = {
                 "source_kind": "synthetic_demo",
                 "market": "SE",
-                "as_of": FROZEN,
+                "as_of": os.environ["APP_NOW"],
                 "batch_id": batch,
                 "complete": True,
                 "item_count": len(rows),
@@ -480,7 +500,7 @@ def verify_batch(batch: dict[str, Any], shared_key: str, *, expected_reservation
             or batch["market"] != "SE"
             or batch["complete"] is not True
             or batch["item_count"] != len(items)
-            or batch["as_of"] != FROZEN
+            or batch["as_of"] not in ALLOWED_CLOCKS
             or type(batch["batch_id"]) is not int
             or batch["batch_id"] < 1
             or expected_reservation_id not in batch["included_reservation_ids"]

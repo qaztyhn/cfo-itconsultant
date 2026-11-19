@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # browser URL exposure and an effective distributed abuse-control policy (#181).
     cs_phone_search_production_enabled: bool = False
     app_now: str | None = None  # ví dụ "2026-11-04T10:05:00+01:00" (08 mục 1.6)
+    # E1: mặc định tắt. Chỉ "simulated" mới bật đường WMS giả lập (xem app/services/wms_mode.py).
+    wms_reservation_mode: str = "disabled"
+    # E1: địa chỉ loopback và khóa của WMS giả lập (chỉ dùng khi wms_reservation_mode="simulated").
+    synthetic_wms_url: str | None = None  # ví dụ "http://127.0.0.1:8188"
+    synthetic_wms_api_key: str | None = None  # khóa riêng, không commit
+    synthetic_wms_shared_key: str | None = None  # khóa HMAC xác minh batch, không commit
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

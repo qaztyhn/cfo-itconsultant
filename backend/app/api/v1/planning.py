@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.services import approval_service, planning_service, reservation_service, transfer_service
+from app.services import (
+    approval_service,
+    planning_service,
+    reservation_service,
+    transfer_service,
+)
 from app.services.approval_recheck import five_gate_recheck
 
 router = APIRouter(tags=["planning"])
@@ -64,7 +69,10 @@ async def extend_hold(run_id: int, user: AuthUser, db: DbSession) -> dict[str, o
 
 @router.post("/planning-runs/{run_id}/keep-current")
 async def keep_current(
-    run_id: int, user: AuthUser, db: DbSession, body: Annotated[dict[str, object], Body()]
+    run_id: int,
+    user: AuthUser,
+    db: DbSession,
+    body: Annotated[dict[str, object], Body()],
 ) -> dict[str, object]:
     """Dispatcher keeps the current approved plan (mandatory reason, audited, same transaction)."""
     reason = body.get("reason_text")
@@ -84,7 +92,6 @@ async def get_plan(plan_id: int, user: AuthUser, db: DbSession) -> dict[str, obj
 async def approve_plan(
     plan_id: int,
     user: AuthUser,
-    db: DbSession,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
     body: Annotated[dict[str, object] | None, Body()] = None,
 ) -> dict[str, object]:
@@ -98,7 +105,6 @@ async def approve_plan(
         user,
         body or {},
         idempotency_key,
-        session=db,
         recheck=five_gate_recheck,
     )
 

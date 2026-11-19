@@ -40,7 +40,10 @@ from app.services.ingest_types import (
 
 type RowWriter = Callable[[AsyncSession, Market, FeedRecord, int, datetime], Awaitable[RowOutcome]]
 ENTITIES = ("customers", "products", "orders", "inbound", "fleet")
-SUPPORTED_ENTITIES = (*ENTITIES, "stock")  # Explicit stock diagnostics fail closed pending the scope handoff.
+SUPPORTED_ENTITIES = (
+    *ENTITIES,
+    "stock",
+)  # Explicit stock diagnostics fail closed pending the scope handoff.
 INITIAL_CHECKPOINT = datetime.min.replace(tzinfo=UTC)
 
 
@@ -87,7 +90,11 @@ async def synchronize(
         }
         if retry_run_id is not None:
             prior = await session.get(SyncRun, retry_run_id)
-            if prior is None or (prior.market_id, prior.entity, prior.kind) != (market.id, entity, "api"):
+            if prior is None or (prior.market_id, prior.entity, prior.kind) != (
+                market.id,
+                entity,
+                "api",
+            ):
                 raise ValueError("Retry run does not match this API feed")
             if prior.status not in {"failed", "partial"}:
                 raise ValueError("Only a failed or partial API run may be retried")
@@ -148,7 +155,10 @@ async def synchronize(
                             code = code or "BAD_DATE"
                             pinned.add(feed)
                         else:
-                            greatest[feed] = max(greatest.get(feed, INITIAL_CHECKPOINT), record.updated_at)
+                            greatest[feed] = max(
+                                greatest.get(feed, INITIAL_CHECKPOINT),
+                                record.updated_at,
+                            )
                         if not code:
                             try:
                                 async with session.begin_nested():
@@ -187,12 +197,22 @@ async def synchronize(
                             count_ok += record.weight
                     if feed in greatest and feed not in pinned:
                         old = checkpoints[feed]
-                        target = max(greatest[feed], old.last_updated_since if old else INITIAL_CHECKPOINT)
+                        target = max(
+                            greatest[feed],
+                            old.last_updated_since if old else INITIAL_CHECKPOINT,
+                        )
                         await session.execute(
                             insert(SyncCheckpoint)
-                            .values(market_id=market.id, entity=feed, last_updated_since=target)
+                            .values(
+                                market_id=market.id,
+                                entity=feed,
+                                last_updated_since=target,
+                            )
                             .on_conflict_do_update(
-                                index_elements=[SyncCheckpoint.market_id, SyncCheckpoint.entity],
+                                index_elements=[
+                                    SyncCheckpoint.market_id,
+                                    SyncCheckpoint.entity,
+                                ],
                                 set_={"last_updated_since": target},
                             )
                         )
@@ -255,10 +275,13 @@ async def sync_entity(
     retry_run_id: int | None = None,
     risk: SourceRisk | None = None,
     replan: ReplanSource | None = None,
+    stock_origin: str = "source",
 ) -> IngestResult:
     """Reference transport/persistence entry point; trusted dependency callbacks are server-only."""
     if entity not in SUPPORTED_ENTITIES:
         raise ValueError("Entity persistence is not integrated")
+    if stock_origin not in ("source", "wms_synthetic") or (stock_origin != "source" and entity != "stock"):
+        raise ValueError("Invalid stock origin")
     changed_references = False
 
     async def affected_orders(session: AsyncSession, market: Market) -> list[int]:
@@ -268,7 +291,13 @@ async def sync_entity(
                     select(CustomerOrder.id).where(
                         CustomerOrder.market_id == market.id,
                         CustomerOrder.status.in_(
-                            ("APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
+                            (
+                                "APPROVED",
+                                "PREPARING",
+                                "GOODS_READY",
+                                "LOADED",
+                                "DISPATCHED",
+                            )
                         ),
                     )
                 )
@@ -276,11 +305,20 @@ async def sync_entity(
         )
 
     async def write(
-        session: AsyncSession, market: Market, record: FeedRecord, run_id: int, started: datetime
+        session: AsyncSession,
+        market: Market,
+        record: FeedRecord,
+        run_id: int,
+        started: datetime,
     ) -> RowOutcome:
         nonlocal changed_references
         from app.adapters.order_wire import SourceCancellation, SourceOrder
-        from app.adapters.reference_wire import SourceCustomer, SourceFleet, SourceInbound, SourceProduct
+        from app.adapters.reference_wire import (
+            SourceCustomer,
+            SourceFleet,
+            SourceInbound,
+            SourceProduct,
+        )
 
         value = record.value
         if isinstance(value, (SourceOrder, SourceCancellation)):
@@ -290,7 +328,9 @@ async def sync_entity(
         if isinstance(value, SourceProduct):
             return await ingest_references.product(session, market, value, started)
         if isinstance(value, StockFeedValue):
-            outcome = await stock_writer.apply(session, market, value, run_id, started)
+            outcome = await stock_writer.apply(
+                session, market, value, run_id, started, source_kind=stock_origin
+            )
         elif isinstance(value, SourceInbound):
             outcome = await ingest_references.inbound(session, market, value, run_id)
         elif isinstance(value, SourceFleet):

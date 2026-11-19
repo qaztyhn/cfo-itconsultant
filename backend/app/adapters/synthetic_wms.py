@@ -20,6 +20,8 @@ from app.adapters.wms_reservation import (
 from app.core.config import get_settings
 
 DEMO_NOW = "2026-11-04T10:05:00+01:00"
+E0_04_DEMO_NOW = "2026-12-01T10:05:00+01:00"
+ALLOWED_DEMO_CLOCKS = frozenset({DEMO_NOW, E0_04_DEMO_NOW})
 
 
 class SyntheticWmsPort:
@@ -27,10 +29,11 @@ class SyntheticWmsPort:
         settings = get_settings()
         if (
             settings.app_env != "test"
-            or settings.app_now != DEMO_NOW
+            or settings.app_now not in ALLOWED_DEMO_CLOCKS
             or os.environ.get("DEMO_DISPOSABLE") != "1"
         ):
             raise RuntimeError("Synthetic WMS is restricted to the disposable demo")
+        self._as_of = datetime.fromisoformat(settings.app_now)
         self._initial = dict(quantities)
         self._available = dict(quantities)
         self._acks: dict[str, ReservationAck] = {}
@@ -85,7 +88,7 @@ class SyntheticWmsPort:
             for (warehouse, sku), on_hand in sorted(self._initial.items())
         )
         return StockSnapshotDTO(
-            as_of=datetime.fromisoformat(DEMO_NOW),
+            as_of=self._as_of,
             items=rows,
             batch_id=self._batch,
             item_count=len(rows),

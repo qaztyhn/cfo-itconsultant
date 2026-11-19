@@ -3,17 +3,32 @@
 Use original T16 PG setup/locks/holds/recheck; keep production guard intact.
 """
 
+import asyncio
+import json
+import secrets
+from collections.abc import Iterator
+from datetime import timedelta
+from functools import partial
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.adapters.disposable_wms_client import DisposableWmsPort
+from app.adapters.disposable_wms_service import FROZEN, create_app
 from app.adapters.wms_reservation import AckLine, ReservationAck
+from app.core import clock
+from app.core.config import get_settings
 from app.core.errors import DomainError
-from app.services import approval_service, wms_intent
-from tests.integration.conftest import execute, fetch
+from app.services import approval_service, ingest_service, wms_intent, wms_mode, wms_reserve_phase
+from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.test_approval_service import _actor, _hold, _recheck, _run
 from tests.integration.test_approval_service import db as db  # noqa: F401
 from tests.integration.test_wms_intent import _request
+from tests.integration.test_wms_request import _fixture, _product
 
 pytestmark = pytest.mark.integration
 
@@ -24,6 +39,15 @@ def _scope(monkeypatch) -> None:
         wms_intent,
         "get_settings",
         lambda: SimpleNamespace(app_env="test", app_now="2026-11-04T10:05:00+01:00"),
+    )
+    monkeypatch.setattr(
+        wms_mode,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="test",
+            app_now="2026-11-04T10:05:00+01:00",
+            wms_reservation_mode="simulated",
+        ),
     )
 
 
@@ -97,4 +121,131 @@ def test_changed_source_after_ack_still_fails_closed(db: str, monkeypatch) -> No
     with pytest.raises(DomainError) as caught:
         _approve(db, "wms-changed-source")
     assert caught.value.code in ("RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE")
+    _assert_not_approved(db)
+
+
+@pytest.fixture
+def disposable_wms(
+    db: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[httpx.ASGITransport, str]]:
+    _hold(db)
+    _fixture(tmp_path, monkeypatch)
+    _product(db)
+    execute(
+        db,
+        "INSERT INTO ref.app_user (employee_id,email,password_hash,roles)"
+        " VALUES (2,'stock-review@cfo.test','x','{admin}')",
+        "INSERT INTO ops.stock_scope_version (market_id,version,status,skus,warehouse_ids,"
+        "reason_text,created_by,approved_by,approved_at,effective_from)"
+        " VALUES (1,1,'approved','{SKU1}','{1}','Synthetic scope',1,2,"
+        "'2026-11-01T00:00Z','2026-11-01T00:00Z')",
+    )
+    fixture_path = tmp_path / "wms.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    fixture["source_orders"] = [
+        {
+            "order_id": 1,
+            "plan_id": 1,
+            "source_version": 1,
+            "source_ref": "EXT-1",
+            "lines": [
+                {"order_line_id": 1, "pos_sku": "SKU1", "warehouse_code": "WH-1", "quantity": "20.000"}
+            ],
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+    secret = secrets.token_urlsafe(32)
+    url = "http://127.0.0.1:8199"
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("APP_NOW", FROZEN)
+    monkeypatch.setenv("DEMO_DISPOSABLE", "1")
+    monkeypatch.setenv("WMS_RESERVATION_MODE", "simulated")
+    monkeypatch.setenv("SYNTHETIC_WMS_URL", url)
+    monkeypatch.setenv("SYNTHETIC_WMS_API_KEY", secret)
+    monkeypatch.setenv("SYNTHETIC_WMS_SHARED_KEY", secret)
+    monkeypatch.delenv("WMS_PRODUCTION_ENABLED", raising=False)
+    get_settings.cache_clear()
+    engine = create_async_engine(async_url(db), poolclass=NullPool)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    for module in (approval_service, ingest_service, wms_reserve_phase):
+        monkeypatch.setattr(module, "get_sessionmaker", lambda: maker)
+    transport = httpx.ASGITransport(app=create_app(tmp_path / "wms.sqlite", secret, fixture))
+    monkeypatch.setattr(
+        wms_reserve_phase, "DisposableWmsPort", partial(DisposableWmsPort, transport=transport)
+    )
+    try:
+        yield transport, secret
+    finally:
+        asyncio.run(engine.dispose())
+        get_settings.cache_clear()
+
+
+def test_US_APR_01_concurrent_distinct_keys_do_not_release_committed_wms_hold(
+    db: str, disposable_wms: tuple[httpx.ASGITransport, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport, secret = disposable_wms
+    reserve = approval_service._reserve_before_approval
+
+    async def race() -> None:
+        after_preflight = asyncio.Barrier(2)
+        approved = asyncio.Event()
+
+        async def reserve_after_preflight(plan_id: int, actor: object) -> None:
+            await after_preflight.wait()
+            task = asyncio.current_task()
+            assert task is not None
+            if task.get_name() == "loser":
+                await approved.wait()
+            await reserve(plan_id, actor)
+
+        monkeypatch.setattr(approval_service, "_reserve_before_approval", reserve_after_preflight)
+
+        async def winner() -> None:
+            result = await approval_service.approve(1, _actor(), {}, "winner", recheck=_recheck)
+            assert result["order"]["status"] == "APPROVED"
+            approved.set()
+            assert await approval_service.approve(1, _actor(), {}, "winner", recheck=_recheck) == result
+
+        async def loser() -> None:
+            with pytest.raises(DomainError, match="currently proposed plan") as caught:
+                await approval_service.approve(1, _actor(), {}, "loser", recheck=_recheck)
+            assert caught.value.code == "PLAN_NOT_APPROVABLE"
+
+        async with asyncio.timeout(20), asyncio.TaskGroup() as group:
+            group.create_task(winner(), name="winner")
+            group.create_task(loser(), name="loser")
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8199") as client:
+            batch = (await client.get("/v1/stock", headers={"X-Demo-WMS-Key": secret})).json()
+        assert batch["items"][0]["reserved"] == "20.000"
+        assert len(batch["included_reservation_ids"]) == 1
+
+    asyncio.run(race())
+    assert fetch(db, "SELECT status FROM ops.wms_reservation_intent")[0][0] == "refreshed"
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 1
+    assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
+
+
+def test_release_compensates_only_an_expired_unapproved_hold(
+    db: str, disposable_wms: tuple[httpx.ASGITransport, str]
+) -> None:
+    transport, secret = disposable_wms
+
+    async def expiry() -> None:
+        await wms_reserve_phase.reserve_simulated(1, 1)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8199") as client:
+            await wms_reserve_phase.release_invalid_plan(1)
+            headers = {"X-Demo-WMS-Key": secret}
+            reserved = (await client.get("/v1/stock", headers=headers)).json()
+            assert reserved["items"][0]["reserved"] == "20.000"
+            clock.set_now(clock.now() + timedelta(hours=1))
+            await wms_reserve_phase.release_invalid_plan(1)
+            await wms_reserve_phase.release_invalid_plan(1)
+            released = (await client.get("/v1/stock", headers=headers)).json()
+            assert released["items"][0]["reserved"] == "0.000"
+            assert released["items"][0]["on_hand"] == "100.000"
+            assert released["batch_id"] == reserved["batch_id"] + 1
+
+    asyncio.run(expiry())
+    assert fetch(db, "SELECT status FROM ops.wms_reservation_intent")[0][0] == "released"
     _assert_not_approved(db)
