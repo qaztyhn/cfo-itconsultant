@@ -68,7 +68,7 @@ def main() -> int:
         action="store_true",
         help="T27: stop after fully scoped stock/roster/Source prep; CFO order stays absent.",
     )
-    args = parser.parse_args()
+    cli = parser.parse_args()
     values = dotenv_values(ROOT / ".env")
     base = {**os.environ, **{k: v for k, v in values.items() if v is not None}}
     if base.get("APP_ENV") != "test" or base.get("DEMO_DISPOSABLE") != "1":
@@ -298,7 +298,7 @@ def main() -> int:
                 module,
                 *args,
             )
-        if args.stop_before_sync:
+        if cli.stop_before_sync:
             if sql(
                 future, f"SELECT count(*) FROM ops.customer_order WHERE external_ref='{REF}'"
             ) != "0":
