@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # E1: địa chỉ loopback và khóa của WMS giả lập (chỉ dùng khi wms_reservation_mode="simulated").
     synthetic_wms_url: str | None = None  # ví dụ "http://127.0.0.1:8188"
     synthetic_wms_api_key: str | None = None  # khóa riêng, không commit
+    synthetic_wms_shared_key: str | None = None  # khóa HMAC xác minh batch, không commit
     cors_origins: list[str] = ["http://localhost:5173"]
 
 
