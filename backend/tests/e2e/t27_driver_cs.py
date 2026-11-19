@@ -168,9 +168,9 @@ def _cs_lookup(
         page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
         # Validate what is actually painted in the CS panel, then independently
         # compare with the real API response captured from this same UI click.
-        expect(
-            page.get_by_label("Order details").get_by_text(order_no, exact=True)
-        ).to_be_visible(timeout=15_000)
+        expect(page.get_by_label("Order details").get_by_text(order_no, exact=True)).to_be_visible(
+            timeout=15_000
+        )
         details = observed.get(detail_path)
         if details is None:
             raise AssertionError("CS details rendered without an observable live HTTP GET")

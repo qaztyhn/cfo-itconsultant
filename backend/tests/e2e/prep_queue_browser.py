@@ -318,11 +318,9 @@ def walkthrough(
         assert [(item["id"], item["trip_id"]) for item in dispatched] == [
             (item["event_id"], item["trip_id"]) for item in observed
         ]
-        report["t27"]["postgres_dispatch_matches_browser"] = (
-            bool(observed)
-            and [(item["id"], item["trip_id"]) for item in dispatched]
-            == [(item["event_id"], item["trip_id"]) for item in observed]
-        )
+        report["t27"]["postgres_dispatch_matches_browser"] = bool(observed) and [
+            (item["id"], item["trip_id"]) for item in dispatched
+        ] == [(item["event_id"], item["trip_id"]) for item in observed]
         report["t27"]["db_order_status"] = fetch(dsn, "SELECT status FROM ops.customer_order WHERE id=1")[0][
             0
         ]
