@@ -1,5 +1,11 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## [E1 #224 — disposable WMS approval of E0-04 order] — 2026-11-19
+
+- Route the existing Approve API through a transaction-separated WMS intent, status/reserve, ACK, scoped T07 stock refresh, and fail-closed finalization. Keep the default WMS mode disabled; allow only the disposable test clock and loopback service.
+- Migration 0017 separates Source and WMS batch identity and links a signed WMS batch to its accepted CFO ingest run. Preserve PR #223's transactional CONFIRMED enqueue.
+- Exact E0-04 order `SE-2026-000249` approved on PostgreSQL with one trip, one PLAN_APPROVED audit, one CONFIRMED, and same-key replay. See `E1_DEMO.md` for reproduction and evidence.
+
 ## 19/11/2026 — Round 3 email-only storage
 
 - DEC-R3-02 clarified: revision 0016 removes the customer channel preference and outbox channel, retains historical notification rows and suppresses pending SMS. The outbox stores only the email destination when available.

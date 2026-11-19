@@ -31,7 +31,11 @@ from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.errors import DomainError
 from app.domain.models.hr import Employee
-from app.domain.models.ops import StockIndependenceEvidence, StockScopeVersion, StockWriteRun
+from app.domain.models.ops import (
+    StockIndependenceEvidence,
+    StockScopeVersion,
+    StockWriteRun,
+)
 from app.domain.models.ref import AppUser, Market, ProductSE, StockAdminGrant
 
 MAX_EVIDENCE_DAYS = 30
@@ -145,7 +149,10 @@ async def _require_market_admin_account(session: AsyncSession, user_id: int, mar
         or employee.market_id != market_id
         or employee.status != "active"
     ):
-        raise _error("FORBIDDEN", "Grant account must be an active Admin in the authorized market.")
+        raise _error(
+            "FORBIDDEN",
+            "Grant account must be an active Admin in the authorized market.",
+        )
     return account
 
 
@@ -192,7 +199,10 @@ async def grant_admin(
         .limit(1)
     )
     if duplicate is not None:
-        raise _error("RESOURCE_CONFLICT", "An unrevoked grant already exists for this capability.")
+        raise _error(
+            "RESOURCE_CONFLICT",
+            "An unrevoked grant already exists for this capability.",
+        )
     row = StockAdminGrant(
         market_id=market.id,
         user_id=user_id,
@@ -256,7 +266,11 @@ async def revoke_grant(session: AsyncSession, actor: object, grant_id: int, reas
         "stock_admin_grant",
         str(grant.id),
         reason_text=reason_text.strip(),
-        before={"user_id": grant.user_id, "capability": grant.capability, "revoked_at": None},
+        before={
+            "user_id": grant.user_id,
+            "capability": grant.capability,
+            "revoked_at": None,
+        },
         after={
             "revoked_at": grant.revoked_at.isoformat(),
             "revoked_by": _user_id(actor),
@@ -344,7 +358,10 @@ async def approve_scope(session: AsyncSession, actor: object, scope_id: int) -> 
     now = clock.now()
     previous = await session.scalar(
         select(StockScopeVersion)
-        .where(StockScopeVersion.market_id == market.id, StockScopeVersion.status == "approved")
+        .where(
+            StockScopeVersion.market_id == market.id,
+            StockScopeVersion.status == "approved",
+        )
         .with_for_update()
     )
     before = _scope_out(row)
@@ -353,7 +370,12 @@ async def approve_scope(session: AsyncSession, actor: object, scope_id: int) -> 
         await session.flush()
         # S5: a scope change invalidates evidence bound to the superseded version (renewal = new approval).
         await _revoke_evidence_of_scope(session, previous.id, "Scope version superseded", actor)
-    row.status, row.approved_by, row.approved_at, row.effective_from = "approved", _user_id(actor), now, now
+    row.status, row.approved_by, row.approved_at, row.effective_from = (
+        "approved",
+        _user_id(actor),
+        now,
+        now,
+    )
     await session.flush()
     await record_decision(
         session,
@@ -421,11 +443,17 @@ async def submit_evidence(
         raise _error("FORBIDDEN", "Only a manager of this warehouse can submit evidence.")
     skus = sorted({sku.strip() for sku in local_skus})
     if len(skus) < 2 or not evidence_ref.strip():
-        raise _error("VALIDATION_ERROR", "At least two SKUs and an evidence reference are required.")
+        raise _error(
+            "VALIDATION_ERROR",
+            "At least two SKUs and an evidence reference are required.",
+        )
     await _lock_market(session, market.id)
     scope = await scope_effective_at(session, market.id, clock.now())
     if scope is None or warehouse_id not in scope.warehouse_ids or not set(skus) <= set(scope.skus):
-        raise _error("PLAN_NOT_APPROVABLE", "Evidence must cover the effective scope warehouses and SKUs.")
+        raise _error(
+            "PLAN_NOT_APPROVABLE",
+            "Evidence must cover the effective scope warehouses and SKUs.",
+        )
     fingerprint = await mapping_fingerprint(session, skus)
     version = (
         await session.scalar(
@@ -452,7 +480,11 @@ async def submit_evidence(
         Action.STOCK_EVIDENCE_SUBMITTED,
         "stock_independence_evidence",
         str(row.id),
-        after={"warehouse_id": warehouse_id, "local_skus": skus, "version": row.version},
+        after={
+            "warehouse_id": warehouse_id,
+            "local_skus": skus,
+            "version": row.version,
+        },
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
         actor_role="warehouse",
@@ -465,7 +497,10 @@ async def _locked_evidence(
 ) -> StockIndependenceEvidence:
     row = await session.scalar(
         select(StockIndependenceEvidence)
-        .where(StockIndependenceEvidence.id == evidence_id, StockIndependenceEvidence.market_id == market.id)
+        .where(
+            StockIndependenceEvidence.id == evidence_id,
+            StockIndependenceEvidence.market_id == market.id,
+        )
         .with_for_update()
     )
     if row is None:
@@ -493,12 +528,21 @@ async def approve_evidence(
     if start < now:
         raise _error("VALIDATION_ERROR", "Evidence cannot be approved retroactively.")
     if end <= start or end - start > timedelta(days=MAX_EVIDENCE_DAYS):
-        raise _error("VALIDATION_ERROR", "Evidence validity must be positive and at most 30 days.")
+        raise _error(
+            "VALIDATION_ERROR",
+            "Evidence validity must be positive and at most 30 days.",
+        )
     if await mapping_fingerprint(session, row.local_skus) != row.mapping_fingerprint:
-        raise _error("PLAN_NOT_APPROVABLE", "Mapping, unit or conversion changed since submission.")
+        raise _error(
+            "PLAN_NOT_APPROVABLE",
+            "Mapping, unit or conversion changed since submission.",
+        )
     scope = await scope_effective_at(session, market.id, now)
     if scope is None or scope.id != row.scope_version_id:
-        raise _error("PLAN_NOT_APPROVABLE", "The scope version of this evidence is no longer effective.")
+        raise _error(
+            "PLAN_NOT_APPROVABLE",
+            "The scope version of this evidence is no longer effective.",
+        )
     overlapping = (
         await session.scalars(
             select(StockIndependenceEvidence).where(
@@ -512,7 +556,10 @@ async def approve_evidence(
         )
     ).all()
     if overlapping:
-        raise _error("RESOURCE_CONFLICT", "Approved evidence for these SKUs already overlaps this window.")
+        raise _error(
+            "RESOURCE_CONFLICT",
+            "Approved evidence for these SKUs already overlaps this window.",
+        )
     row.status, row.approved_by, row.approved_at = "approved", _user_id(actor), now
     row.valid_from, row.valid_to = start, end
     await session.flush()
@@ -522,7 +569,11 @@ async def approve_evidence(
         "stock_independence_evidence",
         str(row.id),
         before={"status": "submitted"},
-        after={"status": "approved", "valid_from": start.isoformat(), "valid_to": end.isoformat()},
+        after={
+            "status": "approved",
+            "valid_from": start.isoformat(),
+            "valid_to": end.isoformat(),
+        },
         actor_user_id=_user_id(actor),
         actor_employee_id=_employee_id(actor),
         actor_role="admin",
@@ -569,7 +620,11 @@ async def revoke_evidence(
         raise _error("ILLEGAL_TRANSITION", "Only approved evidence can be revoked.")
     if not reason_text.strip():
         raise _error("REASON_REQUIRED", "Revoking evidence requires a reason.")
-    row.status, row.revoked_at, row.revoke_reason = "revoked", clock.now(), reason_text.strip()
+    row.status, row.revoked_at, row.revoke_reason = (
+        "revoked",
+        clock.now(),
+        reason_text.strip(),
+    )
     await session.flush()
     await record_decision(
         session,
@@ -617,7 +672,12 @@ async def _revoke_evidence_of_scope(
 
 
 async def invalidate_evidence_for_skus(
-    session: AsyncSession, market_id: int, skus: Collection[str], *, reason: str, actor: object | None = None
+    session: AsyncSession,
+    market_id: int,
+    skus: Collection[str],
+    *,
+    reason: str,
+    actor: object | None = None,
 ) -> int:
     """S5 hook for mapping / unit / conversion / scope changes: revoke affected approved evidence.
 
@@ -710,6 +770,8 @@ async def record_write_run(
     *,
     market_id: int,
     source_batch_id: int,
+    source_kind: str = "source",
+    ingest_run_id: int | None = None,
     as_of: datetime,
     context: StockContext | None,
     expected: int,
@@ -719,10 +781,15 @@ async def record_write_run(
     """Append the binding of one stock write attempt to its scope/evidence versions (S3)."""
     accepted = reject_code is None
     if accepted and context is None:
-        raise _error("STOCK_UNAVAILABLE", "An accepted stock write needs a resolved scope version.")
+        raise _error(
+            "STOCK_UNAVAILABLE",
+            "An accepted stock write needs a resolved scope version.",
+        )
     run = StockWriteRun(
         market_id=market_id,
         source_batch_id=source_batch_id,
+        source_kind=source_kind,
+        ingest_run_id=ingest_run_id,
         as_of=_aware(as_of),
         scope_version_id=context.scope_version_id if context else None,
         evidence_ids=list(context.evidence_ids) if context else [],

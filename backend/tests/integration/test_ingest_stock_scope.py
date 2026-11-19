@@ -68,7 +68,9 @@ def test_S3_scope_approved_after_the_batch_as_of_is_never_retroactive(db: str) -
     assert not fetch(db, "SELECT * FROM stg.sync_checkpoint")
 
 
-def test_S4_missing_required_row_rejects_everything_and_explicit_zero_is_valid(db: str) -> None:
+def test_S4_missing_required_row_rejects_everything_and_explicit_zero_is_valid(
+    db: str,
+) -> None:
     prepare(db)
     execute(db, *APPROVE)
     other = snapshot(items=[{"warehouse_code": "WH-1", "sku": "OTHER", "on_hand": "5", "reserved": "0"}])
@@ -79,7 +81,8 @@ def test_S4_missing_required_row_rejects_everything_and_explicit_zero_is_valid(d
     )
     assert stock_rows(db) == [(1, 1, Decimal("99.000"), Decimal("3.000"))]  # missing is unknown, not zero
     zero = snapshot(
-        batch_id=2, items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "0", "reserved": "0"}]
+        batch_id=2,
+        items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "0", "reserved": "0"}],
     )
     result, _ = run_stock(db, zero)
     assert result.status == "ok"
@@ -93,7 +96,12 @@ def test_S4_out_of_scope_rows_are_ignored_and_never_block(db: str) -> None:
         item_count=2,
         items=[
             {"warehouse_code": "WH-1", "sku": "P1", "on_hand": "10", "reserved": "2"},
-            {"warehouse_code": "WH-9", "sku": "NOT-IN-SCOPE", "on_hand": "7", "reserved": "0"},
+            {
+                "warehouse_code": "WH-9",
+                "sku": "NOT-IN-SCOPE",
+                "on_hand": "7",
+                "reserved": "0",
+            },
         ],
     )
     result, _ = run_stock(db, body)
@@ -113,7 +121,9 @@ def test_unit_drift_in_scope_rejects_the_whole_batch(db: str) -> None:
     assert stock_rows(db) == [(1, 1, Decimal("99.000"), Decimal("3.000"))]
 
 
-def test_replaying_the_same_published_batch_is_a_noop_and_a_new_batch_replaces(db: str) -> None:
+def test_replaying_the_same_published_batch_is_a_noop_and_a_new_batch_replaces(
+    db: str,
+) -> None:
     prepare(db)
     execute(db, *APPROVE)
     assert run_stock(db, snapshot())[0].status == "ok"
@@ -123,12 +133,45 @@ def test_replaying_the_same_published_batch_is_a_noop_and_a_new_batch_replaces(d
         run_stock(
             db,
             snapshot(
-                batch_id=2, items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "8", "reserved": "1"}]
+                batch_id=2,
+                items=[
+                    {
+                        "warehouse_code": "WH-1",
+                        "sku": "P1",
+                        "on_hand": "8",
+                        "reserved": "1",
+                    }
+                ],
             ),
         )[0].status
         == "ok"
     )
     assert stock_rows(db) == [(1, 1, Decimal("8.000"), Decimal("1.000"))]
+
+
+def test_US_APR_01_AC1_wms_batch_two_is_distinct_from_source_batch_two(db: str) -> None:
+    prepare(db)
+    execute(db, *APPROVE)
+    source = snapshot(
+        batch_id=2,
+        items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "10", "reserved": "0"}],
+    )
+    assert run_stock(db, source)[0].status == "ok"
+    wms = snapshot(
+        batch_id=2,
+        items=[{"warehouse_code": "WH-1", "sku": "P1", "on_hand": "10", "reserved": "4"}],
+    )
+    result, _ = run_stock(db, wms, stock_origin="wms_synthetic")
+    assert result.status == "ok"
+    assert stock_rows(db) == [(1, 1, Decimal("10.000"), Decimal("4.000"))]
+    runs = fetch(
+        db,
+        "SELECT source_kind,source_batch_id,ingest_run_id FROM ops.stock_write_run ORDER BY id",
+    )
+    assert [tuple(row) for row in runs] == [
+        ("source", 2, 1),
+        ("wms_synthetic", 2, result.run_id),
+    ]
 
 
 def test_freshness_and_scope_supersession_make_stock_unusable(db: str) -> None:

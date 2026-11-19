@@ -13,7 +13,14 @@ KEY = "synthetic-disposable-local-only-key-1234567890"
 FIXTURE = {
     "source_kind": "synthetic_demo",
     "market": "SE",
-    "stock": [{"warehouse_code": "GBG", "wms_sku": "WMS-CEM-25", "wms_unit": "bag", "on_hand": "100.000"}],
+    "stock": [
+        {
+            "warehouse_code": "GBG",
+            "wms_sku": "WMS-CEM-25",
+            "wms_unit": "bag",
+            "on_hand": "100.000",
+        }
+    ],
     "mapping": [
         {
             "market": "SE",
@@ -83,6 +90,7 @@ def database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DEMO_DISPOSABLE", "1")
     monkeypatch.setenv("APP_NOW", FROZEN)
+    monkeypatch.setenv("WMS_RESERVATION_MODE", "simulated")
     monkeypatch.delenv("WMS_PRODUCTION_ENABLED", raising=False)
     return tmp_path / "persistent-synthetic-wms.sqlite3"
 
@@ -177,14 +185,20 @@ def test_stock_capacity_idempotency_collision_partial_and_tamper_denied(database
         no_include = copy.deepcopy(changed)
         no_include["included_reservation_ids"] = []
         assert not verify_batch(
-            no_include, KEY, expected_reservation_id=changed["included_reservation_ids"][0]
+            no_include,
+            KEY,
+            expected_reservation_id=changed["included_reservation_ids"][0],
         )
         assert client.get("/v1/status/SE/wrong", headers=HEADERS).status_code == 404
 
 
 def test_pinned_source_version_and_reference_rejected_without_key_reuse(database: Path):
     with _client(database) as client:
-        for field, wrong in [("source_version", 3), ("source_ref", "SYN-POS-OTHER"), ("plan_id", 81)]:
+        for field, wrong in [
+            ("source_version", 3),
+            ("source_ref", "SYN-POS-OTHER"),
+            ("plan_id", 81),
+        ]:
             invalid = copy.deepcopy(REQUEST)
             invalid["idempotency_key"] = "new-key-" + field
             invalid[field] = wrong

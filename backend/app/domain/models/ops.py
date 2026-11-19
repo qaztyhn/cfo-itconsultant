@@ -151,7 +151,8 @@ class CustomerOrder(TimestampMixin, Base):
     promise_end: Mapped[datetime | None] = mapped_column(TSTZ)
     # Phụ thuộc vòng với plan.fulfilment_plan.order_id → use_alter (khóa ngoài thêm sau, như 0006).
     approved_plan_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("plan.fulfilment_plan.id", name="fk_order_plan", use_alter=True)
+        BigInteger,
+        ForeignKey("plan.fulfilment_plan.id", name="fk_order_plan", use_alter=True),
     )
     currency: Mapped[str] = mapped_column(CHAR(3))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
@@ -210,7 +211,8 @@ class DeliveryTrip(TimestampMixin, Base):
 
     id: Mapped[int] = bigint_pk()
     plan_vehicle_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("plan.plan_vehicle.id", name="fk_trip_plan_vehicle", use_alter=True)
+        BigInteger,
+        ForeignKey("plan.plan_vehicle.id", name="fk_trip_plan_vehicle", use_alter=True),
     )
     warehouse_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.location.id"))
     vehicle_id: Mapped[int] = mapped_column(BigInteger, _fk("ref.vehicle.id"))
@@ -451,6 +453,8 @@ class StockWriteRun(TimestampMixin, Base):
     id: Mapped[int] = bigint_pk()
     market_id: Mapped[int] = mapped_column(SmallInteger, _fk("ref.market.id"))
     source_batch_id: Mapped[int] = mapped_column(BigInteger)
+    source_kind: Mapped[str] = mapped_column(Text, server_default=text("'source'"))
+    ingest_run_id: Mapped[int | None] = mapped_column(BigInteger, _fk("stg.sync_run.id"))
     as_of: Mapped[datetime] = mapped_column(TSTZ)
     scope_version_id: Mapped[int | None] = mapped_column(BigInteger, _fk("ops.stock_scope_version.id"))
     evidence_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), server_default=text("'{}'"))

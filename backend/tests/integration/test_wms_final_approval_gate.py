@@ -9,7 +9,7 @@ import pytest
 
 from app.adapters.wms_reservation import AckLine, ReservationAck
 from app.core.errors import DomainError
-from app.services import approval_service, wms_intent
+from app.services import approval_service, wms_intent, wms_mode
 from tests.integration.conftest import execute, fetch
 from tests.integration.test_approval_service import _actor, _hold, _recheck, _run
 from tests.integration.test_approval_service import db as db  # noqa: F401
@@ -24,6 +24,15 @@ def _scope(monkeypatch) -> None:
         wms_intent,
         "get_settings",
         lambda: SimpleNamespace(app_env="test", app_now="2026-11-04T10:05:00+01:00"),
+    )
+    monkeypatch.setattr(
+        wms_mode,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="test",
+            app_now="2026-11-04T10:05:00+01:00",
+            wms_reservation_mode="simulated",
+        ),
     )
 
 

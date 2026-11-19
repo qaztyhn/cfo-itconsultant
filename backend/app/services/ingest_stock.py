@@ -19,7 +19,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.ingestion_feed import StockFeedValue
-from app.adapters.stock_batches import StockMapping, StockNormalizationError, normalize_stock
+from app.adapters.stock_batches import (
+    StockMapping,
+    StockNormalizationError,
+    normalize_stock,
+)
 from app.core.config import MarketConfig
 from app.domain.models.ops import StockSnapshot, StockWriteRun
 from app.domain.models.ref import Location, Market, ProductSE
@@ -56,7 +60,13 @@ async def usable(session: AsyncSession, market_id: int, *, now: datetime) -> boo
 
 
 async def apply(
-    session: AsyncSession, market: Market, value: StockFeedValue, run_id: int, now: datetime
+    session: AsyncSession,
+    market: Market,
+    value: StockFeedValue,
+    run_id: int,
+    now: datetime,
+    *,
+    source_kind: str = "source",
 ) -> RowOutcome:
     snapshot = value.snapshot
     ctx = await _context(session, market.id, snapshot.as_of)
@@ -64,6 +74,7 @@ async def apply(
         select(StockWriteRun.id).where(
             StockWriteRun.market_id == market.id,
             StockWriteRun.source_batch_id == int(snapshot.batch_id or 0),
+            StockWriteRun.source_kind == source_kind,
             StockWriteRun.status == "accepted",
         )
     )
@@ -87,14 +98,21 @@ async def apply(
     products = (await session.scalars(select(ProductSE).where(ProductSE.local_sku.in_(ctx.skus)))).all()
     mappings = {
         p.local_sku: StockMapping(
-            p.global_product_id, p.sale_unit, p.units_to_base, p.mapping_status == "confirmed"
+            p.global_product_id,
+            p.sale_unit,
+            p.units_to_base,
+            p.mapping_status == "confirmed",
         )
         for p in products
         if p.global_product_id is not None
     }
     try:
         rows = normalize_stock(
-            snapshot, mappings, value.declared, scope=ctx.skus, verified_independent=ctx.verified_independent
+            snapshot,
+            mappings,
+            value.declared,
+            scope=ctx.skus,
+            verified_independent=ctx.verified_independent,
         )
     except StockNormalizationError:
         raise BatchRejected("STOCK_NORMALIZATION_REJECTED") from None
@@ -110,7 +128,10 @@ async def apply(
         )
         await session.execute(
             statement.on_conflict_do_update(
-                index_elements=[StockSnapshot.warehouse_id, StockSnapshot.global_product_id],
+                index_elements=[
+                    StockSnapshot.warehouse_id,
+                    StockSnapshot.global_product_id,
+                ],
                 set_={
                     "on_hand": statement.excluded.on_hand,
                     "wms_reserved": statement.excluded.wms_reserved,
@@ -123,6 +144,8 @@ async def apply(
         session,
         market_id=market.id,
         source_batch_id=int(snapshot.batch_id or 0),
+        source_kind=source_kind,
+        ingest_run_id=run_id,
         as_of=snapshot.as_of,
         context=ctx,
         expected=len(expected),

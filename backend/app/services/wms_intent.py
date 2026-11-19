@@ -23,7 +23,7 @@ from app.adapters.wms_reservation import (
 from app.adapters.wms_sku import ReservationLine
 from app.core.config import get_settings
 from app.core.errors import DomainError
-from app.domain.models.ops import CustomerOrder, OrderLine, OrderRouting
+from app.domain.models.ops import CustomerOrder, OrderLine, OrderRouting, StockWriteRun
 from app.domain.models.plan import FulfilmentPlan
 from app.domain.models.ref import Location, Market
 from app.domain.models.wms import WmsReservationIntent
@@ -110,7 +110,10 @@ async def begin_intent(
     from app.adapters.wms_reservation import build_request
 
     if build_request(request.market, request.order_id, request.plan_id, request.lines) != request:
-        raise DomainError("RESOURCE_CONFLICT", "Reservation identity was not derived from exact lines.")
+        raise DomainError(
+            "RESOURCE_CONFLICT",
+            "Reservation identity was not derived from exact lines.",
+        )
     order = await session.scalar(
         select(CustomerOrder).where(CustomerOrder.id == request.order_id).with_for_update()
     )
@@ -148,7 +151,8 @@ async def begin_intent(
         or any(line.warehouse_code != warehouse.code.strip() for line in request.lines)
     ):
         raise DomainError(
-            "RESOURCE_CONFLICT", "WMS reservation differs from CFO routing, order or warehouse."
+            "RESOURCE_CONFLICT",
+            "WMS reservation differs from CFO routing, order or warehouse.",
         )
     payload = _payload(request)
     digest = _digest(payload)
@@ -202,7 +206,11 @@ async def record_ack(session: AsyncSession, request_key: str, ack: ReservationAc
         "reservation_id": ack.reservation_id,
         "revision": ack.revision,
         "lines": [
-            {"warehouse_code": line.warehouse_code, "wms_sku": line.wms_sku, "quantity": str(line.quantity)}
+            {
+                "warehouse_code": line.warehouse_code,
+                "wms_sku": line.wms_sku,
+                "quantity": str(line.quantity),
+            }
             for line in ack.lines
         ],
     }
@@ -225,7 +233,14 @@ async def record_unknown(session: AsyncSession, request_key: str) -> None:
 
 
 async def mark_refreshed(
-    session: AsyncSession, request_key: str, *, batch_id: int, inclusion_proven: bool
+    session: AsyncSession,
+    request_key: str,
+    *,
+    batch_id: int,
+    inclusion_proven: bool,
+    write_run_id: int | None = None,
+    batch_sha256: str | None = None,
+    batch_payload: dict[str, object] | None = None,
 ) -> WmsReservationIntent:
     """Advance only with explicit matching inclusion proof, never later timestamp alone."""
     intent = await session.scalar(
@@ -241,6 +256,28 @@ async def mark_refreshed(
         or batch_id < intent.reflected_in_batch_id
     ):
         raise DomainError("RESOURCE_CONFLICT", "WMS stock inclusion is not proven.")
+    if write_run_id is not None:
+        write = await session.get(StockWriteRun, write_run_id)
+        if (
+            write is None
+            or write.market_id != intent.market_id
+            or write.source_kind != "wms_synthetic"
+            or write.source_batch_id != batch_id
+            or write.status != "accepted"
+            or batch_sha256 is None
+            or len(batch_sha256) != 64
+            or batch_payload is None
+            or batch_payload.get("sha256") != batch_sha256
+        ):
+            raise DomainError(
+                "RESOURCE_CONFLICT",
+                "WMS batch does not match an accepted CFO stock write.",
+            )
+        if intent.stock_write_run_id is not None and intent.stock_write_run_id != write_run_id:
+            raise DomainError("RESOURCE_CONFLICT", "WMS stock write link changed.")
+        intent.stock_write_run_id = write_run_id
+        intent.verified_batch_sha256 = batch_sha256
+        intent.verified_batch_payload = batch_payload
     intent.status = "refreshed"
     intent.refreshed_batch_id = batch_id
     await session.flush()

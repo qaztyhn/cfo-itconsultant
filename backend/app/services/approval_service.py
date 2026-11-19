@@ -27,7 +27,13 @@ from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
 from app.domain.enums import OrderStatus
 from app.domain.models.audit import DecisionLog
-from app.domain.models.hr import Attendance, DriverStaff, EmployeeShiftSchedule, ShiftTemplate, WarehouseStaff
+from app.domain.models.hr import (
+    Attendance,
+    DriverStaff,
+    EmployeeShiftSchedule,
+    ShiftTemplate,
+    WarehouseStaff,
+)
 from app.domain.models.ops import (
     CustomerOrder,
     DateNegotiation,
@@ -48,6 +54,7 @@ from app.domain.models.plan import (
     VehicleReservation,
 )
 from app.domain.models.ref import Market, Vehicle
+from app.domain.models.wms import WmsReservationIntent
 from app.domain.transitions import transition
 from app.services import alert_service, notify_service, reservation_service
 from app.services.wms_mode import require_simulated_or_off
@@ -109,7 +116,11 @@ def _digest(plan_id: int, payload: dict[str, object]) -> str:
 
 
 async def _claim(
-    session: AsyncSession, key: str, user_id: int, plan_id: int, payload: dict[str, object]
+    session: AsyncSession,
+    key: str,
+    user_id: int,
+    plan_id: int,
+    payload: dict[str, object],
 ) -> tuple[IdempotencyKey, dict[str, object] | None]:
     if not isinstance(key, str) or not 1 <= len(key) <= 200:
         raise _fail("VALIDATION_ERROR", "Idempotency-Key is required.")
@@ -190,11 +201,17 @@ async def _reserve_locks(
         raise _fail("RESOURCE_CONFLICT", "A selected vehicle or driver is no longer available.")
     for vehicle in vehicles:
         if vehicle.home_warehouse_id != warehouse_id or vehicle.status != "available":
-            raise _fail("RESOURCE_CONFLICT", "Vehicle is no longer available.", conflict="vehicle")
+            raise _fail(
+                "RESOURCE_CONFLICT",
+                "Vehicle is no longer available.",
+                conflict="vehicle",
+            )
     for driver in drivers:
         if driver.home_warehouse_id != warehouse_id:
             raise _fail(
-                "RESOURCE_CONFLICT", "Driver is no longer assigned to the warehouse.", conflict="driver"
+                "RESOURCE_CONFLICT",
+                "Driver is no longer assigned to the warehouse.",
+                conflict="driver",
             )
 
 
@@ -206,6 +223,7 @@ async def _stock_available(
     cfg: MarketConfig,
     *,
     sales: bool,
+    wms_self_reserved: bool = False,
 ) -> None:
     for entry in stock:
         snapshot = await session.get(StockSnapshot, (entry.warehouse_id, entry.global_product_id))
@@ -214,7 +232,11 @@ async def _stock_available(
             or snapshot.as_of < now - timedelta(minutes=cfg.stale_stock_min)
             or snapshot.as_of > now + timedelta(minutes=cfg.stale_stock_min)
         ):
-            raise _fail("RESOURCE_CONFLICT", "Stock snapshot unavailable or stale.", conflict="stock")
+            raise _fail(
+                "RESOURCE_CONFLICT",
+                "Stock snapshot unavailable or stale.",
+                conflict="stock",
+            )
         committed = await session.scalar(
             select(func.coalesce(func.sum(StockReservation.qty), 0)).where(
                 StockReservation.warehouse_id == entry.warehouse_id,
@@ -241,7 +263,14 @@ async def _stock_available(
                 )
                 or 0
             )
-        available = snapshot.on_hand - snapshot.wms_reserved - Decimal(committed or 0) - other_held
+        # A verified post-ACK WMS snapshot already includes this order's reserve
+        # (and other WMS channels). Give this order its own held quantity back
+        # exactly once; do not subtract CFO committed stock a second time.
+        available = (
+            snapshot.on_hand - snapshot.wms_reserved + entry.qty - other_held
+            if wms_self_reserved
+            else snapshot.on_hand - snapshot.wms_reserved - Decimal(committed or 0) - other_held
+        )
         if entry.qty <= 0 or available < entry.qty:
             raise _fail("RESOURCE_CONFLICT", "Insufficient stock at approval.", conflict="stock")
 
@@ -260,8 +289,14 @@ async def _labour_available(
         roster = (
             await session.execute(
                 select(EmployeeShiftSchedule, ShiftTemplate)
-                .join(WarehouseStaff, WarehouseStaff.employee_id == EmployeeShiftSchedule.employee_id)
-                .outerjoin(ShiftTemplate, ShiftTemplate.id == EmployeeShiftSchedule.shift_template_id)
+                .join(
+                    WarehouseStaff,
+                    WarehouseStaff.employee_id == EmployeeShiftSchedule.employee_id,
+                )
+                .outerjoin(
+                    ShiftTemplate,
+                    ShiftTemplate.id == EmployeeShiftSchedule.shift_template_id,
+                )
                 .where(
                     EmployeeShiftSchedule.warehouse_id == item.warehouse_id,
                     EmployeeShiftSchedule.work_date == item.work_date,
@@ -277,7 +312,8 @@ async def _labour_available(
                 continue
             presence = await session.scalar(
                 select(Attendance.status).where(
-                    Attendance.employee_id == shift.employee_id, Attendance.work_date == item.work_date
+                    Attendance.employee_id == shift.employee_id,
+                    Attendance.work_date == item.work_date,
                 )
             )
             if presence != "present" and not (presence == "planned" and item.work_date > local_today):
@@ -301,7 +337,11 @@ async def _labour_available(
             used_staff.add(shift.employee_id)
             capacity += max(Decimal(0), useful) * Decimal(str(cfg.delivery_share))
         if not used_staff:
-            raise _fail("RESOURCE_CONFLICT", "No official warehouse capacity.", conflict="labour")
+            raise _fail(
+                "RESOURCE_CONFLICT",
+                "No official warehouse capacity.",
+                conflict="labour",
+            )
         capacity = max(Decimal(0), capacity - Decimal(str(cfg.final_inspection_hours)))
         booked = await session.scalar(
             select(func.coalesce(func.sum(PrepReservation.hours), 0)).where(
@@ -325,7 +365,11 @@ async def _labour_available(
             )
             booked = Decimal(booked or 0) + Decimal(held or 0)
         if item.hours <= 0 or capacity - Decimal(booked or 0) < item.hours:
-            raise _fail("RESOURCE_CONFLICT", "Insufficient official warehouse capacity.", conflict="labour")
+            raise _fail(
+                "RESOURCE_CONFLICT",
+                "Insufficient official warehouse capacity.",
+                conflict="labour",
+            )
 
 
 def _stored_gates(plan: FulfilmentPlan) -> bool:
@@ -356,6 +400,9 @@ async def _approve(
     payload: dict[str, object],
     key: str,
     recheck: Recheck | None,
+    *,
+    preflight_only: bool = False,
+    recovery_ready: bool = False,
 ) -> dict[str, object]:
     uid = _actor_id(actor)
     identity, replay = await _claim(session, key, uid, plan_id, payload)
@@ -389,7 +436,10 @@ async def _approve(
         or run.kind == "replan_suggestion"
         or run.result != "feasible"
     ):
-        raise _fail("PLAN_NOT_APPROVABLE", "This plan cannot be approved from the current order state.")
+        raise _fail(
+            "PLAN_NOT_APPROVABLE",
+            "This plan cannot be approved from the current order state.",
+        )
     if order.version != run.order_version or plan.order_id != order.id:
         raise _fail("PLAN_NOT_APPROVABLE", "Order data changed; re-run planning.")
     latest = await session.scalar(
@@ -433,7 +483,10 @@ async def _approve(
         or plan.manual_reason_code is not None
         or plan.target_date != order.date_to
     ):
-        raise _fail("PLAN_NOT_APPROVABLE", "Sales can only confirm an unchanged safe rank-1 plan.")
+        raise _fail(
+            "PLAN_NOT_APPROVABLE",
+            "Sales can only confirm an unchanged safe rank-1 plan.",
+        )
     if plan.target_date != order.date_to:
         neg_id = payload.get("date_negotiation_id")
         if not isinstance(neg_id, int):
@@ -445,7 +498,10 @@ async def _approve(
             or agreement.proposed_date != plan.target_date
             or agreement.outcome != "agreed"
         ):
-            raise _fail("DATE_AGREEMENT_REQUIRED", "The agreed date does not match the selected plan.")
+            raise _fail(
+                "DATE_AGREEMENT_REQUIRED",
+                "The agreed date does not match the selected plan.",
+            )
     if not _stored_gates(plan):
         raise _fail("PLAN_NOT_APPROVABLE", "Stored planning gates are incomplete.")
     if recheck is None:
@@ -475,7 +531,8 @@ async def _approve(
     veh_res = (
         await session.scalars(
             select(VehicleReservation).where(
-                VehicleReservation.plan_id == plan.id, VehicleReservation.status == "held"
+                VehicleReservation.plan_id == plan.id,
+                VehicleReservation.status == "held",
             )
         )
     ).all()
@@ -493,32 +550,35 @@ async def _approve(
     # Re-evaluate the expiry AFTER waiting on advisory/row locks.
     if run.hold_expires_at <= clock.now():
         raise _fail("HOLD_EXPIRED", "Planning hold expired. Plan Again.", run_id=run.id)
-    await _stock_available(session, stock, order.id, clock.now(), cfg, sales=sales)
-    await _labour_available(session, prep, order.id, market, cfg, sales=sales)
-    proof = await recheck(session, plan.id)
-    if not _proof_valid(proof, plan, order):
-        raise _fail("RESOURCE_CONFLICT", "Fresh engine/source gate validation failed.", conflict="five_gates")
+    simulated = require_simulated_or_off()
+    if simulated and (not preflight_only or recovery_ready):
+        from app.services.wms_finalization_gate import inspect_wms_gate
 
-    # DEC-WMS-RESERVE-SYNC: a local hold and five passing gates are NOT a WMS
-    # reserve ACK. Production/staging and the real disposable demo must never
-    # commit APPROVED before a durable reservation intent, exact WMS ACK,
-    # post-ACK stock refresh and recovery ledger are integrated and verified.
-    # Existing isolated unit/PG tests remain backward-compatible solely as
-    # pre-WMS internal transaction tests, NOT as evidence of final approval.
-    require_simulated_or_off()  # 409 PLAN_NOT_APPROVABLE nếu mode không hợp lệ hoặc mô phỏng bị cấm
-    if get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1":
-        # Persisted synthetic ACK by itself is NOT sufficient. Inspect the
-        # current ledger under the order lock, then fail closed until an
-        # authenticated native-SKU→CFO stock-batch linkage is verified.
-        if get_settings().app_env == "test" and os.environ.get("DEMO_DISPOSABLE") == "1":
-            from app.services.wms_finalization_gate import inspect_wms_gate
-
-            wms_state = await inspect_wms_gate(session, order, plan)
+        wms_state = await inspect_wms_gate(session, order, plan)
+        if wms_state.status != "ready":
             raise _fail("PLAN_NOT_APPROVABLE", wms_state.reason)
-        raise _fail(
-            "PLAN_NOT_APPROVABLE",
-            "WMS reservation acknowledgment and durable recovery are not configured.",
-        )
+    await _stock_available(
+        session,
+        stock,
+        order.id,
+        clock.now(),
+        cfg,
+        sales=sales,
+        wms_self_reserved=simulated and (not preflight_only or recovery_ready),
+    )
+    await _labour_available(session, prep, order.id, market, cfg, sales=sales)
+    if (preflight_only and not recovery_ready) or not simulated:
+        proof = await recheck(session, plan.id)
+        if not _proof_valid(proof, plan, order):
+            raise _fail(
+                "RESOURCE_CONFLICT",
+                "Fresh engine/source gate validation failed.",
+                conflict="five_gates",
+            )
+    if preflight_only:
+        return {"preflight": "ok"}
+    if not simulated and (get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1"):
+        raise _fail("PLAN_NOT_APPROVABLE", "WMS reservation is disabled.")
 
     plan.status = "approved"
     await session.flush()
@@ -598,8 +658,16 @@ async def _approve(
         actor_user_id=uid,
         actor_employee_id=getattr(actor, "employee_id", None),
         actor_role="sales" if sales else "dispatcher",
-        snapshot={"run_id": run.id, "order_version": order.version, "source_version": order.source_version},
-        after={"status": "approved", "trip_ids": trips, "committed_date": plan.target_date.isoformat()},
+        snapshot={
+            "run_id": run.id,
+            "order_version": order.version,
+            "source_version": order.source_version,
+        },
+        after={
+            "status": "approved",
+            "trip_ids": trips,
+            "committed_date": plan.target_date.isoformat(),
+        },
     )
     # T21 (historical T23 handoff): stage exactly one CONFIRMED in this
     # approval transaction after the order has its committed plan and window.
@@ -612,7 +680,10 @@ async def _approve(
         or notification.plan_id != plan.id
         or notification.template != "CONFIRMED"
     ):
-        raise _fail("PLAN_NOT_APPROVABLE", "Approved CONFIRMED notification is missing or inconsistent.")
+        raise _fail(
+            "PLAN_NOT_APPROVABLE",
+            "Approved CONFIRMED notification is missing or inconsistent.",
+        )
     response: dict[str, object] = {
         "order": {
             "id": order.id,
@@ -626,7 +697,11 @@ async def _approve(
         "plan": {"id": plan.id, "status": "approved", "rank": plan.rank},
         "trip_ids": trips,
         "notifications": [
-            {"id": notification.id, "template": notification.template, "status": notification.status}
+            {
+                "id": notification.id,
+                "template": notification.template,
+                "status": notification.status,
+            }
         ],
     }
     identity.response_status = 200
@@ -642,9 +717,11 @@ async def _reserve_before_approval(plan_id: int, actor: object) -> None:
     async with get_sessionmaker()() as db:
         order, plan, _, market = await _order_and_plan(db, plan_id)
     roles = _roles(actor)
-    if not roles.intersection({"dispatcher"}):
+    if not roles.intersection({"dispatcher", "sales"}):
         raise _fail("FORBIDDEN", "Approval permission denied.")
     if getattr(actor, "market", None) != market.code:
+        raise _fail("NOT_FOUND", "Plan not found.")
+    if "dispatcher" not in roles and order.origin_store_id not in getattr(actor, "location_ids", ()):
         raise _fail("NOT_FOUND", "Plan not found.")
     await reserve_simulated(order.id, plan.id)
 
@@ -666,7 +743,51 @@ async def approve(
     if session is not None:
         return await _approve(session, plan_id, actor, payload, idempotency_key, recheck)
     if require_simulated_or_off():
-        await _reserve_before_approval(plan_id, actor)
+        async with get_sessionmaker()() as db:
+            recovery_ready = (
+                await db.scalar(
+                    select(WmsReservationIntent.id).where(
+                        WmsReservationIntent.plan_id == plan_id,
+                        WmsReservationIntent.status == "refreshed",
+                        WmsReservationIntent.stock_write_run_id.is_not(None),
+                    )
+                )
+                is not None
+            )
+        async with get_sessionmaker()() as db, db.begin():
+            preflight = await _approve(
+                db,
+                plan_id,
+                actor,
+                payload,
+                idempotency_key,
+                recheck,
+                preflight_only=True,
+                recovery_ready=recovery_ready,
+            )
+        if "order" in preflight:
+            return preflight
+        from app.services.wms_reserve_phase import (
+            refresh_simulated,
+            release_invalid_plan,
+        )
+
+        try:
+            await _reserve_before_approval(plan_id, actor)
+            async with get_sessionmaker()() as db:
+                plan = await db.get(FulfilmentPlan, plan_id)
+                if plan is None:
+                    raise _fail("NOT_FOUND", "Plan not found.")
+                order_id = plan.order_id
+            await refresh_simulated(order_id, plan_id)
+            async with get_sessionmaker()() as db, db.begin():
+                return await _approve(db, plan_id, actor, payload, idempotency_key, recheck)
+        except Exception:
+            try:
+                await release_invalid_plan(plan_id)
+            except Exception:
+                pass  # Keep the durable ACK for same-key recovery if release is uncertain.
+            raise
     async with get_sessionmaker()() as db, db.begin():
         return await _approve(db, plan_id, actor, payload, idempotency_key, recheck)
 
@@ -675,7 +796,10 @@ async def manual_plan(
     order_id: int, actor: object, payload: dict[str, object], idempotency_key: str
 ) -> dict[str, object]:
     """No unsafe bypass: manual plans need the T14 fresh engine adapter."""
-    raise _fail("PLAN_NOT_APPROVABLE", "Manual plan creation needs a verified five-gate engine adapter.")
+    raise _fail(
+        "PLAN_NOT_APPROVABLE",
+        "Manual plan creation needs a verified five-gate engine adapter.",
+    )
 
 
 _PRE_DISPATCH = ("APPROVED", "PREPARING", "GOODS_READY", "LOADED")
@@ -743,7 +867,10 @@ async def keep_current(
         order_id=order.id,
         plan_id=order.approved_plan_id,
         reason_text=reason,
-        snapshot={"trigger": run.params.get("trigger"), "kept_plan_id": order.approved_plan_id},
+        snapshot={
+            "trigger": run.params.get("trigger"),
+            "kept_plan_id": order.approved_plan_id,
+        },
         actor_user_id=_actor_id(actor),
         actor_employee_id=getattr(actor, "employee_id", None),
         actor_role="dispatcher",
@@ -760,7 +887,11 @@ async def record_date_negotiation(order_id: int, actor: object, payload: dict[st
     raw_contact = payload.get("contacted_at")
     outcome = payload.get("outcome")
     channel = payload.get("channel")
-    if outcome not in ("agreed", "declined", "unreachable") or channel not in ("phone", "email", "in_person"):
+    if outcome not in ("agreed", "declined", "unreachable") or channel not in (
+        "phone",
+        "email",
+        "in_person",
+    ):
         raise _fail("VALIDATION_ERROR", "Invalid outcome or contact channel.")
     try:
         proposed = date.fromisoformat(raw_date) if isinstance(raw_date, str) else None
@@ -785,7 +916,7 @@ async def record_date_negotiation(order_id: int, actor: object, payload: dict[st
             channel=channel,
             recorded_by=actor.employee_id,
             note=note,
-            remind_at=contacted + timedelta(hours=24) if outcome == "unreachable" else None,
+            remind_at=(contacted + timedelta(hours=24) if outcome == "unreachable" else None),
         )
         db.add(row)
         await db.flush()
