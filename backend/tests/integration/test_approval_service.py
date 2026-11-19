@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
@@ -504,8 +505,10 @@ def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -
     assert notification["dedupe_key"] == f"{order['id']}:CONFIRMED:1:APPROVED"
     assert order["order_no"] in notification["subject"]
     assert order["order_no"] in notification["body"]
-    assert order["promise_start"].isoformat(timespec="minutes") in notification["body"]
-    assert order["promise_end"].isoformat(timespec="minutes") in notification["body"]
+    market_timezone = fetch(db, "SELECT timezone FROM ref.market WHERE id=1")[0][0]
+    zone = ZoneInfo(market_timezone)
+    assert order["promise_start"].astimezone(zone).isoformat(timespec="minutes") in notification["body"]
+    assert order["promise_end"].astimezone(zone).isoformat(timespec="minutes") in notification["body"]
     assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
     print(
         "T21 CONFIRMED PG evidence (synthetic ids only): "
