@@ -32,7 +32,6 @@ from app.domain.models.types import (
     LICENCE_CLASS,
     LOCATION_TYPE,
     MAPPING_STATUS,
-    NOTIFY_CHANNEL,
     PREP_UNIT,
     TASK_STATUS,
     USER_ROLE,
@@ -232,7 +231,6 @@ class Customer(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str | None] = mapped_column(Text)
-    preferred_channel: Mapped[str] = mapped_column(NOTIFY_CHANNEL, server_default=text("'email'"))
     default_receiving_hours: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     is_anonymised: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 

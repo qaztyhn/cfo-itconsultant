@@ -26,7 +26,6 @@ from app.core.db import get_sessionmaker
 from app.domain.models.ops import CustomerOrder, Notification
 from app.domain.models.ref import Market
 from app.providers.email_smtp import EmailDeliveryError, EmailRecipientNotAllowed, SmtpEmailProvider
-from app.providers.sms_sim import SimulatedSmsProvider
 from app.services.notification_snapshot import read_snapshot
 from app.services.notification_templates import (
     EtaWindow,
@@ -39,10 +38,6 @@ from app.services.notification_templates import (
 
 class EmailTransport(Protocol):
     async def send(self, *, recipient: str, subject: str, text: str) -> None: ...
-
-
-class SmsTransport(Protocol):
-    async def send(self, *, recipient: str, body: str) -> object: ...
 
 
 def delivery_time(now: datetime, *, timezone: str, quiet_hours: tuple[str, str], delay: bool) -> datetime:
@@ -65,7 +60,7 @@ def delivery_time(now: datetime, *, timezone: str, quiet_hours: tuple[str, str],
 
 
 async def deliver_queued(
-    session: AsyncSession, *, now: datetime, email: EmailTransport, sms: SmsTransport, limit: int = 100
+    session: AsyncSession, *, now: datetime, email: EmailTransport, limit: int = 100
 ) -> int:
     if now.tzinfo is None or limit <= 0:
         raise ValueError("Invalid outbox run parameters")
@@ -73,7 +68,11 @@ async def deliver_queued(
         select(Notification, Market, CustomerOrder)
         .join(CustomerOrder, CustomerOrder.id == Notification.order_id)
         .join(Market, Market.id == CustomerOrder.market_id)
-        .where(Notification.status == "queued", Notification.scheduled_for <= now)
+        .where(
+            Notification.status == "queued",
+            Notification.scheduled_for <= now,
+            Notification.recipient.is_not(None),
+        )
         .order_by(Notification.scheduled_for, Notification.id)
         .limit(limit)
         .with_for_update(of=Notification, skip_locked=True)
@@ -115,7 +114,7 @@ async def deliver_queued(
         try:
             rendered = read_snapshot(
                 notification.eta_window,
-                channel=notification.channel,
+                channel="email",
                 template=notification.template,
                 subject=notification.subject,
                 body=notification.body,
@@ -131,7 +130,7 @@ async def deliver_queued(
                     MessageVariables(public_order_ref=order.order_no, eta_window=window),
                     locale=market.locale,
                     timezone=market.timezone,
-                    channel=notification.channel,
+                    channel="email",
                 )
         except (ValueError, KeyError):
             notification.status = "failed"
@@ -142,16 +141,12 @@ async def deliver_queued(
         notification.subject, notification.body = rendered.subject, rendered.body
         notification.attempts += 1
         try:
-            if notification.channel == "email":
-                await email.send(
-                    recipient=notification.recipient,
-                    subject=notification.subject or "",
-                    text=notification.body,
-                )
-            elif notification.channel == "sms_sim":
-                await sms.send(recipient=notification.recipient, body=notification.body)
-            else:
-                raise ValueError("Unsupported notification channel")
+            assert notification.recipient is not None
+            await email.send(
+                recipient=notification.recipient,
+                subject=notification.subject or "",
+                text=notification.body,
+            )
         except EmailRecipientNotAllowed:
             notification.attempts -= 1  # nothing was sent; policy refusal is not a delivery attempt
             notification.status, notification.suppressed_reason = "suppressed", "recipient_not_allowed"
@@ -198,4 +193,4 @@ async def process_outbox() -> int:
         allowed_recipient_domains=os.environ.get("SMTP_ALLOWED_RECIPIENT_DOMAINS", "test").split(","),
     )
     async with get_sessionmaker()() as session, session.begin():
-        return await deliver_queued(session, now=clock.now(), email=email, sms=SimulatedSmsProvider())
+        return await deliver_queued(session, now=clock.now(), email=email)

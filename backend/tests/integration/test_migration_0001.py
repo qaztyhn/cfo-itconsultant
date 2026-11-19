@@ -16,7 +16,12 @@ FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid JOIN pg_namespace n ON n.oi
 GROUP BY 1
 """
 
-# Enum Python (app.domain.enums) phải khớp 1-1 với enum DB tương ứng.
+# Python enums are current; revision 0001 must retain its original historical labels.
+# DRIVER_INCIDENT was introduced later by 0015, not by migration 0001.
+LATER_ADDITIONS: dict[str, frozenset[str]] = {
+    "ops.event_type": frozenset({"DRIVER_INCIDENT"}),
+}
+
 PY_TO_DB: dict[type[StrEnum], str] = {
     enums.UserRole: "ref.user_role",
     enums.PrepUnit: "ref.prep_unit",
@@ -49,7 +54,17 @@ def test_migration_0001_creates_extensions_schemas_enums(empty_db: str) -> None:
     db = _db_enums(empty_db)
     assert len(db) == 27
     for py_enum, db_name in PY_TO_DB.items():
+        historical = [m.value for m in py_enum if m.value not in LATER_ADDITIONS.get(db_name, ())]
+        assert db[db_name] == historical, db_name
+    assert "DRIVER_INCIDENT" not in db["ops.event_type"]
+
+
+def test_current_enums_match_database_at_head(empty_db: str) -> None:
+    command.upgrade(alembic_config(empty_db), "head")
+    db = _db_enums(empty_db)
+    for py_enum, db_name in PY_TO_DB.items():
         assert db[db_name] == [m.value for m in py_enum], db_name
+    assert "DRIVER_INCIDENT" in db["ops.event_type"]
 
 
 def test_migration_0001_v12_order_status_and_events(empty_db: str) -> None:

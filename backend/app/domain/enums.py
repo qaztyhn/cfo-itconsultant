@@ -50,6 +50,7 @@ class EventType(StrEnum):
     BREAKAGE = "BREAKAGE"
     VEHICLE_ISSUE = "VEHICLE_ISSUE"
     SHIFT_CHANGE = "SHIFT_CHANGE"
+    DRIVER_INCIDENT = "DRIVER_INCIDENT"
 
 
 class KpiScope(StrEnum):
@@ -63,6 +64,7 @@ class RunKind(StrEnum):
     INITIAL = "initial"
     RERUN = "rerun"
     REPLAN_SUGGESTION = "replan_suggestion"  # không giữ chỗ, coi kế hoạch cũ như không tồn tại
+    REMAINING_REPLAN = "remaining_replan"
 
 
 class RiskStatus(StrEnum):

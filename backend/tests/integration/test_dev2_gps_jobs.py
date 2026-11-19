@@ -28,7 +28,7 @@ def _duty(db: str) -> None:
 
 
 def test_US_GPS_03_AC2_terminal_positions_are_purged_immediately(empty_db: str) -> None:
-    command.upgrade(alembic_config(empty_db), "0009")
+    command.upgrade(alembic_config(empty_db), "head")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1), rows.trip_sql(2), rows.trip_sql(1))
     execute(
         empty_db,
@@ -46,7 +46,7 @@ def test_US_GPS_03_AC2_terminal_positions_are_purged_immediately(empty_db: str) 
 def test_US_GPS_03_AC1_loss_check_is_scoped_deduplicated_and_respects_threshold(
     empty_db: str,
 ) -> None:
-    command.upgrade(alembic_config(empty_db), "0009")
+    command.upgrade(alembic_config(empty_db), "head")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1), rows.trip_sql(2))
     execute(
         empty_db,
@@ -66,7 +66,7 @@ def test_US_GPS_03_AC1_loss_check_is_scoped_deduplicated_and_respects_threshold(
 
 
 def _on_road_with_old_signal(db: str) -> None:
-    command.upgrade(alembic_config(db), "0009")
+    command.upgrade(alembic_config(db), "head")
     execute(db, *rows.REF_HR, rows.trip_sql(1))
     execute(
         db,
@@ -122,7 +122,7 @@ def test_US_GPS_03_AC1_alert_resolves_when_trip_is_no_longer_tracked(empty_db: s
 def test_US_GPS_03_AC2_finished_trip_without_end_time_does_not_keep_gps_forever(
     empty_db: str, status: str
 ) -> None:
-    command.upgrade(alembic_config(empty_db), "0009")
+    command.upgrade(alembic_config(empty_db), "head")
     execute(empty_db, *rows.REF_HR, rows.trip_sql(1))
     execute(
         empty_db,

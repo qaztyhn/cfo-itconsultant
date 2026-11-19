@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 from app.deps import get_current_user, get_db
 from app.main import create_app
 from app.services import notify_service
-from tests.integration.conftest import async_url
+from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.test_notify_backend import WINDOW, actor, prepare
 
@@ -137,3 +137,17 @@ def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(
     roles["actor"] = actor("dispatcher", market="NO")
     assert client.get("/api/v1/orders/1/notifications").status_code == 404
     assert client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 2}).status_code == 404
+
+
+def test_US_NOT_02_no_email_reports_suppressed_instead_of_a_sendable_draft(
+    notifications_api: tuple[TestClient, dict[str, SimpleNamespace], str],
+) -> None:
+    client, _, dsn = notifications_api
+    execute(dsn, "UPDATE ref.customer SET email = NULL WHERE id = 1")
+    response = client.post("/api/v1/orders/1/delay-notice", json={**WINDOW, "version": 1})
+    assert response.status_code == 200
+    assert response.json()["status"] == "suppressed"
+    assert tuple(fetch(dsn, "SELECT recipient, skipped_reason FROM ops.notification")[0]) == (
+        None,
+        "SKIPPED_NO_CHANNEL",
+    )

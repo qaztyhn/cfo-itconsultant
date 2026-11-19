@@ -184,7 +184,14 @@ def test_US_RSK_01_AC2_event_signal_must_exist_and_cannot_replay(
         )
         is None
     )
-    state["now"] += timedelta(minutes=1)
+    assert fetch(dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 1
+    # Another verified input may produce its own version, but it does not
+    # make the already-consumed GOODS_READY event a fresh signal.
+    state["now"] += timedelta(minutes=2)
+    later = _recalc(dsn, at=state["now"] - timedelta(minutes=1))
+    assert later is not None and later["version"] == 2
+    assert run(dsn, lambda s: risk_service.recalculate(1, "event:GOODS_READY", session=s)) is None
+    assert fetch(dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 2
 
 
 def test_US_RSK_02_AC6_overdue_without_delivered_order(risk_db: tuple[str, dict[str, datetime]]) -> None:
