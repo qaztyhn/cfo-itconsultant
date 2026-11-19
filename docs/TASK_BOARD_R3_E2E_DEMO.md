@@ -160,6 +160,7 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 
 ### T27 · E2E 14 bước — Dev 3/QA · M · cuối
 - Dùng mã đơn đã submit từ bộ seed T26. Chạy Playwright đủ 14 bước ở mục 1 (gồm 12b), bắt đầu tại **Sales → Sync & Check** trong CFO. Ghi PASS/FAIL/BLOCKED kèm trace thật.
+- Bước 5 trên `SE-2026-000249` dùng chung lượt chạy với T21. [Báo cáo bước 5 và bằng chứng PostgreSQL/Mailpit](T21_MAILPIT_EVIDENCE.md#t27-bước-5).
 
 ### T28 · Runbook + lệnh reset + video dự phòng — Dev 2 · S
 - Ghi cách khôi phục bộ seed, mã đơn đã submit ở Source và màn mở đầu **Sales → Sync & Check** trong CFO.

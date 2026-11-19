@@ -46,6 +46,7 @@ services:
       ORS_API_KEY: "${ORS_API_KEY:-}"
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
+      NOTIFY_DISPATCHED_ENABLED: "${NOTIFY_DISPATCHED_ENABLED:-true}"
       APP_ENV: "${APP_ENV:-local}"
       APP_NOW: "${APP_NOW:-}"
       SEED_DEMO_PASSWORD: "${SEED_DEMO_PASSWORD:-}"

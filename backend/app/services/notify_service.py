@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
-from app.core.config import MarketConfig
+from app.core.config import MarketConfig, get_settings
 from app.core.errors import DomainError
 from app.domain.models.ops import (
     Alert,
@@ -324,6 +324,7 @@ async def _deduped_insert(
     if customer is None or customer.market_id != order.market_id:
         raise DomainError("PLAN_NOT_APPROVABLE", "Customer channel is not verified.")
     recipient, suppressed = _recipient(customer)
+    flag_disabled = template == "DISPATCHED" and not get_settings().notify_dispatched_enabled
     now = clock.now()
     snapshot = NotificationSnapshot(
         template=template,
@@ -336,8 +337,12 @@ async def _deduped_insert(
     )
     frozen, rendered = freeze_snapshot(snapshot, channel="email")
     default_status = "suppressed" if market.shadow_mode else "queued"
-    status = "suppressed" if suppressed else status_override or default_status
-    reason = suppressed or ("shadow_mode" if market.shadow_mode else None)
+    status = "suppressed" if flag_disabled or suppressed else status_override or default_status
+    reason = (
+        "SKIPPED_FLAG_DISABLED"
+        if flag_disabled
+        else suppressed or ("shadow_mode" if market.shadow_mode else None)
+    )
     schedule = delivery_time(
         now,
         timezone=market.timezone,
@@ -359,7 +364,7 @@ async def _deduped_insert(
             plan_id=order.approved_plan_id,
             dedupe_key=dedupe_key,
             suppressed_reason=reason if status == "suppressed" else None,
-            skipped_reason="SKIPPED_NO_CHANNEL" if suppressed == "SKIPPED_NO_CHANNEL" else None,
+            skipped_reason=reason if reason in ("SKIPPED_NO_CHANNEL", "SKIPPED_FLAG_DISABLED") else None,
         )
         .on_conflict_do_nothing(index_elements=[Notification.dedupe_key])
         .returning(Notification.id)
@@ -400,13 +405,25 @@ async def enqueue(
         raise NotImplementedError("Caller must pass its existing notification transaction")
     if template not in AUTO_TEMPLATES:
         raise DomainError("VALIDATION_ERROR", "Only four automatic templates are permitted.")
-    order = await session.get(CustomerOrder, order_id)
+    per_order = template == "DISPATCHED"
+    # Serialize the legacy lookup and insert on the same order lock used by
+    # execution. A previous plan's notification is the result for this order.
+    order = await session.get(CustomerOrder, order_id, with_for_update=per_order)
     if order is None:
         raise DomainError("NOT_FOUND", "Order not found.")
     if order.status != ("APPROVED" if template == "CONFIRMED" else template):
         raise DomainError("ILLEGAL_TRANSITION", "Notification does not match the committed order state.")
     if plan_id is None or order.approved_plan_id != plan_id:
         raise DomainError("PLAN_NOT_APPROVABLE", "Approved plan identifier is required.")
+    if per_order:
+        existing_id = await session.scalar(
+            select(Notification.id)
+            .where(Notification.order_id == order_id, Notification.template == "DISPATCHED")
+            .order_by(Notification.id)
+            .limit(1)
+        )
+        if existing_id is not None:
+            return existing_id
     market = await _order_market(session, order)
     try:
         window = approved_window(order.promise_start, order.promise_end)
@@ -419,7 +436,9 @@ async def enqueue(
         order=order,
         market=market,
         template=template,  # type: ignore[arg-type]
-        dedupe_key=f"{order.id}:{template}:{plan_id}:{order.status}",
+        dedupe_key=(
+            f"{order.id}:DISPATCHED" if per_order else f"{order.id}:{template}:{plan_id}:{order.status}"
+        ),
         window=window,
     )
 
