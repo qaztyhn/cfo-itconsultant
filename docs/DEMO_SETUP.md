@@ -5,6 +5,7 @@ CFO reference data, official *demo-only* shift schedule and live HTTP checks on
 one isolated Compose installation. They do **not** presently reproduce a
 fully approved, driver-executable happy path. See
 [DEMO_TEST_RESULTS.md](DEMO_TEST_RESULTS.md) for exact blockers and evidence.
+For the separate E0-04 stock-to-feasible-plan slice, see [E0_04_DEMO.md](E0_04_DEMO.md).
 
 ## 1. Scope and contracts
 

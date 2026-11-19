@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+if [[ -n "${MSYSTEM:-}" ]]; then
+  export MSYS_NO_PATHCONV=1
+fi
 if [[ "${APP_ENV:-}" != "test" || "${DEMO_DISPOSABLE:-}" != "1" ||
       "${APP_NOW:-}" != "2026-11-04T10:05:00+01:00" ]]; then
   echo "BLOCKED: export APP_ENV=test, DEMO_DISPOSABLE=1 and approved APP_NOW." >&2
@@ -46,7 +49,13 @@ fi
 
 tmpfile="$(mktemp "$ROOT/.demo-manifest.XXXXXXXX")"
 trap 'rm -f "$tmpfile"' EXIT
-docker compose cp cfo-api:/tmp/cfo-demo-fixtures.json "$tmpfile" >/dev/null
+docker_tmpfile="$tmpfile"
+docker_manifest="$ROOT/demo-fixtures.json"
+if command -v cygpath >/dev/null; then
+  docker_tmpfile="$(cygpath -w "$tmpfile")"
+  docker_manifest="$(cygpath -w "$docker_manifest")"
+fi
+docker compose cp cfo-api:/tmp/cfo-demo-fixtures.json "$docker_tmpfile" >/dev/null
 if [[ -e "$ROOT/demo-fixtures.json" ]]; then
   cmp -s "$tmpfile" "$ROOT/demo-fixtures.json" || {
     echo "BLOCKED: local manifest conflicts; refusing to overwrite." >&2
@@ -55,7 +64,7 @@ if [[ -e "$ROOT/demo-fixtures.json" ]]; then
 else
   install -m 600 "$tmpfile" "$ROOT/demo-fixtures.json"
 fi
-docker compose cp "$ROOT/demo-fixtures.json" source-se:/tmp/cfo-demo-fixtures.json >/dev/null
+docker compose cp "$docker_manifest" source-se:/tmp/cfo-demo-fixtures.json >/dev/null
 docker compose exec -T source-se python -m app.seed_demo --manifest /tmp/cfo-demo-fixtures.json
 # The M0 market seed deliberately leaves Source URL unset; bind only this
 # approved local adapter, refusing any preexisting incompatible configuration.

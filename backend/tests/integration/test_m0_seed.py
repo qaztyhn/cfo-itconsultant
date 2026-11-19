@@ -10,17 +10,21 @@ from alembic import command
 from app.core.db import to_async_url
 from app.core.security import verify_password
 from app.seed.m0_accounts import seed_accounts
+from scripts.provision_stock_demo_admins import DEMO_ACCOUNTS
 from tests.integration.conftest import alembic_config, execute, fetch
 
 pytestmark = pytest.mark.integration
 
 
-def seed(dsn: str, password: str) -> None:
+def seed(dsn: str, password: str, accounts: tuple[tuple[str, str, str, str], ...] | None = None) -> None:
     async def go() -> None:
         engine = create_async_engine(to_async_url(dsn), hide_parameters=True)
         try:
             async with async_sessionmaker(engine)() as session, session.begin():
-                await seed_accounts(session, password)
+                if accounts is None:
+                    await seed_accounts(session, password)
+                else:
+                    await seed_accounts(session, password, accounts=accounts)
         finally:
             await engine.dispose()
 
@@ -75,3 +79,30 @@ def test_m0_seed_rolls_back_on_conflicting_assignment(empty_db: str) -> None:
     with pytest.raises(ValueError, match="different active assignment"):
         seed(empty_db, secrets.token_urlsafe(24))
     assert len(fetch(empty_db, "SELECT id FROM ref.app_user")) == 5
+
+
+def test_US_STK_01_AC1_disposable_accounts_have_no_implicit_stock_grants(empty_db: str) -> None:
+    command.upgrade(alembic_config(empty_db), "head")
+    password = secrets.token_urlsafe(24)
+    seed(empty_db, password)
+    seed(empty_db, password, DEMO_ACCOUNTS)
+    first = fetch(
+        empty_db,
+        """SELECT u.id, e.employee_no FROM ref.app_user u
+           JOIN hr.employee e ON e.id=u.employee_id
+           WHERE e.employee_no IN ('DEMO-STOCKOPERATOR','DEMO-STOCKAPPROVER')
+           ORDER BY e.employee_no""",
+    )
+    assert len(first) == 2 and first[0]["id"] != first[1]["id"]
+    assert fetch(empty_db, "SELECT count(*) AS n FROM ref.stock_admin_grant")[0]["n"] == 0
+    seed(empty_db, password, DEMO_ACCOUNTS)
+    assert (
+        fetch(
+            empty_db,
+            """SELECT u.id, e.employee_no FROM ref.app_user u
+           JOIN hr.employee e ON e.id=u.employee_id
+           WHERE e.employee_no IN ('DEMO-STOCKOPERATOR','DEMO-STOCKAPPROVER')
+           ORDER BY e.employee_no""",
+        )
+        == first
+    )

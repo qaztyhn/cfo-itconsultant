@@ -16,13 +16,17 @@ from app.core.config import get_settings
 from app.core.db import get_engine
 from app.services.ingest_service import sync_entity
 
-DEMO_NOW = "2026-11-04T10:05:00+01:00"
+DEMO_CLOCKS = {"2026-11-04T10:05:00+01:00", "2026-12-01T10:05:00+01:00"}
 ENTITIES = ("customers", "products", "inbound", "fleet", "orders", "stock")
 
 
 async def run(entity: str) -> int:
     settings = get_settings()
-    if settings.app_env != "test" or settings.app_now != DEMO_NOW or os.environ.get("DEMO_DISPOSABLE") != "1":
+    if (
+        settings.app_env != "test"
+        or settings.app_now not in DEMO_CLOCKS
+        or os.environ.get("DEMO_DISPOSABLE") != "1"
+    ):
         print("BLOCKED: demo ingestion requires disposable APP_ENV=test and approved APP_NOW.")
         return 2
     clock.init_from_settings(settings.app_now)

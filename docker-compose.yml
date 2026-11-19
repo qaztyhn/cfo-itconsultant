@@ -49,7 +49,11 @@ services:
       APP_ENV: "${APP_ENV:-local}"
       APP_NOW: "${APP_NOW:-}"
       SEED_DEMO_PASSWORD: "${SEED_DEMO_PASSWORD:-}"
+      DEMO_DISPOSABLE: "${DEMO_DISPOSABLE:-0}"
+      DEMO_D7_FIXTURE_DIR: "${DEMO_D7_FIXTURE_DIR:-}"
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
+    volumes:
+      - ./.e0_04_d7:/srv/e0_04_d7:ro
     ports: ["127.0.0.1:${CFO_API_PORT:-8000}:8000"]
     depends_on:
       postgres: {condition: service_healthy}

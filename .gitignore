@@ -16,3 +16,5 @@ logs/
 demo-fixtures.json
 demo-*-results.json
 .demo-manifest.*
+.e0_04_d7/
+.e0-04-*.json
