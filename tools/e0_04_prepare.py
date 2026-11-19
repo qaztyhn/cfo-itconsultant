@@ -113,6 +113,20 @@ def main() -> int:
     if not bash.is_file():
         print("BLOCKED: Git Bash or a POSIX bash is required for base demo setup")
         return 2
+    # Compose bind mounts create missing host directories as root on Linux.
+    # Make the synthetic fixture directory writable by the invoking user first.
+    fixture_dir = ROOT / ".e0_04_d7"
+    if fixture_dir.is_symlink():
+        print("BLOCKED: disposable D7 fixture directory must not be a symlink")
+        return 2
+    try:
+        fixture_dir.mkdir(mode=0o700, exist_ok=True)
+        if not os.access(fixture_dir, os.W_OK):
+            print("BLOCKED: D7 fixture directory is not writable by this user")
+            return 2
+    except OSError:
+        print("BLOCKED: cannot create disposable D7 fixture directory")
+        return 2
     base["MSYS_NO_PATHCONV"] = "1"
     try:
         if compose(base, "ps", "-q", capture=True):
