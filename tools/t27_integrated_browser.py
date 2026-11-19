@@ -205,6 +205,11 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
     page = login(browser, f"/dispatcher/plan-review/{run_id}", "user1@cfo.test", password, out, "Dispatcher")
     try:
         expect(page.get_by_role("heading", name="Plan review")).to_be_visible()
+        tight = page.get_by_role("checkbox", name="I accept the tight schedule")
+        if tight.count():
+            # The actual Dispatcher explicitly acknowledges a tight plan.
+            # This is not an automatic approval or a bypass of backend recheck.
+            tight.check()
         action = page.get_by_role("region", name="Decision").get_by_role("button", name="Approve #1")
         expect(action).to_be_enabled(timeout=15000)
         screenshot(page, out, "03-dispatcher-proposed.png")
