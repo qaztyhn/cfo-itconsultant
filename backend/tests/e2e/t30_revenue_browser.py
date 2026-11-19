@@ -12,12 +12,12 @@ import sys
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
-from alembic import command
 from playwright.sync_api import sync_playwright
 
+from alembic import command
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core.security import hash_password
