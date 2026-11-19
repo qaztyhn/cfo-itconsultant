@@ -1081,7 +1081,7 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 
 - Kênh duy nhất `email`. `DISPATCHED` gửi một lần khi chuyến đầu tiên của đơn xuất phát, bật/tắt bằng `NOTIFY_DISPATCHED_ENABLED` (tắt → `suppressed`, `skipped_reason='SKIPPED_FLAG_DISABLED'`).
 - `FAILED` luôn gửi khi đơn chuyển `FAILED`. `DELAY` giữ nguyên quy tắc Dispatcher (§10).
-- Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`; khách chưa khớp được qua `CustomerContactPort` → `suppressed`, `SKIPPED_CUSTOMER_UNMATCHED`, alert `CUSTOMER_UNMATCHED` cho Dispatcher.
+- Khách không có email → `suppressed`, `SKIPPED_NO_CHANNEL`.
 
 ### 19.8 KPI (thay §14)
 
@@ -1102,22 +1102,4 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 - Định nghĩa theo DEC-R3-03. `manual_intervention_rate` = đơn có kế hoạch tay hoặc override ÷ đơn được cam kết. `eta_error_min` = |ETA dự báo gần nhất trước `DISPATCHED` − giờ POD| theo chuyến; không có `baseline`.
 - `GET /kpi/daily?metric=` chỉ nhận 5 key trên. `PUT /kpi/baseline/eta_error_min` → `422 VALIDATION_ERROR`. Các metric cũ (`labour_hours_per_delivery`, `km_per_delivery`, `prep_error_min`, `failed_delivery_rate`, `capacity_utilisation`) không còn được trả về.
 
-### 19.9 CRM: `CustomerContactPort` và provider giả lập (DEC-R3-12)
-
-- Cổng nội bộ (không phải endpoint CFO): `get_contacts(external_ids) → [{external_id, email, phone, email_consent, updated_at}]`. Chọn provider bằng cấu hình market `crm.provider ∈ {d365_mock, salesforce_mock}`. Engine không bao giờ gọi cổng này; thông báo và CS lookup lấy liên hệ qua cổng.
-- Nguồn giả lập trong `source-<cc>`, hai hình dạng khác nhau để chứng minh mapping nằm trong adapter:
-```json
-// GET /crm/d365/contacts?external_ids=C-1001,C-1002
-{ "value": [ { "accountnumber": "C-1001", "emailaddress1": "demo+1001@example.test", "telephone1": "+46700000001",
-               "donotbulkemail": false, "modifiedon": "…" } ] }
-// GET /crm/salesforce/contacts?external_ids=C-1001,C-1002
-{ "records": [ { "External_ID__c": "C-1001", "Email": "demo+1001@example.test", "Phone": "+46700000001",
-                 "HasOptedOutOfEmail": false, "LastModifiedDate": "…" } ] }
-```
-- `email_consent = not donotbulkemail` / `not HasOptedOutOfEmail`. Không khớp `external_id` → coi như chưa khớp (19.7). Không log email/điện thoại.
-- Kiểm thử bắt buộc: đổi provider với cùng dữ liệu → cùng `PlanningResult` và cùng nội dung thông báo.
-
-### 19.10 Thị trường Đan Mạch giả lập và AI theo lô (DEC-R3-14)
-
-- `source-dk` dùng đúng hợp đồng §16; CFO thêm market `DK` chỉ bằng cấu hình (múi giờ `Europe/Copenhagen`, ngày lễ, giờ chốt, ngôn ngữ template, `crm.provider`). Không thêm endpoint.
-- AI gợi ý nhóm xử lý chạy theo lô lúc seed, ghi vào `ref.mapping_task.candidates` phần tử `{ "handling_group": "N3", "reason": "ai_batch", "model": "…", "confidence": 0.82 }` (không đổi DDL). Chỉ IT xác nhận qua §12.1; không có lời gọi AI trong request.
+> §19.9 (CRM) và §19.10 (Đan Mạch, AI theo lô) đã bị gỡ ngày 19/11/2026 do Owner hủy DEC-R3-12 và DEC-R3-14.

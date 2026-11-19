@@ -181,7 +181,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 |---|---|---|
 | 1 | Đường lý tưởng: POS → CFO → 3 phương án → Approve → Start prep → Goods ready → Loaded → Dispatched → tài xế gửi vị trí → Delivered (kèm vị trí) | Mọi trạng thái, giữ chỗ → committed, email CONFIRMED/DISPATCHED/DELIVERED, ETA theo sự kiện, KPI cập nhật, decision_log đủ |
 | 2 | Thiếu hàng nhưng có hàng nhập xác nhận trước ngày | Phương án khả thi, `STOCK_AFTER_INBOUND`, điểm phức tạp +1 |
-| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày khả thi sớm nhất; không gợi ý chuyển kho (R3); Dispatcher ghi thỏa thuận ngày rồi Apply, kiểm đủ gate |
+| 3 | Thiếu hàng mọi kho (đơn synthetic 000137) | `NO_FEASIBLE_DATE`, ngày sớm nhất 12/11 và gợi ý chuyển kho **chỉ nếu source stock/ETA xác minh**; ghi `date_negotiation.agreed` **chưa** đổi ngày; Dispatcher explicit **Apply agreed date** có audit/version, sau đó chạy planning mới và toàn bộ gate, không tự approve |
 | 4 | Quá công suất ngày / quá giờ cắt (đơn 000155) | Goods ready dời, lên hàng ca sau, `PREP_AFTER_CUTOFF` |
 | 5 | Hai đơn tranh cùng SKU ở cùng kho (100 bao; cần 80 và 70) | Lập kế hoạch đồng thời: cả hai được giữ chỗ (cho phép vượt); duyệt đồng thời: tổng `committed` ≤ 100, một đơn thành công, đơn kia `409 RESOURCE_CONFLICT` |
 | 6 | Đơn lớn hơn một xe (đơn 000160); đơn thiếu loại xe (000144) | 000160: phương án 2 xe (ít nhất), mỗi xe phần hàng, tới cùng lúc; duyệt; Mark loaded từng xe; giao từng xe; `DELIVERED` khi xe cuối giao, 2 POD, một thông báo mỗi loại. 000144: `NO_FEASIBLE_DATE` check `truck` |
@@ -195,7 +195,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
-| 17 | Đổi CRM (R3) | Đổi `crm.provider` giữa `d365_mock` và `salesforce_mock` → cùng kết quả lập kế hoạch và cùng nội dung email; khách chưa khớp → email `suppressed` + cảnh báo |
+| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày |
 | 18 | Công suất ngày (R3) | Kho chưa xác nhận công suất ngày → gate công suất fail; Warehouse Manager xác nhận → phương án khả thi; sửa ngày đã qua cần lý do |
 
 ## 7. Definition of Done

@@ -1180,7 +1180,7 @@ ALTER TABLE hr.dispatcher_staff ADD COLUMN IF NOT EXISTS in_rotation boolean NOT
 -- R3-DB-2: chỉ email (DEC-R3-02). Giữ giá trị 'sms_sim' trong enum; chặn dòng mới.
 ALTER TABLE ops.notification ADD CONSTRAINT ck_notification_email_only_r3 CHECK (channel = 'email') NOT VALID;
 ALTER TABLE ops.notification ADD COLUMN IF NOT EXISTS skipped_reason text
-  CHECK (skipped_reason IS NULL OR skipped_reason IN ('SKIPPED_NO_CHANNEL','SKIPPED_FLAG_DISABLED','SKIPPED_CUSTOMER_UNMATCHED'));
+  CHECK (skipped_reason IS NULL OR skipped_reason IN ('SKIPPED_NO_CHANNEL','SKIPPED_FLAG_DISABLED'));
 -- 'suppressed' (notif_status có sẵn) + skipped_reason dùng khi không gửi; không log địa chỉ email.
 
 -- R3-DB-3: lập lại cho phần chưa giao (DEC-R3-09)
