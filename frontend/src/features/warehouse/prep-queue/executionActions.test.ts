@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 describe("Round 3 authoritative action eligibility", () => {
-  it("test_US_WH_01_AC1_requires_backend next_action as well as legal status", () => {
+  it("test_US_WH_04_AC1_requires_backend next_action as well as legal status", () => {
     expect(canPerform(orderApproved(), "START_PREP")).toBe(true);
     expect(canPerform(orderRunning(), "GOODS_READY")).toBe(true);
     expect(canPerform({ ...orderApproved(), next_action: null }, "START_PREP")).toBe(false);
@@ -31,7 +31,7 @@ describe("Round 3 authoritative action eligibility", () => {
     expect(canPerform({ ...orderApproved(), status: "PREPARING" }, "START_PREP")).toBe(false);
   });
 
-  it("test_US_WH_01_AC2_requires one un-loaded matching trip per vehicle", () => {
+  it("test_US_WH_04_AC2_requires one un-loaded matching trip per vehicle", () => {
     const order = orderMultiVehicle();
     expect(canPerform(order, "LOADED", 941)).toBe(false);
     expect(canPerform(order, "LOADED", 942)).toBe(true);
@@ -40,7 +40,7 @@ describe("Round 3 authoritative action eligibility", () => {
     expect(canPerform(orderApproved(), "LOADED", 930)).toBe(false);
   });
 
-  it("allows shortage and breakage reports only during warehouse execution", () => {
+  it("test_US_WH_05_AC1_allows shortage and breakage only during warehouse execution", () => {
     expect(canPerform(orderRunning(), "SHORTAGE")).toBe(true);
     expect(canPerform(orderRunning(), "BREAKAGE")).toBe(true);
     expect(canPerform({ ...orderRunning(), status: "DELIVERED" }, "SHORTAGE")).toBe(false);
@@ -56,7 +56,7 @@ describe("POST /orders/{id}/events Round 3 payload and key", () => {
     ["BREAKAGE", { sku: "SE-CEM", qty: 2 }],
   ];
 
-  it.each(cases)("test_US_WH_01_AC3_sends %s exactly as documented", async (eventType, payload) => {
+  it.each(cases)("test_US_WH_04_AC3_sends %s exactly as documented", async (eventType, payload) => {
     vi.mocked(apiPost).mockResolvedValue({ event_id: 28, order_status: "GOODS_READY" });
     const event = prepareEvent(eventDraft(137, eventType, at, payload));
     await expect(submitPrepEvent(event)).resolves.toMatchObject({ event_id: 28 });
@@ -67,7 +67,7 @@ describe("POST /orders/{id}/events Round 3 payload and key", () => {
     }, event.key);
   });
 
-  it("test_US_WH_01_AC4_replays uncertain retries with unchanged key and body", async () => {
+  it("test_US_WH_04_AC4_replays uncertain retries with unchanged key and body", async () => {
     const original = prepareEvent(eventDraft(137, "START_PREP", at, { crew_size: 4 }));
     expect(prepareEvent(eventDraft(137, "START_PREP", at, { crew_size: 4 }), original)).toBe(original);
     vi.mocked(apiPost).mockRejectedValueOnce(new ApiError("NETWORK_ERROR", "unavailable", undefined, undefined, 0));
