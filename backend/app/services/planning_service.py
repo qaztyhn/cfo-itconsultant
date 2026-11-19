@@ -147,10 +147,13 @@ def _check_to_json(candidate: PlanCandidate) -> dict[str, object]:
 
 
 def _line_payload(candidate: PlanCandidate) -> dict[str, object]:
-    return {
+    workload: dict[str, object] = {
         "prep_by_day": {d.isoformat(): str(h) for d, h in candidate.prep_by_day.items()},
         "labour_hours": str(candidate.prep_hours),
     }
+    if candidate.planned_start_prep is not None:
+        workload["planned_start_prep"] = candidate.planned_start_prep.isoformat()
+    return workload
 
 
 def _candidate_row(

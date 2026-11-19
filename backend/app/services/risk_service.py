@@ -137,6 +137,20 @@ async def _valid_signal(
     return previous is None or signal_at > previous.computed_at
 
 
+def _planned_start_prep(plan: FulfilmentPlan) -> datetime | None:
+    """Read the start captured by the scheduler from the approved plan's workload snapshot."""
+    raw = plan.workload.get("planned_start_prep") if isinstance(plan.workload, dict) else None
+    if not isinstance(raw, str):
+        return None
+    try:
+        start = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if start.utcoffset() is None or start > plan.goods_ready_at:
+        return None
+    return start
+
+
 async def _vehicle_inputs(
     session: AsyncSession,
     order: CustomerOrder,
@@ -174,6 +188,7 @@ async def _vehicle_inputs(
         (e.occurred_at for e in events if e.event_type == "START_PREP"),
         default=None,
     )
+    planned_start_prep = _planned_start_prep(plan)
     paused = bool(events) and events[-1].event_type == "PREP_PAUSED"
     zone = ZoneInfo(market.timezone)
     cutoff = await session.scalar(
@@ -225,7 +240,7 @@ async def _vehicle_inputs(
                 raise _missing("Next official loading shift is required after cutoff.")
         state = MilestoneState(
             planned_goods_ready=plan.goods_ready_at,
-            planned_start_prep=None,  # not persisted in approved plan; never invent it
+            planned_start_prep=planned_start_prep,
             planned_depart=pv.depart_at,
             drive_min=drive,
             loading_min=loading,

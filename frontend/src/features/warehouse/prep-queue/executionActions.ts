@@ -114,6 +114,8 @@ export function safeActionError(cause: unknown): string {
   if (cause.status === 401) return "Session expired. Sign in again; the event is not confirmed.";
   if (cause.status === 403) return "Not authorized for this warehouse or event. No completion was confirmed.";
   if (cause.status === 404) return "Order, trip or warehouse not available in your scope. Refresh the queue.";
+  if (cause.status === 409 && cause.code === "PLAN_NOT_APPROVABLE")
+    return "CFO could not verify the approved plan or calculate ETA. Refresh the queue before trying again.";
   if (cause.status === 409) return "Event rejected: invalid order or loading sequence, or data changed. Refresh the queue before deciding what to do.";
   if (cause.status === 422) return "The server rejected the event. Review the crew, time and report fields.";
   if (cause.status === 503 || cause.status === 0) return "Connection or mandatory service unavailable. Completion is unconfirmed; retry the same operation.";

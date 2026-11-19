@@ -102,6 +102,7 @@ def _attempt(
                 route_provenance=warehouse.route.provenance,
                 checks=checks,
                 prep_by_day=prep.prep_by_day,
+                planned_start_prep=prep.planned_start_prep,
             )
         )
     return candidates, rejected, reached

@@ -103,6 +103,12 @@ describe("POST /orders/{id}/events Round 3 payload and key", () => {
     expect(() => localOccurredAt("")).toThrow(/Select when/);
   });
 
+  it("test_US_WH_04_AC4 explains a plan verification conflict", () => {
+    const error = new ApiError("PLAN_NOT_APPROVABLE", "sensitive server text", "test-cid", undefined, 409);
+    expect(safeActionError(error)).toMatch(/could not verify the approved plan or calculate ETA/);
+    expect(safeActionError(error)).not.toContain("sensitive");
+  });
+
   it("explains 409 without exposing upstream error text", () => {
     const error = new ApiError("ILLEGAL_TRANSITION", "sensitive server text", "test-cid", undefined, 409);
     expect(safeActionError(error)).toMatch(/Refresh the queue/);

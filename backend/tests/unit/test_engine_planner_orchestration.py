@@ -124,6 +124,8 @@ def test_US_PLN_06_AC5_five_gates_explanation_and_deterministic_rank() -> None:
     assert 1 <= len(result.candidates) <= 3
     assert result.candidates == reversed_input.candidates
     winner = result.candidates[0]
+    assert winner.planned_start_prep is not None
+    assert winner.planned_start_prep < winner.goods_ready_at
     assert winner.rank == 1
     assert winner.reason_codes[0] in (
         "ONLY_FEASIBLE",

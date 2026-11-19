@@ -24,6 +24,7 @@ class PrepSchedule:
     loading_start_at: datetime | None
     capacity_fill: Decimal
     after_cutoff: bool
+    planned_start_prep: datetime | None = None
 
 
 # --- dòng thời gian giờ công trong một ngày ------------------------------------------------------------
@@ -55,12 +56,15 @@ def _position_at(day: DayCapacity, t: time, cfg: EngineConfig) -> Decimal:
     return pos
 
 
-def _datetime_at(day: DayCapacity, pos: Decimal, tz: tzinfo | None, cfg: EngineConfig) -> datetime:
-    """Thời điểm trong ngày khi đạt `pos` giờ công (làm tròn lên giây)."""
+def _datetime_at(
+    day: DayCapacity, pos: Decimal, tz: tzinfo | None, cfg: EngineConfig, *, starts_work: bool = False
+) -> datetime:
+    """Convert a labour position to wall time. A start at a shift boundary belongs to the next shift."""
     cumulative = Decimal(0)
     for shift in sorted(day.shifts, key=lambda s: s.start):
         cap = _shift_capacity(shift, cfg)
-        if cap > 0 and pos <= cumulative + cap:
+        boundary = cumulative + cap
+        if cap > 0 and (pos < boundary or (pos == boundary and not starts_work)):
             seconds = ((pos - cumulative) / _rate(shift, cfg) * 3600).to_integral_value(
                 rounding=ROUND_CEILING
             )
@@ -106,6 +110,7 @@ def schedule_preparation(
     prep_by_day: dict[date, Decimal] = {}
     last_day: DayCapacity | None = None
     last_end_pos = Decimal(0)
+    planned_start_prep: datetime | None = None
     for offset in range(cfg.search_days_max):
         d = start_day + timedelta(days=offset)
         day = wh.capacity.get(d)
@@ -116,6 +121,8 @@ def schedule_preparation(
         allocated = min(remaining, free)
         if allocated <= 0:
             continue
+        if planned_start_prep is None:
+            planned_start_prep = _datetime_at(day, start_pos, tz, cfg, starts_work=True)
         prep_by_day[d] = allocated
         remaining -= allocated
         last_day, last_end_pos = day, start_pos + allocated
@@ -134,7 +141,9 @@ def schedule_preparation(
         check = CheckResult(
             "preparation", True, "PREP_OK", {"message": "Goods ready before loading cut-off."}
         )
-        return PrepSchedule(check, prep_by_day, goods_ready_at, goods_ready_at, fill, False)
+        return PrepSchedule(
+            check, prep_by_day, goods_ready_at, goods_ready_at, fill, False, planned_start_prep
+        )
     loading = _first_shift_start(last_day.day, wh, cfg, tz)
     if loading is None:
         return _fail("No shift after the loading cut-off within the search horizon.", "no_shift_after_cutoff")
@@ -147,4 +156,4 @@ def schedule_preparation(
             f"loading moved to {loading:%Y-%m-%d %H:%M}."
         },
     )
-    return PrepSchedule(check, prep_by_day, goods_ready_at, loading, fill, True)
+    return PrepSchedule(check, prep_by_day, goods_ready_at, loading, fill, True, planned_start_prep)
