@@ -360,7 +360,7 @@ Không công bố con số lợi ích trước khi đo baseline. Điều kiện 
 | Tích hợp | API polling ~5 phút, dự phòng CSV qua SFTP | API hệ thống nguồn giả lập; dự phòng tải CSV lên |
 | Công suất kho | Người × giờ năng suất − việc đã đặt | Thêm tỷ lệ 90% dành cho đơn giao |
 | Báo trễ | Gửi khi thay đổi có ý nghĩa | Hệ thống tạo nháp, **dispatcher bấm gửi**; ngưỡng lệch ≥ 30 phút |
-| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; slide đề cập các chỉ số mở rộng | **10 KPI vận hành** theo FR-KPI-01 (bao gồm giờ công và km tách riêng, giao thất bại, sử dụng công suất, manual_plan_count); **2 diagnostics chưa có nguồn = null**; rollout effort/shared component reuse để mở rộng | 30 ngày mặc định, tối đa 366, market rõ; không hiển thị cost/SEK như một giá trị tài chính |
+| KPI | Planning time, on-time, cost per delivery, prep error, ETA error, plan acceptance; slide đề cập các chỉ số mở rộng | **5 KPI** theo FR-KPI-01 (R3, DEC-R3-03); bản 10 KPI trước đây (bao gồm giờ công và km tách riêng, giao thất bại, sử dụng công suất, manual_plan_count); **2 diagnostics chưa có nguồn = null**; rollout effort/shared component reuse để mở rộng | 30 ngày mặc định, tối đa 366, market rõ; không hiển thị cost/SEK như một giá trị tài chính |
 | Chuyển kho | Không nhắc | Gợi ý chuyển kho bằng quy tắc (vẫn một kho xử lý trọn đơn) |
 | Giờ công | Theo đơn vị chuẩn bị | Quy về đơn vị cơ sở nhỏ nhất; hàng không chia nhỏ được thì làm tròn lên |
 | Dữ liệu cho AI | Học từ thực tế | Giờ nhân công/đơn vị cơ sở theo nhóm, thu qua bắt đầu/tạm dừng/tiếp tục/xong |

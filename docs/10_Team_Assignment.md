@@ -4,6 +4,23 @@
 >
 > Thay tên thật vào ba vai dưới đây khi nhóm chốt người.
 
+> **Round 3 ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md), 18–19/11/2026):** thư mục sở hữu ở mục 1 giữ nguyên. Các việc theo milestone ở mục 2 là lịch sử; khi mâu thuẫn, áp dụng bảng R3 dưới đây và các ghi chú *(R3)* trong từng dòng.
+
+## 0. Round 3 — việc mới và việc bị thay
+
+| Chủ đề | Dev 1 — Backend lõi | Dev 2 — Tích hợp, hạ tầng | Dev 3 — Frontend |
+|---|---|---|---|
+| Công suất kho theo ngày/ca (DEC-R3-06) | `hr_service`/`planning_inputs` đọc `warehouse_day_capacity`, API `day-capacity` | Seed công suất ngày | Form Công suất ngày (thay Attendance & shifts) |
+| Tài xế đã xác minh (DEC-R3-07) | Gate tài xế dùng khung khả dụng + quyền lái | Nguồn `/fleet/driver-*`, adapter, seed | — |
+| Vị trí tài xế (DEC-R3-01) | Vị trí bắt buộc khi DELIVERED/FAILED, `DRIVER_INCIDENT`, ETA từ vị trí, gán Dispatcher luân phiên + bàn giao | `gps_service` một điểm/lần, dòng `gps/live`, xóa khi đơn kết thúc, job quá hạn | Nút Cập nhật vị trí / Báo sự cố trên trang tài xế; dòng "Vị trí gần nhất · Giờ cập nhật · ETA" |
+| Thông báo (DEC-R3-02) | — | Chỉ email, cờ `NOTIFY_DISPATCHED_ENABLED`, bỏ `sms_sim` | Notification inbox chỉ email |
+| KPI (DEC-R3-03) | `kpi_service` 5 KPI + `by_path` | Seed tuần demo cho 5 KPI | Màn KPI 5 thẻ |
+| CS (DEC-R3-05) | Gỡ `contact-logs` | — | Gỡ Contact log |
+| Chuẩn bị hàng (DEC-R3-08) | Bỏ PAUSE/RESUME, `prep_time = GOODS_READY − START_PREP` | — | Prep Queue không Pause/Resume |
+| Thất bại & sự cố (DEC-R3-09) | Bỏ gợi ý lập lại sau FAILED/VEHICLE_ISSUE, alert `DELIVERY_FAILED`, `replan scope=remaining` | — | Màn xử lý FAILED cho Dispatcher |
+| Sales (DEC-R3-10) | ApprovalService: Sales rank 1–3, chạy lại, thỏa thuận ngày; bỏ tick lịch sát | Test đồng thời Sales/Dispatcher | Sales chọn 1 trong 3 phương án; bỏ tick lịch sát |
+| Bị thay | Pause/Resume, proof 56 ngày, gợi ý lập lại sau FAILED | GPS 30 phút, `gps_simulator`, SMS, `attendance_gen`, D7 seed 56 ngày | Bản đồ Leaflet, offline IndexedDB, Attendance & shifts, tick "accept tight" |
+
 ## 1. Ba vai
 
 | Vai | Người | Phụ trách chính | Thư mục sở hữu |
@@ -66,11 +83,11 @@
 |---|---|---|---|
 | Dev 1 | `reservation_service` (hold, extend ≤ 2, **không khóa khi giữ chỗ**); `approval_service` (approve với advisory lock `stock:`/`labour:` theo thứ tự kho → sản phẩm → ngày → xe → tài xế **chỉ khi duyệt**, manual plan nhiều xe, **duyệt/giữ phương án gợi ý lập lại**, date negotiation); `planning_service.suggest_replan` (4 tín hiệu, coi kế hoạch cũ như không tồn tại, không giữ chỗ); `domain/transitions.close_active_plan` (đóng kế hoạch cũ khi lập lại/hủy/xếp lại); `transfer_service`; Idempotency-Key; job `hold_expiry` | `services/reservation_service.py`, `services/approval_service.py`, `services/transfer_service.py`, `domain/transitions.py`, `core/db.py`, `api/v1/planning.py`, `api/v1/transfers.py`, `jobs/hold_expiry.py` | US-RES-01, US-APR-01..04, US-ATP-02/03, US-ORD-04/05, US-PLN-07 |
 | Dev 2 | Test tải đồng thời: lập kế hoạch đồng thời cho phép vượt; duyệt đồng thời tranh **xe**, **cùng SKU**, **cùng ngày công suất** (mỗi trường hợp đúng một thắng); seed kịch bản 5, 6, 9, 12, 14, 16 | `backend/tests/integration/` | — |
-| Dev 3 | Nút Approve, `DecisionBar`, bộ đếm hold + Extend, tick "accept tight", `ReasonModal`; màn kế hoạch tay nhiều xe; banner gợi ý lập lại + nút Approve suggested / Keep current; Plan review list; Exceptions (tab Replan suggested); Transfers; toast `409` có Re-run plan | `features/dispatcher/{PlanReviewList,ManualPlan,Exceptions,Transfers}.tsx`, `components/{DecisionBar,ReplanSuggestionBanner}.tsx` | — |
+| Dev 3 | Nút Approve, `DecisionBar`, bộ đếm hold + Extend, `ReasonModal` *(R3: bỏ tick "accept tight")*; màn kế hoạch tay nhiều xe; banner gợi ý lập lại + nút Approve suggested / Keep current; Plan review list; Exceptions (tab Replan suggested); Transfers; toast `409` có Re-run plan | `features/dispatcher/{PlanReviewList,ManualPlan,Exceptions,Transfers}.tsx`, `components/{DecisionBar,ReplanSuggestionBanner}.tsx` | — |
 
 **M5-S (US-APR-05, US-ORD-06):** Dev 1 làm Sales guard trong ApprovalService, kiểm đơn trước & audit; Dev 2 test đồng thời cạnh tranh nguồn lực; Dev 3 màn Check feasibility/Confirm/Escalate. Không mở Sales quyền GPS, replan, manual plan hay thương lượng ngày.
 
-### M6 — Thực thi, driver PWA, GPS
+### M6 — Thực thi, driver PWA, GPS *(R3: xem mục 0 — vị trí do tài xế bấm, không Pause/Resume, không offline)*
 
 | Người | Việc | File | Story |
 |---|---|---|---|
@@ -83,14 +100,14 @@
 | Người | Việc | File | Story |
 |---|---|---|---|
 | Dev 1 | `engine/forecast.py`; `risk_service` (chỉ tính khi có tín hiệu, `eta_forecast`, 2 lần liên tiếp); `alert_service` (dedupe khi đang mở); tạo nháp DELAY | `engine/forecast.py`, `services/risk_service.py`, `services/alert_service.py`, `api/v1/alerts.py` | US-RSK-01..03 |
-| Dev 2 | `notify_service` (outbox, dedupe theo `plan_id`, giờ yên lặng, thử lại 3, Mailpit/Brevo, `sms_sim`, `shadow_mode`); job outbox, milestone overdue, morning check, stale data | `services/notify_service.py`, `providers/email_smtp.py`, `providers/sms_sim.py`, `api/v1/notifications.py`, `jobs/outbox.py`, `jobs/risk_check.py` | US-NOT-01..03 |
+| Dev 2 | `notify_service` (outbox, dedupe theo `plan_id`, giờ yên lặng, thử lại 3, Mailpit/Brevo, `shadow_mode`; *R3: bỏ `sms_sim`*); job outbox, milestone overdue (*R3: chỉ alert*), stale data | `services/notify_service.py`, `providers/email_smtp.py`, `providers/sms_sim.py`, `api/v1/notifications.py`, `jobs/outbox.py`, `jobs/risk_check.py` | US-NOT-01..03 |
 | Dev 3 | Tracking & risk (Live position chỉ dispatcher, "Why it is late" theo công thức 04); Notification inbox; Tracking list | `features/dispatcher/{Tracking,TrackingList}.tsx`, `features/notifications/NotificationInbox.tsx`, `components/{MilestoneTimeline,EventLog,NotificationPreview}.tsx` | — |
 
 ### M8 — KPI, nhật ký, quản trị, CS
 
 | Người | Việc | File | Story |
 |---|---|---|---|
-| Dev 1 | `audit.v_kpi_daily`, `kpi_service` (**10 KPI**, 2 diagnostics chưa có nguồn phải `null`, mặc định 30 ngày/tối đa 366 ngày, System Admin chọn market, quyền `admin`/`ops`); **`revenue_service`** (`resolve_revenue_scope`, hai view, 5 endpoint `/revenue/*`, CSV `REVENUE_EXPORTED`, test nhất quán store = warehouse, ranh giới ngày Stockholm); `/audit/decisions`; job `nightly_metrics` (improvement_log theo trip_stop, `group_hours_per_unit`) | `services/kpi_service.py`, `services/revenue_service.py`, `api/v1/kpi.py`, `api/v1/revenue.py`, `jobs/nightly_metrics.py` | US-KPI-01/02, US-REV-01, US-LOG-01 |
+| Dev 1 | `audit.v_kpi_daily`, `kpi_service` (*R3: **5 KPI** theo DEC-R3-03*, mặc định 30 ngày/tối đa 366 ngày, System Admin chọn market, quyền `admin`/`ops`); **`revenue_service`** (`resolve_revenue_scope`, hai view, 5 endpoint `/revenue/*`, CSV `REVENUE_EXPORTED`, test nhất quán store = warehouse, ranh giới ngày Stockholm); `/audit/decisions`; job `nightly_metrics` (improvement_log theo trip_stop, `group_hours_per_unit`) | `services/kpi_service.py`, `services/revenue_service.py`, `api/v1/kpi.py`, `api/v1/revenue.py`, `jobs/nightly_metrics.py` | US-KPI-01/02, US-REV-01, US-LOG-01 |
 | Dev 2 | Seed 48 đơn đã đóng cho tuần demo (trải đều cửa hàng và kho, có đoạn chuẩn bị với `crew_size`, 1 đơn giao lại, 1 đơn không có cửa hàng); ẩn danh theo hạn lưu giữ; GPS settings + compliance | `seed/generate_data.py`, `jobs/retention.py`, `api/v1/gps.py` | US-ADM-03 |
 | Dev 3 | KPIs & decision log; **Revenue (A16)**: 5 thẻ, biểu đồ, bảng theo nơi, danh sách đơn, Export CSV, làm mới 60 giây; Handling groups & norms; Market config & GPS; CS Order lookup; My store orders | `features/kpi/KpiDashboard.tsx`, `features/revenue/Revenue.tsx`, `features/it/{HandlingGroups,MarketConfig}.tsx`, `features/cs/OrderLookup.tsx`, `features/store/MyStoreOrders.tsx` | US-CS-01/02 |
 
@@ -100,7 +117,7 @@
 |---|---|
 | Dev 1 | Kiểm tra quyền cho **mọi hàng** ma trận `06` mục 3 (đường cho phép và bị cấm); hiệu năng (lập kế hoạch < 2 s, bảng đơn < 1 s với 1.000 đơn); sửa lỗi backend |
 | Dev 2 | 16 kịch bản E2E Playwright (cùng Dev 3); deploy staging (Supabase + Render + Vercel, vùng EU nếu có); ping 5 phút; README, hướng dẫn demo, `CHANGELOG` |
-| Dev 3 | So giao diện với ảnh thiết kế theo `03` (gồm điều chỉnh #1–#36); a11y bằng axe; PWA cài được; offline gửi lại không trùng |
+| Dev 3 | So giao diện với ảnh thiết kế theo `03` (gồm điều chỉnh #1–#36); a11y bằng axe; PWA cài được; gửi lại không trùng (*R3: online, không offline*) |
 
 ## 3. Tổng hợp trách nhiệm theo người
 
@@ -114,13 +131,13 @@
 **Dev 2 — Tích hợp, dữ liệu, hạ tầng**
 - Hệ thống nguồn giả lập + hợp đồng nguồn; adapter, ingestion, routing.
 - Seed (khớp ảnh thiết kế, đủ cho 16 kịch bản), `add_market.py`, `gps_simulator.py`.
-- GPS, thông báo (outbox, Mailpit, SMS mô phỏng), mọi job.
+- Vị trí tài xế (R3), thông báo (outbox, Mailpit; R3 không SMS), mọi job.
 - Docker, Makefile, CI, deploy staging; test đồng thời và E2E.
 - Review bắt buộc: mọi PR đụng `adapters/`, `jobs/`, CI, Docker.
 
 **Dev 3 — Frontend**
 - Design system theo `03` mục 2 và 11 (không hard-code màu hex ngoài token).
-- 28 màn web (gồm Revenue) + POS UI + driver PWA (offline, GPS có xin quyền).
+- 28 màn web (gồm Revenue) + POS UI + driver PWA (R3: online, vị trí do tài xế bấm, có xin quyền).
 - Client sinh từ OpenAPI, mock MSW, trạng thái rỗng/tải/lỗi ở mọi màn, a11y.
 - Review bắt buộc: mọi PR đụng `frontend/`.
 

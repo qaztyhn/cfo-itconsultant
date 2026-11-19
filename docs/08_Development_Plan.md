@@ -50,7 +50,7 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 **M2-S — Sales sync-now (US-INT-06):** Dev 2 làm API sync-now bằng GET adapter nguồn và ingestion idempotent với polling; Dev 1 review contract/scope cửa hàng; Dev 3 màn My store orders → Sync & confirm trong CFO. Không sửa POS/database nguồn. Phụ thuộc M1/M2 core.
 
 ### M3 — Nhân sự, công suất kho (phụ thuộc M0, song song M2)
-- **A:** API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
+- **A** *(R3: công suất theo ngày/ca thay lịch từng người và điểm danh, DEC-R3-06)*: API nhân sự `06` mục 13 (employees, assignments, managers, attendance, shift templates, absences); ràng buộc một phân công hiệu lực, một quản lý chính; **audit ASM-006**; đề xuất migration lịch nhân viên–ngày–ca do Warehouse Manager xác nhận, và guard theo kho; `attendance_gen` chỉ lấy lịch xác nhận, không dùng `expected_staff` để tự chia; `GET /warehouses/{id}/capacity`.
 - **B:** seed nhân viên, ca mẫu, ngày lễ (thư viện `holidays`), bằng lái.
 - **C:** **Attendance & shifts** (5.A5) có màn Warehouse Manager lập lịch từng nhân viên/ngày/ca, xem chênh lệch dự kiến–thực tế, xem lịch sử, yêu cầu lý do khi chỉnh hồi tố; **Employees & locations**, **Vehicles & drivers**, **Users** (5.A9–A11).
 - **Xong khi:** Warehouse Manager lập lịch chính thức từng người; không tự chia theo `expected_staff`; "All present" chỉ trên người có lịch; vắng giảm công suất; thiếu lịch không tự dựng nhân viên; đổi quản lý, chuyển/nghỉ việc và chỉnh hồi tố có audit. *Story:* US-WH-01/02/06, US-EMP-01/02/04/05.
@@ -72,12 +72,12 @@ Mỗi milestone liệt kê việc theo luồng, **Xong khi** (điều kiện tho
 ### M6 — Thực thi, driver PWA, GPS (phụ thuộc M5)
 - **A:** `ExecutionService` (sự kiện bất biến, thứ tự, idempotency, POD theo từng `trip_stop`), `GET /driver/trips`, `/warehouses/{id}/prep-queue`; chuyển trạng thái qua `transition()`.
 - **B:** `gps_service` (nhận lô vị trí, kiểm `gps_enabled`, `on_road`), `tools/gps_simulator.py`, `retention_job`, `gps_lost_check`; `compliance_record`.
-- **C:** **Prep queue** (5.6) + báo ngoại lệ; **Driver PWA** (5.10: danh sách, chi tiết, hàng đợi offline IndexedDB, xin quyền vị trí, thông báo riêng tư, Failed + lý do).
+- **C** *(R3: không Pause/Resume, trang tài xế online, vị trí do tài xế bấm, không IndexedDB)*: **Prep queue** (5.6) + báo ngoại lệ; **Driver PWA** (5.10: danh sách, chi tiết, hàng đợi offline IndexedDB, xin quyền vị trí, thông báo riêng tư, Failed + lý do).
 - **Xong khi:** đơn đi hết vòng `APPROVED → … → DELIVERED/FAILED` bằng giao diện; FAILED → xếp lại → giao lại tạo POD thứ hai; offline gửi lại không trùng; GPS lên bản đồ dispatcher (simulator); khách/CS nhận `403` với GPS. *Story:* US-WH-04/05, US-EXE-01..04, US-GPS-01..03.
 
 ### M7 — Rủi ro, cảnh báo, thông báo (phụ thuộc M6)
 - **A:** `engine/forecast.py`, `RiskService` (ETA theo sự kiện/GPS/nguồn/mốc quá hạn/07:00, `eta_forecast`, màu rủi ro, 2 lần liên tiếp), `alert_service`, bản nháp `DELAY`.
-- **B:** `notify_service` (outbox, giờ yên lặng, dedupe, thử lại, Mailpit/Brevo, `sms_sim`, `shadow_mode`), `milestone_overdue_check`, `morning_check`, `stale_data_check`.
+- **B:** `notify_service` (outbox, giờ yên lặng, dedupe, thử lại, Mailpit/Brevo, `shadow_mode`), `milestone_overdue_check`, `morning_check`, `stale_data_check`.
 - **C:** **Tracking & risk** (5.4, gồm Live position), **Notification inbox** (5.8), alerts trên Order queue, A3 Tracking list.
 - **Xong khi:** AC US-RSK-01..03, US-NOT-01..03 pass; kịch bản trễ giữa chừng chạy đủ (cam → đỏ → bản nháp → dispatcher gửi); không tính lại ETA khi không có tín hiệu.
 

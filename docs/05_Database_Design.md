@@ -39,7 +39,7 @@ CREATE TYPE ref.mapping_status AS ENUM ('pending','suggested','confirmed','rejec
 CREATE TYPE ref.licence_class  AS ENUM ('B','C','CE');
 CREATE TYPE ref.prep_unit      AS ENUM ('line','pallet','m3','bundle','package');
 CREATE TYPE ref.customer_type  AS ENUM ('business','consumer');
-CREATE TYPE ref.notify_channel AS ENUM ('email','sms_sim');
+CREATE TYPE ref.notify_channel AS ENUM ('email','sms_sim');   -- R3: chỉ email cho dòng mới (mục 13.1)
 CREATE TYPE ref.task_status    AS ENUM ('open','in_progress','done');
 
 -- hr
@@ -59,7 +59,7 @@ CREATE TYPE ops.order_status AS ENUM (
   -- v1.2: không còn MANUAL_PLANNING (đơn nhiều xe tự lập kế hoạch) và HANDLED_EXTERNALLY
 CREATE TYPE ops.event_type AS ENUM (
   'START_PREP','PREP_PAUSED','PREP_RESUMED','GOODS_READY','LOADED','DISPATCHED','DELIVERED','FAILED',
-  'SHORTAGE','BREAKAGE','VEHICLE_ISSUE','SHIFT_CHANGE');
+  'SHORTAGE','BREAKAGE','VEHICLE_ISSUE','SHIFT_CHANGE');  -- R3: PREP_PAUSED/PREP_RESUMED bị service từ chối; SHIFT_CHANGE không còn tác dụng tính công suất; thêm DRIVER_INCIDENT (mục 13)
 CREATE TYPE ops.risk_status AS ENUM ('ON_TRACK','AT_RISK','PREDICTED_LATE','OVERDUE');
 CREATE TYPE ops.risk_color  AS ENUM ('green','yellow','orange','red');
 CREATE TYPE ops.notif_template AS ENUM ('CONFIRMED','DISPATCHED','DELIVERED','FAILED','DELAY');
@@ -920,7 +920,7 @@ CREATE TABLE audit.kpi_baseline (               -- baseline thủ công trước
 
 **Quyền xem KPI vận hành:** `admin` và người có `'ops'` trong `kpi_scopes` (dispatcher, quản lý/phó kho, Project Lead). Business owner (`revenue_all`) **không** xem KPI vận hành. CS không xem KPI.
 
-**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc **10 KPI vận hành**).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
+**Doanh thu (v1.2, báo cáo chỉ đọc, không thuộc **5 KPI vận hành** (R3)).** Doanh thu chỉ gồm **tiền hàng** (đơn giá × số lượng); chưa có phí giao, phí đóng gói, chi phí nhân công, giá vốn, lợi nhuận (chờ quyết định riêng, không tự thêm).
 
 | Chỉ số | Định nghĩa |
 |---|---|

@@ -1,6 +1,8 @@
 # 03 — UI/UX Specification (CFO MVP)
 
 > **Phiên bản 1.2 (06/11/2026):** plan card và màn tài xế/kho cho **đơn nhiều xe**; bỏ form "Handled outside CFO" và tab Manual planning; thêm **gợi ý lập lại** (thẻ cảnh báo + banner ở Plan review); nút **Pause/Resume** ở Prep queue; màn **Revenue** mới (A16) thay panel doanh thu ở KPI; điều chỉnh #37–#40.
+
+> **Round 3 ([DEC-R3](decisions/DEC_R3_SCOPE_CRM_20261118.md)):** màn 5.4 (không bản đồ, dòng vị trí gần nhất), 5.6 (không tạm dừng, công suất ngày), 5.7 (5 KPI), 5.8 và §6 (chỉ email), 5.10 (vị trí do tài xế bấm, không offline), A5 (công suất ngày), menu §3.2 đã sửa theo DEC-R3-01 → 10.
 >
 > Lịch sử **v1.1:** đã đối chiếu lại toàn bộ 23 trang `CFO_Web_Platform_UI.pdf`. Bổ sung các điều chỉnh #25–#36 ở mục 7 (chỗ thiết kế khác quy tắc mà bản 1.0 chưa ghi); bỏ màn và thành phần thiết bị kho; thêm form "Handled outside CFO" và panel doanh thu.
 >
@@ -11,7 +13,7 @@
 1. **Một kế hoạch bạn duyệt**: mọi đơn đi từ nhận đến giao qua một kế hoạch dispatcher quyết định; giao diện luôn trả lời "đơn đang ở đâu, vì sao, tôi cần làm gì".
 2. **Giải thích được**: mỗi phương án có 5 check, lý do bị loại, mã lý do; mỗi cảnh báo nói rõ vì sao.
 3. **Dữ liệu có nguồn và độ tươi**: luôn hiện "Data as of …" và nguồn đồng bộ.
-4. **Không bao giờ lộ GPS cho khách/CS**; GPS chỉ hiện ở màn của dispatcher.
+4. **Không bao giờ lộ vị trí tài xế cho khách/CS/Sales**; chỉ Dispatcher được gán chuyến thấy dòng "Vị trí gần nhất · Giờ cập nhật · ETA" (R3, không bản đồ).
 5. **Màu không là tín hiệu duy nhất**: trạng thái rủi ro khác nhau về độ sáng, kèm nhãn chữ, đọc được ở thang xám.
 6. **Một hành động lớn mỗi bước** trên điện thoại (tài xế).
 7. **Bản demo luôn có banner "DEMO · SYNTHETIC DATA"** (bật theo `APP_ENV != production`).
@@ -73,9 +75,9 @@ Mức xanh/vàng/cam/đỏ lấy từ `eta_forecast.risk_color`; nhãn chữ l�
 | **DISPATCHER** | Order queue (huy hiệu: đơn cần xử lý) · Plan review (đơn chờ duyệt) · Exceptions (NO_FEASIBLE_DATE, gợi ý lập lại đang chờ; không nhận đơn thiếu SKU đi quy trình cũ) · Tracking & risk (đơn cam/đỏ) · Transfers · KPIs & decision log | dispatcher; `viewer` có `ops` (Project lead) chỉ thấy KPIs & decision log |
 | **REVENUE** | Revenue (Business owner, admin) · Revenue · my location (owner kho/cửa hàng) | `viewer` có `revenue_all` (chỉ thấy mục này), owner của một nơi, admin |
 | **SALES** | New order (POS hiện có/giả lập) · My store orders · **Sync & confirm delivery** trong CFO | sales, store manager |
-| **WAREHOUSE** | Prep queue · Attendance & shifts · Transfers (kho nguồn/đích) | quản lý/phó/trưởng ca kho (thiết kế gộp "Prep queue & mapping"; phần mapping chuyển sang ADMIN, xem #15) |
-| **CUSTOMER SERVICE** | Order lookup · Contact log | customer_service |
-| **ADMIN (IT)** | Data integration · Product mapping · Handling groups & norms · Employees & locations · Vehicles & drivers · Users · Market config & GPS · Notification inbox | admin; dispatcher và CS đọc Notification inbox |
+| **WAREHOUSE** | Prep queue · Công suất ngày (R3) · Transfers (kho nguồn/đích) | quản lý/phó/trưởng ca kho |
+| **CUSTOMER SERVICE** | Order lookup (R3: không còn Contact log) | customer_service |
+| **ADMIN (IT)** | Data integration · Product mapping · Handling groups & norms · Employees & locations · Vehicles & drivers · Users · Market config · Notification inbox | admin; dispatcher và CS đọc Notification inbox |
 | **Driver** | Không dùng sidebar: ứng dụng PWA riêng (mục 5.11) | driver |
 
 Mục đang chọn: nền `#E8F1EF`, chữ `deep-pine`, bo 10px; mục chưa chọn chữ sáng 80%. Huy hiệu tròn `apricot`, chữ mono nhỏ.
@@ -107,7 +109,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 ### 5.0 — 00 Sign in
 - **Bố cục:** hai nửa. Trái nền `deep-pine`: logo; overline `ORDER-TO-DELIVERY ORCHESTRATION`; tiêu đề "Make every order a reliable, visible promise."; đoạn mô tả; ba mục đánh số 01 Time-phased inventory / 02 Warehouse readiness / 03 Fleet & delivery; chân trang mono "Sweden pilot · synthetic data · v0.1-demo". Phải nền `stone`: "Sign in", "Use your work account. Access follows your role.", ô Email (`name@company.se`), Password, nút `pine` "Sign in".
 - **Demo accounts:** lưới thẻ nhỏ có mũi tên → bấm là điền sẵn tài khoản: Dispatcher ("Plans & approvals"), Sales ("Order intake"), Warehouse ("Prep & milestones"), Driver ("PWA on phone"), Admin ("Data & inbox"), **thêm Customer service ("Status & contact log")** và **Business owner ("KPIs, read-only")**. Chỉ hiện ở môi trường demo.
-- **Chân:** "Customers have no login. They receive order status and ETA by email or SMS — never driver location."
+- **Chân:** "Customers have no login. They receive order status and ETA by email — never driver location."
 - API: `POST /auth/login`; sai → thông báo dưới form, `429` hiện "Too many attempts, try again in a minute".
 
 ### 5.1 — 01 Order queue (dispatcher)
@@ -136,7 +138,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
   - Nút: card #1 "Approve plan" (`pine`), card #2/#3 "Select this plan" (viền).
   - Nếu `route_provenance = fallback`: chip vàng "Estimated route" kèm tooltip.
 - **Bảng "Why other candidates were not ranked"** (`rejected_candidates`, "6 rejected · 4 shown", nút "Show all 6"): CANDIDATE (kho + xe) · FAILED CHECK (chip ✕ + mã mono) · DETAIL (câu giải thích có số: "Order weighs 4 120 kg; van carries 3 500 kg.").
-- **Panel Route options:** sơ đồ minh họa kho–điểm giao với thời gian đường (nguồn `route_matrix`, ghi "ORS matrix · <ngày tính>"). Ghi chú "Schematic. Live map tiles (OpenStreetMap) are a later phase" **được thay bằng bản đồ Leaflet/OSM** ở màn tracking (5.4); ở màn này giữ sơ đồ.
+- **Panel Route options:** sơ đồ minh họa kho–điểm giao với thời gian đường (nguồn `route_matrix`, ghi "ORS matrix · <ngày tính>"). Ghi chú "Schematic. Live map tiles (OpenStreetMap) are a later phase" giữ nguyên (R3: không có bản đồ ở bất kỳ màn nào); ở màn này giữ sơ đồ.
 - **Panel "Change criteria and rerun":** "Creates a new planning run; current plans become superseded. Logged as CRITERIA_CHANGED_RERUN." Điều khiển: **"Optimise for"** (xem mục 7: thay "Lowest cost / Largest buffer" bằng preset trọng số **Balanced 50/50 · Shortest distance 80/20 · Lowest warehouse load 20/80** và ô tùy chỉnh trọng số), **Exclude warehouse** (checkbox từng kho), **Try date** (chỉ cho dạng `range`/`latest`, trong tập ngày khách chấp nhận), nút "Rerun plan" → modal lý do.
 - **Panel "Manual fallback":** "Choose warehouse, truck and times yourself. A reason is required; checks still run and warnings stay visible. Flagged in KPIs." Nút "Plan manually" → màn nhập tay (chọn kho/xe/tài xế/giờ + mã lý do).
 - **Màn nhập tay (v1.2):** mở từ đơn `PLANNED` hoặc `NO_FEASIBLE_DATE`. Chọn kho, ngày, rồi **thêm một hoặc nhiều xe** (mỗi xe: tài xế, phần hàng theo dòng, giờ xuất phát/ETA); thanh tổng hiện "Allocated 20 000 / 20 000 kg · 18.4 / 18.4 m³", nút xác nhận chỉ bật khi chia đủ hàng; mã lý do bắt buộc; lỗi gate hiện mã check dưới xe tương ứng.
@@ -156,7 +158,7 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Panel bổ sung "Transfer suggestions"** (khi thiếu hàng được xác minh): hiển thị gợi ý kho nguồn, lead time, khoảng cách và số lượng cùng nút **"Request transfer"** cho Dispatcher được phép. CFO **chỉ gợi ý/yêu cầu**; WMS thực thi và ghi nhận xuất/nhập vật lý. Không hiển thị chuỗi CFO `source_confirmed → received`, không coi click trên CFO là bằng chứng inbound/ATP; dữ liệu WMS chưa phản ánh phải giữ Not verified.
 
 ### 5.4 — 04 Order tracking & risk (dispatcher)
-- **Banner:** "Risk is rule-based: slack against the committed window, recalculated when a milestone, GPS fix or source data changes." (đổi so với "mỗi 5 phút", xem mục 7).
+- **Banner:** "Risk is rule-based: slack against the committed window, recalculated when a milestone, a driver location update, an incident or source data changes." (R3: không tính lại theo chu kỳ).
 - **Đầu trang:** breadcrumb; Risk chip + chip trạng thái; H1 tên khách; dòng "SE-… · Stockholm DC → Uppsala · Truck 12 t STO-12-04 · today 10:00–12:30". Nút: "Acknowledge alert" (viền), "Replan this order" (`apricot`, mở modal lý do).
 - **3 ô lớn:** COMMITTED WINDOW ("10:00–12:30 · Confirmed to customer 3 Nov") · PLANNED ETA ("11:15 · 75 min slack at approval") · FORECAST ETA (nền Predicted late khi trễ: "13:15 · 45 min after window closes"). **Thêm ô thứ tư nhỏ:** "Reserve used 120%" (mono, thanh tiêu hao với vạch 33/66%).
 - **Milestones · planned vs actual vs forecast** ("Now 11:00"): 6 mốc (Approved, Start prep, Goods ready, Loaded, Dispatched, Delivered); mỗi mốc `plan hh:mm`, `✓ hh:mm` (thực tế, mono `pine`) hoặc `not recorded · fcst hh:mm` (đỏ). Hộp "**Why it is late:**" sinh từ `forecast` theo đúng công thức ở `04` mục 6.3, ví dụ: "Goods ready is 90 min past plan and not recorded. CFO assumes goods are ready no earlier than now (11:00), then loading 25 min, drive 65 min. Forecast 13:15 is 45 min after the site closes." Bỏ câu "assumes 40 min of preparation remains (proportional to recorded work)" của thiết kế vì MVP không ghi tiến độ bên trong bước chuẩn bị (#29).
@@ -164,9 +166,9 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 - **Cột phải — "Customer notifications":** danh sách (giờ, loại · kênh, nội dung ngắn, trạng thái). **Bản nháp DELAY** hiện thẻ nền `#FFF4EE`: "Draft · Delay notice — new window 13:00–13:30" với **Edit**, **Send**, **Discard** (lý do bắt buộc). Chân: "A new draft appears only if the ETA moves ≥ 30 min from the last notified window. Customers see status and ETA only — never driver location." Liên kết "Open inbox".
 - **Thẻ "Approved plan":** Warehouse · Truck · Prep (giờ/phút) · **Distance** (thay "Cost") · Score.
 - **Event log:** hiệu ứng của `RISK · AT_RISK` lấy theo mức thật (ví dụ "Goods ready 30 min overdue" khớp `milestone_grace_min = 30`); hiệu ứng của `RISK · PREDICTED_LATE` là "Alert to dispatcher; delay notice draft created" (không "delay email queued").
-- **Panel bổ sung "Live position" (D3 / DEC-DEV2-D3-001: chỉ Dispatcher được gán rõ cho chuyến, khi `gps_enabled`, chuyến `on_road` và tài xế trong ca đã xác nhận):** bản đồ Leaflet/OSM với kho, điểm giao, đường đi, xe; dòng "Last fix 10:52 · accuracy 12 m · source device/simulator"; trạng thái "GPS lost since 10:20" (nền Predicted late); biểu ngữ "No DPIA on file — demo only". Không hiển thị cho Dispatcher khác dù cùng market hay vai trò khác; khi trip hoặc ca kết thúc phải **ẩn GPS live, chấm dứt thu và xóa queue offline không hợp lệ ngay**; chỉ cho phép lịch sử tọa độ hợp lệ tối đa **7 ngày** ở khu vực tra soát được phân quyền, có lý do/audit và privacy/legal sign-off, không hiển thị mặc định trong live panel, chỉ bật lại cho chuyến kế tiếp có phân công/ca hợp lệ.
-- Hộp thoại khẩn cấp cho `VEHICLE_ISSUE`: hiển thị cảnh báo kèm nút "Review suggested plan" (gợi ý lập lại tự động) và "Replan this order".
-- **Đơn nhiều xe:** ô FORECAST ETA theo xe tới muộn nhất; danh sách nhỏ trạng thái từng xe (Loaded / Dispatched / Delivered / Failed); Live position hiện mọi xe của đơn.
+- **Dòng vị trí gần nhất (R3, DEC-R3-01; thay panel bản đồ):** chỉ Dispatcher được gán chuyến, khi chuyến `on_road`: "Vị trí gần nhất 57.70, 11.97 · cách điểm giao 12 km · cập nhật 10:52 · ETA 11:20". Chưa có vị trí: "Chưa có vị trí · đã xuất phát 09:40"; quá 45 phút không cập nhật: "chưa cập nhật 45 phút". Không có bản đồ, không có đường đi, không có lịch sử điểm. Có nút **Bàn giao chuyến** (chọn Dispatcher trong market, lý do bắt buộc).
+- Hộp thoại khẩn cấp cho `VEHICLE_ISSUE` hoặc `DRIVER_INCIDENT`: hiển thị cảnh báo (lý do, ETA mới hoặc "không xác định" nếu hỏng xe) kèm nút "Replan this order"; không có gợi ý lập lại tự động (R3).
+- **Đơn nhiều xe:** ô FORECAST ETA theo xe tới muộn nhất; danh sách nhỏ trạng thái từng xe (Loaded / Dispatched / Delivered / Failed) kèm dòng vị trí gần nhất của từng xe.
 
 ### 5.5 — 05 New order (POS giả lập, sales)
 - **Vị trí:** ứng dụng **POS giả lập** của hệ thống nguồn (`source_system/pos_ui`), dùng **cùng ngôn ngữ hình ảnh**, banner "Customers, sites and products are seeded test data." CFO chỉ đọc đơn sau khi nộp (mục 7). Mục menu SALES · New order mở ứng dụng này.
@@ -179,34 +181,32 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 ### 5.6 — 06 Preparation queue (kho)
 - **Dữ liệu:** `GET /warehouses/{id}/prep-queue`, `GET /warehouses/{id}/capacity`.
 - **Banner demo:** "Labour standards are shared rule-based assumptions set by IT; shifts are entered by the warehouse team."
-- **Đầu trang:** overline `GÖTEBORG DC · WEDNESDAY 4 NOVEMBER`; H1 "Preparation queue"; "Record what really happens. Each milestone updates the ETA immediately — no approval step."; nút "Edit shifts & staff" → màn 5.A5.
-- **Thẻ "Capacity today"** ("<booked> of <total> min booked · <free> free"): thanh xếp chồng theo ca (Shift 1, Shift 2) + vạch Loading cut-off. Chú thích mỗi ca dạng **"8 present × 7.0 h useful × 90% = 3 024 min · fully booked"** (thay "8 staff × 85% productive = 3 264 min"). Vì công thức đổi, tổng ngày với seed (8 + 6 người) là 3 024 + 2 268 = **5 292 phút**, không phải 5 712 như ảnh; UI hiển thị số từ API. **Không có hàng thiết bị** (thiết bị kho ngoài MVP, #25).
-- **Bảng "Orders to prepare" ("Approved plans only · in planned order")**, cột: ORDER (mã + "6 lines · 3 340 kg") · HANDLING MIX (chip nhóm dạng `N2 · Boards, sheets & tiles`, tên lấy từ `handling_group.name`, xem #27) · WORK (phút) · PREP WINDOW (`06:00 → 08:10`) · LOADING (`08:30 · GBG-12-03`, hoặc "Thu 06:00 **after cut-off**" màu `#7A4106`) · STATUS (chip) · hành động theo trạng thái: `APPROVED` → **Start prep** (viền, hỏi số người làm), `PREPARING` đang làm → **Pause** (viền) và **Goods ready** (`pine`), `PREPARING` đang tạm dừng → chip "Paused" + **Resume** (hỏi số người làm), `GOODS_READY` → **Mark loaded** cho **từng xe** (đơn nhiều xe hiện một nút mỗi xe, ví dụ "Mark loaded · GBG-18-01"). Cột LOADING của đơn nhiều xe liệt kê từng xe. Mỗi bấm gửi sự kiện, hiện toast, hàng cập nhật; cần chọn giờ thực tế nếu khác "bây giờ" (popover "Happened at").
-- **"Report an exception":** 4 thẻ **Shortage / Breakage / Vehicle issue / Shift change** ("Alerts the dispatcher and recalculates affected orders"), mỗi thẻ mở form nhỏ theo payload ở `06` mục 8.1.
+- **Đầu trang:** overline `GÖTEBORG DC · WEDNESDAY 4 NOVEMBER`; H1 "Preparation queue"; "Record what really happens. Each milestone updates the ETA immediately — no approval step."; nút "Công suất ngày" → màn 5.A5 (R3).
+- **Thẻ "Capacity today"** ("<booked> of <total> min booked · <free> free"): thanh xếp chồng theo ca (Shift 1, Shift 2) + vạch Loading cut-off. Chú thích mỗi ca dạng **"8 người × 7.0 h × 90% = 3 024 min · fully booked"** (R3: số người do Warehouse Manager xác nhận theo ca) (thay "8 staff × 85% productive = 3 264 min"). Vì công thức đổi, tổng ngày với seed (8 + 6 người) là 3 024 + 2 268 = **5 292 phút**, không phải 5 712 như ảnh; UI hiển thị số từ API. **Không có hàng thiết bị** (thiết bị kho ngoài MVP, #25).
+- **Bảng "Orders to prepare" ("Approved plans only · in planned order")**, cột: ORDER (mã + "6 lines · 3 340 kg") · HANDLING MIX (chip nhóm dạng `N2 · Boards, sheets & tiles`, tên lấy từ `handling_group.name`, xem #27) · WORK (phút) · PREP WINDOW (`06:00 → 08:10`) · LOADING (`08:30 · GBG-12-03`, hoặc "Thu 06:00 **after cut-off**" màu `#7A4106`) · STATUS (chip) · hành động theo trạng thái: `APPROVED` → **Start prep** (viền, hỏi số người làm), `PREPARING` → **Goods ready** (`pine`) (R3: không Pause/Resume), `GOODS_READY` → **Mark loaded** cho **từng xe** (đơn nhiều xe hiện một nút mỗi xe, ví dụ "Mark loaded · GBG-18-01"). Cột LOADING của đơn nhiều xe liệt kê từng xe. Mỗi bấm gửi sự kiện, hiện toast, hàng cập nhật; cần chọn giờ thực tế nếu khác "bây giờ" (popover "Happened at").
+- **"Report an exception":** 3 thẻ **Shortage / Breakage / Vehicle issue** ("Alerts the dispatcher"), mỗi thẻ mở form nhỏ theo payload ở `06` mục 8.1. R3: không có Shift change (đổi số người dùng màn Công suất ngày), không có nút Pause/Resume; chỉ Start prep (số người), Goods ready, Mark loaded từng xe.
 - **Bỏ khỏi màn kho:** panel "Products waiting for a handling group … Approve" — chuyển sang màn IT (5.A7).
 
 ### 5.7 — 07 KPIs & decision log
 - **Đầu trang:** overline `PILOT VALUE METRICS · SWEDEN`; H1 "KPIs & decision log"; "Demo week 3–9 Nov · 48 orders closed · baselines entered as assumptions"; bộ chọn kỳ + "Export CSV".
-- **Lưới thẻ KPI 3×2** (mỗi thẻ: nhãn mono, chip `↓ lower is better`/`↑ higher is better`, số lớn mono, thanh so sánh với baseline, ghi chú phương pháp):
-  1. PLANNING TIME / ORDER — "3.2 min" vs baseline 15 min; ghi chú "Submit → approval, people time. Engine run alone: 0.4 s median."
-  2. ON-TIME DELIVERY — "92%"; "44 of 48 delivered before the committed window closed. No real baseline yet." (giao thất bại không tính, xem 7)
-  3. **LABOUR & DISTANCE PER DELIVERY** (thay "Cost per delivery"): hai số "9.8 h" và "31.4 km"; so với baseline "Nearest-warehouse rule"; ghi chú "Same seeded orders. Not converted to money."
-  4. PREPARATION ERROR — "11 min"; "Mean |actual − planned| from Start prep to Goods ready. Calibrate labour standards only with ≥ 30 orders per group."
-  5. ETA ERROR — "14 min"; "Rule-based forecast, not AI prediction."
-  6. PLAN ACCEPTANCE — "81%"; "39 of 48 recommended plans approved unchanged · 7 alternatives chosen · 2 manual."
-- **Thêm hai thẻ phụ:** FAILED DELIVERY RATE và CAPACITY UTILISATION.
-- **Thanh nền tối (chẩn đoán):** "HARD-CONSTRAINT VIOLATIONS — 0 in approved plans (target 0)" · "EVENT → ALERT LATENCY — 4 s median, milestone to dispatcher alert".
+- **Lưới 5 thẻ KPI (R3, DEC-R3-03)** (mỗi thẻ: nhãn mono, chip hướng, số lớn mono, ghi chú phương pháp):
+  1. PLANNING TIME / ORDER — "3.2 min" vs baseline 15 min; tách **Sales · Dispatcher**; dòng phụ "Submit → confirmed: Sales 6 min · Dispatcher 95 min".
+  2. ON-TIME DELIVERY — "92%"; "Delivered inside the promised window. Failed deliveries excluded."
+  3. PLAN ACCEPTANCE — "81%"; tách **Sales · Dispatcher**; dòng phụ "Committed at the counter: 42%".
+  4. MANUAL INTERVENTIONS / ORDER — "9%" vs baseline; "Manual plans or overrides, incl. manual plan count".
+  5. ETA ERROR — "median 14 min · P90 38 min" so với mục tiêu; "ETA at dispatch vs proof of delivery. Absolute — no manual baseline exists."
+- **Không có** thẻ giờ công/km, sai số chuẩn bị, tỷ lệ giao thất bại, mức dùng công suất, và thanh chẩn đoán (R3).
 - **Bảng "Decision log — Append-only · every approval, override and rule change"** cột TIME · WHO · ACTION (chip) · SUBJECT · DETAIL / REASON; có lọc theo hành động, đơn, khoảng ngày; mã hành động theo `04` mục 10 (`ALT_SELECTED`, `CRITERIA_CHANGED_RERUN`, `MANUAL_PLAN_CREATED`, `MAPPING_CONFIRMED`…). Chip `MANUAL_PLAN_CREATED` dùng bộ At risk để nổi bật.
 - **Không có panel doanh thu** ở màn này (v1.2): doanh thu ở màn riêng A16.
 - **Quyền xem:** `admin` và người có `ops` (dispatcher, quản lý kho, Project lead); Business owner nhận màn 403 "You do not have access to KPIs".
 - **Đơn vị định mức trong nhật ký:** thiết kế ghi "0.8 → 0.9 min per unit"; MVP lưu giờ (`labour_hours_per_unit`). UI hiển thị cả hai: "0.15 h (9 min) per pallet".
 
 ### 5.8 — 08 Notification inbox
-- **Banner:** "Nothing here reaches a real customer. Email goes to Mailpit locally; SMS is simulated."
-- **Đầu trang:** overline `CUSTOMER COMMUNICATION · OUTBOX`; H1; "Four message types: date confirmed, dispatched, delivered or failed, and delay — delay notices are sent by a dispatcher."
-- **Chip lọc:** `All · 6`, `Email · 4`, `SMS · 2`, `Draft · 1`, `Suppressed · 1`.
+- **Banner:** "Nothing here reaches a real customer. Email goes to Mailpit locally."
+- **Đầu trang:** overline `CUSTOMER COMMUNICATION · OUTBOX`; H1; "Five email types: confirmed, dispatched, delivered, failed and delay — delay notices are sent by a dispatcher. No SMS." (R3)
+- **Chip lọc:** `All · 6`, `Draft · 1`, `Suppressed · 1` (R3: chỉ email).
 - **Danh sách trái:** mỗi mục: chip mẫu (`DELAY`, `DISPATCHED`, `DELIVERED`, `CONFIRMED`) + kênh + giờ, dòng `SE-… · Khách`, dòng trạng thái ("Sent · new ETA 13:00–13:30", "Suppressed · ETA moved < 30 min", "Draft · waiting for dispatcher").
-- **Chi tiết phải:** khung email (From/To/Subject; To đã che `u•••@…`), thân thư theo mẫu mục 8.1 (dải màu `apricot` phía trên, tiêu đề, đoạn, khối "New arrival / Status", chân thư). Dưới: **SMS preview · simulated** và thẻ **"What a customer can see"** ("Order number, status, delivery window and ETA. **Never driver location or GPS.**").
+- **Chi tiết phải:** khung email (From/To/Subject; To đã che `u•••@…`), thân thư theo mẫu mục 8.1 (dải màu `apricot` phía trên, tiêu đề, đoạn, khối "New arrival / Status", chân thư). Dưới (R3: không có SMS preview): thẻ **"What a customer can see"** ("Order number, status, delivery window and ETA. **Never driver location or GPS.**").
 - **Bản nháp DELAY (D4):** Edit chỉ chỉnh `eta_window` đã kiểm tra và chọn `reason_code`/câu từ template được duyệt. **Không có textarea subject/body free-text**. Xem trước chính là nội dung server render từ biến allowlist (mã đơn công khai, trạng thái, khung ETA). Send (chỉ Dispatcher) / Discard (bắt buộc lý do). CS và admin chỉ đọc. Không đưa GPS, tên tài xế, người nhận, địa chỉ, risk score hoặc ghi chú CS vào template.
 
 ### 5.9 — 09 Data integration (admin/IT)
@@ -220,17 +220,17 @@ Mỗi màn: mục đích · vai trò · dữ liệu · bố cục · hành độ
 
 ### 5.10 — 10–11 Driver app (PWA điện thoại, 390×844)
 - **Khung:** nền `stone`, đầu trang `deep-pine` bo dưới; "CFO Driver" + mã xe mono bên phải.
-- **Màn danh sách "Today's trips":** ngày · số chuyến; chip "Saved for offline · synced 10:52". Thẻ chuyến: `NOW · TRIP 1` + chip trạng thái (LOADED); tên điểm ("Mölndal · Kvarnbyn"), khách; ba ô Window / Drive / Load; mã đơn · số dòng; **một nút lớn `apricot` cho bước kế**: `LOADED` → "Mark dispatched". Thẻ `LATER · TRIP 2` mờ hơn, chip trạng thái theo enum (`PREPARING`, thiết kế ghi "IN PREP"), ghi "Loading at DC from 14:40", "Window 15:30–17:00".
-- **Quyền riêng tư (thay câu "Your location is not tracked or shared"):** thẻ chân trang: "During an authorised on-road trip and official shift, location is shared with the assigned dispatcher every 30 minutes. Live sharing stops when the trip or duty ends. Lawfully collected history may be retained for up to 7 days for case-authorised review; customers never see it." Có nút "Privacy details", xin quyền vị trí và notice/ack riêng theo driver; **không bật GPS người thật trước legal/privacy/DPIA sign-off**. Chip "Sharing location" / "Location off"; không còn lời hứa "Deleted after 30 days".
+- **Màn danh sách "Today's trips" (R3: online, không chip offline):** ngày · số chuyến; Thẻ chuyến: `NOW · TRIP 1` + chip trạng thái (LOADED); tên điểm ("Mölndal · Kvarnbyn"), khách; ba ô Window / Drive / Load; mã đơn · số dòng; **một nút lớn `apricot` cho bước kế**: `LOADED` → "Mark dispatched". Thẻ `LATER · TRIP 2` mờ hơn, chip trạng thái theo enum (`PREPARING`, thiết kế ghi "IN PREP"), ghi "Loading at DC from 14:40", "Window 15:30–17:00".
+- **Quyền riêng tư (R3):** thẻ chân trang: "Your location is sent only when you tap Update location, report an incident or complete a delivery. Only the dispatcher assigned to this trip sees it while you are on the road. It is deleted when the order is closed. Customers never see it."
 - **Màn chi tiết chuyến:** quay lại "Today's trips"; mã đơn + chip `DISPATCHED 08:45`; tên điểm giao; thẻ thông tin (Receiving window, Goods, ghi chú "Report to the site office. Forklift on site."); **Outcome** (phân đoạn Delivered/Failed); **Received by** (tên người ký — bắt buộc khi Delivered); **Note** (tùy chọn); khi chọn **Failed** hiện **Failure reason** (select bắt buộc: customer absent, site inaccessible, refused, wrong address, vehicle breakdown, goods damaged, other); nút lớn `apricot` **"Confirm delivered"** / "Confirm failed". Chân: "No signal? Your update is saved and sent once you are back online — never twice."
-- **Offline:** sự kiện vào hàng đợi IndexedDB (`idempotency_key`, `occurred_at` = giờ chạm); chip "1 update waiting to send" khi chưa đồng bộ.
+- **Hành động trên chuyến đang chạy (R3):** nút **Cập nhật vị trí** (lấy vị trí một lần, hiện "Đã gửi 10:52"); nút **Báo sự cố** (Hỏng xe / Kẹt xe-tai nạn / Không vào được công trình / Khác + ghi chú); **Delivered/Failed** khóa cho tới khi lấy được vị trí, kèm hướng dẫn bật định vị. Lỗi mạng: thông báo + nút "Thử lại" (cùng `Idempotency-Key`); không có hàng đợi offline.
 - **Cảm ứng:** vùng chạm ≥ 48px, một hành động chính mỗi màn, chữ ≥ 16px.
 
 ### 5.A — Màn bổ sung (chưa có trong thiết kế; dựng theo cùng ngôn ngữ)
 
 **A1. Plan review (danh sách):** bảng đơn `PLANNED` (cột như Order queue + "Hold expires in", "Reserve class") dẫn tới màn 5.2. **A2. Exceptions:** hai tab đang dùng trong CFO là `No feasible date` · `Replan suggested`; đơn thiếu SKU đi quy trình cũ nên **không** vào hàng đợi Dispatcher để chờ mapping. Có liên kết độc lập cho IT tới hàng đợi sản phẩm chưa mapping. Đơn `NO_FEASIBLE_DATE` vì check `truck` (thiếu loại xe, kín xe) hiện mã và chi tiết (`NO_TRUCK_FIT · capability: crane`). **A3. Tracking & risk:** bảng đơn cam/đỏ sắp theo `slack` tăng dần, kèm bản đồ tóm tắt xe đang chạy (dispatcher). **A4. Transfers:** bảng chuyển kho (trạng thái `suggested/approved/source_confirmed/received`), nút theo vai trò (dispatcher: Approve/Cancel; kho nguồn: Confirm source; kho đích: Receive).
 
-**A5. Attendance & shifts (kho):** chọn ngày (mặc định hôm nay, hiển thị ít nhất 14 ngày tới); **Warehouse Manager** lập/sửa lịch ca chính thức theo **từng nhân viên và ngày** (chọn người, ca, giờ; xác nhận thay đổi). Bảng tách **Scheduled shift** (nguồn chính thức, không tự suy ra) và **Actual attendance** (`planned/present/absent/leave`); nút "All present" chỉ tác động người **đã có lịch**, không tạo ca hay chuyển người. `expected_staff` trong tab **Shift templates** là chỉ tiêu dự kiến để so sánh với số nhân viên đã được xếp, không là giới hạn/quota tự phân ca. Hiển thị cảnh báo nếu chưa có lịch chính thức hoặc dự kiến/hiện thực khác nhau; không tự dồn người vào ca cuối. Có trường lý do bắt buộc khi sửa lịch/điểm danh quá khứ; lịch sử người sửa/giờ sửa, xác minh quyền backend; tóm tắt công suất ca theo người có mặt × giờ hữu ích × 90%. Tab "Absences" giữ nguyên. (Không có tab Equipment, #25.)
+**A5. Công suất ngày (kho, R3, DEC-R3-06):** chọn ngày; bảng các ca (mã ca, giờ bắt đầu–kết thúc, **số người**, **số giờ hữu ích**); nút **Xác nhận**; dòng tính "8 × 7.0 h × 90% = 50.4 h"; sửa ngày đã có dữ liệu hoặc ngày đã qua bắt buộc lý do; hiện người xác nhận và giờ. Không có lịch từng nhân viên, không điểm danh. *(Mô tả cũ "Attendance & shifts" đã bỏ.)*
 
 **A7. Product mapping (IT):** danh sách task bên trái (SKU nội bộ, nước, mức độ ưu tiên mapping, tuổi task; không gọi đơn quy trình cũ là đơn đang chờ CFO); chi tiết phải theo mẫu thẻ "Products waiting for a handling group" của thiết kế: tên/ERP code/cân nặng/đóng gói, **ứng viên theo quy tắc** (GTIN trùng, tên gần giống `pg_trgm` kèm điểm, nhóm gợi ý theo bảng quy tắc) thay cho "AI confidence"; hành động **Approve** (chọn ứng viên), **Choose other** (tìm sản phẩm global hoặc **Create global product** với nhóm N1–N6, đơn vị chuẩn bị, `base_units_per_prep_unit`, cờ, `units_to_base`), **Reject** (lý do bắt buộc). Văn bản dẫn: "Suggestions come from GTIN, name, category and size rules. Orders containing unmapped SKUs continue through the existing process; IT mapping expands CFO eligibility for future orders." Chân: "Every approval is written to the audit log."
 **A8. Handling groups & norms (IT):** bảng N1–N6 (mã, tên, đơn vị chuẩn bị, giờ cố định/dòng, giờ/đơn vị kèm quy ra phút, số người tối thiểu, yêu cầu xe) và bảng hệ số cờ; ghi chú "N6 never carries the FRAGILE flag"; chỉnh sửa tại chỗ có xác nhận và lý do; ghi chú "One norm set for all warehouses". Tab "Group rules" (quy tắc gán nhóm theo category).
@@ -265,7 +265,7 @@ Nguồn chung: `From: CFO deliveries (demo) · noreply@cfo.demo`; ngôn ngữ th
 | `FAILED` | "We could not deliver your order" | "We could not deliver today (approved reason template). We will contact you to arrange a new time." |
 | `DELAY` | "Delivery update for order SE-…" | "**Your delivery is running later than planned.** We now expect to arrive … between **13:00 and 13:30** today. The confirmed window was 10:00–12:30." khối New arrival / Status; "We will tell you again only if this changes." |
 
-SMS (≤ 160 ký tự): "CFO demo: order SE-2026-000129 has left Malmö DC. Expected arrival 13:10–13:40." Ghi chú dưới bản xem trước: `sms_sim · 10:12 · not sent to a network`.
+*(R3: không có SMS.)*
 
 ## 7. Điều chỉnh bắt buộc so với bản thiết kế
 
@@ -280,11 +280,11 @@ Bảng dưới liệt kê chỗ bản thiết kế khác quy tắc nghiệp vụ
 | 5 | 02, 03 | Mã `NO_TRUCK_SLOT`, `SAFETY_LIMIT`, `PREP_OVER_CAPACITY`, `INBOUND_LATE` | Mã chuẩn: `TRUCK_BUSY`/`NO_DRIVER`, `DRIVER_HOURS_EXCEEDED`/`OVER_LOAD`, `PREP_NO_CAPACITY`, và `STOCK_SHORT` kèm `detail.inbound_available_on` (hiển thị nhãn "INBOUND_LATE") | Danh mục mã ở `04` mục 6.2 |
 | 6 | 03 | Thẻ ngày sớm nhất hiện giá tiền | Hiện km và ETA, không tiền | Như #1 |
 | 7 | 03 | Không có gợi ý chuyển kho | Thêm panel "Transfer suggestions" | Đã chốt |
-| 8 | 04 | "recalculated … every 5 minutes" | "recalculated when a milestone, GPS fix, source data or an overdue milestone changes" | Đã chốt: không tính vô ích |
+| 8 | 04 | "recalculated … every 5 minutes" | R3: "recalculated when a milestone, driver location update, incident or source data changes" | Không tính theo chu kỳ |
 | 9 | 04, 08 | Thông báo trễ **tự gửi** ("delay email queued/sent") | Hệ thống tạo **bản nháp**, **dispatcher bấm gửi** | Đã chốt Q16 |
 | 10 | 04, 08 | "Max one delay message per hour" | Bản nháp mới chỉ khi ETA lệch ≥ 30 phút so với khung đã thông báo | `BR-NOT-02` |
 | 11 | 04 | "Approved plan … Cost 3 960 SEK" | Distance, prep hours, score | Như #1 |
-| 12 | 04 | Không có GPS | Thêm panel "Live position" (chỉ dispatcher) | Đã chốt GPS trong MVP |
+| 12 | 04 | Không có GPS | R3: dòng "Vị trí gần nhất · Giờ cập nhật · ETA" cho Dispatcher được gán, không bản đồ | DEC-R3-01 |
 | 13 | 05 | "New order" trong ứng dụng CFO, một ô ngày | Màn thuộc **POS giả lập**; thêm **Date type Exact/Range/Latest**; bỏ "Handling group" | Đơn đến từ POS nguồn; ba dạng ngày; nhóm xử lý là khái niệm CFO |
 | 14 | 06 | Công suất "85% productive" tính phút | "người có mặt × giờ hữu ích × **90%**" (v1.1: không có hàng thiết bị, #25) | Đã chốt 90% |
 | 15 | 06 | Warehouse manager duyệt nhóm xử lý (AI gợi ý) | Chuyển sang **IT**; gợi ý bằng quy tắc, không AI | Đã chốt: chỉ IT ánh xạ; AI sau |
@@ -294,7 +294,7 @@ Bảng dưới liệt kê chỗ bản thiết kế khác quy tắc nghiệp vụ
 | 19 | 08 | Mọi thông báo gửi tự động, có `Suppressed · delay within 60 min` | `DELAY` là bản nháp; thêm lọc `Draft`; lý do bị chặn: `shadow_mode`, lệch < 30 phút, dispatcher bỏ | Đã chốt |
 | 20 | 09 | Nguồn là **file CSV**, bước FETCH "files from the inbox" | Nguồn là **API giả lập** theo `updated_since`; CSV chỉ là phương án dự phòng ("Upload CSV (fallback)") | Đã chốt: gọi API qua adapter |
 | 21 | 09 | "A missing pair returns ROUTE_DATA_UNAVAILABLE — never a fake pass" | Có **fallback ước lượng** gắn nhãn "Estimated route"; nếu cấu hình `routing.allow_fallback = false` thì cặp thiếu trả `ROUTE_DATA_UNAVAILABLE` | Fallback đã chốt; vẫn giữ nguyên tắc không giả vờ |
-| 22 | 10–11 | "Location is not tracked or shared" | Thông báo GPS có điều kiện, xin quyền, chip trạng thái; **bắt buộc chọn lý do khi Failed** | Đã chốt GPS trong MVP; `failure_reason` |
+| 22 | 10–11 | "Location is not tracked or shared" | R3: vị trí chỉ gửi khi tài xế bấm/báo sự cố/hoàn tất; **bắt buộc vị trí và lý do khi Failed** | DEC-R3-01; `failure_reason` |
 | 23 | Menu | Mọi mục hiện chung trong mockup | Lọc mục theo vai trò (mục 3.2) | RBAC |
 | 24 | Đăng nhập | 5 tài khoản demo | Thêm Customer service, Business owner | Vai trò đã chốt |
 | 25 | 06, A5, A8 | Màn kho có thiết bị (thiết kế không vẽ, nhưng bản 1.0 thêm hàng "Equipment today", tab Equipment) | **Bỏ** mọi UI thiết bị kho | Chốt v1.1: thiết bị kho ngoài MVP theo slide |
@@ -311,7 +311,7 @@ Bảng dưới liệt kê chỗ bản thiết kế khác quy tắc nghiệp vụ
 | 36 | 01 | Bảng không có cột rủi ro riêng (chỉ nền hàng) | Thêm cột chip rủi ro hẹp | Màu không là tín hiệu duy nhất (mục 1.5) |
 | 37 | 02 | Mỗi phương án một xe | Phương án có thể nhiều xe (`VehicleList`), xếp ít xe trước | v1.2: đơn nhiều xe |
 | 38 | 02 | Tie-break "smaller vehicle code" (#3) | "…earlier ETA, then smaller trucks (total capacity)" | v1.2: xe nhỏ hơn mà vẫn đủ chứa |
-| 39 | 06 | Chỉ Start prep / Goods ready / Mark loaded | Thêm Pause / Resume, hỏi số người làm; Mark loaded theo từng xe | v1.2: dữ liệu giờ nhân công thực tế |
+| 39 | 06 | Chỉ Start prep / Goods ready / Mark loaded | R3: giữ nguyên ba nút (không Pause/Resume), hỏi số người khi Start prep; Mark loaded theo từng xe | DEC-R3-08 |
 | 40 | 07 | Không có màn doanh thu | Màn Revenue A16 | v1.2: đặc tả doanh thu |
 
 ## 8. Hành vi chung
@@ -331,7 +331,7 @@ Bảng dưới liệt kê chỗ bản thiết kế khác quy tắc nghiệp vụ
 | 768–1023 px (máy tính bảng kho) | Sidebar thu thành biểu tượng; Prep queue một cột, nút hành động lớn hơn (≥ 48px) |
 | < 768 px | Chỉ ứng dụng **Driver** được tối ưu cho điện thoại; các màn khác hiện thông báo "Open on a larger screen" trừ màn tra cứu của CS và danh sách đơn (chỉ đọc) |
 
-Driver PWA: `manifest.webmanifest` (tên "CFO Driver", biểu tượng logo, `display: standalone`, `theme_color #0B2E2B`), service worker cache danh sách chuyến của ngày, hàng đợi sự kiện offline, cảnh báo cài lên màn hình chính.
+Driver PWA: `manifest.webmanifest` (tên "CFO Driver", biểu tượng logo, `display: standalone`, `theme_color #0B2E2B`), cảnh báo cài lên màn hình chính. R3: chạy online, không hàng đợi sự kiện offline.
 
 ## 10. Khả năng truy cập
 
@@ -368,8 +368,8 @@ Reference: [27 approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_202
 
 - Five gate field `checks.<name>.passed` rather than `pass`; absent gate is a failure. Rejected candidates are flat `warehouse_id,vehicle_code,failed_check,code,detail`, not nested DTO. Public nested `vehicle` is supported, **driver name is not returned by backend**; never invent it.
 - Disable approval for `replan_suggestion`, missing/expired hold, non-feasible run, non-proposed plan, failed gate or in-flight submit. When date differs, require a matching agreed `date_negotiation_id`. Keep five-gate D7 fail-closed. Show actionable infeasible/Plan Again states.
-- Do not infer `promise_window_preview`, site closing time, customer ETA window or freshness from an unsupported endpoint. Tight reserve class requires explicit UI acknowledgment where specified, without inventing an approval payload field.
-- GPS needs individually assigned primary Dispatcher/trip and notice/privacy sign-off for real employees. DELAY must have approved start/end/version and fixed typed template before dispatch. KPI has 10 keys and unavailable diagnostics shown as unknown (`null`), using local market days.
+- Do not infer `promise_window_preview`, site closing time, customer ETA window or freshness from an unsupported endpoint. R3: no tight-schedule acknowledgment for any approver.
+- R3: driver location is shown only to the rotation-assigned Dispatcher of the trip; notice/privacy sign-off needed for real employees. DELAY must have approved start/end/version and fixed typed template before dispatch. KPI has 5 keys (DEC-R3-03), using local market days.
 
 
 
@@ -389,7 +389,7 @@ Reference: [27 approved decisions](decisions/OWNER_CROSS_WORKSTREAM_APPROVED_202
 
 - **Transfer:** CFO may show a transfer suggestion/request, but must never display `confirmed outbound/inbound in WMS` solely because a CFO-side control was clicked. WMS is authoritative for physical movements; #127 must be reconciled.
 - **Date negotiation:** after verified customer agreement, an authorized Dispatcher explicitly selects **Apply agreed date**, sees refreshed safety/stock evidence and new planning run; saving `agreed` alone must not auto-update the delivery promise or approve the new plan.
-- **GPS historical:** a closed-trip GPS view is not available to regular Dispatchers. Only case-authorized privacy/compliance reviewers with reason and access audit (and legal/privacy approval for real employees) may view restricted history within the approved seven-day retention window.
+- **GPS historical (R3):** không có màn lịch sử vị trí; tọa độ bị xóa khi đơn kết thúc.
 - **M6:** before START_PREP the actual `prep_window.start` is `null` and UI shows not started, never displays planned as actual.
 - **KPI:** default 30-day date range, max 366 days; System Admin selects market before cross-market views; unimplemented diagnostics are `null`/unavailable, not 0.
 - **CS:** `GET /orders?q=` phone search must not persist raw phone to navigation/telemetry; `Referrer-Policy: no-referrer` and server-side log redaction are required, but GET URL/browser history remains a documented privacy risk. Contact response still masked by backend under DEC-CS-PRIVACY.
