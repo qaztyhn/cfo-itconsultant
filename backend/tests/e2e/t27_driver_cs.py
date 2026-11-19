@@ -88,9 +88,13 @@ def _driver_dispatch(
         res = sent.value
         stage["http"].append(_metadata(res))
         stage["event_type"] = "DISPATCHED"
-        stage["last_verified"] = "Driver UI sent DISPATCHED to real API"
         if not res.ok:
-            _block(stage, ["T06", "T16", "T14"], "Backend rejected the assigned driver's DISPATCHED event")
+            stage["last_verified"] = "Assigned trip visible; DISPATCHED rejected by backend"
+            _block(
+                stage,
+                ["T12", "E1", "T16"],
+                "DISPATCHED rejected: verified official shift, 56-day D7/vehicle proof or integrated ETA/notification may be missing",
+            )
             return stage
         ack = res.json()
         assert isinstance(ack.get("event_id"), int)

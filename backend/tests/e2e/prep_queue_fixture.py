@@ -77,6 +77,17 @@ def seed_approved_order(dsn: str, trip_count: int, password: str) -> str:
             "INSERT INTO ops.trip_stop (trip_id, seq, order_id, eta_planned_at) "
             f"VALUES ({seq}, 1, 1, '2026-11-10T11:45Z')",
         )
+    # CS must have a real Sweden-market employee scope. This synthetic fixture
+    # mirrors test_orders_api's scoped employee binding and grants no new role.
+    execute(
+        dsn,
+        "INSERT INTO hr.employee (market_id, employee_no, first_name, last_name, "
+        "position_code, hire_date) VALUES "
+        "(1, 'E3-CS', 'Synthetic', 'Service', 'CUSTOMER_SERVICE', '2025-01-01')",
+        "UPDATE ref.app_user SET employee_id=(SELECT id FROM hr.employee "
+        "WHERE employee_no='E3-CS') WHERE id=12",
+        "INSERT INTO hr.cs_staff(employee_id) SELECT id FROM hr.employee WHERE employee_no='E3-CS'",
+    )
     updated = fetch(
         dsn,
         "UPDATE ref.app_user SET password_hash=$1 WHERE email=ANY($2::text[]) RETURNING id",

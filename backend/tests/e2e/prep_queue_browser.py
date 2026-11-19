@@ -277,8 +277,12 @@ def walkthrough(
         page.set_default_timeout(12_000)
         run_warehouse(page, web, api, order_no, password, trip_count, out, report)
         page.close()
-        for trip_id in range(1, trip_count + 1):
-            check_driver(browser, web, api, order_no, trip_id, password, out, report)
+        # The continuation verifies the same assigned trip through its own
+        # driver browser session. Avoid duplicate logins: real auth rate limit
+        # must not be disabled just to exercise the two-trip case.
+        if not continue_driver_cs:
+            for trip_id in range(1, trip_count + 1):
+                check_driver(browser, web, api, order_no, trip_id, password, out, report)
         if continue_driver_cs:
             from tests.e2e.t27_driver_cs import run_driver_cs
 
@@ -314,7 +318,11 @@ def walkthrough(
         assert [(item["id"], item["trip_id"]) for item in dispatched] == [
             (item["event_id"], item["trip_id"]) for item in observed
         ]
-        report["t27"]["postgres_dispatch_matches_browser"] = True
+        report["t27"]["postgres_dispatch_matches_browser"] = (
+            bool(observed)
+            and [(item["id"], item["trip_id"]) for item in dispatched]
+            == [(item["event_id"], item["trip_id"]) for item in observed]
+        )
         report["t27"]["db_order_status"] = fetch(dsn, "SELECT status FROM ops.customer_order WHERE id=1")[0][
             0
         ]
