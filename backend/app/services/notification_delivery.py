@@ -60,11 +60,16 @@ def delivery_time(now: datetime, *, timezone: str, quiet_hours: tuple[str, str],
 
 
 async def deliver_queued(
-    session: AsyncSession, *, now: datetime, email: EmailTransport, limit: int = 100
+    session: AsyncSession,
+    *,
+    now: datetime,
+    email: EmailTransport,
+    limit: int = 100,
+    market_code: str | None = None,
 ) -> int:
     if now.tzinfo is None or limit <= 0:
         raise ValueError("Invalid outbox run parameters")
-    records = await session.execute(
+    query = (
         select(Notification, Market, CustomerOrder)
         .join(CustomerOrder, CustomerOrder.id == Notification.order_id)
         .join(Market, Market.id == CustomerOrder.market_id)
@@ -73,7 +78,11 @@ async def deliver_queued(
             Notification.scheduled_for <= now,
             Notification.recipient.is_not(None),
         )
-        .order_by(Notification.scheduled_for, Notification.id)
+    )
+    if market_code is not None:
+        query = query.where(Market.code == market_code)
+    records = await session.execute(
+        query.order_by(Notification.scheduled_for, Notification.id)
         .limit(limit)
         .with_for_update(of=Notification, skip_locked=True)
     )
@@ -181,7 +190,7 @@ async def deliver_queued(
     return processed
 
 
-async def process_outbox() -> int:
+async def process_outbox(*, market_code: str | None = None) -> int:
     email = SmtpEmailProvider(
         os.environ.get("SMTP_HOST", "mailpit"),
         int(os.environ.get("SMTP_PORT", "1025")),
@@ -193,4 +202,4 @@ async def process_outbox() -> int:
         allowed_recipient_domains=os.environ.get("SMTP_ALLOWED_RECIPIENT_DOMAINS", "test").split(","),
     )
     async with get_sessionmaker()() as session, session.begin():
-        return await deliver_queued(session, now=clock.now(), email=email)
+        return await deliver_queued(session, now=clock.now(), email=email, market_code=market_code)

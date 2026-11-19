@@ -751,7 +751,24 @@ Không cộng góc nhìn store với warehouse; không gộp nhiều tiền tệ
 | GET | `/sync-runs/{id}/rejects` | admin | Dòng bị loại và lý do |
 | GET | `/audit/decisions?order_id=&action=&from=&to=` | admin, dispatcher, viewer có `ops` | Nhật ký quyết định (chỉ đọc) |
 | GET | `/health` | công khai | `{ "status": "ok", "db": "ok", "last_sync_age_min": 3, "notify_queue": 0 }` |
-| POST | `/internal/tick?job=ingest_orders` | `X-Internal-Key` | Chạy một job theo yêu cầu (cho dịch vụ ping) |
+| POST | `/internal/tick?job=notify_outbox&market=SE` | `X-Internal-Key` | E2 gửi các notification email `queued` đã đến hạn trong market xác định; `market` **bắt buộc**, phải là code hiện có trong `ref.market` |
+| POST | `/internal/tick?job=hold_expiry` | `X-Internal-Key` | E2 xử lý các hold hết hạn **toàn cục**, không nhận tham số `market` |
+
+**Hợp đồng E2 của `POST /internal/tick` (chỉ `local`, `test`, `staging`):** Cần header `X-Internal-Key` bằng secret `INTERNAL_TICK_KEY`; thiếu/sai hoặc chứa ký tự ngoài ASCII ⇒ `401 AUTH_INVALID`, không chạy handler. Key đúng nhưng production ⇒ `403 FORBIDDEN`. Chỉ `notify_outbox` và `hold_expiry` là handler hợp lệ; job sai, `notify_outbox` thiếu hoặc sai market, và `hold_expiry` có `market` (kể cả rỗng) ⇒ `422 VALIDATION_ERROR`. Lỗi handler được chuẩn hóa thành `503 INTERNAL_ERROR` không tiết lộ SMTP/DB/secret.
+
+**Response `200`** trả dữ liệu thực sau khi job hoàn tất (header `X-Correlation-ID` khớp trường `correlation_id`):
+```json
+{
+  "job": "notify_outbox",
+  "market": "SE",
+  "status": "ok",
+  "started_at": "2026-11-19T10:00:00+00:00",
+  "finished_at": "2026-11-19T10:00:01+00:00",
+  "processed": 1,
+  "correlation_id": "example-id"
+}
+```
+Với `hold_expiry`, `market` trong response là `null`. `processed` là số đối tượng do handler xử lý; gọi lại khi không còn việc có thể trả `0`. Timestamps UTC ISO 8601. Endpoint này không kích hoạt scheduler, không tự approve hoặc tự gửi DELAY. Các job khác chưa triển khai phải bị từ chối.
 
 **D8 được owner phê duyệt chỉ để triển khai và kiểm thử staging/demo (DEC-D8-STAGING-SCHEDULE-20261109):** danh sách job/tần suất trong proposal là baseline staging, chưa bật production; tick endpoint/auth/response và mã lỗi vẫn phải review kỹ thuật. Đề xuất tách riêng tại `docs/proposals/D8_SCHEDULER_SWEDEN_PROPOSAL_20261108.md`: 5 phút ingest/stock/gps-lost/stale/milestone, 1 phút hold expiry/outbox, morning 07:00 và nightly 04:00/04:15 giờ Thụy Điển; bảo vệ DB lock/mỗi job/market, không tác động đến ca/GPS ngoài giờ, không tự approve hay gửi DELAY, D6 hosting chờ owner. Chưa thay route/code trong tài liệu này.
 
