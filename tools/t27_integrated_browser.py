@@ -202,7 +202,15 @@ def start_disposable_wms(env: dict[str, str], report: dict) -> None:
 
 def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
             out: Path, report: dict, env: dict[str, str]) -> list[int]:
-    page = login(browser, f"/dispatcher/plan-review/{run_id}", "user1@cfo.test", password, out, "Dispatcher")
+    # E0-04's Dispatcher user is profile id=1 (also used in E1's
+    # verified TestClient actor). Discover its demo login from the seeded
+    # database; the T27 E3 fixture's user1@cfo.test is a DIFFERENT seed.
+    account = sql(
+        "SELECT email FROM ref.app_user WHERE id=1 AND 'dispatcher'=ANY(roles)", env
+    )
+    if not account:
+        raise RuntimeError("E1 Dispatcher identity not found in disposable market seed")
+    page = login(browser, f"/dispatcher/plan-review/{run_id}", account, password, out, "Dispatcher")
     try:
         expect(page.get_by_role("heading", name="Plan review")).to_be_visible()
         tight = page.get_by_role("checkbox", name="I accept the tight schedule")
