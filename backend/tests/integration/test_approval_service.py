@@ -466,7 +466,6 @@ def test_DEC_WMS_RESERVE_SYNC_disposable_demo_fails_closed_without_ack(db: str, 
     assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
 
 
-
 def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -> None:
     """The approved order and frozen CONFIRMED outbox share one PG transaction."""
     execute(
@@ -520,9 +519,7 @@ def test_US_NOT_01_AC1_t21_missing_email_approves_but_suppresses(db: str) -> Non
     _hold(db)
     result = _run(
         db,
-        lambda s: approval_service.approve(
-            1, _actor(), {}, "t21-no-email", session=s, recheck=_recheck
-        ),
+        lambda s: approval_service.approve(1, _actor(), {}, "t21-no-email", session=s, recheck=_recheck),
     )
     assert result["order"]["status"] == "APPROVED"
     row = fetch(
@@ -532,7 +529,9 @@ def test_US_NOT_01_AC1_t21_missing_email_approves_but_suppresses(db: str) -> Non
     )[0]
     assert row["id"] > 0 and (row["order_id"], row["plan_id"]) == (1, 1)
     assert (row["status"], row["recipient"], row["skipped_reason"]) == (
-        "suppressed", None, "SKIPPED_NO_CHANNEL"
+        "suppressed",
+        None,
+        "SKIPPED_NO_CHANNEL",
     )
     email = AsyncMock()
     assert _run(db, lambda s: deliver_queued(s, now=NOW + timedelta(days=1), email=email)) == 0
@@ -546,9 +545,7 @@ def test_US_NOT_01_AC1_t21_expired_hold_creates_no_confirmed(db: str) -> None:
     with pytest.raises(DomainError) as error:
         _run(
             db,
-            lambda s: approval_service.approve(
-                1, _actor(), {}, "t21-expired", session=s, recheck=_recheck
-            ),
+            lambda s: approval_service.approve(1, _actor(), {}, "t21-expired", session=s, recheck=_recheck),
         )
     assert error.value.code == "HOLD_EXPIRED"
     assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 0
@@ -560,9 +557,7 @@ def test_US_NOT_01_AC1_t21_wms_gate_rejection_creates_no_confirmed(
 ) -> None:
     _hold(db)
     # Exercise the existing fail-closed real-WMS branch, not a synthetic ACK.
-    monkeypatch.setattr(
-        approval_service, "get_settings", lambda: SimpleNamespace(app_env="production")
-    )
+    monkeypatch.setattr(approval_service, "get_settings", lambda: SimpleNamespace(app_env="production"))
     with pytest.raises(DomainError) as error:
         _run(
             db,
@@ -585,9 +580,7 @@ def test_US_NOT_01_AC1_t21_post_enqueue_rollback_is_atomic(db: str) -> None:
         )
         assert response["order"]["status"] == "APPROVED"
         staged = await session.execute(
-            text(
-                "SELECT id FROM ops.notification WHERE order_id=1 AND template='CONFIRMED'"
-            )
+            text("SELECT id FROM ops.notification WHERE order_id=1 AND template='CONFIRMED'")
         )
         assert staged.scalar_one() > 0
         raise RuntimeError("synthetic failure after enqueue before commit")
@@ -595,7 +588,8 @@ def test_US_NOT_01_AC1_t21_post_enqueue_rollback_is_atomic(db: str) -> None:
     with pytest.raises(RuntimeError, match="synthetic failure"):
         _run(db, aborted_approval)
     assert fetch(db, "SELECT status, approved_plan_id FROM ops.customer_order WHERE id=1")[0] == (
-        "PLANNED", None
+        "PLANNED",
+        None,
     )
     assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 0
     assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
