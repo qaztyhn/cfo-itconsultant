@@ -5,6 +5,9 @@ services:
   cfo-api:
     environment:
       WMS_RESERVATION_MODE: simulated
+      # The approval API ALSO reads the verified native SKU/line mapping.
+      # Copy it into this container after Sales Check, before Approve.
+      SYNTHETIC_WMS_FIXTURE: /tmp/t27-wms-fixture.json
       SYNTHETIC_WMS_URL: http://127.0.0.1:8188
       SYNTHETIC_WMS_API_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
       SYNTHETIC_WMS_SHARED_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
