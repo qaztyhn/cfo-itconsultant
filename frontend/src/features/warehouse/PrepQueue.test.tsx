@@ -62,7 +62,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(seen).toHaveBeenCalledWith({ warehouse_id: 1, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 
-  it("test_US_WH_01_AC1_offers_backend-authorized milestones only", async () => {
+  it("test_US_WH_04_AC1_offers_backend-authorized milestones only", async () => {
     server.use(prepQueueSuccess());
     signInWarehouse();
     renderAt("/warehouse/prep");
@@ -202,7 +202,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(screen.queryByRole("link", { name: "Edit shifts & staff" })).toBeNull();
   });
 
-  it("test_US_WH_01_AC1_E3_one_order_progresses_start_ready_loaded_through_refreshed_backend_state", async () => {
+  it("test_US_WH_04_AC1_E3_one_order_progresses_start_ready_loaded_through_refreshed_backend_state", async () => {
     const order = orderApproved();
     let step = 0;
     const recorded: { type: string; payload: Record<string, unknown>; key: string }[] = [];
@@ -255,7 +255,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(new Set(recorded.map((e) => e.key)).size).toBe(3);
   });
 
-  it("test_US_WH_01_AC2_two_vehicle_loads_send_distinct_trip_ids_and_keys", async () => {
+  it("test_US_WH_04_AC2_two_vehicle_loads_send_distinct_trip_ids_and_keys", async () => {
     const original = orderMultiVehicle();
     const loaded = new Set<number>();
     const calls: { trip: number; key: string }[] = [];
@@ -291,7 +291,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(calls[0].key).not.toBe(calls[1].key);
   });
 
-  it("test_US_WH_01_AC4_after_409_shows_conflict_and_requires_backend_reload", async () => {
+  it("test_US_WH_04_AC4_after_409_shows_conflict_and_requires_backend_reload", async () => {
     const order = orderApproved();
     let stale = false;
     let sent = 0;
@@ -320,7 +320,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(sent).toBe(1);
   });
 
-  it("test_US_WH_01_AC4_retries_an_uncertain_event_with_the_same_key_and_body", async () => {
+  it("test_US_WH_04_AC4_retries_an_uncertain_event_with_the_same_key_and_body", async () => {
     const requests: { body: unknown; key: string | null }[] = [];
     let success = false;
     server.use(
@@ -349,7 +349,7 @@ describe("PrepQueue screen (Round 3)", () => {
     expect(requests[0]).toEqual(requests[1]);
   });
 
-  it("test_US_WH_01_AC5_fails_closed_for_a_warehouse_worker_without_location_scope", async () => {
+  it("test_US_WH_04_AC5_fails_closed_for_a_warehouse_worker_without_location_scope", async () => {
     const seen = vi.fn();
     server.use(prepQueueSuccess(buildPrepQueueFixture("verified"), seen));
     signInAs({ ...userByEmail("wm.got@cfo.demo"), location_ids: [] });
