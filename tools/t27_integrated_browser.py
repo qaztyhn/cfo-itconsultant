@@ -533,7 +533,8 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         # Driver time is after the last warehouse event, within the server's
         # accepted +5 minute skew without bypassing the official shift gate.
         page.clock.fast_forward(60_000)
-        card = page.get_by_role("article").filter(has_text=re.compile(rf"\bTrip {trip_id}\b"))
+        trip_label = page.get_by_text(re.compile(rf"^(Now|Later) · Trip {trip_id}$"))
+        card = page.get_by_role("article").filter(has=trip_label)
         expect(card).to_be_visible(timeout=16000)
         card.get_by_role("button", name="Review and dispatch").click()
         screenshot(page, out, "08-driver-dispatch-ready.png")
@@ -552,7 +553,7 @@ def driver(browser, password: str, trip_id: int, order_id: int,
                 code, msg = None, None
             classified = dispatch_rejection(posted.value.status, code, msg)
             reason = f"Driver UI Dispatch HTTP {info['http']} {info['error_code']}. {classified['reason']}"
-            report["dispatch_attempt"]["reason"] = classified["reason"]
+            report["dispatch_attempt"]["reason"] = msg if classified["status"] == "BLOCKED" else classified["reason"]
             mark(report, "8", classified["status"], reason,
                  task=", ".join(classified["tasks"]), http=info, trip_id=trip_id)
             report["last_verified"] = "Assigned Driver UI trip visible; DISPATCHED rejected"
