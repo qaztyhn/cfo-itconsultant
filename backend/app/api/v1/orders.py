@@ -289,10 +289,30 @@ async def order_timeline(order_id: int, user: AuthUser, db: DbSession) -> Timeli
     return TimelineOut.model_validate(await order_read_service.timeline(db, scope, order_id))
 
 
-@router.get("/orders/{order_id}/eta-forecasts")
-async def order_eta_forecasts(order_id: int) -> dict[str, object]:
-    """GET /orders/{order_id}/eta-forecasts — dispatcher, warehouse, CS."""
-    raise NotImplementedError
+class CsEtaForecastOut(BaseModel):
+    version: int
+    forecast_eta: datetime
+    risk_status: str
+
+
+class EtaForecastOut(CsEtaForecastOut):
+    risk_color: str
+
+
+@router.get(
+    "/orders/{order_id}/eta-forecasts",
+    response_model=list[EtaForecastOut | CsEtaForecastOut],
+    responses=_ERRORS,
+)
+async def order_eta_forecasts(
+    order_id: int, user: AuthUser, db: DbSession
+) -> list[EtaForecastOut | CsEtaForecastOut]:
+    """GET /orders/{id}/eta-forecasts — scoped, version-ordered history."""
+    scope = await order_read_service.resolve_order_scope(db, user)
+    rows = await order_read_service.eta_forecasts(db, scope, order_id)
+    if scope.role == "customer_service":
+        return [CsEtaForecastOut.model_validate(row) for row in rows]
+    return [EtaForecastOut.model_validate(row) for row in rows]
 
 
 @router.post("/orders/{order_id}/replan")
