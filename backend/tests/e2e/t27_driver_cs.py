@@ -93,7 +93,8 @@ def _driver_dispatch(
             _block(
                 stage,
                 ["T12", "E1", "T16"],
-                "DISPATCHED rejected: verified official shift, 56-day D7/vehicle proof or integrated ETA/notification may be missing",
+                "DISPATCHED rejected: verified official shift, 56-day D7/vehicle "
+                "proof or integrated ETA/notification may be missing",
             )
             return stage
         ack = res.json()
