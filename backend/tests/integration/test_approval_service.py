@@ -1,11 +1,11 @@
 """T16: real-PostgreSQL approval transaction and concurrency regression tests."""
 
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 from collections.abc import Callable, Coroutine, Iterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import text
@@ -17,8 +17,8 @@ from app.core import clock
 from app.core.errors import DomainError
 from app.deps import CurrentUser
 from app.services import approval_service, reservation_service
-from app.services.notification_delivery import deliver_queued
 from app.services.approval_service import RecheckProof
+from app.services.notification_delivery import deliver_queued
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, async_url, execute, fetch
 
