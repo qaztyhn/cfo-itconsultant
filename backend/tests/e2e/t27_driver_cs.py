@@ -129,6 +129,15 @@ def _cs_lookup(
         timezone_id=TIME_ZONE, viewport={"width": 1440, "height": 1000}, service_workers="block"
     )
     page.set_default_timeout(15_000)
+    observed: dict[str, Response] = {}
+
+    def capture(response: Response) -> None:
+        # Record only endpoint objects, never tokens, addresses or raw payloads.
+        path = urlsplit(response.url).path
+        if response.request.method == "GET" and path.startswith("/api/v1/orders/"):
+            observed[path] = response
+
+    page.on("response", capture)
     try:
         page.goto(f"{web}/login")
         page.locator('input[type="email"]').fill(CS_ACCOUNT)
@@ -154,15 +163,20 @@ def _cs_lookup(
         assert len(target) == 1
         order_id = target[0]["id"]
         stage["order_id"] = order_id
-        eta_path = f"{api}/api/v1/orders/{order_id}/eta-forecasts"
-        with page.expect_response(lambda r: response_for(r, "GET", eta_path)) as forecast:
-            with page.expect_response(
-                lambda r: response_for(r, "GET", f"{api}/api/v1/orders/{order_id}")
-            ) as details:
-                page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
-        stage["http"].append(_metadata(details.value))
-        require_ok(details.value)
-        detail = details.value.json()
+        detail_path = f"/api/v1/orders/{order_id}"
+        eta_path = f"/api/v1/orders/{order_id}/eta-forecasts"
+        page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
+        # Validate what is actually painted in the CS panel, then independently
+        # compare with the real API response captured from this same UI click.
+        expect(
+            page.get_by_label("Order details").get_by_text(order_no, exact=True)
+        ).to_be_visible(timeout=15_000)
+        details = observed.get(detail_path)
+        if details is None:
+            raise AssertionError("CS details rendered without an observable live HTTP GET")
+        stage["http"].append(_metadata(details))
+        require_ok(details)
+        detail = details.json()
         assert detail["id"] == order_id and detail["order_no"] == order_no
         stage["status_from_api"] = detail["status"]
         # CS should not receive location/GPS or internal approval scores.
@@ -173,17 +187,29 @@ def _cs_lookup(
         stage["last_verified"] = "CS UI result and details match real /orders API"
         page.screenshot(path=output / "t27-cs-order-lookup.png")
 
-        result = forecast.value
-        stage["http"].append(_metadata(result))
-        if not result.ok:
-            _block(stage, [ETA_STUB_TASK], "ETA history endpoint unavailable; CS lookup itself passed")
+        # The separate ETA request may finish before the detail GET. A
+        # response listener installed before selecting the order captures both.
+        eta_response = observed.get(eta_path)
+        if eta_response is None:
+            stage["eta_history"] = "No ETA history HTTP response observed"
+            _block(stage, [ETA_STUB_TASK], "ETA history unavailable; no live HTTP response")
         else:
-            stage["eta_history"] = "API responded; correlate versioned rows with ops.eta_forecast before PASS"
-            stage["status"] = "NOT VERIFIED"
+            stage["http"].append(_metadata(eta_response))
+            if not eta_response.ok:
+                _block(stage, [ETA_STUB_TASK], "ETA history HTTP error; CS order lookup passed")
+            else:
+                stage["eta_history"] = "HTTP responded; versioned API/DB rows not yet correlated"
+                stage["status"] = "NOT VERIFIED"
         page.screenshot(path=output / "t27-cs-eta-history.png")
         return stage
     except (AssertionError, BrowserTimeout, Error, KeyError, ValueError, TypeError) as exc:
+        stage["http"].extend(
+            _metadata(response)
+            for path, response in observed.items()
+            if path not in {str(item["path"]) for item in stage["http"]}
+        )
         _failed(stage, ["T03", "T14"], exc)
+        page.screenshot(path=output / "t27-cs-last-verified.png")
         return stage
     finally:
         page.close()
