@@ -48,7 +48,7 @@ from app.domain.models.plan import (
 )
 from app.domain.models.ref import Market, Vehicle
 from app.domain.transitions import transition
-from app.services import alert_service, reservation_service
+from app.services import alert_service, notify_service, reservation_service
 
 
 @dataclass(frozen=True)
@@ -598,8 +598,10 @@ async def _approve(
         snapshot={"run_id": run.id, "order_version": order.version, "source_version": order.source_version},
         after={"status": "approved", "trip_ids": trips, "committed_date": plan.target_date.isoformat()},
     )
-    # Notification app/outbox is owned by T23. No direct SMTP/SMS or
-    # arbitrary text here; T23 must enqueue the CONFIRMED template once per plan.
+    # T21 (historical T23 handoff): stage exactly one CONFIRMED in this
+    # approval transaction after the order has its committed plan and window.
+    # The E2 worker owns delivery after commit; never connect to SMTP here.
+    await notify_service.enqueue(order.id, "CONFIRMED", plan.id, session=session)
     response: dict[str, object] = {
         "order": {
             "id": order.id,

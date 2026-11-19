@@ -1,11 +1,14 @@
 """T16: real-PostgreSQL approval transaction and concurrency regression tests."""
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from collections.abc import Callable, Coroutine, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -14,6 +17,7 @@ from app.core import clock
 from app.core.errors import DomainError
 from app.deps import CurrentUser
 from app.services import approval_service, reservation_service
+from app.services.notification_delivery import deliver_queued
 from app.services.approval_service import RecheckProof
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, async_url, execute, fetch
@@ -460,3 +464,139 @@ def test_DEC_WMS_RESERVE_SYNC_disposable_demo_fails_closed_without_ack(db: str, 
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 0
     assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "held"
     assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
+
+
+
+def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -> None:
+    """The approved order and frozen CONFIRMED outbox share one PG transaction."""
+    execute(
+        db,
+        "UPDATE ref.customer SET email='confirmed@cfo.test' WHERE id=1",
+        "UPDATE ref.market SET shadow_mode=false WHERE id=1",
+    )
+    _hold(db)
+
+    async def approve(session: AsyncSession) -> dict[str, object]:
+        return await approval_service.approve(
+            1, _actor(), {}, "t21-confirmed-once", session=session, recheck=_recheck
+        )
+
+    first = _run(db, approve)
+    again = _run(db, approve)
+    assert again == first
+    assert first["order"]["status"] == "APPROVED"
+    order = fetch(
+        db,
+        "SELECT id, approved_plan_id, order_no, promise_start, promise_end "
+        "FROM ops.customer_order WHERE id=1",
+    )[0]
+    notification = fetch(
+        db,
+        "SELECT id, order_id, plan_id, status::text, recipient, skipped_reason, "
+        "subject, body, dedupe_key, eta_window FROM ops.notification "
+        "WHERE template='CONFIRMED'",
+    )[0]
+    assert notification["id"] > 0
+    assert notification["order_id"] == order["id"] == first["order"]["id"]
+    assert notification["plan_id"] == order["approved_plan_id"] == first["plan"]["id"]
+    assert notification["status"] == "queued"
+    assert notification["recipient"] == "confirmed@cfo.test"
+    assert notification["skipped_reason"] is None
+    assert notification["dedupe_key"] == f"{order['id']}:CONFIRMED:1:APPROVED"
+    assert order["order_no"] in notification["subject"]
+    assert order["order_no"] in notification["body"]
+    assert order["promise_start"].isoformat(timespec="minutes") in notification["body"]
+    assert order["promise_end"].isoformat(timespec="minutes") in notification["body"]
+    assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
+    print(
+        "T21 CONFIRMED PG evidence (synthetic ids only): "
+        f"order_id={order['id']} plan_id={notification['plan_id']} "
+        f"notification_id={notification['id']} status={notification['status']}"
+    )
+
+
+def test_US_NOT_01_AC1_t21_missing_email_approves_but_suppresses(db: str) -> None:
+    execute(db, "UPDATE ref.customer SET email=NULL WHERE id=1")
+    _hold(db)
+    result = _run(
+        db,
+        lambda s: approval_service.approve(
+            1, _actor(), {}, "t21-no-email", session=s, recheck=_recheck
+        ),
+    )
+    assert result["order"]["status"] == "APPROVED"
+    row = fetch(
+        db,
+        "SELECT id, order_id, plan_id, status::text, recipient, skipped_reason "
+        "FROM ops.notification WHERE template='CONFIRMED'",
+    )[0]
+    assert row["id"] > 0 and (row["order_id"], row["plan_id"]) == (1, 1)
+    assert (row["status"], row["recipient"], row["skipped_reason"]) == (
+        "suppressed", None, "SKIPPED_NO_CHANNEL"
+    )
+    email = AsyncMock()
+    assert _run(db, lambda s: deliver_queued(s, now=NOW + timedelta(days=1), email=email)) == 0
+    email.send.assert_not_called()
+    assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 1
+
+
+def test_US_NOT_01_AC1_t21_expired_hold_creates_no_confirmed(db: str) -> None:
+    _hold(db)
+    clock.set_now(NOW + timedelta(minutes=16))
+    with pytest.raises(DomainError) as error:
+        _run(
+            db,
+            lambda s: approval_service.approve(
+                1, _actor(), {}, "t21-expired", session=s, recheck=_recheck
+            ),
+        )
+    assert error.value.code == "HOLD_EXPIRED"
+    assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 0
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
+
+
+def test_US_NOT_01_AC1_t21_wms_gate_rejection_creates_no_confirmed(
+    db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hold(db)
+    # Exercise the existing fail-closed real-WMS branch, not a synthetic ACK.
+    monkeypatch.setattr(
+        approval_service, "get_settings", lambda: SimpleNamespace(app_env="production")
+    )
+    with pytest.raises(DomainError) as error:
+        _run(
+            db,
+            lambda s: approval_service.approve(
+                1, _actor(), {}, "t21-wms-unavailable", session=s, recheck=_recheck
+            ),
+        )
+    assert error.value.code == "PLAN_NOT_APPROVABLE"
+    assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 0
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "PLANNED"
+
+
+def test_US_NOT_01_AC1_t21_post_enqueue_rollback_is_atomic(db: str) -> None:
+    execute(db, "UPDATE ref.customer SET email='confirmed@cfo.test' WHERE id=1")
+    _hold(db)
+
+    async def aborted_approval(session: AsyncSession) -> None:
+        response = await approval_service.approve(
+            1, _actor(), {}, "t21-abort-after-enqueue", session=session, recheck=_recheck
+        )
+        assert response["order"]["status"] == "APPROVED"
+        staged = await session.execute(
+            text(
+                "SELECT id FROM ops.notification WHERE order_id=1 AND template='CONFIRMED'"
+            )
+        )
+        assert staged.scalar_one() > 0
+        raise RuntimeError("synthetic failure after enqueue before commit")
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        _run(db, aborted_approval)
+    assert fetch(db, "SELECT status, approved_plan_id FROM ops.customer_order WHERE id=1")[0] == (
+        "PLANNED", None
+    )
+    assert fetch(db, "SELECT count(*) FROM ops.notification")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 0

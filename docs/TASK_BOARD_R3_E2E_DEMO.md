@@ -113,8 +113,11 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 ### T08 · Cảnh báo quá hạn 30 phút 🟡 — Dev 2 · S
 - **Căn cứ:** US-RSK-01 AC2/AC5. **Việc:** viết `jobs/risk_check.py` (stub); chỉ alert, không tính ETA.
 
-### T21 · Chỉ email + cờ DISPATCHED 🔴 — Dev 2 · S · cần T09
-- **Căn cứ:** US-NOT-01 AC3, `06` §19.7. **Việc:** bỏ `sms_sim`; DISPATCHED một lần/đơn; cờ `NOTIFY_DISPATCHED_ENABLED`.
+### T21 · Thông báo qua email 🔴 — Dev 2 · cần T09, E1, E2
+- **Subtask: Nối CONFIRMED khi duyệt đơn** (nhánh `feat/r3-t21-enqueue-confirmed-on-approval`; PR riêng sau #103 đã merge). Tại `approval_service._approve`, sau khi E1 hoàn tất các recheck/WMS ACK và đơn có `APPROVED`, `approved_plan_id`, `promise_start/end`, gọi `notify_service.enqueue(order.id, "CONFIRMED", plan.id, session=session)` trong **cùng transaction**; không gửi SMTP trong request. Tái dùng dedupe key/template, schema email-only 0016 từ #220.
+- **Nghiệm thu riêng T21:** PostgreSQL thật: email demo hợp lệ → một CONFIRMED `queued` có đúng `order_id/plan_id`, nội dung theo khung giao cam kết; retry cùng Idempotency-Key → vẫn một bản ghi; hold/WMS fail → 0; rollback sau enqueue → cả approval và notification rollback; thiếu email → `suppressed`, `recipient=NULL`, `skipped_reason=SKIPPED_NO_CHANNEL`. Mailpit không gửi khi suppressed.
+- **Handoff E1/E2:** sau khi E1 duyệt được plan E0-04 `SE-2026-000249`, chạy HTTP approve → PostgreSQL notification → worker E2 sau commit → `sent` và một email Mailpit; nếu chưa có E1/E2, ghi **BLOCKED**, không thay thế bằng test mock. Giữ fail-closed real WMS. **Mã T23** trong comment approval service và PR #103 là nhãn handoff cũ; task board Round 3 sử dụng **T21**, không tạo task T23 thứ hai.
+- **Phần T21 còn lại:** chỉ email (bỏ `sms_sim`), DISPATCHED đúng một lần/đơn, cờ `NOTIFY_DISPATCHED_ENABLED` (tắt → `SKIPPED_FLAG_DISABLED`) theo US-NOT-01 AC3 và `06` §19.7; không thuộc subtask CONFIRMED này.
 
 ### T18 · Lập lại phần chưa giao, hẹn lại, hủy 🟡 — Dev 1 · L · cần T09
 - **Căn cứ:** US-EXE-04 AC1–AC6, `06` §19.4. **Việc:** viết `replan` (`scope=remaining|full`) và `cancel` (stub `orders.py:298–306`).
