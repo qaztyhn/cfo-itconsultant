@@ -66,8 +66,7 @@ export function PrepActionDialog({
     }
     let prepared: PreparedEvent;
     try {
-      const draft = eventDraft(order.order_id, type, localOccurredAt(clockValue), fields());
-      prepared = attempt.current ?? prepareEvent(draft);
+      prepared = attempt.current ?? prepareEvent(eventDraft(order.order_id, type, localOccurredAt(clockValue), fields()));
       attempt.current = prepared;
       setHasAttempt(true);
     } catch (cause) {
