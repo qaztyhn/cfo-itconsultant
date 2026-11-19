@@ -61,18 +61,22 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
   });
   // For the server's default 30-day market-local window, the *status* response
   // supplies the exact dates used in drill-down. Never infer dates from device time.
-  // A manager may own several locations; the active location's breakdown is
-  // scoped, so fetch selectable names independently without an active location.
-  const ownerLocationChoices = useQuery({
-    queryKey: ["revenue", "authorised-owner-locations", view, from, to, ownerIds],
-    queryFn: ({ signal }) => getRevenueLocations({
-      view, ...(from ? { from } : {}), ...(to ? { to } : {}),
-    }, signal),
-    enabled: configured && !fullAccess && ownerIds.length > 1,
+  // The selected-location breakdown is intentionally scoped to that location.
+  // Keep an unfiltered, server-authorised list for the dropdown; otherwise a
+  // user cannot switch directly from one location to another. The query key is
+  // identical to the main breakdown when no location filter is active.
+  const needsChoiceList = fullAccess || ownerIds.length > 1;
+  const choicesFilters: RevenueFilters = {
+    view, ...(from ? { from } : {}), ...(to ? { to } : {}),
+  };
+  const locationChoices = useQuery({
+    queryKey: revenueQueryKeys.locations(choicesFilters),
+    queryFn: ({ signal }) => getRevenueLocations(choicesFilters, signal),
+    enabled: configured && needsChoiceList,
     refetchInterval: REFRESH, refetchIntervalInBackground: false, retry: false,
   });
-  const selectableLocations = !fullAccess && ownerIds.length > 1
-    ? (ownerLocationChoices.data?.rows ?? []) : (locations.data?.rows ?? []);
+  const selectableLocations = needsChoiceList
+    ? (locationChoices.data?.rows ?? []) : (locations.data?.rows ?? []);
   const selectedFilters = selected === null || !status.data ? null : {
     ...filters, from: from || status.data.period.from, to: to || status.data.period.to, location_id: selected,
   };
@@ -87,7 +91,7 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
     refetchInterval: REFRESH, refetchIntervalInBackground: false, retry: false,
   });
   const failures = [summary.error, status.error, daily.error, locations.error,
-    !fullAccess && ownerIds.length > 1 ? ownerLocationChoices.error : null].filter(Boolean);
+    needsChoiceList ? locationChoices.error : null].filter(Boolean);
   const forbidden = failures.some(error => isApiError(error) && error.status === 403);
   const missing = failures.some(error => isApiError(error) && error.status === 404);
   const currencies = [summary.data?.currency, status.data?.currency, daily.data?.currency,
@@ -97,7 +101,7 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
     status.data.period.from !== summary.data.period.from || status.data.period.to !== summary.data.period.to
   ));
   const loading = summary.isPending || status.isPending || daily.isPending || locations.isPending ||
-    (!fullAccess && ownerIds.length > 1 && ownerLocationChoices.isPending);
+    (needsChoiceList && locationChoices.isPending);
   const statusCounts = new Map(status.data?.groups.map(group => [group.key, group]) ?? []);
   const totalOrders = status.data?.total.orders ?? 0;
   const groupLabel = REVENUE_STATUS_GROUPS.find(item => item.key === selectedGroup)?.label ?? "";
@@ -173,8 +177,8 @@ function RevenueBody({ fullAccess, ownerIds, ownerView, hideCustomers }: {
           }} />
       </label>
       <label className="flex flex-col gap-1 text-caption">Location
-        <select className={field} aria-label="Location filter" disabled={locations.isPending || (!fullAccess &&
-            (ownerIds.length <= 1 || ownerLocationChoices.isPending || ownerLocationChoices.isError))}
+        <select className={field} aria-label="Location filter" disabled={(!fullAccess && ownerIds.length <= 1) ||
+            (needsChoiceList ? locationChoices.isPending || locationChoices.isError : locations.isPending)}
           value={location ?? ""} onChange={e => chooseLocation(e.target.value ? Number(e.target.value) : undefined)}>
           {fullAccess && <option value="">All authorised locations</option>}
           {selectableLocations.filter(row => row.location_id !== null &&
