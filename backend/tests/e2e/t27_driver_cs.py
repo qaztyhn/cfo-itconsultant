@@ -11,29 +11,35 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Browser, Error, Page, Response, expect
+from playwright.sync_api import APIResponse, Browser, Error, Page, Response, expect
 from playwright.sync_api import TimeoutError as BrowserTimeout
 
 from tests.e2e.prep_queue_browser import DRIVER_PATH, EVENT_PATH, require_ok, response_for, sign_in
 from tests.e2e.prep_queue_fixture import APP_NOW, DRIVER_EMAILS, TIME_ZONE, vehicle_code
+from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
 
 CS_ACCOUNT = "cs@cfo.test"
 ETA_STUB_TASK = "T14"
 GPS_UI_TASKS = ["T13", "T14", "T16"]
 
 
-def _metadata(response: Response) -> dict[str, object]:
+def _error_fields(response: APIResponse | Response) -> tuple[str | None, str | None]:
+    if response.ok:
+        return None, None
+    try:
+        payload = response.json()
+    except (ValueError, TypeError, Error):
+        return None, None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return None, None
+    code, message = error.get("code"), error.get("message")
+    return code if isinstance(code, str) else None, message if isinstance(message, str) else None
+
+
+def _metadata(response: APIResponse | Response) -> dict[str, object]:
     """Never persist raw request bodies, auth headers or third-party PII."""
-    code = None
-    if not response.ok:
-        try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                error = payload.get("error")
-                if isinstance(error, dict) and isinstance(error.get("code"), str):
-                    code = error["code"]
-        except (ValueError, TypeError):
-            pass
+    code, _ = _error_fields(response)
     return {"path": urlsplit(response.url).path, "http": response.status, "error_code": code}
 
 
@@ -86,35 +92,30 @@ def _driver_dispatch(
         ) as sent:
             page.get_by_role("button", name="Mark dispatched").click()
         res = sent.value
-        stage["http"].append(_metadata(res))
+        code, message = _error_fields(res)
+        stage["http"].append({"path": urlsplit(res.url).path, "http": res.status, "error_code": code})
         stage["event_type"] = "DISPATCHED"
         if not res.ok:
             stage["last_verified"] = "Assigned trip visible; DISPATCHED rejected by backend"
-            _block(
-                stage,
-                ["T12", "E1", "T16"],
-                "DISPATCHED rejected: verified official shift, 56-day D7/vehicle "
-                "proof or integrated ETA/notification may be missing",
-            )
+            stage.update(dispatch_rejection(res.status, code, message))
             return stage
         ack = res.json()
-        assert isinstance(ack.get("event_id"), int)
+        assert isinstance(ack, dict) and type(ack.get("event_id")) is int and ack["event_id"] > 0
+        assert ack.get("order_status") == "DISPATCHED"
         stage["event_id"] = ack["event_id"]
         stage["order_status"] = ack.get("order_status")
-        stage["status"] = "PASS"
+        stage["dispatch_status"] = "PASS"
+        stage["last_verified"] = "DISPATCHED acknowledged by backend"
         page.get_by_role("button", name="Refresh trips").click()
         # Round 3 requires a manual coordinate update and position on POD.
         # Do not treat older no-GPS DELIVERED UI as a compliant pass.
         if page.get_by_text("GPS upload is off.", exact=False).count():
             _block(stage, GPS_UI_TASKS, "Driver UI has no authorized manual location-upload control")
-            stage["dispatch_status"] = "PASS"
-            stage["last_verified"] = "DISPATCHED committed; GPS update unavailable"
             page.screenshot(path=output / f"t27-driver-{trip_id}-gps-blocked.png")
         else:
             stage["next_check"] = "Verify location POST and mandatory POD separately against R3 contract"
-            stage["dispatch_status"] = "PASS"
         return stage
-    except (AssertionError, BrowserTimeout, Error, KeyError, ValueError) as exc:
+    except (AssertionError, BrowserTimeout, Error, KeyError, TypeError, ValueError) as exc:
         _failed(stage, ["T06", "T16"], exc)
         return stage
     finally:
@@ -191,20 +192,16 @@ def _cs_lookup(
 
         # The separate ETA request may finish before the detail GET. A
         # response listener installed before selecting the order captures both.
-        eta_response = observed.get(eta_path)
+        eta_response: APIResponse | Response | None = observed.get(eta_path)
+        via_probe = eta_response is None
         if eta_response is None:
-            # The UI currently displays a network-style error for this stub.
-            # Verify actual HTTP/error.code via the SAME authenticated CS session,
-            # without storing its JWT anywhere in shared evidence.
             try:
-                probe = page.request.get(
+                eta_response = page.request.get(
                     f"{api}{eta_path}",
                     headers={"Authorization": f"Bearer {cs_token}"},
                     timeout=10_000,
                 )
             except Error:
-                # Unhandled ETA stub may sever the connection without HTTP.
-                # Do not invent an HTTP status or error.code for a non-response.
                 stage["http"].append(
                     {
                         "path": eta_path,
@@ -214,29 +211,36 @@ def _cs_lookup(
                         "via": "CS API probe",
                     }
                 )
-                _block(stage, [ETA_STUB_TASK], "ETA history API did not return HTTP; CS lookup passed")
-            else:
-                error_code = None
-                if not probe.ok:
-                    try:
-                        error_code = probe.json().get("error", {}).get("code")
-                    except (ValueError, TypeError, AttributeError):
-                        pass
-                stage["http"].append(
-                    {"path": eta_path, "http": probe.status, "error_code": error_code, "via": "CS API probe"}
+                stage.update(
+                    status="FAIL",
+                    tasks=[ETA_STUB_TASK],
+                    reason="ETA history request returned no HTTP response.",
                 )
-                if probe.ok:
-                    stage["eta_history"] = "GET 200; versioned ETA rows not yet compared with PostgreSQL"
-                    stage["status"] = "NOT VERIFIED"
-                else:
-                    _block(stage, [ETA_STUB_TASK], "CS-authenticated ETA history API rejected request")
-        else:
-            stage["http"].append(_metadata(eta_response))
-            if not eta_response.ok:
-                _block(stage, [ETA_STUB_TASK], "ETA history HTTP error; CS order lookup passed")
+        if eta_response is not None:
+            evidence = _metadata(eta_response)
+            if via_probe:
+                evidence["via"] = "CS API probe"
+            stage["http"].append(evidence)
+            error_code = evidence["error_code"]
+            status = eta_history_status(
+                eta_response.status,
+                error_code if isinstance(error_code, str) else None,
+                output / "api.log",
+                eta_path,
+                eta_response.headers.get("x-correlation-id"),
+            )
+            if status == "BLOCKED":
+                _block(
+                    stage,
+                    [ETA_STUB_TASK],
+                    "ETA history stub confirmed by a matching backend NotImplementedError.",
+                )
+            elif status == "FAIL":
+                stage.update(
+                    status="FAIL", tasks=[ETA_STUB_TASK], reason="Unexpected ETA history HTTP response."
+                )
             else:
-                stage["eta_history"] = "HTTP responded; versioned API/DB rows not yet correlated"
-                stage["status"] = "NOT VERIFIED"
+                stage["eta_history"] = "GET 200; versioned ETA rows have yet to be compared with PostgreSQL."
         try:
             page.screenshot(path=output / "t27-cs-eta-history.png")
         except Error:
@@ -249,7 +253,10 @@ def _cs_lookup(
             if path not in {str(item["path"]) for item in stage["http"]}
         )
         _failed(stage, ["T03", "T14"], exc)
-        page.screenshot(path=output / "t27-cs-last-verified.png")
+        try:
+            page.screenshot(path=output / "t27-cs-last-verified.png")
+        except Error:
+            stage["last_verified_screenshot_unavailable"] = True
         return stage
     finally:
         page.close()

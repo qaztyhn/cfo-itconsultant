@@ -19,26 +19,37 @@ jobs:
       - name: Install Python E3 and Playwright dependencies
         working-directory: backend
         run: python -m pip install -e ".[dev]" "playwright>=1.50,<2" tzdata
+      - name: Check T27 evidence classification
+        run: |
+          python -m unittest discover -s tools/tests -p test_t27_report.py
+          cd backend
+          python -m pytest -q tests/unit/test_t27_http_evidence.py
       - name: Install dedicated Chromium/Chrome
         working-directory: backend
         run: python -m playwright install chrome
       - name: Install web dependencies
+        id: web-dependencies
         working-directory: frontend
         run: npm ci
       - name: Run one-trip E3 real browser
+        if: ${{ !cancelled() && steps.web-dependencies.outcome == 'success' }}
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 1 --output ../t27-e3-one
       - name: Run two-trip E3 real browser
+        if: ${{ !cancelled() && steps.web-dependencies.outcome == 'success' }}
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 2 --output ../t27-e3-two
       - name: Continue one-trip E3 via Driver UI and CS UI
+        if: ${{ !cancelled() && steps.web-dependencies.outcome == 'success' }}
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 1 --continue-driver-cs --output ../t27-flow-one
       - name: Continue two-trip E3 via Driver UI and CS UI
+        if: ${{ !cancelled() && steps.web-dependencies.outcome == 'success' }}
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 2 --continue-driver-cs --output ../t27-flow-two
 
-      - name: Generate the complete T27 14-step ledger (no invented PASS)
+      - name: Generate the complete T27 14-step ledger
+        if: ${{ !cancelled() }}
         run: |
           python tools/t27_report.py \
             --one t27-flow-one/demo-prep-browser-results.json \

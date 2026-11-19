@@ -1,6 +1,6 @@
-# E2E (Playwright, Docker Compose)
+# Browser acceptance (Playwright)
 
-16 kịch bản ở `docs/08_Development_Plan.md` mục 6.3. Đồng hồ `APP_NOW=2026-11-04T10:05:00+01:00`.
+The project-wide E2E scenarios are listed in [Development plan §6.3](../../../docs/08_Development_Plan.md#63-kịch-bản-e2e-bắt-buộc). The T27 fixtures and the full integrated demo have separate business clocks.
 
 ## E3 warehouse to driver browser walkthrough
 
@@ -53,9 +53,9 @@ DTO and T07. Round 3's prep duration calculation is tracked by T05.
 
 ## T27 same-fixture Driver → CS continuation (Round 3)
 
-Use the **existing** E3 case with a fresh disposable PostgreSQL database, Chrome and
-real Vite/FastAPI. Do not treat it as a POS/Sales/Approve journey: the seed starts
-from `APPROVED`. Before running, install the dependencies and export the loopback
+Use the E3 case with a fresh disposable PostgreSQL database, Chrome and real
+Vite/FastAPI. T27 browser evidence starts at the seeded `APPROVED` order.
+Before running, install the dependencies and export the loopback
 `TEST_DATABASE_URL` as specified above. The script generates a synthetic password
 at runtime; it must never be written to the report, screenshots, trace or GitHub logs.
 
@@ -64,8 +64,10 @@ cd backend
 python -m tests.e2e.prep_queue_browser --trips 1 --continue-driver-cs --output ../t27-flow-one
 python -m tests.e2e.prep_queue_browser --trips 2 --continue-driver-cs --output ../t27-flow-two
 cd ..
-python tools/t27_report.py --one t27-flow-one/demo-prep-browser-results.json --two t27-flow-two/demo-prep-browser-results.json --out t27-evidence
+GITHUB_SHA="$(git rev-parse HEAD)" python tools/t27_report.py --one t27-flow-one/demo-prep-browser-results.json --two t27-flow-two/demo-prep-browser-results.json --out t27-evidence
 ```
+
+For a standalone Chrome for Testing binary, pass `--chrome-path` to the browser command.
 
 The test verifies warehouse START_PREP/GOODS_READY/LOADED, the first of two LOADED
 keeping the order GOODS_READY, and the final trip setting LOADED. It checks the
@@ -74,20 +76,34 @@ assigned driver accounts, freezes browser time to the fixture's APP_NOW for
 chronologically valid actions, clicks the real Driver UI's DISPATCHED action,
 and compares acknowledged events with PostgreSQL. The CS account searches that
 same synthetic order and checks the order-detail GET response; the ETA-history
-HTTP response is captured separately. A missing GPS position control or ETA
-history endpoint is recorded as BLOCKED with the responsible T13/T14/T16 task,
-never substituted with fabricated successful delivery/ETA.
+HTTP response is captured separately. A known missing prerequisite yields
+`BLOCKED`. Other API errors yield `FAIL` with the HTTP status and `error.code`.
+ETA history is `BLOCKED T14` only when the same request matches the stub's
+`NotImplementedError` in the backend log.
 
-The output ledger contains exactly 14 rows (including 12b), the fixture origin,
-SHA, Stockholm business clock, sanitized HTTP statuses/error codes and the
-furthest verified step. The GitHub workflow `.github/workflows/t27-e3-browser.yml`
-archives only synthetic screenshots and JSON/Markdown evidence for T28. Do not
-publish Playwright traces containing JWTs, raw headers or coordinates; keep any
-such trace in a restricted local store, with access control and limited retention.
+The output ledger contains 14 rows (including 12b), the fixture origin, SHA,
+Stockholm business clock, sanitized HTTP statuses/error codes and the furthest
+verified step. On GitHub Actions, use `t27-e3-browser-evidence` from the run for the
+revision under review. It contains synthetic screenshots and JSON/Markdown. The
+workflow result describes evidence collection. The ledger gives each scenario's
+verdict. Keep Playwright traces containing JWTs, raw headers or coordinates in a
+restricted local store with limited retention.
 
-For the **separate full** E0-04 candidate `SE-2026-000249`, consult
-`docs/E0_04_DEMO.md`: it currently performs Sync and Plan during preparation,
-so a Sales UI click-through requires a true pre-Sync seed. Match Source+CFO+
-browser to the same `APP_NOW` and `Europe/Stockholm` business date/roster.
-Handoff to T28 must include separate order refs for Plan Review, T26 revenue
-and failed-exception cases; do not reuse the already-approved fixture for them.
+## T28 integrated demo handoff
+
+| Evidence | Order | `APP_NOW` (Europe/Stockholm) | Starting point |
+| --- | --- | --- | --- |
+| T27 warehouse and Driver/CS fixtures | `SE-E3-1T`, `SE-E3-2T` | `2026-11-10T10:06:00+01:00` | Seeded `APPROVED` |
+| Integrated Source → `DELIVERED` candidate | `SE-2026-000249` | `2026-12-01T10:05:00+01:00` | Source before CFO Sync |
+
+E0-04 preparation runs Sync and Plan. Its verified checkpoint was a proposed
+STO plan for December 2 with `sales_approvable=false`. Reproduce Sales UI from a
+pre-Sync Source seed and align Source, CFO, browser time and official rosters to
+the E0-04 scenario. [E0-04 setup](../../../docs/E0_04_DEMO.md) · [PR #222](https://github.com/qaztyhn/cfo-itconsultant/pull/222)
+
+The Source → `DELIVERED` journey for `SE-2026-000249` remains **NOT VERIFIED**.
+Once E1 approval with simulated WMS ACK is available, verify the same order from
+Source through approval, warehouse milestones and delivery. Correlate T21/E2
+`CONFIRMED` with the committed approval and the corresponding Mailpit message on
+that order. Use distinct orders for untouched Plan Review, the period revenue/KPI
+checks and the `FAILED` exception. [E1 PR #224](https://github.com/qaztyhn/cfo-itconsultant/pull/224)
