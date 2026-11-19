@@ -517,17 +517,24 @@ def main() -> int:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(channel="chrome")
             try:
+                report["active_step"] = "2"
                 order_id, run_id, plan_id = sales(browser, password, args.output, report, env)
+                report["active_step"] = "4"
                 start_disposable_wms(env, report)
                 trip_ids = approve(browser, password, run_id, plan_id, order_id, args.output, report, env)
                 if trip_ids:
+                    report["active_step"] = "5"
                     mailpit_confirm(report, env)
+                    report["active_step"] = "7"
                     if warehouse(browser, password, order_id, trip_ids, args.output, report, env):
+                        report["active_step"] = "8"
                         driver(browser, password, trip_ids[0], order_id, args.output, report, env)
+                    report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, env)
                 else:
                     # Same order may still be available for CS even when approval
                     # was blocked; do not attempt unauthorized warehouse actions.
+                    report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, env)
             finally:
                 browser.close()
@@ -538,6 +545,13 @@ def main() -> int:
         report["result"] = "FAIL"
         report["failure_type"] = type(exc).__name__
         report["failure_stage"] = report["last_verified"]
+        active = report.get("active_step")
+        if active:
+            prior = next(row for row in report["steps"] if row["step"] == active)
+            if prior["status"] == "NOT VERIFIED":
+                mark(report, active, "FAIL",
+                     "Unexpected browser/setup failure; inspect safe HTTP log and workflow logs",
+                     exception_type=type(exc).__name__)
         # Do not serialize raw exception text; may embed database IDs or headers.
         raise
     finally:
