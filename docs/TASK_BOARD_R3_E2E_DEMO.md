@@ -13,7 +13,7 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 
 | # | Bước | Vai trò | US/AC | Hiện trạng code | Task |
 |---|---|---|---|---|---|
-| 1 | Tạo đơn trong POS giả lập | Sales | US-SRC-01..03 | Có | E0 |
+| 1 | Tạo đơn trong POS giả lập | Sales | US-SRC-01..03 | Chưa có POS UI, đã thử tạo và submit đơn qua Source API | E0 |
 | 2 | Sync now + Check feasibility | Sales | US-ORD-06, flow 2a | Có | E0 |
 | 3 | 3 phương án; Sales chọn rank 1–3 | Sales | US-APR-05 | Chỉ rank-1 | T19 |
 | 4 | Duyệt → APPROVED, gán Dispatcher luân phiên | Sales/Dispatcher | US-APR-01, US-GPS-02 AC3 | **Chặn**: duyệt luôn lỗi ngoài môi trường test (WMS ACK); gate tài xế cần proof 56 ngày | E1, T12, T15 |
