@@ -112,7 +112,10 @@ async def _valid_signal(
         if not relevant:
             return False
         observed = max(e.received_at for e in relevant)
-        return previous is None or observed > previous.computed_at
+        # Both timestamps are assigned by PostgreSQL. Using computed_at here
+        # mixes the injectable application clock with the database receive clock,
+        # so a replay may create an extra version even with no new event.
+        return previous is None or observed > previous.created_at
     if trigger not in _FIXED_SIGNALS:
         raise DomainError("VALIDATION_ERROR", "Unsupported forecast signal.")
     if trigger == "approval":

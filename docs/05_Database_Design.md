@@ -39,7 +39,7 @@ CREATE TYPE ref.mapping_status AS ENUM ('pending','suggested','confirmed','rejec
 CREATE TYPE ref.licence_class  AS ENUM ('B','C','CE');
 CREATE TYPE ref.prep_unit      AS ENUM ('line','pallet','m3','bundle','package');
 CREATE TYPE ref.customer_type  AS ENUM ('business','consumer');
-CREATE TYPE ref.notify_channel AS ENUM ('email','sms_sim');   -- R3: chỉ email cho dòng mới (mục 13.1)
+CREATE TYPE ref.notify_channel AS ENUM ('email','sms_sim');   -- Kiểu lịch sử; R3 bỏ các cột kênh (mục 13.1)
 CREATE TYPE ref.task_status    AS ENUM ('open','in_progress','done');
 
 -- hr
@@ -1177,11 +1177,18 @@ ALTER TABLE hr.dispatcher_staff ADD COLUMN IF NOT EXISTS in_rotation boolean NOT
 --   Không có ai in_rotation → NULL → không ai xem vị trí (fail-closed), alert NO_DISPATCHER_IN_ROTATION.
 -- PREP_PAUSED, PREP_RESUMED vẫn còn trong enum nhưng service từ chối ghi mới (DEC-R3-08).
 
--- R3-DB-2: chỉ email (DEC-R3-02). Giữ giá trị 'sms_sim' trong enum; chặn dòng mới.
-ALTER TABLE ops.notification ADD CONSTRAINT ck_notification_email_only_r3 CHECK (channel = 'email') NOT VALID;
+-- R3-DB-2: 0015 thêm ràng buộc chỉ-email và skipped_reason.
+-- 0016 (làm rõ DEC-R3-02) bỏ dữ liệu chọn kênh.
+ALTER TABLE ops.notification DROP CONSTRAINT ck_notification_email_only_r3;
+ALTER TABLE ops.notification ALTER COLUMN recipient DROP NOT NULL;
+-- Giữ bản ghi SMS lịch sử. Chuyển SMS draft/queued sang suppressed (legacy_sms)
+-- và bỏ địa chỉ nhận SMS trước khi bỏ cột; không khôi phục chúng vào outbox.
+ALTER TABLE ops.notification DROP COLUMN channel;
+ALTER TABLE ref.customer DROP COLUMN preferred_channel;
 ALTER TABLE ops.notification ADD COLUMN IF NOT EXISTS skipped_reason text
   CHECK (skipped_reason IS NULL OR skipped_reason IN ('SKIPPED_NO_CHANNEL','SKIPPED_FLAG_DISABLED'));
--- 'suppressed' (notif_status có sẵn) + skipped_reason dùng khi không gửi; không log địa chỉ email.
+-- recipient chỉ lưu email đích; NULL khi thiếu email hoặc loại khỏi luồng gửi.
+-- 'suppressed' + skipped_reason dùng khi không gửi; không log địa chỉ email.
 
 -- R3-DB-3: lập lại cho phần chưa giao (DEC-R3-09)
 ALTER TABLE plan.planning_run DROP CONSTRAINT IF EXISTS planning_run_kind_check;

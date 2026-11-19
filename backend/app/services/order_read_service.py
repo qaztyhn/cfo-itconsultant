@@ -758,7 +758,11 @@ async def timeline(session: AsyncSession, scope: OrderScope, order_id: int) -> d
                 "at": note.sent_at or note.scheduled_for,
                 "kind": "notification",
                 "title": f"Notification {note.template}",
-                "detail": {"template": note.template, "channel": note.channel, "status": note.status},
+                "detail": {
+                    "template": note.template,
+                    "channel": "email" if note.recipient else None,
+                    "status": note.status,
+                },
                 "actor": None,
             }
         )

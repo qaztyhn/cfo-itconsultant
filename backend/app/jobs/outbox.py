@@ -1,4 +1,4 @@
-"""Gửi notification queued (email/sms_sim), giờ yên lặng, thử lại 3 lần.
+"""Gửi notification queued (email), giờ yên lặng, thử lại 3 lần.
 
 Owner: Dev 2 (B) — M7.
 """

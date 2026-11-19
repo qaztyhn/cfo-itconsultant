@@ -70,6 +70,8 @@ class ImprovementLog(TimestampMixin, Base):
     delay_reason: Mapped[str | None] = mapped_column(Text)
     was_manual: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     accepted_unchanged: Mapped[bool | None] = mapped_column(Boolean)
+    approval_path: Mapped[str | None] = mapped_column(Text)
+    order_to_commit_min: Mapped[int | None] = mapped_column(Integer)
     order_mix: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     closed_at: Mapped[datetime] = mapped_column(TSTZ, server_default=text("now()"))
 

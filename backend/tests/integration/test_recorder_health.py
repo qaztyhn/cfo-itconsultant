@@ -168,8 +168,8 @@ def test_health_reports_age_of_last_successful_sync(head_db: str) -> None:
 
 def test_health_counts_only_queued_notifications(head_db: str) -> None:
     sql = (
-        "INSERT INTO ops.notification (order_id, template, channel, recipient, body, status, dedupe_key) "
-        "VALUES (1, 'CONFIRMED', 'email', 'r@cfo.test', 'Body', '{status}', '{key}')"
+        "INSERT INTO ops.notification (order_id, template, recipient, body, status, dedupe_key) "
+        "VALUES (1, 'CONFIRMED', 'r@cfo.test', 'Body', '{status}', '{key}')"
     )
     execute(
         head_db,

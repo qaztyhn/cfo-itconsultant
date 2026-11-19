@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alembic import command
 from app.core.errors import DomainError
-from app.providers.sms_sim import SimulatedSmsProvider
 from app.services import notify_service
 from app.services.notification_delivery import deliver_queued
 from tests.integration import rows
@@ -41,7 +40,7 @@ def prepare(dsn: str, *, status: str = "APPROVED") -> None:
     execute(
         dsn,
         *rows.REF_HR,
-        "UPDATE ref.customer SET email='demo@cfo.test',preferred_channel='email'",
+        "UPDATE ref.customer SET email='demo@cfo.test'",
         "UPDATE ref.market SET timezone='Europe/Stockholm', locale='en'",
         _order(1, status),
         rows.run_sql(1, 1),
@@ -52,6 +51,7 @@ def prepare(dsn: str, *, status: str = "APPROVED") -> None:
         "VALUES (1,1,'PREDICTED_LATE','critical','Synthetic late signal',"
         "'{dispatcher}','risk:1:PREDICTED_LATE')",
     )
+    command.upgrade(alembic_config(dsn), "head")
 
 
 def run[T](dsn: str, fn):
@@ -110,11 +110,10 @@ def test_US_NOT_03_AC1_market_quiet_hours_and_post_commit_delivery(empty_db: str
     assert row["status"] == "queued"
     assert row["scheduled_for"] == datetime(2026, 11, 10, 6, tzinfo=UTC)
     email = AsyncMock()
-    sms = SimulatedSmsProvider()
     assert (
         run(
             empty_db,
-            lambda s: deliver_queued(s, now=NIGHT, email=email, sms=sms),
+            lambda s: deliver_queued(s, now=NIGHT, email=email),
         )
         == 0
     )
@@ -122,7 +121,7 @@ def test_US_NOT_03_AC1_market_quiet_hours_and_post_commit_delivery(empty_db: str
     assert (
         run(
             empty_db,
-            lambda s: deliver_queued(s, now=datetime(2026, 11, 10, 6, tzinfo=UTC), email=email, sms=sms),
+            lambda s: deliver_queued(s, now=datetime(2026, 11, 10, 6, tzinfo=UTC), email=email),
         )
         == 1
     )
@@ -267,7 +266,7 @@ def test_US_NOT_03_AC4_snapshot_does_not_follow_later_order_eta_or_pii(empty_db:
     email = AsyncMock()
     run(
         empty_db,
-        lambda s: deliver_queued(s, now=NOW, email=email, sms=SimulatedSmsProvider()),
+        lambda s: deliver_queued(s, now=NOW, email=email),
     )
     message = email.send.call_args.kwargs["text"]
     assert "2026-11-10" in message
@@ -331,7 +330,19 @@ def test_US_NOT_01_AC2_recipient_with_display_name_never_leaks_into_queue(empty_
     with patch("app.services.notify_service.clock.now", return_value=NOW):
         run(empty_db, lambda session: notify_service.enqueue(1, "CONFIRMED", 1, session=session))
     result = fetch(empty_db, "SELECT status,recipient,suppressed_reason FROM ops.notification")[0]
-    assert result == ("suppressed", "suppressed@cfo.test", "recipient_not_allowed")
+    assert result == ("suppressed", None, "recipient_not_allowed")
+
+
+def test_US_NOT_01_AC3_missing_email_is_suppressed_without_a_fake_recipient(empty_db: str) -> None:
+    prepare(empty_db)
+    execute(empty_db, "UPDATE ref.customer SET email = NULL")
+    with patch("app.services.notify_service.clock.now", return_value=NOW):
+        run(empty_db, lambda session: notify_service.enqueue(1, "CONFIRMED", 1, session=session))
+    row = fetch(empty_db, "SELECT recipient,status::text,skipped_reason FROM ops.notification")[0]
+    assert tuple(row) == (None, "suppressed", "SKIPPED_NO_CHANNEL")
+    email = AsyncMock()
+    assert transact(empty_db, lambda s: deliver_queued(s, now=NOW, email=email)) == 0
+    email.send.assert_not_called()
 
 
 def test_US_NOT_02_AC4_delay_draft_threshold_uses_market_configuration(empty_db: str) -> None:

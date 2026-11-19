@@ -256,7 +256,7 @@ def test_US_NOT_01_AC1_execution_outbox_rolls_back_with_milestone_and_dedupes(
     # Real PostgreSQL outbox in the SAME transaction as the delivery status change.
     execute(
         execution_api.dsn,
-        "UPDATE ref.customer SET email='demo@cfo.test',preferred_channel='email' WHERE id=1",
+        "UPDATE ref.customer SET email='demo@cfo.test' WHERE id=1",
         "UPDATE ops.customer_order SET promise_start='2026-11-10T08:00:00Z',"
         "promise_end='2026-11-10T11:00:00Z' WHERE id=1",
     )
