@@ -1,0 +1,26 @@
+name: T21 CONFIRMED approval PostgreSQL acceptance (diagnostic only)
+on:
+  push:
+    branches: [diag/t21-postgresql-acceptance-20261119]
+permissions:
+  contents: read
+jobs:
+  t21:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: {run: {working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: ./.github/actions/postgres
+      - name: Install backend test dependencies
+        run: pip install -e ".[dev]"
+      - name: Check repository Ruff and Black
+        run: |
+          ruff check .
+          black --check .
+      - name: Run real-PostgreSQL approval CONFIRMED acceptance with synthetic ID evidence
+        run: pytest -q -s tests/integration/test_approval_service.py -k t21
+      - name: Regress existing notification idempotency and email-only outbox
+        run: pytest -q tests/integration/test_notify_backend.py tests/integration/test_migration_0016_email_only.py
