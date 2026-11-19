@@ -1,0 +1,16 @@
+name: T27 formatting diagnostic
+on:
+  push:
+    branches: [diag/t27-black-20261119]
+permissions:
+  contents: read
+jobs:
+  black:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install black
+      - name: Print exact Black diff (diagnostic only)
+        run: black --check --diff backend/tests/e2e/prep_queue_browser.py backend/tests/e2e/t27_driver_cs.py || true
