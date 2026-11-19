@@ -31,6 +31,13 @@ jobs:
       - name: Run two-trip E3 real browser
         working-directory: backend
         run: python -m tests.e2e.prep_queue_browser --trips 2 --output ../t27-e3-two
+      - name: Continue one-trip E3 via Driver UI and CS UI
+        working-directory: backend
+        run: python -m tests.e2e.prep_queue_browser --trips 1 --continue-driver-cs --output ../t27-flow-one
+      - name: Continue two-trip E3 via Driver UI and CS UI
+        working-directory: backend
+        run: python -m tests.e2e.prep_queue_browser --trips 2 --continue-driver-cs --output ../t27-flow-two
+
       - name: Archive synthetic screenshots and sanitized event IDs
         if: always()
         uses: actions/upload-artifact@v4
@@ -41,5 +48,9 @@ jobs:
             t27-e3-one/*.json
             t27-e3-two/*.png
             t27-e3-two/*.json
+            t27-flow-one/*.png
+            t27-flow-one/*.json
+            t27-flow-two/*.png
+            t27-flow-two/*.json
           if-no-files-found: ignore
           retention-days: 3
