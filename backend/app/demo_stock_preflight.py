@@ -17,14 +17,14 @@ from app.core.config import get_settings
 from app.core.db import get_engine, get_sessionmaker
 from app.services.planning_stock_preflight import diagnose
 
-DEMO_NOW = "2026-11-04T10:05:00+01:00"
+DEMO_CLOCKS = {"2026-11-04T10:05:00+01:00", "2026-12-01T10:05:00+01:00"}
 
 
 async def run(external_ref: str) -> int:
     settings = get_settings()
     if (
         settings.app_env != "test"
-        or settings.app_now != DEMO_NOW
+        or settings.app_now not in DEMO_CLOCKS
         or os.environ.get("DEMO_DISPOSABLE") != "1"
         or not external_ref.startswith("SE-2026-")
     ):
@@ -34,7 +34,10 @@ async def run(external_ref: str) -> int:
     try:
         async with get_sessionmaker()() as session:
             outcome = await diagnose(
-                session, market_code="SE", order_external_ref=external_ref, now=clock.now()
+                session,
+                market_code="SE",
+                order_external_ref=external_ref,
+                now=clock.now(),
             )
         payload = asdict(outcome)
         if outcome.accepted_as_of is not None:

@@ -19,6 +19,7 @@ from app.domain.models.hr import Employee
 from app.services.driver_history import DayEvidence, DriverEvidence
 
 DEMO_NOW = "2026-11-04T10:05:00+01:00"
+E0_04_NOW = "2026-12-01T10:05:00+01:00"
 DEMO_MARKET = "SE"
 WEEKS = tuple(f"history_week_{n:02d}.json" for n in range(1, 9))
 FILES = ("manifest.json", "drivers.json", *WEEKS)
@@ -26,7 +27,11 @@ FILES = ("manifest.json", "drivers.json", *WEEKS)
 
 def _demo_enabled() -> bool:
     s = get_settings()
-    return s.app_env == "test" and s.app_now == DEMO_NOW and os.environ.get("DEMO_DISPOSABLE") == "1"
+    return (
+        s.app_env == "test"
+        and s.app_now in (DEMO_NOW, E0_04_NOW)
+        and os.environ.get("DEMO_DISPOSABLE") == "1"
+    )
 
 
 def _document(path: Path) -> dict:
@@ -57,7 +62,9 @@ class DisposableD7Reader:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def _load(self, employee_no: str, target: date, employee_id: int) -> DriverEvidence | None:
+    def _load(
+        self, employee_no: str, target: date, employee_id: int
+    ) -> DriverEvidence | None:
         manifest = _document(self.root / "manifest.json")
         start = target - timedelta(days=56)
         end = target - timedelta(days=1)
@@ -72,7 +79,10 @@ class DisposableD7Reader:
         ):
             return None
         proof = _document(self.root / "verification.json")
-        if proof.get("source_kind") != "synthetic_demo" or proof.get("revoked") is not False:
+        if (
+            proof.get("source_kind") != "synthetic_demo"
+            or proof.get("revoked") is not False
+        ):
             return None
         who = proof.get("verified_by")
         if not isinstance(who, str) or not who.strip():
@@ -92,7 +102,8 @@ class DisposableD7Reader:
         matches = [
             row["driver_code"]
             for row in drivers.get("records", [])
-            if row.get("employee_no") == employee_no and row.get("market") == DEMO_MARKET
+            if row.get("employee_no") == employee_no
+            and row.get("market") == DEMO_MARKET
         ]
         if len(matches) != 1:
             return None
@@ -115,7 +126,11 @@ class DisposableD7Reader:
                     if not isinstance(rest, dict):
                         return None
                     days.append(
-                        DayEvidence(day, "off_duty", rest=(_instant(rest["start"]), _instant(rest["end"])))
+                        DayEvidence(
+                            day,
+                            "off_duty",
+                            rest=(_instant(rest["start"]), _instant(rest["end"])),
+                        )
                     )
                 else:
                     driving = tuple(
@@ -126,7 +141,10 @@ class DisposableD7Reader:
                         DayEvidence(
                             day,
                             "duty",
-                            duty=(_instant(row["duty_start"]), _instant(row["duty_end"])),
+                            duty=(
+                                _instant(row["duty_start"]),
+                                _instant(row["duty_end"]),
+                            ),
                             driving=driving,
                         )
                     )
@@ -144,7 +162,11 @@ class DisposableD7Reader:
         )
 
     async def read(
-        self, session: AsyncSession, employee_id: int, market_code: str, target_date: date
+        self,
+        session: AsyncSession,
+        employee_id: int,
+        market_code: str,
+        target_date: date,
     ) -> DriverEvidence | None:
         if not _demo_enabled() or market_code != DEMO_MARKET:
             return None
@@ -163,7 +185,9 @@ def configure_disposable_reader() -> None:
     if not path:
         return
     if not _demo_enabled():
-        raise RuntimeError("D7 synthetic reader may only run in the frozen disposable demo")
+        raise RuntimeError(
+            "D7 synthetic reader may only run in the frozen disposable demo"
+        )
     from app.services.driver_history import configure_reader
 
     configure_reader(DisposableD7Reader(Path(path)))
