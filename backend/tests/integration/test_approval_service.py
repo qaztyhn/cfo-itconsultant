@@ -485,6 +485,7 @@ def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -
     again = _run(db, approve)
     assert again == first
     assert first["order"]["status"] == "APPROVED"
+    assert len(first["notifications"]) == 1
     order = fetch(
         db,
         "SELECT id, approved_plan_id, order_no, promise_start, promise_end "
@@ -500,6 +501,9 @@ def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -
     assert notification["order_id"] == order["id"] == first["order"]["id"]
     assert notification["plan_id"] == order["approved_plan_id"] == first["plan"]["id"]
     assert notification["status"] == "queued"
+    assert first["notifications"] == [
+        {"id": notification["id"], "template": "CONFIRMED", "status": "queued"}
+    ]
     assert notification["recipient"] == "confirmed@cfo.test"
     assert notification["skipped_reason"] is None
     assert notification["dedupe_key"] == f"{order['id']}:CONFIRMED:1:APPROVED"
@@ -509,6 +513,21 @@ def test_US_NOT_01_AC1_t21_approved_plan_enqueues_one_confirmed_email(db: str) -
     zone = ZoneInfo(market_timezone)
     assert order["promise_start"].astimezone(zone).isoformat(timespec="minutes") in notification["body"]
     assert order["promise_end"].astimezone(zone).isoformat(timespec="minutes") in notification["body"]
+    assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
+
+    # E2 may have sent the email after the original commit. Approval retries
+    # must return the frozen Idempotency-Key response, not its live outbox status.
+    execute(
+        db,
+        f"UPDATE ops.notification SET status='sent', sent_at='2026-11-04T10:00:00Z' "
+        f"WHERE id={notification['id']}",
+    )
+    replay_after_worker = _run(db, approve)
+    assert replay_after_worker == first
+    assert replay_after_worker["notifications"] == [
+        {"id": notification["id"], "template": "CONFIRMED", "status": "queued"}
+    ]
+    assert fetch(db, "SELECT status::text FROM ops.notification WHERE id=1")[0][0] == "sent"
     assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
     print(
         "T21 CONFIRMED PG evidence (synthetic ids only): "
@@ -531,6 +550,9 @@ def test_US_NOT_01_AC1_t21_missing_email_approves_but_suppresses(db: str) -> Non
         "FROM ops.notification WHERE template='CONFIRMED'",
     )[0]
     assert row["id"] > 0 and (row["order_id"], row["plan_id"]) == (1, 1)
+    assert result["notifications"] == [
+        {"id": row["id"], "template": "CONFIRMED", "status": "suppressed"}
+    ]
     assert (row["status"], row["recipient"], row["skipped_reason"]) == (
         "suppressed",
         None,
@@ -585,7 +607,11 @@ def test_US_NOT_01_AC1_t21_post_enqueue_rollback_is_atomic(db: str) -> None:
         staged = await session.execute(
             text("SELECT id FROM ops.notification WHERE order_id=1 AND template='CONFIRMED'")
         )
-        assert staged.scalar_one() > 0
+        notification_id = staged.scalar_one()
+        assert notification_id > 0
+        assert response["notifications"] == [
+            {"id": notification_id, "template": "CONFIRMED", "status": "queued"}
+        ]
         raise RuntimeError("synthetic failure after enqueue before commit")
 
     with pytest.raises(RuntimeError, match="synthetic failure"):
