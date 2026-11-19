@@ -88,11 +88,14 @@ def test_US_NOT_01_AC2_notification_list_scoped_and_preview_masked(
     listing = client.get("/api/v1/notifications?template=CONFIRMED")
     assert listing.status_code == 200
     assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["order_no"] == "ZZ-000001"
     masked = client.get("/api/v1/notifications/1")
     assert masked.status_code == 200
     body = masked.json()
     assert body["recipient_masked"] == "d***@cfo.test"
     assert body["template"] == "CONFIRMED"
+    assert body["order_no"] == "ZZ-000001"
+    assert body["market_timezone"] == "Europe/Stockholm"
     assert "demo@cfo.test" not in str(body)
     assert "contact_name" not in str(body)
     roles["actor"] = actor("sales")
@@ -116,6 +119,22 @@ def test_US_NOT_02_AC3_discard_request_requires_reason(
     response = client.post(f"/api/v1/notifications/{draft}/discard", json={"reason_text": "Do not notify"})
     assert response.status_code == 200
     assert response.json() == {"id": draft, "status": "suppressed"}
+
+
+def test_US_NOT_02_AC2_draft_detail_exposes_approved_version(
+    notifications_api: tuple[TestClient, dict[str, SimpleNamespace], str],
+) -> None:
+    client, _, dsn = notifications_api
+    draft = transact(
+        dsn,
+        lambda s: notify_service.create_delay_draft(1, {**WINDOW, "version": 3}, session=s, actor=actor()),
+    )
+    assert draft is not None
+    detail = client.get(f"/api/v1/notifications/{draft}")
+    assert detail.status_code == 200
+    assert detail.json()["eta_window"] == {**WINDOW, "version": 3}
+    assert detail.json()["order_no"] == "ZZ-000001"
+    assert detail.json()["market_timezone"] == "Europe/Stockholm"
 
 
 def test_US_NOT_02_AC1_order_routes_reachable_without_orders_stubs(

@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 19/11/2026 — E5 DELAY inbox DTO
+
+- `GET /notifications` includes the public `order_no`; detail includes `order_no`, `market_timezone`, and the approved ETA `version` from the stored snapshot. No database change. Missing version remains unavailable to Send.
+
 ## 19/11/2026 — Round 3 email-only storage
 
 - DEC-R3-02 clarified: revision 0016 removes the customer channel preference and outbox channel, retains historical notification rows and suppresses pending SMS. The outbox stores only the email destination when available.

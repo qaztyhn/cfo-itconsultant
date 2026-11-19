@@ -494,7 +494,7 @@ Quy tắc: sự kiện bất biến; không có bước duyệt; `occurred_at` �
 |---|---|---|---|
 | GET | `/alerts` | dispatcher, warehouse, CS, admin | Lọc `type`, `level`, `resolved`, `order_id` (theo phạm vi) |
 | POST | `/alerts/{id}/ack` | dispatcher, admin | Xác nhận đã xem |
-| GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status` |
+| GET | `/notifications` | dispatcher, CS, admin | Lọc `order_id`, `template`, `status`; mỗi item có `order_no` công khai để mở đúng đơn |
 | GET | `/orders/{id}/notifications` | dispatcher, CS | Lịch sử thông báo của đơn |
 | POST | `/notifications/{id}/send` | dispatcher | D4: chỉ Send bản nháp `DELAY` với `eta_window` đã validate, `reason_code`/phrase từ template allowlist, `Idempotency-Key`; **không** nhận body/subject free-text. Ghi `NOTIFICATION_SENT` |
 | POST | `/notifications/{id}/discard` | dispatcher | Discard `DELAY` với `reason_text` bắt buộc cho audit nội bộ; **không** chèn reason_text vào thư gửi khách |
@@ -880,7 +880,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 | GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
 | GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
 | GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint **chuẩn** của Prep queue (thay cho `/prep-queue?warehouse_id=&date=`): `capacity { booked_min, total_min, free_min, schedule_verified, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id,at,vehicle_code,after_cutoff,loaded}], prep_state ('running'|'paused'|null), status, next_action}]`. Đơn nhiều xe có nhiều dòng loading. |
-| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ template, channel, status, recipient_masked, subject, body_html, body_text, eta_window, suppressed_reason }` (người nhận đã che) |
+| GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ order_no, market_timezone, template, channel, status, recipient_masked, subject, body_html, body_text, eta_window: { start, end, version }, suppressed_reason }` (người nhận đã che; `version` là phiên bản ETA đã duyệt trong snapshot, `null` nếu không có bằng chứng; UI chặn Send khi thiếu) |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |
 
 ### A.1 M6 Prep queue contract alignment (OWNER APPROVED 09/11/2026 — DEC-M6-PREP-QUEUE-20261109; code/E2E pending)

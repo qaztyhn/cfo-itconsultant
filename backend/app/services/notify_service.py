@@ -186,10 +186,11 @@ async def _verified_date(
         raise DomainError("DATE_AGREEMENT_REQUIRED", "No matching agreed customer date was recorded.")
 
 
-def _mask_response(record: Notification) -> dict[str, object]:
+def _mask_response(record: Notification, *, order_no: str | None = None) -> dict[str, object]:
     return {
         "id": record.id,
         "order_id": record.order_id,
+        "order_no": order_no,
         "template": record.template,
         "channel": "email" if record.recipient else None,
         "status": record.status,
@@ -211,7 +212,7 @@ async def list_notifications(
 ) -> dict[str, object]:
     _require_reader(actor)
     stmt = (
-        select(Notification)
+        select(Notification, CustomerOrder.order_no)
         .join(CustomerOrder, Notification.order_id == CustomerOrder.id)
         .join(Market, Market.id == CustomerOrder.market_id)
     )
@@ -225,14 +226,14 @@ async def list_notifications(
         stmt = stmt.where(Notification.status == status)
     total = await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     rows = (
-        await session.scalars(
+        await session.execute(
             stmt.order_by(Notification.created_at.desc(), Notification.id.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
         )
     ).all()
     return {
-        "items": [_mask_response(item) for item in rows],
+        "items": [_mask_response(item, order_no=order_no) for item, order_no in rows],
         "page": page,
         "page_size": page_size,
         "total": int(total or 0),
@@ -246,7 +247,8 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
     market = await _order_market(session, order)
     if record.recipient is None:
         return {
-            **_mask_response(record),
+            **_mask_response(record, order_no=order.order_no),
+            "market_timezone": market.timezone,
             "subject": None,
             "body_html": None,
             "body_text": "",
@@ -285,9 +287,11 @@ async def get_notification(session: AsyncSession, notification_id: int, actor: o
         public_window = {
             "start": str(record.eta_window["start"]),
             "end": str(record.eta_window["end"]),
+            "version": snapshot_version(record.eta_window),
         }
     return {
-        **_mask_response(record),
+        **_mask_response(record, order_no=order.order_no),
+        "market_timezone": market.timezone,
         "subject": rendered.subject,
         "body_html": None,
         "body_text": rendered.body,
