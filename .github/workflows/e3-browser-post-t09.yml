@@ -1,0 +1,80 @@
+name: E3 real-browser approved-order replays (diagnostic only)
+on:
+  push:
+    branches: [diag/e3-browser-post-t09-20261119]
+permissions:
+  contents: read
+jobs:
+  approved-e3:
+    name: Chrome + FastAPI + PostgreSQL 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: ./.github/actions/postgres
+      - name: Install actual API and browser dependencies
+        run: |
+          python -m pip install -e './backend[dev]' 'playwright>=1.50,<2' tzdata
+          python -m playwright install --with-deps chrome
+          cd frontend
+          npm ci
+      - name: Case 1 — approved order with one trip
+        run: |
+          cd backend
+          python -m tests.e2e.prep_queue_browser --trips 1 --output ../demo-e3-one
+      - name: Case 2 — approved order with two trips
+        run: |
+          cd backend
+          python -m tests.e2e.prep_queue_browser --trips 2 --output ../demo-e3-two
+      - name: Verify API and DB ledger; print synthetic IDs only
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for folder, size in [('demo-e3-one', 1), ('demo-e3-two', 2)]:
+              p=Path(folder,'demo-prep-browser-results.json')
+              x=json.loads(p.read_text())
+              assert x['result']=='PASS'
+              assert x['trip_count']==size
+              assert len(x['events'])==2+size
+              assert len(x['persisted_events'])==2+size
+              assert len(x['driver_handoff'])==size
+              assert x['initial_queue']['status']=='APPROVED'
+              assert x['reload_queue']['status']=='LOADED'
+              for item,persisted in zip(x['events'],x['persisted_events']):
+                  assert item['event_id']==persisted['id']
+                  assert item['payload'].get('trip_id')==persisted['trip_id']
+                  assert item['http']==200
+                  assert item['ack_refetch']['http']==200
+              if size==2:
+                  assert x['events'][2]['order_status']=='GOODS_READY'
+                  assert x['events'][3]['order_status']=='LOADED'
+              assert all(item['http']==200 and item['visible'] for item in x['driver_handoff'])
+              print(json.dumps({
+                'case':size,'result':x['result'],'order_no':x['order_no'],
+                'app_now':x['app_now'],
+                'events':[{'event_id':e['event_id'],'event_type':e['event_type'],
+                           'trip_id':e['payload'].get('trip_id'),
+                           'order_status':e['order_status']} for e in x['events']],
+                'persisted_events':[{'event_id':e['id'],'trip_id':e['trip_id']} for e in x['persisted_events']],
+                'reload':x['reload_queue'],
+                'drivers':x['driver_handoff']
+              },sort_keys=True))
+          PY
+      - name: Upload synthetic browser evidence (no service logs or credentials)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e3-browser-real-api-postgres
+          path: |
+            demo-e3-one/demo-prep-browser-results.json
+            demo-e3-one/*.png
+            demo-e3-two/demo-prep-browser-results.json
+            demo-e3-two/*.png
+          if-no-files-found: warn
