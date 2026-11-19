@@ -14,7 +14,7 @@ import { CapacityCard } from "./prep-queue/CapacityCard";
 import { formatClock } from "./prep-queue/format";
 import { OrdersTable } from "./prep-queue/OrdersTable";
 import { PrepActionDialog, type ActionChoice } from "./prep-queue/PrepActionDialog";
-import { ACTION_NAMES, EXCEPTION_ACTIONS, type PrepEventType } from "./prep-queue/executionActions";
+import { ACTION_NAMES, EXCEPTION_ACTIONS, canPerform, type PrepEventType } from "./prep-queue/executionActions";
 import type { PrepQueueOrder } from "./prep-queue/types";
 import { formatQueueDate } from "./prep-queue/queueDate";
 import { usePrepQueue, PREP_QUEUE_POLL_MS } from "./prep-queue/usePrepQueue";
@@ -75,7 +75,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
   const user = useAuthStore((state) => state.user);
   const canWrite = user?.roles.includes("warehouse") === true && user.location_ids.includes(scope.warehouseId);
   function chooseAction(order: PrepQueueOrder, type: PrepEventType, tripId?: number, vehicleCode?: string) {
-    if (!canWrite) return;
+    if (!canWrite || !canPerform(order, type, tripId)) return;
     setAcknowledged(null);
     setChoice({ order, type, tripId, vehicleCode });
   }
@@ -152,7 +152,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
             const order = data.orders.find((item) => String(item.order_id) === reportOrderId);
             return (
               <button key={type} type="button"
-                disabled={!canWrite || !order || choice !== null}
+                disabled={!canWrite || !order || !canPerform(order, type) || choice !== null}
                 className="min-h-[48px] rounded-control border border-border bg-surface px-4 py-3 text-left font-semibold text-ink disabled:opacity-50"
                 onClick={() => { if (order) chooseAction(order, type); }}>
                 {ACTION_NAMES[type]}
@@ -162,7 +162,7 @@ function PrepQueueBody({ scope }: { scope: ReadyScope }) {
         </div>
       </section>
       {choice && <PrepActionDialog key={scope.warehouseId + ":" + scope.date + ":" + choice.order.order_id + ":" + choice.type + ":" + (choice.tripId ?? 0)}
-        choice={choice} warehouseId={scope.warehouseId} reportDate={scope.date} onClose={() => setChoice(null)}
+        choice={choice} warehouseId={scope.warehouseId} onClose={() => setChoice(null)}
         onAcknowledged={async () => {
           const refreshed = await query.refetch();
           if (refreshed.error || !refreshed.data) throw new Error("Queue refresh failed.");
