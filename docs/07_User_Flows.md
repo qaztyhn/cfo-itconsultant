@@ -457,7 +457,7 @@ stateDiagram-v2
 | Store manager | My store orders | Theo dõi đơn; xem Đơn hàng & doanh thu cửa hàng mình nếu là owner | Đơn hàng & doanh thu · my location |
 | Customer service | Order lookup | Tra cứu trạng thái và ETA | — |
 | IT/Admin | Data integration | Xử lý hàng đợi mapping, đồng bộ lỗi | Product mapping, Handling groups |
-| Business owner (`revenue_all`) | Đơn hàng & doanh thu | Doanh thu, số đơn theo 6 nhóm trạng thái, lọc theo kỳ, xuất CSV | — |
+| Business owner (`revenue_all`) | Đơn hàng & doanh thu | Doanh thu, số đơn theo 5 nhóm trạng thái, lọc theo kỳ, xuất CSV | — |
 | Project lead (`ops`) | KPIs & decision log | Xem KPI vận hành và nhật ký | — |
 
 ## 19. Tình huống ngoại lệ thường gặp và cách hệ thống phản ứng

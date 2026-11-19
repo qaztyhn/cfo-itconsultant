@@ -3,7 +3,7 @@
 ## [R3 — DEC-R3-15 màn hình & báo cáo đơn hàng] — 2026-11-19 — chỉ tài liệu
 
 - `06` §19.1: không mount `/transfers/*`, `/orders/{id}/transfer-suggestions` và các API ghi quản trị (employees, users, vehicles, market config, shift templates, absences).
-- `06` §19.11: `GET /revenue/order-status` (6 nhóm trạng thái, lọc theo `committed_date`, fallback `date_to`) và `status_group` cho `/revenue/orders`. Không đổi DDL.
+- `06` §19.11: `GET /revenue/order-status` (5 nhóm trạng thái theo `committed_date`; nhóm hủy theo ngày hủy; không gồm đơn chờ duyệt) và `status_group` cho `/revenue/orders`. Không đổi DDL.
 
 ## [R3 — gỡ hợp đồng CRM/Đan Mạch/AI] — 2026-11-19 — chỉ tài liệu
 

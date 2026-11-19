@@ -1112,17 +1112,16 @@ CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung gi�
 
 ```json
 { "period": { "from": "2026-11-01", "to": "2026-11-30" }, "view": "store", "location_id": 21, "currency": "SEK",
-  "date_basis": "committed_date_or_requested_date",
-  "total": { "orders": 128, "amount": "1712300.00" },
+  "total": { "orders": 116, "amount": "1569100.00" },
   "groups": [
-    { "key": "awaiting_approval", "statuses": ["SUBMITTED","PLANNED","NO_FEASIBLE_DATE"], "orders": 12, "amount": "143200.00" },
-    { "key": "approved", "statuses": ["APPROVED","PREPARING","GOODS_READY","LOADED"], "orders": 30, "amount": "402100.00" },
-    { "key": "in_transit", "statuses": ["DISPATCHED"], "orders": 6, "amount": "88400.00" },
-    { "key": "completed", "statuses": ["DELIVERED"], "orders": 72, "amount": "1012600.00" },
-    { "key": "failed", "statuses": ["FAILED"], "orders": 3, "amount": "41000.00" },
-    { "key": "cancelled", "statuses": ["CANCELLED"], "orders": 5, "amount": "25000.00" } ] }
+    { "key": "approved", "statuses": ["APPROVED","PREPARING","GOODS_READY","LOADED"], "date_basis": "committed_date", "orders": 30, "amount": "402100.00" },
+    { "key": "in_transit", "statuses": ["DISPATCHED"], "date_basis": "committed_date", "orders": 6, "amount": "88400.00" },
+    { "key": "completed", "statuses": ["DELIVERED"], "date_basis": "committed_date", "orders": 72, "amount": "1012600.00" },
+    { "key": "failed", "statuses": ["FAILED"], "date_basis": "committed_date", "orders": 3, "amount": "41000.00" },
+    { "key": "cancelled", "statuses": ["CANCELLED"], "date_basis": "cancelled_at", "orders": 5, "amount": "25000.00" } ] }
 ```
-- Đơn được tính vào kỳ theo `committed_date`; đơn chưa có `committed_date` dùng `date_to` (ngày giao khách yêu cầu). Mỗi đơn chỉ thuộc một nhóm theo trạng thái hiện tại. `BLOCKED_UNMAPPED_SKU` (legacy) không được tính.
+- Bốn nhóm đầu tính vào kỳ theo `committed_date`. Nhóm `cancelled` tính theo ngày hủy = thời điểm chuyển sang `CANCELLED` (`ops.order_transition`/`decision_log ORDER_CANCELLED`), gồm cả đơn hủy trước khi duyệt; không dùng `committed_date` vì hủy đơn xóa trường này (`05` §6). Ngày quy theo timezone market.
+- Đơn chờ duyệt (`SUBMITTED`, `PLANNED`, `NO_FEASIBLE_DATE`) và `BLOCKED_UNMAPPED_SKU` (legacy) **không** nằm trong báo cáo. Mỗi đơn chỉ thuộc một nhóm theo trạng thái hiện tại; `total` = tổng 5 nhóm.
 - `amount` = tổng `total_amount` của đơn trong nhóm (giá trị đơn, **không** phải doanh thu ghi nhận). Doanh thu ghi nhận vẫn lấy từ `/revenue/summary` theo ngày giao thực tế (BR-KPI-01).
 - Không trả tên, điện thoại, địa chỉ khách. Góc nhìn store và warehouse không cộng nhau.
 - `/revenue/orders` nhận thêm `status_group=<key>` để liệt kê đơn của một nhóm (phân trang, cùng quy tắc trường như hiện tại).

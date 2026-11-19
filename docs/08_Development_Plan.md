@@ -195,7 +195,7 @@ Khối lượng việc (ví dụ 10,15 giờ; cờ nhân 1,625; trần 2,0; nhó
 | 14 | Hold hết hạn / gia hạn | Extend tối đa 2 lần, lần thứ 3 từ chối; hết hạn thì **không duyệt bằng hold cũ**, trả `HOLD_EXPIRED`/409 và bắt buộc Plan Again rồi kiểm đủ gate; không mở WMS reserve khi hold/gate chưa hợp lệ |
 | 15 | Phân quyền | CS không thấy dữ liệu nội bộ; Sales duyệt rank 1–3, chạy lại, ghi thỏa thuận ngày cho đơn cửa hàng mình (cửa hàng khác 404); Sales làm kế hoạch tay/replan sau FAILED/gửi DELAY → 403; quản lý kho A không thấy kho B; driver chỉ chuyến mình |
 | 16 | Đơn đổi sau khi duyệt | Alert `ORDER_CHANGED_AFTER_APPROVAL`, không ghi đè; gợi ý phương án mới; duyệt gợi ý / Keep (lý do) / Cancel |
-| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày; màn Đơn hàng & doanh thu trả 6 nhóm trạng thái lọc theo ngày cam kết giao, tổng nhóm = tổng đơn (DEC-R3-15) |
+| 17 | Doanh thu | Business owner thấy mọi nơi, `/kpi/summary` 403; owner ST-021 chỉ thấy ST-021 (ST-022 → 404); owner GBG chỉ góc nhìn warehouse; Project lead 403; tổng store = tổng warehouse; CSV ghi `REVENUE_EXPORTED`; đơn giao 23:50 Stockholm vào đúng ngày; màn Đơn hàng & doanh thu trả 5 nhóm trạng thái (lọc theo ngày cam kết giao, nhóm Đã hủy theo ngày hủy, không gồm đơn chờ duyệt), tổng nhóm = tổng đơn (DEC-R3-15) |
 | 18 | Công suất ngày (R3) | Kho chưa xác nhận công suất ngày → gate công suất fail; Warehouse Manager xác nhận → phương án khả thi; sửa ngày đã qua cần lý do |
 
 ## 7. Definition of Done

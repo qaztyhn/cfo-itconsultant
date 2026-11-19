@@ -466,8 +466,9 @@
 - AC11. *Given* đơn giao thất bại rồi giao lại thành công, *Then* chỉ tính một lần, vào ngày giao thành công.
 
 **US-REV-02 — Đơn hàng theo nhóm trạng thái (R3, DEC-R3-15)** · FR-KPI-03, BR-KPI-01
-- AC1. *Given* owner ST-021 chọn 01–30/11, *Then* `GET /revenue/order-status` trả tổng số đơn và 6 nhóm (Chờ duyệt, Đã duyệt, Đang vận chuyển, Đã hoàn thành, Thất bại, Đã hủy) với số đơn và giá trị; tổng các nhóm = tổng số đơn.
-- AC2. *Given* đơn `APPROVED` có `committed_date` 05/12, *Then* không nằm trong kỳ 01–30/11; *Given* đơn `PLANNED` chưa có ngày cam kết, `date_to` 20/11, *Then* nằm trong kỳ, nhóm Chờ duyệt.
+- AC1. *Given* owner ST-021 chọn 01–30/11, *Then* `GET /revenue/order-status` trả tổng số đơn và 5 nhóm (Đã duyệt, Đang vận chuyển, Đã hoàn thành, Thất bại, Đã hủy) với số đơn và giá trị; tổng các nhóm = tổng số đơn.
+- AC2. *Given* đơn `APPROVED` có `committed_date` 05/12, *Then* không nằm trong kỳ 01–30/11; *Given* đơn `PLANNED` chưa duyệt, *Then* không nằm trong báo cáo.
+- AC7. *Given* đơn `PLANNED` bị hủy ngày 15/11 (trước duyệt), *Then* nằm trong nhóm Đã hủy của kỳ 01–30/11 (theo ngày hủy); đơn đã duyệt bị hủy cũng tính theo ngày hủy.
 - AC3. *Given* đơn chuyển từ `DISPATCHED` sang `DELIVERED`, *Then* chuyển từ nhóm Đang vận chuyển sang Đã hoàn thành (theo trạng thái hiện tại).
 - AC4. *Then* quyền như US-REV-01: owner nơi khác → `404`; dispatcher, CS, sales không phải owner, tài xế, Project lead → `403`; không có dữ liệu cá nhân khách.
 - AC5. *Then* `amount` là giá trị đơn, khác doanh thu ghi nhận (US-REV-01 AC5 vẫn theo ngày giao thực tế).
