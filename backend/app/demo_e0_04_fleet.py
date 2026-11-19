@@ -59,9 +59,7 @@ async def run() -> int:
     try:
         async with get_sessionmaker()() as session, session.begin():
             warehouse = await session.scalar(
-                select(Location).where(
-                    Location.code == "STO", Location.type == "warehouse"
-                )
+                select(Location).where(Location.code == "STO", Location.type == "warehouse")
             )
             vehicle = await session.scalar(
                 select(Vehicle).where(Vehicle.code == "STO-12-04").with_for_update()
@@ -79,18 +77,10 @@ async def run() -> int:
             ):
                 raise ValueError("Stored vehicle does not match synthetic fixture")
             mass = Decimal(item["max_permissible_mass_kg"])
-            if (
-                vehicle.regulation_561_scope == "in_scope"
-                and vehicle.max_permissible_mass_kg == mass
-            ):
+            if vehicle.regulation_561_scope == "in_scope" and vehicle.max_permissible_mass_kg == mass:
                 return vehicle.id
-            if (
-                vehicle.regulation_561_scope != "unknown"
-                or vehicle.max_permissible_mass_kg is not None
-            ):
-                raise ValueError(
-                    "Existing vehicle classification must not be overwritten"
-                )
+            if vehicle.regulation_561_scope != "unknown" or vehicle.max_permissible_mass_kg is not None:
+                raise ValueError("Existing vehicle classification must not be overwritten")
             vehicle.max_permissible_mass_kg = mass
             vehicle.regulation_561_scope = "in_scope"
             await record_decision(
@@ -124,8 +114,6 @@ if __name__ == "__main__":
     try:
         vehicle_id = asyncio.run(run())
     except Exception:
-        print(
-            "BLOCKED: E0-04 synthetic vehicle classification failed; unknown scope remains blocked."
-        )
+        print("BLOCKED: E0-04 synthetic vehicle classification failed; unknown scope remains blocked.")
         raise SystemExit(2) from None
     print(f"PASS: STO-12-04 synthetic classification loaded; vehicle_id={vehicle_id}.")

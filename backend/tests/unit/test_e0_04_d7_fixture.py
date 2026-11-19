@@ -9,9 +9,7 @@ from app.adapters.demo_d7_reader import DisposableD7Reader
 from app.services.driver_history import verify_history
 
 
-def test_e0_04_attested_driver_window_and_tamper_fail_closed(
-    tmp_path, monkeypatch
-) -> None:
+def test_e0_04_attested_driver_window_and_tamper_fail_closed(tmp_path, monkeypatch) -> None:
     path = Path(__file__).resolve().parents[3] / "tools" / "e0_04_d7_fixture.py"
     spec = importlib.util.spec_from_file_location("e0_04_d7_fixture", path)
     assert spec is not None and spec.loader is not None

@@ -62,9 +62,7 @@ class DisposableD7Reader:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def _load(
-        self, employee_no: str, target: date, employee_id: int
-    ) -> DriverEvidence | None:
+    def _load(self, employee_no: str, target: date, employee_id: int) -> DriverEvidence | None:
         manifest = _document(self.root / "manifest.json")
         start = target - timedelta(days=56)
         end = target - timedelta(days=1)
@@ -79,10 +77,7 @@ class DisposableD7Reader:
         ):
             return None
         proof = _document(self.root / "verification.json")
-        if (
-            proof.get("source_kind") != "synthetic_demo"
-            or proof.get("revoked") is not False
-        ):
+        if proof.get("source_kind") != "synthetic_demo" or proof.get("revoked") is not False:
             return None
         who = proof.get("verified_by")
         if not isinstance(who, str) or not who.strip():
@@ -102,8 +97,7 @@ class DisposableD7Reader:
         matches = [
             row["driver_code"]
             for row in drivers.get("records", [])
-            if row.get("employee_no") == employee_no
-            and row.get("market") == DEMO_MARKET
+            if row.get("employee_no") == employee_no and row.get("market") == DEMO_MARKET
         ]
         if len(matches) != 1:
             return None
@@ -185,9 +179,7 @@ def configure_disposable_reader() -> None:
     if not path:
         return
     if not _demo_enabled():
-        raise RuntimeError(
-            "D7 synthetic reader may only run in the frozen disposable demo"
-        )
+        raise RuntimeError("D7 synthetic reader may only run in the frozen disposable demo")
     from app.services.driver_history import configure_reader
 
     configure_reader(DisposableD7Reader(Path(path)))

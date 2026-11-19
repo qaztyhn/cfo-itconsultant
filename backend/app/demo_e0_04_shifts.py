@@ -21,11 +21,7 @@ DEMO_NOW = "2026-12-01T10:05:00+01:00"
 
 async def run() -> tuple[int, int]:
     settings = get_settings()
-    if (
-        settings.app_env != "test"
-        or settings.app_now != DEMO_NOW
-        or os.environ.get("DEMO_DISPOSABLE") != "1"
-    ):
+    if settings.app_env != "test" or settings.app_now != DEMO_NOW or os.environ.get("DEMO_DISPOSABLE") != "1":
         raise ValueError("Disposable E0-04 clock required")
     clock.init_from_settings(settings.app_now)
     prep_day = date(2026, 12, 1)
@@ -42,12 +38,8 @@ async def run() -> tuple[int, int]:
     }
     try:
         async with get_sessionmaker()() as session, session.begin():
-            warehouse = await seed_roster(
-                session, start=prep_day, end=day, now=clock.now()
-            )
-            driver = await seed_driver_shifts(
-                session, shifts=[fixture], now=clock.now()
-            )
+            warehouse = await seed_roster(session, start=prep_day, end=day, now=clock.now())
+            driver = await seed_driver_shifts(session, shifts=[fixture], now=clock.now())
             schedules = (
                 await session.scalars(
                     select(EmployeeShiftSchedule).where(
@@ -73,19 +65,13 @@ async def run() -> tuple[int, int]:
                         )
                     )
             await session.flush()
-            manager = await session.scalar(
-                select(Employee).where(Employee.employee_no == "DEMO-STO-W00")
-            )
+            manager = await session.scalar(select(Employee).where(Employee.employee_no == "DEMO-STO-W00"))
             warehouse_location = await session.scalar(
-                select(Location).where(
-                    Location.code == "STO", Location.type == "warehouse"
-                )
+                select(Location).where(Location.code == "STO", Location.type == "warehouse")
             )
             if manager is None or warehouse_location is None:
                 raise ValueError("Named warehouse manager or GBG missing")
-            user = await session.scalar(
-                select(AppUser).where(AppUser.employee_id == manager.id)
-            )
+            user = await session.scalar(select(AppUser).where(AppUser.employee_id == manager.id))
             if user is None or not user.is_active or "warehouse" not in user.roles:
                 raise ValueError("Named warehouse manager account inactive")
             actor = CurrentUser(
@@ -95,9 +81,7 @@ async def run() -> tuple[int, int]:
                 market="SE",
                 location_ids=(warehouse_location.id,),
             )
-            await set_attendance(
-                session, actor, warehouse_location.id, prep_day, all_present=True
-            )
+            await set_attendance(session, actor, warehouse_location.id, prep_day, all_present=True)
         return warehouse, driver
     finally:
         await get_engine().dispose()
@@ -107,10 +91,6 @@ if __name__ == "__main__":
     try:
         wh_count, driver_count = asyncio.run(run())
     except Exception:
-        print(
-            "BLOCKED: E0-04 named shifts unavailable; review manager authority and date."
-        )
+        print("BLOCKED: E0-04 named shifts unavailable; review manager authority and date.")
         raise SystemExit(2) from None
-    print(
-        f"PASS: Dec 1-2 named warehouse shifts added={wh_count}; Dec 2 driver shifts added={driver_count}."
-    )
+    print(f"PASS: Dec 1-2 named warehouse shifts added={wh_count}; Dec 2 driver shifts added={driver_count}.")

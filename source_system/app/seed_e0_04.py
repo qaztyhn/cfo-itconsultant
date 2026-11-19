@@ -50,12 +50,8 @@ async def run() -> tuple[int, int]:
             "lines": [{"line_no": 1, "sku": "SE-BRD-GYP-13", "qty": "10"}],
         }
         async with AsyncSession(engine) as session, session.begin():
-            added = await _orders(
-                session, {"orders": [order], "completed_orders": []}, now
-            )
-            batch_id = await publish(
-                session, captured, source_instance=settings.source_schema, now=now
-            )
+            added = await _orders(session, {"orders": [order], "completed_orders": []}, now)
+            batch_id = await publish(session, captured, source_instance=settings.source_schema, now=now)
         return added, batch_id
     finally:
         await engine.dispose()
@@ -65,13 +61,9 @@ def main() -> int:
     try:
         added, batch_id = asyncio.run(run())
     except Exception:
-        print(
-            "BLOCKED: E0-04 Source order/batch publication failed; check disposable clock and Source data."
-        )
+        print("BLOCKED: E0-04 Source order/batch publication failed; check disposable clock and Source data.")
         return 2
-    print(
-        f"PASS: Source {EXTERNAL_REF} added={added}; complete stock batch_id={batch_id}."
-    )
+    print(f"PASS: Source {EXTERNAL_REF} added={added}; complete stock batch_id={batch_id}.")
     return 0
 
 

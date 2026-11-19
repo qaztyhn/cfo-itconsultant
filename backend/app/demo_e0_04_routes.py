@@ -21,12 +21,8 @@ async def run(order_id: int) -> tuple[int, int]:
     clock.init_from_settings(settings.app_now)
     try:
         async with get_sessionmaker()() as session, session.begin():
-            routes = await prepare_order_routes(
-                session, order_id, OrsRoutingProvider(""), now=clock.now()
-            )
-        return len(routes), sum(
-            route.provider == "fallback" for route in routes.values()
-        )
+            routes = await prepare_order_routes(session, order_id, OrsRoutingProvider(""), now=clock.now())
+        return len(routes), sum(route.provider == "fallback" for route in routes.values())
     finally:
         await get_engine().dispose()
 
@@ -40,8 +36,6 @@ if __name__ == "__main__":
     try:
         count, fallback = asyncio.run(run(args.order_id))
     except Exception:
-        print(
-            "BLOCKED: E0-04 route preparation failed; check order and approved fallback policy."
-        )
+        print("BLOCKED: E0-04 route preparation failed; check order and approved fallback policy.")
         raise SystemExit(2) from None
     print(f"PASS: route pairs={count}; approved fallback estimates={fallback}.")
