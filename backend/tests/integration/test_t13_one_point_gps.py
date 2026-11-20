@@ -39,9 +39,14 @@ def prepared(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811
         "status,depart_actual_at) VALUES "
         "(1,1,1,5,2,'2026-11-10T07:00Z','on_road','2026-11-10T07:00Z')",
         rows.stop_sql(1, 1),
-        "UPDATE ops.customer_order SET status='DISPATCHED',approved_plan_id=1,"
+        "UPDATE ops.customer_order SET status='PLANNED' WHERE id=1",
+        "UPDATE ops.customer_order SET status='APPROVED',approved_plan_id=1,"
         "approved_at='2026-11-10T06:45Z',committed_date='2026-11-10',"
         "promise_start='2026-11-10T08:00Z',promise_end='2026-11-10T12:00Z' WHERE id=1",
+        "UPDATE ops.customer_order SET status='PREPARING' WHERE id=1",
+        "UPDATE ops.customer_order SET status='GOODS_READY' WHERE id=1",
+        "UPDATE ops.customer_order SET status='LOADED' WHERE id=1",
+        "UPDATE ops.customer_order SET status='DISPATCHED' WHERE id=1",
         "UPDATE ref.market SET gps_enabled=true, timezone='Europe/Stockholm' WHERE id=1",
         "INSERT INTO ref.compliance_record (market_id,type,status,approved_on,reference) "
         "VALUES(1,'GPS_NOTICE','approved','2026-11-01','SYNTHETIC-T13')",
