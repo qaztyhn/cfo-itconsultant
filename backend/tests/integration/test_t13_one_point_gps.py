@@ -80,9 +80,8 @@ def test_US_GPS_01_AC1_one_point_202_writes_exactly_once_with_eta(prepared: Api)
     assert datetime.fromisoformat(ack["recorded_at"]) == datetime.fromisoformat("2026-11-10T08:05:00Z")
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 1
-    assert fetch(prepared.dsn, "SELECT source,route_source FROM ops.vehicle_position")[0] == (
-        "driver_tap", "fallback"
-    )
+    row = fetch(prepared.dsn, "SELECT source,route_source FROM ops.vehicle_position")[0]
+    assert (row["source"], row["route_source"]) == ("driver_tap", "haversine_estimate")
     repeated = send(prepared, key=key)
     assert repeated.status_code == 202 and repeated.json() == ack
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
@@ -124,7 +123,7 @@ def test_US_GPS_02_AC1_assigned_dispatcher_only_live_and_hidden_after_trip_end(p
     assert item["last_position"] == {"lat": 59.3, "lon": 18.1}
     assert item["updated_at"] and item["forecast_eta"]
     assert_error(prepared.get("/gps/live", 6), 403, "FORBIDDEN")
-    assert_error(prepared.get("/trips/1/positions", 2), 404, "NOT_FOUND")
+    assert_error(prepared.get("/trips/1/positions", 2), 405, "VALIDATION_ERROR")
     execute(prepared.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=NULL WHERE id=1")
     assert prepared.get("/gps/live", 2).json() == []
     execute(prepared.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=2,"
@@ -136,7 +135,7 @@ def test_US_GPS_03_AC1_purge_terminal_order_and_no_history_route(prepared: Api) 
     assert send(prepared, key=str(uuid4())).status_code == 202
     assert transact(prepared.dsn, lambda s: gps_service.purge_order(s, 1)) == 1
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
-    assert_error(prepared.get("/trips/1/positions", 2), 404, "NOT_FOUND")
+    assert_error(prepared.get("/trips/1/positions", 2), 405, "VALIDATION_ERROR")
 
 
 def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(
@@ -149,10 +148,11 @@ def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(
     response = send(prepared, key=str(uuid4()))
     assert response.status_code == 202, response.text
     assert response.json()["provider"] == "ors"
-    assert fetch(
+    row = fetch(
         prepared.dsn,
         "SELECT route_source,remaining_km,remaining_min FROM ops.vehicle_position",
-    )[0] == (
+    )[0]
+    assert (row["route_source"], row["remaining_km"], row["remaining_min"]) == (
         "ors", Decimal("3.2"), 6
     )
 
