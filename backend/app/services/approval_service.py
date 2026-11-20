@@ -9,6 +9,7 @@ The planning API is owned by T14 and is deliberately not edited here.
 import hashlib
 import json
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -97,7 +98,11 @@ def _actor_id(actor: object) -> int:
 def _reason(payload: dict[str, object]) -> tuple[str | None, str | None]:
     code = payload.get("reason_code")
     details = payload.get("reason_text")
-    if code is not None and (not isinstance(code, str) or not code.strip()):
+    if isinstance(code, str) and not code.strip():
+        code = None
+    if code is not None and (
+        not isinstance(code, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code) is None
+    ):
         raise _fail("VALIDATION_ERROR", "Invalid reason code.")
     if details is not None and not isinstance(details, str):
         raise _fail("VALIDATION_ERROR", "Invalid reason.")
@@ -465,8 +470,8 @@ async def _approve(
     if route != "cfo":
         raise _fail("PLAN_NOT_APPROVABLE", "Order is not routed through CFO.")
     code, reason_text = _reason(payload)
-    if plan.rank > 1 and not ((code and code.strip()) or (reason_text and reason_text.strip())):
-        raise _fail("REASON_REQUIRED", "Alternative plan approval requires a reason.")
+    if plan.rank > 1 and code is None:
+        raise _fail("REASON_REQUIRED", "Rank 2–3 requires a reason_code, not only a note.")
     cfg = MarketConfig.model_validate(market.config)
     selected = (
         await session.scalars(
@@ -479,17 +484,10 @@ async def _approve(
         # Changing a driver invalidates the original plan/hold and requires
         # engine + vehicle-reservation recreation; do not silently ignore it.
         raise _fail("PLAN_NOT_APPROVABLE", "Re-run planning to change a driver safely.")
-    if sales and (
-        plan.rank != 1
-        or plan.vehicle_count != 1
-        or run.kind != "initial"
-        or plan.manual_reason_code is not None
-        or plan.target_date != order.date_to
-    ):
-        raise _fail(
-            "PLAN_NOT_APPROVABLE",
-            "Sales can only confirm an unchanged rank-1 single-vehicle plan.",
-        )
+    # DEC-R3-10: Sales may approve any proposed rank 1–3, warehouse and fleet size.
+    # Manual overrides are Dispatcher-only; the same holds/WMS/five-gate checks follow.
+    if sales and (plan.rank not in (1, 2, 3) or plan.manual_reason_code is not None):
+        raise _fail("PLAN_NOT_APPROVABLE", "Sales cannot approve a manual or unranked plan.")
     if plan.target_date != order.date_to:
         neg_id = payload.get("date_negotiation_id")
         if not isinstance(neg_id, int):
@@ -664,7 +662,10 @@ async def _approve(
         actor_user_id=uid,
         actor_employee_id=getattr(actor, "employee_id", None),
         actor_role="sales" if sales else "dispatcher",
+        reason_code=code,
+        reason_text=reason_text,
         snapshot={
+            "rank": plan.rank,
             "run_id": run.id,
             "order_version": order.version,
             "source_version": order.source_version,
@@ -813,7 +814,9 @@ async def approve(
 async def manual_plan(
     order_id: int, actor: object, payload: dict[str, object], idempotency_key: str
 ) -> dict[str, object]:
-    """No unsafe bypass: manual plans need the T14 fresh engine adapter."""
+    """No unsafe bypass: manual plans remain Dispatcher-only."""
+    if "dispatcher" not in _roles(actor):
+        raise _fail("FORBIDDEN", "Only Dispatcher may create manual plans.")
     raise _fail(
         "PLAN_NOT_APPROVABLE",
         "Manual plan creation needs a verified five-gate engine adapter.",
@@ -895,10 +898,17 @@ async def keep_current(
     )
 
 
-async def record_date_negotiation(order_id: int, actor: object, payload: dict[str, object]) -> int:
+async def record_date_negotiation(
+    order_id: int,
+    actor: object,
+    payload: dict[str, object],
+    *,
+    session: AsyncSession | None = None,
+) -> int:
     """Implement independent date-negotiation record; no implicit date change."""
-    if "dispatcher" not in _roles(actor):
-        raise _fail("FORBIDDEN", "Only Dispatcher may record a date negotiation.")
+    roles = _roles(actor)
+    if not roles.intersection({"dispatcher", "sales"}):
+        raise _fail("FORBIDDEN", "Only Dispatcher or Sales may record a date negotiation.")
     if not isinstance(getattr(actor, "employee_id", None), int):
         raise _fail("FORBIDDEN", "An employee assignment is required.")
     raw_date = payload.get("proposed_date")
@@ -918,35 +928,45 @@ async def record_date_negotiation(order_id: int, actor: object, payload: dict[st
         raise _fail("VALIDATION_ERROR", "Invalid date or timestamp.") from exc
     if proposed is None or contacted is None or contacted.tzinfo is None or contacted > clock.now():
         raise _fail("VALIDATION_ERROR", "Contact must have a valid timestamp and proposed date.")
-    async with get_sessionmaker()() as db, db.begin():
-        order = await db.get(CustomerOrder, order_id)
-        market = await db.get(Market, order.market_id) if order is not None else None
-        if order is None or market is None or getattr(actor, "market", None) != market.code:
-            raise _fail("NOT_FOUND", "Order not found.")
-        note = payload.get("note")
-        if note is not None and not isinstance(note, str):
-            raise _fail("VALIDATION_ERROR", "Invalid note.")
-        row = DateNegotiation(
-            order_id=order_id,
-            proposed_date=proposed,
-            contacted_at=contacted,
-            outcome=outcome,
-            channel=channel,
-            recorded_by=actor.employee_id,
-            note=note,
-            remind_at=(contacted + timedelta(hours=24) if outcome == "unreachable" else None),
-        )
-        db.add(row)
-        await db.flush()
-        await record_decision(
-            db,
-            Action.DATE_NEGOTIATION_RECORDED,
-            "date_negotiation",
-            str(row.id),
-            order_id=order_id,
-            actor_user_id=_actor_id(actor),
-            actor_employee_id=actor.employee_id,
-            actor_role="dispatcher",
-            after={"outcome": outcome, "proposed_date": proposed.isoformat()},
-        )
-        return row.id
+    if session is None:
+        async with get_sessionmaker()() as db, db.begin():
+            return await record_date_negotiation(order_id, actor, payload, session=db)
+    db = session
+    order = await db.get(CustomerOrder, order_id)
+    market = await db.get(Market, order.market_id) if order is not None else None
+    if order is None or market is None or getattr(actor, "market", None) != market.code:
+        raise _fail("NOT_FOUND", "Order not found.")
+    sales = "dispatcher" not in roles
+    if sales and (
+        order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
+    ):
+        raise _fail("NOT_FOUND", "Order not found.")
+    if sales and order.status not in ("SUBMITTED", "PLANNED", "NO_FEASIBLE_DATE"):
+        raise _fail("FORBIDDEN", "Sales can negotiate dates only before approval.")
+    note = payload.get("note")
+    if note is not None and not isinstance(note, str):
+        raise _fail("VALIDATION_ERROR", "Invalid note.")
+    row = DateNegotiation(
+        order_id=order_id,
+        proposed_date=proposed,
+        contacted_at=contacted,
+        outcome=outcome,
+        channel=channel,
+        recorded_by=actor.employee_id,
+        note=note,
+        remind_at=(contacted + timedelta(hours=24) if outcome == "unreachable" else None),
+    )
+    db.add(row)
+    await db.flush()
+    await record_decision(
+        db,
+        Action.DATE_NEGOTIATION_RECORDED,
+        "date_negotiation",
+        str(row.id),
+        order_id=order_id,
+        actor_user_id=_actor_id(actor),
+        actor_employee_id=actor.employee_id,
+        actor_role="sales" if sales else "dispatcher",
+        after={"outcome": outcome, "proposed_date": proposed.isoformat()},
+    )
+    return row.id

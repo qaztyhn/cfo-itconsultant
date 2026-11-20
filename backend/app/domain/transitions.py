@@ -90,6 +90,7 @@ async def transition(
     *,
     expired_hold_run_id: int | None = None,
     sales_approved_plan_id: int | None = None,
+    sales_plan_again_order_id: int | None = None,
 ) -> "Transitioned":
     """Đổi trạng thái đơn trong transaction của caller; trả trạng thái cũ và kế hoạch đã đóng (nếu có).
 
@@ -129,9 +130,9 @@ async def transition(
         and expired_hold_run_id is not None
         and await _eligible_expired_hold(session, order_id, expired_hold_run_id)
     )
-    # Q14: Sales may confirm only after ApprovalService has marked a plan
-    # approved and linked it to this order in the same locked transaction.
-    # This DOES NOT allow Sales to select plans or change order dates.
+    # DEC-R3-10: Sales may confirm any system-ranked 1–3 proposal
+    # only after the shared ApprovalService has approved and linked it to this order.
+    # The service validates latest-run hold, signed WMS ACK and five gates separately.
     sales_confirm = False
     if (
         actor_role == "sales"
@@ -145,15 +146,29 @@ async def transition(
             .where(
                 FulfilmentPlan.id == sales_approved_plan_id,
                 FulfilmentPlan.order_id == order_id,
-                FulfilmentPlan.rank == 1,
+                FulfilmentPlan.rank.in_((1, 2, 3)),
                 FulfilmentPlan.status == "approved",
-                FulfilmentPlan.vehicle_count == 1,
+                FulfilmentPlan.manual_reason_code.is_(None),
                 CustomerOrder.approved_plan_id == sales_approved_plan_id,
                 CustomerOrder.committed_date == FulfilmentPlan.target_date,
             )
         )
         sales_confirm = approved is not None
-    if actor_role not in allowed and not timeout_reset and not sales_confirm:
+    # Narrow pre-approval state reset for Sales Plan Again. Scope, CFO routing and
+    # criteria are checked by PlanningService under the order lock.
+    sales_rerun = False
+    if (
+        actor_role == "sales"
+        and from_status in (S.PLANNED, S.NO_FEASIBLE_DATE)
+        and to_status == S.SUBMITTED
+        and reason_text == "Plan Again"
+        and sales_plan_again_order_id == order_id
+    ):
+        approved_id = await session.scalar(
+            select(CustomerOrder.approved_plan_id).where(CustomerOrder.id == order_id)
+        )
+        sales_rerun = approved_id is None
+    if actor_role not in allowed and not timeout_reset and not sales_confirm and not sales_rerun:
         raise DomainError("FORBIDDEN", "Role may not perform this transition.")
     if rule.requires_reason and not (reason_text and reason_text.strip()):
         raise DomainError("REASON_REQUIRED", "This transition requires a reason.")

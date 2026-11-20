@@ -64,6 +64,9 @@ export interface Plan {
   planning_reserve_min?: number;
   route_provenance?: string;
   checks?: PlanChecks;
+  /** Sales-only: server-scoped eligibility, not a substitute for approval recheck. */
+  approvable?: boolean;
+  requires_date_agreement?: boolean;
   reason_codes?: string[];
   explanation?: string;
 }
@@ -95,6 +98,7 @@ export interface PlanningRun {
   hold_expires_at: string | null;
   hold_extensions: number;
   plans: Plan[];
+  requested_date?: string;
   // Dispatcher only
   failed_check?: string | null;
   earliest_feasible_date?: string | null;
@@ -122,6 +126,7 @@ export interface ApprovePlanInput {
 
 export interface ApprovePlanResponse {
   order: {
+    id?: number;
     status: string;
     committed?: { date: string; promise_start: string; promise_end: string };
   };

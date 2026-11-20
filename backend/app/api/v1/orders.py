@@ -316,14 +316,22 @@ async def order_eta_forecasts(
 
 
 @router.post("/orders/{order_id}/replan")
-async def replan_order(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/replan — dispatcher; đóng kế hoạch cũ (05 mục 6); ORDER_REPLAN."""
+async def replan_order(order_id: int, user: AuthUser) -> dict[str, object]:
+    """Dispatcher-only replan; do not expose unimplemented workflow to Sales."""
+    from app.core.errors import DomainError
+
+    if "dispatcher" not in user.roles:
+        raise DomainError("FORBIDDEN", "Only Dispatcher may replan after approval.")
     raise NotImplementedError
 
 
 @router.post("/orders/{order_id}/cancel")
-async def cancel_order(order_id: int) -> dict[str, object]:
-    """POST /orders/{order_id}/cancel — dispatcher; reason_text bắt buộc; chỉ trước DISPATCHED."""
+async def cancel_order(order_id: int, user: AuthUser) -> dict[str, object]:
+    """Dispatcher-only cancel; do not expose unimplemented workflow to Sales."""
+    from app.core.errors import DomainError
+
+    if "dispatcher" not in user.roles:
+        raise DomainError("FORBIDDEN", "Only Dispatcher may cancel an approved order.")
     raise NotImplementedError
 
 

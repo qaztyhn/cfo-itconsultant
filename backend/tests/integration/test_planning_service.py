@@ -246,27 +246,35 @@ def test_US_PLN_08_AC4_fail_closed_mapping_is_atomic(db: str) -> None:
     assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "SUBMITTED"
 
 
-def test_US_PLN_08_AC5_sales_store_scope_and_no_criteria(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_US_APR_05_AC4_sales_store_scope_and_custom_criteria(
+    db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with pytest.raises(DomainError) as out:
         _request(db, monkeypatch, actor=_actor("sales", store_ids=(999,)))
     assert out.value.code == "NOT_FOUND"
-    with pytest.raises(DomainError) as customized:
-        _request(db, monkeypatch, actor=_actor("sales"), params={"target_date": "2026-11-10"})
-    assert customized.value.code == "FORBIDDEN"
-    assert _request(db, monkeypatch, actor=_actor("sales")) == 1
+    assert _request(db, monkeypatch, actor=_actor("sales"), params={"target_date": "2026-11-10"}) == 1
     run = _run(db, lambda s: planning_service.get_run(1, _actor("sales"), session=s))
     assert run["plans"][0]["rank"] == 1
+    assert run["plans"][0]["warehouse"]["id"] == 1
+    assert run["plans"][0]["checks"]["stock"]["passed"] is True
     assert "score" not in run["plans"][0]
     assert "driver_employee_id" not in run["plans"][0]["vehicles"][0]
     assert "rejected_candidates" not in run
 
 
-def test_US_PLN_08_AC6_sales_cannot_force_plan_again(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_US_APR_05_AC4_sales_can_plan_again_and_audit_actor(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
     _request(db, monkeypatch)
     clock.set_now(NOW + timedelta(minutes=16))
-    with pytest.raises(DomainError) as refused:
-        _request(db, monkeypatch, actor=_actor("sales"))
-    assert refused.value.code == "FORBIDDEN"
+    assert _request(db, monkeypatch, actor=_actor("sales"), params={"reason_code": "criteria_change"}) == 2
+    assert fetch(db, "SELECT count(*) FROM ops.customer_order WHERE id=1")[0][0] == 1
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=1")[0][0] == "released"
+    assert fetch(db, "SELECT status FROM plan.stock_reservation WHERE run_id=2")[0][0] == "held"
+    audit = fetch(
+        db, "SELECT actor_role, reason_code FROM audit.decision_log " "WHERE action='CRITERIA_CHANGED_RERUN'"
+    )[0]
+    assert tuple(audit) == ("sales", "criteria_change")
+    run = _run(db, lambda s: planning_service.get_run(2, _actor("sales"), session=s))
+    assert run["kind"] == "rerun" and run["sales_approvable"] is True
 
 
 def test_US_PLN_08_AC7_plan_again_reason_required(db: str, monkeypatch: pytest.MonkeyPatch) -> None:

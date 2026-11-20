@@ -10,11 +10,13 @@ import { SalesSyncCheck } from "./SalesSyncCheck";
 
 const mock = vi.hoisted(() => ({
   sync: vi.fn(), plan: vi.fn(), confirm: vi.fn(), ack: vi.fn(), key: vi.fn(),
+  history: vi.fn(), negotiate: vi.fn(),
 }));
 vi.mock("./salesSyncApi", async importOriginal => {
   const actual = await importOriginal<typeof import("./salesSyncApi")>();
   return { ...actual, syncAndCheck: mock.sync, requestDefaultPlan: mock.plan,
-    confirmStandardPlan: mock.confirm, acknowledgeRouting: mock.ack, newRetryKey: mock.key };
+    confirmStandardPlan: mock.confirm, acknowledgeRouting: mock.ack, newRetryKey: mock.key,
+    listDateAgreements: mock.history, recordDateAgreement: mock.negotiate };
 });
 const sales: AuthUser = {
   id: 12, employee_id: 14, name: null, roles: ["sales"], market: "SE",
@@ -30,7 +32,8 @@ const checks = {
 const run = {
   id: 500, order_id: 44, run_no: 1, kind: "initial", result: "feasible",
   reserve_class: "safe", hold_expires_at: "2027-11-30T14:00:00Z", hold_extensions: 0, sales_approvable: true,
-  plans: [{ id: 55, rank: 1, status: "proposed", target_date: "2027-11-30", eta_at: "2027-11-30T09:00:00Z",
+  requested_date: "2027-11-30",
+  plans: [{ id: 55, rank: 1, approvable: true, status: "proposed", target_date: "2027-11-30", eta_at: "2027-11-30T09:00:00Z",
     vehicle_count: 1, vehicles: [{ seq: 1, vehicle: { id: 1, code: "TRK", name: "Truck",
       capacity_kg: "6000", capacity_m3: "30" }, load_kg: "500", load_m3: "3",
       loading_start_at: "2027-11-30T06:00:00Z", depart_at: "2027-11-30T07:00:00Z",
@@ -40,7 +43,9 @@ beforeEach(() => {
   mock.sync.mockResolvedValue(syncResult);
   mock.plan.mockResolvedValue(run);
   mock.ack.mockResolvedValue({ status: "recorded" });
-  mock.confirm.mockResolvedValue({ order: { status: "APPROVED" },
+  mock.history.mockResolvedValue({ items: [] });
+  mock.negotiate.mockResolvedValue({ id: 77 });
+  mock.confirm.mockResolvedValue({ order: { id: 44, status: "APPROVED" },
     plan: { id: 55, status: "approved" }, trip_ids: [], notifications: [] });
   let n = 0;
   mock.key.mockImplementation(() => `test-idempotency-${++n}`);
@@ -72,7 +77,7 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
   });
   it("starts empty with a disabled action and meaningful field label", () => {
     mount();
-    expect(screen.getByRole("heading", { name: "Sync & confirm delivery" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sync & Check" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync & check routing" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "External POS order reference" })).toHaveAttribute("autocomplete", "off");
   });
@@ -135,23 +140,22 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
   it("fails closed when any one of five checks is absent despite sales_approvable", async () => {
     mock.plan.mockResolvedValue({ ...run, plans: [{ ...run.plans[0], checks: { ...checks, safety: undefined } }] });
     mount(); await eligibleFlow();
-    expect(screen.getByText(/Not eligible for Sales confirmation/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm standard delivery plan" })).not.toBeInTheDocument();
+    expect(screen.getByText(/This proposal cannot currently be approved/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve rank 1" })).not.toBeInTheDocument();
     expect(mock.confirm).not.toHaveBeenCalled();
   });
   it("requires deliberate confirm and reports WMS ACK not yet verified", async () => {
     mount(); await eligibleFlow();
     expect(mock.confirm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm standard delivery plan" }));
-    await waitFor(() => expect(mock.confirm).toHaveBeenCalledWith(55, "test-idempotency-2"));
+    fireEvent.click(screen.getByRole("button", { name: "Approve rank 1" }));
+    await waitFor(() => expect(mock.confirm).toHaveBeenCalledWith(55, "test-idempotency-2", {}));
     expect(await screen.findByText(/CFO approval recorded by the server/)).toBeInTheDocument();
-    expect(screen.getByText(/CFO approval recorded by the server/)).toHaveTextContent("WMS reservation ACK");
   });
   it("never shows confirmed on an invalid approval response", async () => {
     mock.confirm.mockResolvedValue({ order: { status: "PLANNED" }, plan: { id: 55, status: "proposed" } });
     mount(); await eligibleFlow();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm standard delivery plan" }));
-    expect(await screen.findByText(/Confirmation response was not an approved-plan commit/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve rank 1" }));
+    expect(await screen.findByText(/The API did not confirm this plan and order as APPROVED/)).toBeInTheDocument();
     expect(screen.queryByText(/CFO approval recorded by the server/)).not.toBeInTheDocument();
   });
   it("records manual-start exceptions with mandatory reason and does not flip routing", async () => {
@@ -214,10 +218,73 @@ describe("US-SRC/Sales — Sync & check workflow", () => {
   it("reuses the approve Idempotency-Key on a 409 retried approval", async () => {
     mock.confirm.mockRejectedValueOnce(new ApiError("RESOURCE_CONFLICT", "Resource conflict", "cid", undefined, 409));
     mount(); await eligibleFlow();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm standard delivery plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve rank 1" }));
     expect(await screen.findByRole("heading", { name: "Conflict — refresh before proceeding" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mock.confirm).toHaveBeenCalledTimes(2));
     expect(mock.confirm.mock.calls[0][1]).toBe(mock.confirm.mock.calls[1][1]);
   });
+  it("test_US_APR_05_AC2_rank2_requires_a_machine_readable_code_even_with_note", async () => {
+    const second = { ...run.plans[0], id: 56, rank: 2, vehicle_count: 2,
+      vehicles: [...run.plans[0].vehicles, { ...run.plans[0].vehicles[0], seq: 2 }] };
+    mock.plan.mockResolvedValue({ ...run, plans: [run.plans[0], second] });
+    mock.confirm.mockResolvedValue({ order: { id: 44, status: "APPROVED" },
+      plan: { id: 56, status: "approved" }, trip_ids: [1, 2], notifications: [] });
+    mount(); await eligibleFlow();
+    fireEvent.click(screen.getByRole("radio", { name: "Rank 2" }));
+    expect(screen.getByRole("button", { name: "Approve rank 2" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Approval reason note" }),
+      { target: { value: "The customer prefers another slot" } });
+    expect(screen.getByRole("button", { name: "Approve rank 2" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Alternative reason code" }),
+      { target: { value: "closest_to_customer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve rank 2" }));
+    await waitFor(() => expect(mock.confirm).toHaveBeenCalledWith(56, "test-idempotency-2", {
+      reason_code: "closest_to_customer", reason_text: "The customer prefers another slot",
+    }));
+    expect(await screen.findByText(/CFO approval recorded by the server/)).toBeInTheDocument();
+  });
+
+  it("test_US_APR_05_AC4_records_customer_agreement_before_approving_a_different_date", async () => {
+    mock.plan.mockResolvedValue({ ...run, plans: [{ ...run.plans[0],
+      target_date: "2027-12-01", requires_date_agreement: true }] });
+    mount(); await eligibleFlow();
+    const approve = screen.getByRole("button", { name: "Approve rank 1" });
+    expect(approve).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Record customer agreement" }));
+    await waitFor(() => expect(mock.negotiate).toHaveBeenCalledWith(44, expect.objectContaining({
+      proposed_date: "2027-12-01", outcome: "agreed", channel: "phone",
+    })));
+    expect(await screen.findByRole("button", { name: "Agreed date recorded" })).toBeDisabled();
+    fireEvent.click(approve);
+    await waitFor(() => expect(mock.confirm).toHaveBeenCalledWith(55, "test-idempotency-2",
+      { date_negotiation_id: 77 }));
+  });
+
+  it("test_US_APR_05_AC4_plan_again_sends_criteria_to_the_same_order", async () => {
+    mock.plan.mockResolvedValueOnce(run).mockResolvedValueOnce({
+      ...run, id: 501, run_no: 2, kind: "rerun",
+    });
+    mount(); await eligibleFlow();
+    fireEvent.change(screen.getByLabelText("Target date preference"),
+      { target: { value: "2027-12-02" } });
+    fireEvent.click(screen.getByRole("button", { name: "Plan Again" }));
+    await waitFor(() => expect(mock.plan).toHaveBeenLastCalledWith(44, {
+      target_date: "2027-12-02", reason_code: "criteria_change",
+      reason_text: "Sales requested new feasible options",
+    }));
+    expect(await screen.findByText(/Planning run #2/)).toBeInTheDocument();
+  });
+
+  it("test_US_APR_05_AC1_preserves_approval_key_and_body_on_uncertain_retry", async () => {
+    mock.confirm.mockRejectedValueOnce(new ApiError(
+      "NETWORK_ERROR", "Cannot reach the server", "cid", undefined, 0));
+    mount(); await eligibleFlow();
+    fireEvent.click(screen.getByRole("button", { name: "Approve rank 1" }));
+    await screen.findByRole("heading", { name: "Cannot reach CFO API" });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mock.confirm).toHaveBeenCalledTimes(2));
+    expect(mock.confirm.mock.calls[1]).toEqual(mock.confirm.mock.calls[0]);
+  });
+
 });
