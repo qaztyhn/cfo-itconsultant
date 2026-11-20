@@ -18,7 +18,7 @@ from app.api.v1 import (
     planning,
     revenue,
     source_sync,
-    transfers,
+    trips,
 )
 
 router = APIRouter()
@@ -26,9 +26,9 @@ router.include_router(auth.router)
 router.include_router(orders.router)
 router.include_router(source_sync.router)
 router.include_router(planning.router)
-router.include_router(transfers.router)
 router.include_router(execution.router)
 router.include_router(gps.router)
+router.include_router(trips.router)
 router.include_router(alerts.router)
 router.include_router(notifications.router)
 router.include_router(mapping.router)

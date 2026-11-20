@@ -20,7 +20,7 @@ from app.core.errors import DomainError
 from app.deps import CurrentUser
 from app.domain.models.plan import StockReservation
 from app.domain.models.ref import Market
-from app.services import approval_service, reservation_service
+from app.services import approval_service, planning_service, reservation_service
 from app.services.approval_service import RecheckProof
 from app.services.notification_delivery import deliver_queued
 from tests.integration import rows
@@ -199,17 +199,18 @@ def test_US_APR_01_AC4_sales_wrong_store_hidden(db: str) -> None:
     assert got.value.code == "NOT_FOUND"
 
 
-def test_US_APR_01_AC4_sales_not_safe_rejected(db: str) -> None:
+def test_US_APR_05_AC3_sales_tight_plan_approved(db: str) -> None:
     _hold(db)
     execute(db, "UPDATE plan.planning_run SET reserve_class='tight' WHERE id=1")
-    with pytest.raises(DomainError) as got:
-        _run(
-            db,
-            lambda s: approval_service.approve(
-                1, _actor("sales"), {}, "sales-tight", session=s, recheck=_recheck
-            ),
-        )
-    assert got.value.code == "PLAN_NOT_APPROVABLE"
+    actor = _actor("sales")
+    preview = _run(db, lambda s: planning_service.get_run(1, actor, session=s))
+    assert preview["sales_approvable"] is True
+    result = _run(
+        db,
+        lambda s: approval_service.approve(1, actor, {}, "sales-tight", session=s, recheck=_recheck),
+    )
+    assert len(result["trip_ids"]) == 1
+    assert fetch(db, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "APPROVED"
 
 
 def test_US_APR_01_AC5_stock_conflict_rolls_back(db: str) -> None:

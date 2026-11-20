@@ -1,11 +1,11 @@
 /**
  * Nguồn "Data as of" cho Plan Review (docs/03 mục 3.1, 5.2). Owner: Dev 3 (luồng C).
- * DEPENDENCY: backend chưa có GET /integration/overview; hiện chỉ MSW mock trả. Lỗi gọi → coi là freshness không rõ (UI cảnh báo).
+ * Dispatcher nhận mốc tồn kho của market mình từ API.
  */
 import { apiGet } from "./client";
 
 export interface IntegrationOverview {
-  sources?: { name: string; data_as_of?: string | null }[];
+  sources?: { name: string; data_as_of?: string | null }[] | { stock?: { data_as_of?: string | null } };
   next_sync_at?: string | null;
   stale?: boolean;
 }
@@ -22,7 +22,9 @@ export interface Freshness {
 
 /** asOf = mốc cũ nhất trong các nguồn. Cờ `stale` của server được ưu tiên; không có thì so với ngưỡng stale_stock_min (15). */
 export function summariseFreshness(overview: IntegrationOverview, nowMs = Date.now(), staleAfterMin = 15): Freshness {
-  const times = (overview.sources ?? [])
+  const sources = overview.sources;
+  const feeds = Array.isArray(sources) ? sources : sources?.stock ? [sources.stock] : [];
+  const times = feeds
     .map((s) => (s.data_as_of ? new Date(s.data_as_of).getTime() : NaN))
     .filter((t) => Number.isFinite(t));
   const oldest = times.length > 0 ? Math.min(...times) : null;

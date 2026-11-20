@@ -48,7 +48,6 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [result, setResult] = useState<ApprovePlanResponse | null>(null);
-  const [tightAccepted, setTightAccepted] = useState(false);
   const [agreementId, setAgreementId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -70,15 +69,13 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
   let blockedReason: string | null = null;
   if (run.kind === "replan_suggestion") blockedReason = "Replan suggestions need a separate dispatcher decision.";
   else if (run.result !== "feasible") blockedReason = "This run has no feasible plan.";
-  else if (!plan || plan.status !== "proposed") blockedReason = "Only a proposed plan can be approved.";
+  else if (!plan || plan.status !== "proposed" || result) blockedReason = "Only a proposed plan can be approved.";
   else if (!run.hold_expires_at || !Number.isFinite(Date.parse(run.hold_expires_at))) blockedReason = "No live planning hold is available.";
   else if (!allGatesPassed) blockedReason = "All five planning gates must have verified passing evidence.";
   else if (orderQuery.isPending) blockedReason = "Checking the requested delivery date…";
   else if (orderQuery.isError || !requestedDate) blockedReason = "Requested delivery date is unavailable.";
   else if (dateChanged && (negotiationsQuery.isPending || negotiationsQuery.isError)) blockedReason = "Checking customer date agreement…";
   else if (dateChanged && !selectedAgreement) blockedReason = "Select an agreed customer date for this plan.";
-  else if (result) blockedReason = "CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.";
-  else if (run.reserve_class === "tight" && !tightAccepted) blockedReason = "Accept the tight schedule before approving.";
   else if (submitting) blockedReason = "Approval is being submitted…";
 
   async function handleConfirm({ reasonCode, reasonText }: ReasonResult) {
@@ -115,7 +112,15 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
 
   return (
     <>
-      {result && <UnverifiedPanel result={result} mock={mock} />}
+      {result && (
+        <div role="status" className="flex flex-col gap-1 rounded-card bg-risk-onTrack-bg p-4 text-risk-onTrack-fg">
+          <p className="text-h3">Plan approved</p>
+          {result.notifications?.some(({ template, status }) => template === "CONFIRMED" && status === "queued") && (
+            <p className="text-body">Confirmation email queued</p>
+          )}
+          {mock && <p className="font-mono text-caption">MOCK API · simulated approval, nothing was committed to a real backend.</p>}
+        </div>
+      )}
       {problem && <ProblemPanel error={problem} />}
       {dateChanged && (
         <label className="flex flex-col gap-1 text-body text-ink">
@@ -126,10 +131,9 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
           </select>
         </label>
       )}
-      {run.reserve_class === "tight" && <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={tightAccepted} onChange={(event) => setTightAccepted(event.target.checked)} />I accept the tight schedule</label>}
       <DecisionBar
         plan={plan}
-        expired={expired}
+        expired={expired && plan?.status !== "approved" && !result}
         approved={false}
         blockedReason={blockedReason}
         onApprove={() => {
@@ -151,18 +155,6 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
         />
       )}
     </>
-  );
-}
-
-function UnverifiedPanel({ result, mock }: { result: ApprovePlanResponse; mock: boolean }) {
-  return (
-    <div role="alert" className="flex flex-col gap-1 rounded-card border border-risk-atRisk-bg bg-risk-atRisk-bg p-4 text-risk-atRisk-fg">
-      <p className="text-h3">
-        CFO reports {result.order.status}; WMS reservation is unverified.
-      </p>
-      <p className="text-body">The current response has no WMS reservation acknowledgment or refreshed stock version. Do not dispatch or repeat the request without checking backend state.</p>
-      {mock && <p className="font-mono text-caption">MOCK API · simulated approval, nothing was committed to a real backend.</p>}
-    </div>
   );
 }
 

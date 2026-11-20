@@ -38,11 +38,16 @@ async def scenario() -> dict[str, object]:
                     "JOIN plan.fulfilment_plan p ON p.order_id=o.id "
                     "JOIN ops.order_line l ON l.order_id=o.id "
                     "JOIN ref.location w ON w.id=p.warehouse_id "
-                    "WHERE o.external_ref=:ref AND p.rank=1"
+                    "WHERE o.external_ref=:ref AND o.status='PLANNED' "
+                    "AND p.rank=1 AND p.status='proposed' AND p.run_id=("
+                    "SELECT r.id FROM plan.planning_run r WHERE r.order_id=o.id "
+                    "ORDER BY r.run_no DESC,r.id DESC LIMIT 1)"
                 ),
                 {"ref": REF},
             )
-        ).one()
+        ).one_or_none()
+        if row is None:
+            raise RuntimeError("The latest E0-04 run has no proposed rank-1 plan")
         profile = await load_active_profile(db, 1)
         data = {
             "order_id": row[0],
@@ -62,9 +67,7 @@ async def scenario() -> dict[str, object]:
 
 def fixture(data: dict[str, object]) -> dict[str, object]:
     if (
-        data["order_id"] != 1
-        or data["plan_id"] != 1
-        or data["source_version"] != 1
+        data["source_version"] != 1
         or data["sku"] != "SE-BRD-GYP-13"
         or data["warehouse"] != "STO"
     ):
@@ -118,7 +121,7 @@ def fixture(data: dict[str, object]) -> dict[str, object]:
     }
 
 
-async def evidence() -> dict[str, object]:
+async def evidence(plan_id: int) -> dict[str, object]:
     async with get_sessionmaker()() as db:
         result = await db.execute(
             text(
@@ -128,12 +131,12 @@ async def evidence() -> dict[str, object]:
                 "ON v.id=t.plan_vehicle_id WHERE v.plan_id=p.id), "
                 "(SELECT count(*) FROM audit.decision_log d WHERE d.action='PLAN_APPROVED' AND d.order_id=o.id), "
                 "(SELECT count(*) FROM ops.notification n WHERE n.order_id=o.id AND n.template='CONFIRMED') "
-                "FROM ops.customer_order o JOIN plan.fulfilment_plan p ON p.order_id=o.id "
-                "LEFT JOIN ops.wms_reservation_intent i ON i.order_id=o.id "
+                "FROM ops.customer_order o JOIN plan.fulfilment_plan p ON p.id=o.approved_plan_id "
+                "LEFT JOIN ops.wms_reservation_intent i ON i.order_id=o.id AND i.plan_id=p.id "
                 "LEFT JOIN ops.stock_write_run w ON w.id=i.stock_write_run_id "
-                "WHERE o.external_ref=:ref AND p.rank=1"
+                "WHERE o.external_ref=:ref AND p.id=:plan_id"
             ),
-            {"ref": REF},
+            {"ref": REF, "plan_id": plan_id},
         )
         row = result.one()
         data = dict(
@@ -204,7 +207,7 @@ def main() -> int:
         with TestClient(app) as client:
             headers = {
                 "Authorization": f"Bearer {token}",
-                "Idempotency-Key": "e1-demo-order-249",
+                "Idempotency-Key": f"e1-demo-order-249-plan-{data['plan_id']}",
             }
             first = client.post(
                 f"/api/v1/plans/{data['plan_id']}/approve", headers=headers, json={}
@@ -221,16 +224,16 @@ def main() -> int:
             "first": first.json(),
             "second": second.json(),
         }
-        proven = asyncio.run(evidence())
+        assert first.status_code == second.status_code == 200, before
+        assert first.json() == second.json()
+        assert len(first.json()["trip_ids"]) == 1
+        proven = asyncio.run(evidence(data["plan_id"]))
         with sqlite3.connect(os.environ["SYNTHETIC_WMS_DB"]) as wms:
             proven["wms_reservation_count"] = wms.execute(
                 "SELECT count(*) FROM reservations"
             ).fetchone()[0]
         print(json.dumps(before, default=str))
         print(json.dumps(proven, default=str))
-        assert first.status_code == second.status_code == 200
-        assert first.json() == second.json()
-        assert first.json()["trip_ids"] == [1]
         assert proven["order_status"] == "APPROVED"
         assert proven["stock_origin"] == "wms_synthetic"
         assert proven["stock_batch"] == proven["reflected_batch"] == 2

@@ -1,8 +1,8 @@
 """D3 GPS: verified trip-duty device ingestion, privacy cleanup and lost signals.
 
 All writes participate in a caller-owned AsyncSession. GPS read access requires
-a persisted dispatcher-to-trip assignment, which is not yet in the approved DB:
-the APIs therefore fail closed, never fall back to market-wide access.
+a persisted dispatcher-to-trip assignment, verified on each live request.
+No market-wide fallback, including when an order has NULL assignment.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -17,8 +17,16 @@ from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.config import MarketConfig
 from app.core.errors import DomainError
-from app.domain.models.ops import Alert, DeliveryTrip, VehiclePosition
-from app.domain.models.ref import ComplianceRecord, Location, Market
+from app.domain.models.ops import (
+    Alert,
+    CustomerOrder,
+    DeliveryTrip,
+    EtaForecast,
+    MilestoneEvent,
+    TripStop,
+    VehiclePosition,
+)
+from app.domain.models.ref import ComplianceRecord, Location, Market, Vehicle
 from app.services import alert_service
 from app.services.gps_duty import active_duty, trip_collection_windows
 
@@ -209,9 +217,101 @@ async def trip_positions(
 
 
 async def live(actor: object, *, session: AsyncSession | None = None) -> list[dict[str, object]]:
-    """Never silently grant market-wide GPS positions to a dispatcher."""
-    _role(actor, "dispatcher")
-    raise DomainError("FORBIDDEN", "Verified dispatcher-to-trip assignment is unavailable.")
+    """R3: read only this Dispatcher's currently assigned on-road trips.
+
+    The current trip assignment is authoritative after a handover. Keep the
+    T13 live DTO while restricting points to verified trip-duty windows.
+    """
+    employee_id = _role(actor, "dispatcher")
+    if session is None:
+        raise DomainError("PLAN_NOT_APPROVABLE", "GPS read requires a DB transaction.")
+    when = clock.now()
+    live_duty = await active_duty(session, now=when)
+    if not live_duty:
+        return []
+    result = await session.execute(
+        select(DeliveryTrip, Vehicle, TripStop, CustomerOrder)
+        .join(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
+        .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+        .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
+        .join(Location, Location.id == DeliveryTrip.warehouse_id)
+        .join(Market, Market.id == Location.market_id)
+        .where(
+            DeliveryTrip.assigned_dispatcher_employee_id == employee_id,
+            DeliveryTrip.id.in_(tuple(live_duty)),
+            DeliveryTrip.status == "on_road",
+            DeliveryTrip.ended_at.is_(None),
+            CustomerOrder.market_id == Market.id,
+            Market.code == getattr(actor, "market", ""),
+            Market.gps_enabled.is_(True),
+        )
+        .order_by(DeliveryTrip.id)
+    )
+    output: list[dict[str, object]] = []
+    for trip, vehicle, _stop, order in result:
+        begins, ends = live_duty[trip.id]
+        position = await session.scalar(
+            select(VehiclePosition)
+            .where(
+                VehiclePosition.trip_id == trip.id,
+                VehiclePosition.recorded_at >= begins,
+                VehiclePosition.recorded_at < ends,
+                VehiclePosition.recorded_at <= when,
+            )
+            .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc())
+            .limit(1)
+        )
+        eta = await session.scalar(
+            select(EtaForecast)
+            .where(EtaForecast.order_id == order.id)
+            .order_by(EtaForecast.version.desc(), EtaForecast.id.desc())
+            .limit(1)
+        )
+        unresolved = await session.scalar(
+            select(Alert.id)
+            .where(Alert.order_id == order.id, Alert.type == "DRIVER_INCIDENT", Alert.resolved_at.is_(None))
+            .limit(1)
+        )
+        incident = None
+        if unresolved is not None:
+            incident_event = await session.scalar(
+                select(MilestoneEvent)
+                .where(
+                    MilestoneEvent.order_id == order.id,
+                    MilestoneEvent.trip_id == trip.id,
+                    MilestoneEvent.event_type == "DRIVER_INCIDENT",
+                )
+                .order_by(MilestoneEvent.id.desc())
+                .limit(1)
+            )
+            if incident_event is not None:
+                candidate = incident_event.payload.get("reason")
+                if candidate in ("vehicle_breakdown", "traffic_or_accident", "site_inaccessible", "other"):
+                    incident = candidate
+        output.append(
+            {
+                "trip_id": trip.id,
+                "order_id": order.id,
+                "vehicle_code": vehicle.code,
+                "last_position": (
+                    {"lat": float(position.lat), "lon": float(position.lon)} if position is not None else None
+                ),
+                "remaining_km": (
+                    str(position.remaining_km)
+                    if position is not None and position.remaining_km is not None
+                    else None
+                ),
+                "updated_at": position.recorded_at.isoformat() if position is not None else None,
+                "forecast_eta": eta.forecast_eta.isoformat() if eta is not None else None,
+                "risk": (
+                    {"status": eta.risk_status, "color": eta.risk_color}
+                    if eta is not None
+                    else {"status": None, "color": None}
+                ),
+                "open_incident": incident,
+            }
+        )
+    return output
 
 
 RETENTION = timedelta(days=7)  # DEC-GPS-RET-20261109: absolute 7 x 24 h, never wall-clock/DST based

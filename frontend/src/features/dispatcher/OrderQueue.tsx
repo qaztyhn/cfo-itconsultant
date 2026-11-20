@@ -19,6 +19,7 @@ import { RiskChip } from "../../components/RiskChip";
 import { StatusChip, type OrderStatus } from "../../components/StatusChip";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { formatDayTime, formatTime } from "../../lib/planFormat";
+import { planningNow } from "../../lib/useHoldExpired";
 import { PAGE_SIZES, fetchOrderQueue, fetchQueueCounts, type QueueSort } from "./orderQueue/api";
 import type { QueueOrder } from "./orderQueue/model";
 import {
@@ -135,10 +136,12 @@ function OrderCards({ items }: { items: QueueOrder[] }) {
   );
 }
 
-export function OrderQueue() {
+export function OrderQueue({ reviewOnly = false }: { reviewOnly?: boolean }) {
   const userId = useAuthStore(s => s.user?.id ?? null);
   const [params, setParams] = useSearchParams();
-  const state = parseQueueState(params);
+  const parsed = parseQueueState(params);
+  const state = reviewOnly ? { ...parsed, status: "PLANNED" } : parsed;
+  const title = reviewOnly ? "Plan review" : "Order queue";
   // `q` chỉ nằm trong state component: không đưa số điện thoại/tên khách lên URL hay lịch sử trình duyệt.
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -166,13 +169,15 @@ export function OrderQueue() {
   const overview = useQuery({
     queryKey: ["dispatcher-order-queue", "freshness", userId],
     queryFn: ({ signal }) => fetchIntegrationOverview(signal),
-    retry: false, refetchInterval: 60_000, refetchIntervalInBackground: false,
+    retry: false, refetchInterval: query => forbidden(query.state.error) ? false : 60_000,
+    refetchIntervalInBackground: false,
   });
 
   const counts = countsQuery.data ?? null;
-  const freshness = overview.data ? summariseFreshness(overview.data) : null;
+  const freshness = overview.data ? summariseFreshness(overview.data, planningNow()) : null;
   const change = (changes: Record<string, string | null>) => setParams(prev => updateParams(prev, changes), { replace: true });
   const filtered = params.size > 0 || search !== "";
+  const emptyMessage = filtered ? "No orders match these filters." : reviewOnly ? "No orders are awaiting plan approval." : "No orders in the queue.";
   const refreshing = list.isFetching || countsQuery.isFetching || overview.isFetching;
   const refresh = () => { void list.refetch(); void countsQuery.refetch(); void overview.refetch(); };
   const clear = () => { setSearchInput(""); setSearch(""); setParams(new URLSearchParams(), { replace: true }); };
@@ -180,7 +185,7 @@ export function OrderQueue() {
   if (forbidden(list.error) || forbidden(countsQuery.error)) {
     return (
       <section data-screen="OrderQueue" className="flex flex-col gap-5">
-        <PageHeader overline="Dispatcher" title="Order queue" />
+        <PageHeader overline="Dispatcher" title={title} />
         <div role="alert" className="rounded-card border border-border bg-surface p-6">
           <h2 className="text-h3 text-ink">You do not have access to the order queue</h2>
           <p className="mt-2 text-body text-inkMuted">Access is decided by the server for your role and market. No orders were loaded.</p>
@@ -198,8 +203,8 @@ export function OrderQueue() {
     <section data-screen="OrderQueue" className="flex flex-col gap-5">
       <PageHeader
         overline="Dispatcher"
-        title="Order queue"
-        description={state.sort === null
+        title={title}
+        description={reviewOnly ? "Orders awaiting plan approval." : state.sort === null
           ? "Oldest submitted first. This is display order only; later orders may still be planned earlier if they do not take committed resources."
           : `Sorted by ${SORT_LABELS[state.sort]} (${state.desc ? "descending" : "ascending"}).`}
       />
@@ -207,7 +212,8 @@ export function OrderQueue() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Dispatcher areas" className="flex flex-wrap gap-2">
           {[
-            { to: PATHS.dispatcherPlanReview, label: "Plan review", count: counts?.awaitingApproval },
+            reviewOnly ? { to: PATHS.dispatcherOrders, label: "Order queue", count: undefined }
+              : { to: PATHS.dispatcherPlanReview, label: "Plan review", count: counts?.awaitingApproval },
             { to: PATHS.dispatcherExceptions, label: "Exceptions", count: counts?.nav.exceptions },
             { to: PATHS.dispatcherTracking, label: "Tracking & risk", count: counts?.nav.trackingRisk },
           ].map(item => (
@@ -226,15 +232,15 @@ export function OrderQueue() {
         </div>
       </div>
 
-      <FilterChips
+      {!reviewOnly && <FilterChips
         options={BUCKETS.map(bucket => ({
           value: bucket, label: BUCKET_LABELS[bucket],
           count: !counts ? undefined : bucket === "needs_plan" ? counts.needsPlan : bucket === "awaiting_approval" ? counts.awaitingApproval
             : bucket === "no_feasible_date" ? counts.noFeasibleDate : bucket === "in_execution" ? counts.inExecution : undefined,
         }))}
         selected={state.status ? "" : state.bucket}
-        onChange={value => change({ bucket: value })}
-      />
+        onChange={value => change({ bucket: !state.status && value === state.bucket ? "all" : value })}
+      />}
       {counts && (
         <p className="font-mono text-caption text-inkMuted">
           Replan suggested {counts.replanSuggested} · Delivered today {counts.deliveredToday}
@@ -251,12 +257,12 @@ export function OrderQueue() {
               placeholder="Order no., customer or phone" className="w-full min-w-0 bg-transparent py-2 text-sm font-normal" />
           </div>
         </Field>
-        <Field label="Status">
+        {!reviewOnly && <Field label="Status">
           <select aria-label="Status" value={state.status ?? ""} onChange={e => change({ status: e.target.value })} className={control}>
             <option value="">Any in selected group</option>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-        </Field>
+        </Field>}
         <Field label="Risk">
           <select aria-label="Risk" value={state.risk ?? ""} onChange={e => change({ risk: e.target.value })} className={control}>
             <option value="">Any risk</option>
@@ -307,7 +313,7 @@ export function OrderQueue() {
           {page.items.length === 0 ? (
             <div className="rounded-card border border-border bg-surface">
               <EmptyState
-                message={filtered ? "No orders match these filters." : "No orders in the queue."}
+                message={emptyMessage}
                 action={state.page > 1 ? { label: "Go to first page", onClick: () => change({ page: null }) } : filtered ? { label: "Clear filters", onClick: clear } : undefined}
               />
             </div>

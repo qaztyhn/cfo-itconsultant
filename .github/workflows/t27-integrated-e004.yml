@@ -1,0 +1,111 @@
+name: T27 integrated pre-Sync to Mailpit/Driver Chrome (disposable E0-04)
+on:
+  push:
+    branches: [feat/r3-t27-integrated-e004]
+  pull_request:
+    branches: [feat/r3-t27-integrated-e004]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e0-e1-e2-e3-t27:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      APP_ENV: test
+      DEMO_DISPOSABLE: "1"
+      APP_NOW: "2026-11-04T10:05:00+01:00"
+      COMPOSE_PROJECT_NAME: cfo-demo-e004
+      COMPOSE_FILE: "docker-compose.yml:tools/t27_e1_compose.override.yml"
+      PYTHONPATH: ".:backend"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install backend E0/E1/T27 and Playwright
+        working-directory: backend
+        run: |
+          python -m pip install -e ".[dev]" "playwright>=1.50,<2" python-dotenv tzdata
+          python -m playwright install chrome
+      - name: Install real frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Generate ephemeral LOCAL disposable secrets (not uploaded or printed)
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from secrets import token_urlsafe
+          from urllib.parse import quote
+          password = quote(token_urlsafe(24), safe="")
+          def key():
+              return token_urlsafe(38)
+          values = [
+              "APP_ENV=test", "DEMO_DISPOSABLE=1", "COMPOSE_PROJECT_NAME=cfo-demo-e004",
+              "APP_NOW=2026-11-04T10:05:00+01:00",
+              "POSTGRES_PASSWORD=" + password,
+              "DATABASE_URL=postgresql+asyncpg://cfo:" + password + "@postgres:5432/cfo",
+              "SOURCE_SE_DATABASE_URL=postgresql+asyncpg://cfo:" + password + "@postgres:5432/source_se",
+              "SOURCE_SE_API_KEY=" + key(),
+              "JWT_SECRET=" + key(),
+              "SEED_DEMO_PASSWORD=" + key(),
+              "INTERNAL_TICK_KEY=" + key(),
+              "SYNTHETIC_WMS_API_KEY=" + key(),
+              "SOURCE_DB_NAME=source_se", "SOURCE_SCHEMA=src_se",
+              "VITE_API_URL=http://localhost:8000/api/v1", "VITE_USE_MOCKS=false",
+              "CORS_ORIGINS='[\"http://localhost:5173\"]'",
+          ]
+          path = Path(".env")
+          path.write_text("\n".join(values) + "\n", encoding="utf-8")
+          path.chmod(0o600)
+          PY
+      - name: E0-04 prepare Source, scope, fleet, shifts, stock WITHOUT Sales Sync/Plan
+        run: |
+          set -a
+          source .env
+          set +a
+          python tools/e0_04_prepare.py --stop-before-sync
+      - name: Playwright real CFO Sales Sync → Dispatcher Approve → E2 Mailpit → E3 → Driver → CS
+        env:
+          APP_NOW: "2026-12-01T10:05:00+01:00"
+        run: |
+          set -a
+          source .env
+          set +a
+          export APP_NOW="2026-12-01T10:05:00+01:00"
+          python tools/t27_integrated_browser.py --output t27-integrated-e004
+      - name: Summarize evidence (synthetic IDs and statuses only)
+        if: always()
+        run: |
+          if [ -f t27-integrated-e004/t27-integrated.json ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path("t27-integrated-e004/t27-integrated.json").read_text())
+          print("T27 SHA", d["revision"])
+          print("T27 origin", d["origin"])
+          print("T27 last", d["last_verified"])
+          for x in d["steps"]:
+              print("T27", x["step"], x["status"], x["task"])
+          PY
+          fi
+      - name: Upload approved synthetic screenshot + sanitized 14-row ledger only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t27-integrated-e004-synthetic-evidence
+          path: |
+            t27-integrated-e004/*.png
+            t27-integrated-e004/t27-integrated.json
+            t27-integrated-e004/t27-integrated.md
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Destroy ONLY dedicated disposable cfo-demo-e004 DB/containers
+        if: always()
+        run: |
+          if [ "${COMPOSE_PROJECT_NAME}" = "cfo-demo-e004" ] && [ -f .env ]; then
+            docker compose --env-file .env -p cfo-demo-e004 down -v --remove-orphans
+          fi

@@ -13,9 +13,10 @@ import pytest
 from app.adapters import demo_d7_reader
 from app.core import clock
 from app.deps import CurrentUser
-from app.services import driver_history, planning_service
+from app.services import approval_service, driver_history, planning_service
 from app.services.approval_recheck import five_gate_recheck
 from tests.d7_evidence import evidence
+from tests.integration.api_harness import api_for_db
 from tests.integration.conftest import execute, fetch
 from tests.integration.dev2_helpers import transact
 from tests.integration.test_ingest_orders import db as db  # noqa: F401 (PostgreSQL fixture)
@@ -144,3 +145,51 @@ def test_demo_D7_missing_day_real_postgres_planner_fails_closed(
         fetch(standard_order, "SELECT status FROM ops.customer_order WHERE id=1")[0][0] == "NO_FEASIBLE_DATE"
     )
     assert fetch(standard_order, "SELECT count(*) FROM plan.vehicle_reservation")[0][0] == 0
+
+
+@pytest.mark.parametrize("requested_day", ["2026-11-10", "2026-11-09"])
+def test_US_PLN_07_AC1_AC3_public_planning_and_date_negotiation(
+    standard_order: str, monkeypatch: pytest.MonkeyPatch, requested_day: str
+) -> None:
+    fetch(
+        standard_order,
+        "UPDATE ops.customer_order SET date_from=$1, date_to=$1 WHERE id=1 RETURNING id",
+        date.fromisoformat(requested_day),
+    )
+    with api_for_db(standard_order, monkeypatch) as api:
+        monkeypatch.setattr(approval_service, "get_sessionmaker", lambda: api.maker)
+        response = api.send("POST", "/orders/1/plan", DISPATCHER.id, {})
+        assert response.status_code == 200, response.text
+        run = response.json()
+        assert "transfer_suggestions" not in run
+        read = api.get(f"/planning-runs/{run['id']}", DISPATCHER.id)
+        assert read.status_code == 200
+        assert read.json() == run
+        if requested_day == TARGET.isoformat():
+            assert run["result"] == "feasible"
+            assert run["plans"][0]["target_date"] == requested_day
+            return
+        assert run["result"] == "infeasible" and not run["plans"]
+        assert run["earliest_feasible_date"] == TARGET.isoformat()
+        assert run["failed_check"] and any(item["code"] for item in run["rejected_candidates"])
+        order_before = fetch(standard_order, "SELECT date_to,version,status FROM ops.customer_order")[0]
+        assert order_before["status"] == "NO_FEASIBLE_DATE"
+        result = api.send(
+            "POST",
+            "/orders/1/date-negotiations",
+            DISPATCHER.id,
+            {
+                "proposed_date": run["earliest_feasible_date"],
+                "contacted_at": NOW.isoformat(),
+                "outcome": "agreed",
+                "channel": "phone",
+                "note": "Synthetic agreement",
+            },
+        )
+        assert result.status_code == 200, result.text
+        history = api.get("/orders/1/date-negotiations", DISPATCHER.id)
+        assert history.status_code == 200 and history.json()["items"][0]["id"] == result.json()["id"]
+        assert (
+            fetch(standard_order, "SELECT date_to,version,status FROM ops.customer_order")[0] == order_before
+        )
+        assert fetch(standard_order, "SELECT count(*) FROM plan.planning_run")[0][0] == 1

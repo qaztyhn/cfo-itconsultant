@@ -556,7 +556,7 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
     if compact:
         response["sales_approvable"] = bool(
             plans
-            and run.reserve_class == "safe"
+            and run.result == "feasible"
             and run.hold_expires_at is not None
             and run.hold_expires_at > clock.now()
             and plans[0].status == "proposed"
@@ -575,7 +575,6 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
                 "planning_reserve_min": run.planning_reserve_min,
                 "workload": run.input_snapshot.get("workload", {}),
                 "rejected_candidates": run.input_snapshot.get("rejected_candidates", []),
-                "transfer_suggestions": [],
             }
         )
     return response

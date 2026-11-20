@@ -29,12 +29,6 @@ export type StockLine = {
   inbound?: Record<string, { qty: number | string; eta: string }[]>;
 };
 export type StockMatrix = { date: string; lines: StockLine[] };
-export type TransferSuggestion = {
-  from_warehouse_id?: number; from_warehouse?: string;
-  to_warehouse_id?: number; to_warehouse?: string;
-  lead_days?: number; distance_km?: number;
-  lines?: { global_product_id: number; qty: number | string }[];
-};
 export type InfeasibleRun = PlanningRun & {
   dates_searched?: DateSearch[];
   per_warehouse_checks?: WarehouseChecks[];
@@ -44,7 +38,6 @@ export type InfeasibleRun = PlanningRun & {
     warehouse_id?: number; vehicle_code?: string | null; failed_check?: string;
     code?: string; detail?: { message?: string; inbound_available_on?: string };
   }[];
-  transfer_suggestions?: TransferSuggestion[];
 };
 export type NegotiationOutcome = "agreed" | "declined" | "unreachable";
 export type NegotiationInput = {
@@ -62,10 +55,6 @@ export function fetchNegotiations(orderId: number, signal?: AbortSignal) {
 export function recordNegotiation(orderId: number, body: NegotiationInput) {
   return apiPost<{ id: number }>(`/orders/${orderId}/date-negotiations`, body);
 }
-export function fetchVerifiedTransfers(orderId: number, signal?: AbortSignal) {
-  return apiGet<{ items: TransferSuggestion[] }>(`/orders/${orderId}/transfer-suggestions`, undefined, signal);
-}
-
 export function gateStatus(gate: GateEvidence | undefined): "passed" | "failed" | "unknown" {
   if (gate?.passed === true) return "passed";
   if (gate?.passed === false) return "failed";

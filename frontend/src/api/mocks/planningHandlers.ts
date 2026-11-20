@@ -259,7 +259,6 @@ function buildRun(runId: number, full: boolean): PlanningRun | undefined {
     planning_reserve_min: allPlans[0]?.planning_reserve_min ?? null,
     workload: { labour_hours: 10.15 },
     rejected_candidates: infeasible ? [] : REJECTED,
-    transfer_suggestions: [],
   };
 }
 
