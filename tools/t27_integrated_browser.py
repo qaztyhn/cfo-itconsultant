@@ -803,7 +803,7 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         # T13: one manual Chrome geolocation tap; snapshot DB BEFORE DELIVERED
         # purges the points, otherwise the evidence disappears by design.
         env = _advance_driver_clock(page, env, 60, report, "gps")
-        expect(page.get_by_role("section", name="Location privacy notice")).to_be_visible()
+        expect(page.get_by_role("region", name="Location privacy notice")).to_be_visible()
         page.get_by_label("I have read the location privacy notice.").check()
         before_eta = sql(
             f"SELECT COALESCE(max(id),0) FROM ops.eta_forecast WHERE order_id={order_id}", env
