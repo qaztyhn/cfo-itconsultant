@@ -7,11 +7,11 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
-from alembic import command
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from alembic import command
 from app.core.errors import DomainError
 from app.domain.models.ops import DeliveryTrip
 from app.services.dispatcher_assignment import choose_dispatcher, handover_trip
@@ -111,21 +111,25 @@ def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db:
         s, 1, _actor(), to_employee_id=2, reason_text="Shift coverage reassignment"
     ))
     assert result["assigned_dispatcher_employee_id"] == 2
-    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1")[0][0] == 2
-    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
+    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id " 
+                 "FROM ops.delivery_trip WHERE id=1")[0][0] == 2
+    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log " 
+                 "WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
     for actor, target, reason in [
         (_actor(role="sales"), 1, "no role"),
         (_actor(market="XX"), 1, "wrong market"),
         (_actor(), 1, "  "),
     ]:
         with pytest.raises(DomainError):
-            _run(dispatcher_db, lambda s: handover_trip(
-                s, 1, actor, to_employee_id=target, reason_text=reason
+            _run(dispatcher_db, lambda s, a=actor, t=target, r=reason: handover_trip(
+                s, 1, a, to_employee_id=t, reason_text=r
             ))
     execute(dispatcher_db, "UPDATE hr.dispatcher_staff SET in_rotation=false WHERE employee_id=1")
     with pytest.raises(DomainError):
         _run(dispatcher_db, lambda s: handover_trip(
             s, 1, _actor(), to_employee_id=1, reason_text="Ineligible recipient"
         ))
-    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1")[0][0] == 2
-    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
+    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id " 
+                 "FROM ops.delivery_trip WHERE id=1")[0][0] == 2
+    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log " 
+                 "WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
