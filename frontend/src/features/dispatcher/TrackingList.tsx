@@ -145,13 +145,18 @@ export function TrackingList() {
   const [reason, setReason] = useState("");
   const [handoverError, setHandoverError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [hiddenTrips, setHiddenTrips] = useState<number[]>([]);
+  const [hiddenTrips, setHiddenTrips] = useState<{ owner: number | null; ids: number[] }>({ owner: null, ids: [] });
   const candidates = useQuery({
     queryKey: ["t17-mock-candidates", user?.id, user?.market, handoverTripId],
     enabled: allowed && handoverTripId !== null && candidatesAreMockOnly,
     queryFn: ({ signal }) => getMockEligibleDispatchers(handoverTripId!, signal),
     retry: false,
   });
+
+  async function refreshTrips() {
+    const result = await live.refetch();
+    if (result.isSuccess) setHiddenTrips({ owner: null, ids: [] });
+  }
 
   function openHandover(tripId: number) {
     setHandoverTripId(tripId);
@@ -185,11 +190,11 @@ export function TrackingList() {
     try {
       await handoverTrip(handoverTripId, employee, reason.trim());
       // Hide committed transfer immediately while refetching server-authorized rows.
-      setHiddenTrips((previous) => [...previous, handoverTripId]);
+      setHiddenTrips({ owner: user?.id ?? null, ids: [...(hiddenTrips.owner === user?.id ? hiddenTrips.ids : []), handoverTripId] });
       setHandoverTripId(null);
       setRecipient("");
       setReason("");
-      await live.refetch();
+      await refreshTrips();
     } catch (error) {
       // Preserve selected receiver and reason: the user can correct either without losing data.
       setHandoverError(safeHandoverError(error));
@@ -201,7 +206,8 @@ export function TrackingList() {
   if (!allowed) {
     return <section data-screen="TrackingList" role="alert">Dispatcher access required.</section>;
   }
-  const rows = (live.data ?? []).filter((trip) => !hiddenTrips.includes(trip.trip_id));
+  const rows = (live.data ?? []).filter((trip) =>
+    hiddenTrips.owner !== user?.id || !hiddenTrips.ids.includes(trip.trip_id));
   const selectedTrip = (live.data ?? []).find((trip) => trip.trip_id === handoverTripId);
   return (
     <section data-screen="TrackingList" className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
@@ -213,7 +219,7 @@ export function TrackingList() {
             Chỉ hiển thị vị trí mới nhất của chuyến đang chạy được backend phân công. Không có bản đồ hoặc lịch sử GPS.
           </p>
         </div>
-        <button type="button" onClick={() => void live.refetch()} disabled={live.isFetching}
+        <button type="button" onClick={() => void refreshTrips()} disabled={live.isFetching}
           className="inline-flex items-center gap-2 rounded-control border border-border px-4 py-2 text-sm font-semibold">
           <RefreshCcw aria-hidden="true" className="h-4 w-4" /> Tải lại
         </button>
@@ -222,13 +228,14 @@ export function TrackingList() {
       {timezone.isError || (timezone.isSuccess && !timezone.data) ? (
         <p role="status" className="text-sm text-inkMuted">Múi giờ market chưa xác minh; không hiển thị giờ theo máy người dùng.</p>
       ) : null}
+      {live.isRefetchError && <p role="alert" className="text-sm text-risk-predictedLate-fg">Không tải lại được danh sách mới nhất. Dữ liệu hiện tại có thể đã thay đổi.</p>}
       {live.isPending ? <LoadingState rows={3} /> : live.isError ? (
         <ErrorState error={isApiError(live.error) && live.error.code === "FORBIDDEN"
           ? live.error : new Error("Không thể tải danh sách chuyến được gán.")}
-          title="Không thể tải vị trí trực tiếp" onRetry={() => void live.refetch()} />
+          title="Không thể tải vị trí trực tiếp" onRetry={() => void refreshTrips()} />
       ) : rows.length === 0 ? (
         <EmptyState message="Không có chuyến đang chạy được gán cho bạn."
-          action={{ label: "Tải lại", onClick: () => void live.refetch() }} />
+          action={{ label: "Tải lại", onClick: () => void refreshTrips() }} />
       ) : (
         <ul className="space-y-4" aria-label="Chuyến được gán">
           {rows.map((trip) => (
