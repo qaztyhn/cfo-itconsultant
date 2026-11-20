@@ -2,6 +2,7 @@
 
 These tests require TEST_DATABASE_URL and a disposable PostgreSQL 16 database.
 """
+
 import asyncio
 from datetime import datetime
 from types import SimpleNamespace
@@ -25,7 +26,8 @@ pytestmark = pytest.mark.integration
 def dispatcher_db(empty_db: str) -> str:
     command.upgrade(alembic_config(empty_db), "head")
     execute(
-        empty_db, *rows.REF_HR,
+        empty_db,
+        *rows.REF_HR,
         "INSERT INTO hr.dispatcher_staff (employee_id, in_rotation) VALUES (1, true), (2, true)",
     )
     return empty_db
@@ -39,6 +41,7 @@ def _run(dsn: str, fn):
                 return await fn(db)
         finally:
             await engine.dispose()
+
     return asyncio.run(go())
 
 
@@ -73,13 +76,18 @@ def test_T15_rotation_unassigned_first_then_oldest_then_id(dispatcher_db: str) -
 def test_T15_rollback_does_not_consume_turn(dispatcher_db: str) -> None:
     async def failed(session):
         selected = await choose_dispatcher(session, 1)
-        session.add(DeliveryTrip(
-            warehouse_id=1, vehicle_id=1, driver_employee_id=1,
-            depart_planned_at=datetime.fromisoformat("2026-11-10T07:00:00+00:00"),
-            assigned_dispatcher_employee_id=selected,
-        ))
+        session.add(
+            DeliveryTrip(
+                warehouse_id=1,
+                vehicle_id=1,
+                driver_employee_id=1,
+                depart_planned_at=datetime.fromisoformat("2026-11-10T07:00:00+00:00"),
+                assigned_dispatcher_employee_id=selected,
+            )
+        )
         await session.flush()
         raise RuntimeError("force rollback")
+
     with pytest.raises(RuntimeError):
         _run(dispatcher_db, failed)
     assert fetch(dispatcher_db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
@@ -89,47 +97,84 @@ def test_T15_rollback_does_not_consume_turn(dispatcher_db: str) -> None:
 def test_T15_market_lock_serializes_simultaneous_assignments(dispatcher_db: str) -> None:
     async def go():
         engine = create_async_engine(async_url(dispatcher_db), poolclass=NullPool)
+
         async def choose_and_insert(vehicle_id):
             async with async_sessionmaker(engine)() as db, db.begin():
                 chosen = await choose_dispatcher(db, 1)
-                await db.execute(text(
-                    "INSERT INTO ops.delivery_trip (warehouse_id, vehicle_id, driver_employee_id, "
-                    "depart_planned_at, assigned_dispatcher_employee_id) "
-                    "VALUES (1, :vehicle, 1, '2026-11-10T07:00Z', :assigned)"
-                ), {"vehicle": vehicle_id, "assigned": chosen})
+                await db.execute(
+                    text(
+                        "INSERT INTO ops.delivery_trip (warehouse_id, vehicle_id, driver_employee_id, "
+                        "depart_planned_at, assigned_dispatcher_employee_id) "
+                        "VALUES (1, :vehicle, 1, '2026-11-10T07:00Z', :assigned)"
+                    ),
+                    {"vehicle": vehicle_id, "assigned": chosen},
+                )
                 return chosen
+
         try:
             return await asyncio.gather(choose_and_insert(1), choose_and_insert(2))
         finally:
             await engine.dispose()
+
     assert set(asyncio.run(go())) == {1, 2}
 
 
 def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db: str) -> None:
     _trip(dispatcher_db, 1)
-    result = _run(dispatcher_db, lambda s: handover_trip(
-        s, 1, _actor(), to_employee_id=2, reason_text="Shift coverage reassignment"
-    ))
+    result = _run(
+        dispatcher_db,
+        lambda s: handover_trip(
+            s, 1, _actor(), to_employee_id=2, reason_text="Shift coverage reassignment"
+        ),
+    )
     assert result["assigned_dispatcher_employee_id"] == 2
-    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id " 
-                 "FROM ops.delivery_trip WHERE id=1")[0][0] == 2
-    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log " 
-                 "WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
+    assert (
+        fetch(
+            dispatcher_db,
+            "SELECT assigned_dispatcher_employee_id " "FROM ops.delivery_trip WHERE id=1",
+        )[0][0]
+        == 2
+    )
+    assert (
+        fetch(
+            dispatcher_db,
+            "SELECT count(*) FROM audit.decision_log "
+            "WHERE action='TRIP_DISPATCHER_HANDOVER'",
+        )[0][0]
+        == 1
+    )
     for actor, target, reason in [
         (_actor(role="sales"), 1, "no role"),
         (_actor(market="XX"), 1, "wrong market"),
         (_actor(), 1, "  "),
     ]:
         with pytest.raises(DomainError):
-            _run(dispatcher_db, lambda s, a=actor, t=target, r=reason: handover_trip(
-                s, 1, a, to_employee_id=t, reason_text=r
-            ))
+            _run(
+                dispatcher_db,
+                lambda s, a=actor, t=target, r=reason: handover_trip(
+                    s, 1, a, to_employee_id=t, reason_text=r
+                ),
+            )
     execute(dispatcher_db, "UPDATE hr.dispatcher_staff SET in_rotation=false WHERE employee_id=1")
     with pytest.raises(DomainError):
-        _run(dispatcher_db, lambda s: handover_trip(
-            s, 1, _actor(), to_employee_id=1, reason_text="Ineligible recipient"
-        ))
-    assert fetch(dispatcher_db, "SELECT assigned_dispatcher_employee_id " 
-                 "FROM ops.delivery_trip WHERE id=1")[0][0] == 2
-    assert fetch(dispatcher_db, "SELECT count(*) FROM audit.decision_log " 
-                 "WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][0] == 1
+        _run(
+            dispatcher_db,
+            lambda s: handover_trip(
+                s, 1, _actor(), to_employee_id=1, reason_text="Ineligible recipient"
+            ),
+        )
+    assert (
+        fetch(
+            dispatcher_db,
+            "SELECT assigned_dispatcher_employee_id " "FROM ops.delivery_trip WHERE id=1",
+        )[0][0]
+        == 2
+    )
+    assert (
+        fetch(
+            dispatcher_db,
+            "SELECT count(*) FROM audit.decision_log "
+            "WHERE action='TRIP_DISPATCHER_HANDOVER'",
+        )[0][0]
+        == 1
+    )
