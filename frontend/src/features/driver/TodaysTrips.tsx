@@ -125,7 +125,8 @@ export function TodaysTrips() {
       if (request.kind === "position") {
         const ack = await submitPosition(request.tripId, request.point, request.key);
         if (ack.accepted !== 1 || ack.trip_id !== request.tripId ||
-            ack.recorded_at !== request.point.recorded_at) {
+            !Number.isFinite(Date.parse(ack.recorded_at)) ||
+            Date.parse(ack.recorded_at) !== Date.parse(request.point.recorded_at)) {
           throw new Error("Unverified GPS acknowledgment");
         }
         setLastAckTime(request.point.recorded_at);
