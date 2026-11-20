@@ -157,8 +157,8 @@ def handover_api(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
         "VALUES (1,1,59.3,18.1,'2026-11-04T08:20:00Z','device'),"
         "(2,2,59.3,18.1,'2026-11-04T08:20:00Z','device')",
         "UPDATE ref.market SET gps_enabled=true WHERE id=1",
-        "INSERT INTO ref.location(market_id,type,code,name,lat,lon) "
-        "VALUES (2,'warehouse','ZZ-WH','Other Market',50,10)",
+        "INSERT INTO ref.location(market_id,type,code,name,lat,lon,loading_cutoff_time) "
+        "VALUES (2,'warehouse','ZZ-WH','Other Market',50,10,'15:00')",
         "INSERT INTO hr.employee(market_id,employee_no,first_name,last_name,position_code,hire_date) "
         "VALUES (2,'Z3','Other','Dispatcher','TEST_POS','2026-01-01')",
         "INSERT INTO ref.app_user(employee_id,email,password_hash,roles) "
