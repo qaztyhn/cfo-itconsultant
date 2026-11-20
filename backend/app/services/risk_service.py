@@ -54,6 +54,7 @@ _FIXED_SIGNALS = frozenset(
         "overdue_milestone",
         "morning_check",
         "gps",
+        "position",
     }
 )
 _ACTIVE = frozenset({"APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED"})
