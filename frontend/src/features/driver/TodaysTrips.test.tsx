@@ -239,7 +239,7 @@ describe("R3 Driver one-fix request and event contract", () => {
         rawSetTimeout(handler, timeout === 15_000 ? 60 : timeout, ...args),
     );
     await userEvent.click(screen.getByRole("button", { name: "Update location" }));
-    expect(await screen.findByRole("button", { name: "Retry same request" })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry same request" })).toBeEnabled());
     expect(screen.queryByText(/Position sent/)).toBeNull();
     expect(received).toHaveLength(1);
     await userEvent.click(screen.getByRole("button", { name: "Retry same request" }));
