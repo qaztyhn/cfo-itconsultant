@@ -125,12 +125,12 @@ def test_US_KPI_01_AC1_AC2_AC3_five_metrics_and_path_sources(kpi: Api) -> None:
 
 
 def test_US_KPI_01_AC2_missing_path_keeps_observed_path_rates(kpi: Api) -> None:
-    # Plan 4 (Sales, rank 2) has no approval audit: excluded from numerator and denominator.
+    # Plan 4 (rank 2) has no approval audit: it stays in the total denominator but in no path.
     add_approval_evidence(kpi, (1, 2, 3))
     response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
     assert response.status_code == 200, response.text
     acceptance = response.json()["metrics"]["plan_acceptance_rate"]
-    assert acceptance["value"] == pytest.approx(2 / 3)
+    assert acceptance["value"] == pytest.approx(2 / 4)
     assert acceptance["by_path"] == {"sales": 1.0, "dispatcher": 0.5}
     assert response.json()["supporting"]["order_to_commit_min"]["by_path"] == {
         "sales": 30.0,
@@ -139,8 +139,7 @@ def test_US_KPI_01_AC2_missing_path_keeps_observed_path_rates(kpi: Api) -> None:
     daily = kpi.get("/kpi/daily", DISPATCHER, metric="plan_acceptance_rate", **PERIOD)
     assert daily.status_code == 200, daily.text
     points = daily.json()["points"]
-    assert points[0]["day"] == "2026-11-10"
-    assert points[0]["value"] == pytest.approx(2 / 3)
+    assert points[0] == {"day": "2026-11-10", "value": pytest.approx(2 / 4)}
     assert points[1] == {"day": "2026-11-11", "value": None}
 
 

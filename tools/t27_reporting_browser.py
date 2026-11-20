@@ -139,8 +139,66 @@ def pg_manual_rate(period: dict, env: dict[str, str]) -> float | None:
     return manual / total if total else None
 
 
+def seed_approval_audit(env: dict[str, str]) -> int:
+    """Synthetic test fixture: role audit for seeded committed orders that have none.
+
+    Alternates sales/dispatcher by order id so both approval paths have PostgreSQL-computable data.
+    Append-only insert into audit.decision_log; no seeded plan, order or revenue field changes.
+    """
+    inserted = demo.sql(
+        "WITH todo AS (SELECT o.id AS order_id, p.id AS plan_id, o.approved_at, "
+        "row_number() OVER (ORDER BY o.id) AS n FROM ops.customer_order o "
+        "JOIN plan.fulfilment_plan p ON p.id=o.approved_plan_id JOIN ref.market m ON m.id=o.market_id "
+        "WHERE m.code='SE' AND o.committed_date IS NOT NULL AND o.approved_at IS NOT NULL "
+        "AND NOT EXISTS (SELECT 1 FROM audit.decision_log d WHERE d.plan_id=p.id AND d.action='PLAN_APPROVED')), "
+        "ins AS (INSERT INTO audit.decision_log (ts, correlation_id, actor_employee_id, actor_role, action, "
+        "entity, order_id, plan_id) SELECT approved_at, gen_random_uuid(), "
+        "(SELECT min(id) FROM hr.employee), CASE WHEN n % 2 = 1 THEN 'sales' ELSE 'dispatcher' END, "
+        "'PLAN_APPROVED', 'plan', order_id, plan_id FROM todo RETURNING 1) SELECT count(*) FROM ins", env,
+    )
+    return int(inserted or 0)
+
+
+def pg_acceptance(period: dict, env: dict[str, str]) -> dict:
+    """Independent PostgreSQL recomputation of plan_acceptance_rate (total, by path, by day)."""
+    rows = demo.sql(
+        "SELECT d::text||'|'||COALESCE(path,'-')||'|'||accepted::int FROM ("
+        "SELECT (o.approved_at AT TIME ZONE m.timezone)::date AS d, "
+        "CASE WHEN x.manual THEN 'dispatcher' ELSE x.role END AS path, "
+        "(p.rank=1 AND NOT x.manual) AS accepted "
+        "FROM ops.customer_order o JOIN ref.market m ON m.id=o.market_id "
+        "JOIN plan.fulfilment_plan p ON p.id=o.approved_plan_id "
+        "CROSS JOIN LATERAL (SELECT (p.status='manual' OR p.manual_reason_code IS NOT NULL OR EXISTS ("
+        "SELECT 1 FROM audit.decision_log a WHERE a.plan_id=p.id AND a.action='MANUAL_PLAN_CREATED')) AS manual, "
+        "(SELECT a.actor_role FROM audit.decision_log a WHERE a.plan_id=p.id AND a.action='PLAN_APPROVED' "
+        "AND a.actor_role IN ('sales','dispatcher') ORDER BY a.ts DESC, a.id DESC LIMIT 1) AS role) x "
+        "WHERE m.code='SE' AND o.committed_date IS NOT NULL AND o.approved_at IS NOT NULL "
+        f"AND (o.approved_at AT TIME ZONE m.timezone)::date BETWEEN DATE '{period['from']}' "
+        f"AND DATE '{period['to']}') t ORDER BY d", env,
+    )
+    orders = [line.split("|") for line in rows.splitlines() if line]
+    def rate(items: list[list[str]]) -> float | None:
+        return sum(int(item[2]) for item in items) / len(items) if items else None
+    days: dict[str, float | None] = {}
+    for day in sorted({item[0] for item in orders}):
+        days[day] = rate([item for item in orders if item[0] == day])
+    return {
+        "orders": len(orders), "value": rate(orders),
+        "by_path": {path: rate([item for item in orders if item[1] == path])
+                    for path in ("sales", "dispatcher")},
+        "days": days,
+    }
+
+
+def percent_text(value: float | None) -> str:
+    if value is None:
+        return NO_DATA
+    return (f"{value * 100:.2f}".rstrip("0").rstrip(".")) + "%"
+
+
 def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]) -> dict:
     period = fixture["period"]
+    audit_rows = seed_approval_audit(env)
     # Ops/admin KPI scope (Project lead has no ops scope and is not the T22 reviewer).
     page = demo.login(browser, "/kpi?from=" + period["from"] + "&to=" + period["to"],
                       OPS_ACCOUNT, password, output, "Ops/Admin")
@@ -203,6 +261,40 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
             "manual_intervention_rate_summary": _close(
                 metrics["manual_intervention_rate"]["value"], manual_expected),
         }
+        # plan_acceptance_rate: total, each approval path and the daily series (PostgreSQL = API = UI).
+        expected_acc = pg_acceptance(period, env)
+        acc = metrics["plan_acceptance_rate"]
+        acc_card = page.locator('section[data-metric="plan_acceptance_rate"]')
+        sales_text = percent_text(expected_acc["by_path"]["sales"])
+        dispatcher_text = percent_text(expected_acc["by_path"]["dispatcher"])
+        expect(acc_card).to_contain_text(percent_text(expected_acc["value"]))
+        expect(acc_card).to_contain_text(f"Sales {sales_text} · Dispatcher {dispatcher_text}")
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/v1/kpi/daily"
+                                  and "plan_acceptance_rate" in r.url) as acc_trend:
+            page.get_by_label("Trend metric").select_option("plan_acceptance_rate")
+        acc_daily = {point["day"]: point["value"] for point in acc_trend.value.json()["points"]}
+        ui_days = {}
+        for day, value in acc_daily.items():
+            if value is not None:
+                row = page.locator("tbody tr").filter(has_text=day)
+                expect(row).to_contain_text(percent_text(expected_acc["days"].get(day)))
+                ui_days[day] = percent_text(value)
+        acceptance_check = {
+            "orders": expected_acc["orders"], "fixture_audit_rows": audit_rows,
+            "postgres": {"value": expected_acc["value"], "by_path": expected_acc["by_path"]},
+            "api": {"value": acc["value"], "by_path": acc["by_path"]},
+            "total": _close(acc["value"], expected_acc["value"]),
+            "sales": _close(acc["by_path"]["sales"], expected_acc["by_path"]["sales"]),
+            "dispatcher": _close(acc["by_path"]["dispatcher"], expected_acc["by_path"]["dispatcher"]),
+            "daily": acc_trend.value.status == 200 and all(
+                _close(acc_daily.get(day), expected_acc["days"].get(day)) for day in acc_daily
+            ) and {d for d, v in acc_daily.items() if v is not None} == set(expected_acc["days"]),
+            "ui_daily_days": sorted(ui_days),
+        }
+        reconciled["plan_acceptance_rate"] = (
+            expected_acc["orders"] > 0 and expected_acc["value"] is not None
+            and all(acceptance_check[key] for key in ("total", "sales", "dispatcher", "daily"))
+        )
         page.get_by_label("Operational KPIs").screenshot(path=output / "12-kpi.png")
         status = "PASS" if (not missing and not legacy and by_path and eta_r3 and all(reconciled.values())
                             and sorted(shown) == sorted(R3_KPI)) else "FAIL"
@@ -212,6 +304,7 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
             "missing_r3_metrics": missing, "legacy_metrics": legacy,
             "sales_dispatcher_breakdown": by_path, "eta_median_p90_target": eta_r3,
             "null_values_shown_as": null_ui, "postgres_reconciliation": reconciled,
+            "plan_acceptance_rate": acceptance_check,
             "daily_observed_days": sorted(observed),
         }
     finally:
@@ -329,10 +422,12 @@ def main() -> None:
         browser = playwright.chromium.launch(channel="chrome")
         try:
             for step, run in (
-                ("12", lambda: kpi(browser, password, args.output, fixture, dict(env))),
+                # 12b first: Sales approval below must not change the official 6-order report.
                 ("12b", lambda: revenue(browser, password, args.output, fixture, seed)),
-                # Last: it recreates cfo-api on the T19 planning clock and starts the loopback WMS.
+                # Recreates cfo-api on the T19 planning clock and starts the loopback WMS.
                 ("3", lambda: sales_rank2_approve(browser, password, args.output, run_env)),
+                # After step 3 so that the real rank-2 Sales approval is part of the acceptance sample.
+                ("12", lambda: kpi(browser, password, args.output, fixture, dict(env))),
             ):
                 try:
                     result["steps"][step] = run()
@@ -346,7 +441,8 @@ def main() -> None:
             payload = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
             (args.output / "t27-reporting.json").write_text(payload, encoding="utf-8")
             print(payload)
-    if any(row["status"] == "FAIL" for row in result["steps"].values()):
+    # The reporting job is green only when steps 3, 12 and 12b all PASS (BLOCKED also fails the job).
+    if any(result["steps"].get(step, {}).get("status") != "PASS" for step in ("3", "12", "12b")):
         raise SystemExit(1)
 
 

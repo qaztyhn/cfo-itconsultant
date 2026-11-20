@@ -265,11 +265,13 @@ async def _collect(
             bucket["planning_time_min"].add(None)
             if path in ("sales", "dispatcher"):
                 by_path["planning_time_min"][path].add(None)
-            # Acceptance and order-to-commit use only orders with complete evidence;
-            # an incomplete order is excluded from numerator and denominator (no poisoning).
-            if path in ("sales", "dispatcher") and row.rank is not None:
-                accepted = Decimal(int(row.rank == 1 and not manual))
-                bucket["plan_acceptance_rate"].add(accepted)
+            # Total acceptance: every committed order in scope is in the denominator, once
+            # (multi-vehicle plans included). Rank-1, unmodified approvals are the numerator.
+            # A missing role audit never removes the order from the total and is never assigned
+            # to a path; by_path uses only audited sales/dispatcher approvals (manual => dispatcher).
+            accepted = Decimal(int(row.rank == 1 and not manual))
+            bucket["plan_acceptance_rate"].add(accepted)
+            if path in ("sales", "dispatcher"):
                 by_path["plan_acceptance_rate"][path].add(accepted)
             bucket["manual_intervention_rate"].add(Decimal(int(manual)))
             supporting["manual_plan_count"].add(Decimal(int(manual)))
