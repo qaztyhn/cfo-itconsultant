@@ -1080,6 +1080,22 @@ def main() -> int:
                     execution_env = start_execution_day(report, env)
                     if warehouse(browser, password, order_id, trip_ids, args.output, report, execution_env):
                         report["active_step"] = "8"
+                        # Explicit synthetic-only GPS opt-in and notice fixture.
+                        # The driver still performs every position/event via Chrome;
+                        # this setup only unlocks the narrowly scoped R3 test gate.
+                        compose(
+                            "exec", "-T", "-e", "COMPOSE_PROJECT_NAME=cfo-demo-e004",
+                            "cfo-api", "python", "-m", "app.demo_t27_gps",
+                            "--order-id", str(order_id),
+                            "--trip-id", str(trip_ids[0]),
+                            "--plan-id", str(plan_id),
+                            env=execution_env,
+                        )
+                        report["gps_demo_fixture"] = {
+                            "source": "synthetic_demo",
+                            "notice": "SYNTHETIC-T27-STEP8-NOT-LEGAL-SIGNOFF",
+                            "real_worker_collection": False,
+                        }
                         driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env)
                     report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, execution_env)
