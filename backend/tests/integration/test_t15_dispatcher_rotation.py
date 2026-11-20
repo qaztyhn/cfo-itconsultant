@@ -123,16 +123,16 @@ def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db:
     _trip(dispatcher_db, 1)
     result = _run(
         dispatcher_db,
-        lambda s: handover_trip(
-            s, 1, _actor(), to_employee_id=2, reason_text="Shift coverage reassignment"
-        ),
+        lambda s: handover_trip(s, 1, _actor(), to_employee_id=2, reason_text="Shift coverage reassignment"),
     )
     assert result["assigned_dispatcher_employee_id"] == 2
     assert (
         fetch(
             dispatcher_db,
             "SELECT assigned_dispatcher_employee_id " "FROM ops.delivery_trip WHERE id=1",
-        )[0][0]
+        )[
+            0
+        ][0]
         == 2
     )
     assert (
@@ -159,15 +159,15 @@ def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db:
     with pytest.raises(DomainError):
         _run(
             dispatcher_db,
-            lambda s: handover_trip(
-                s, 1, _actor(), to_employee_id=1, reason_text="Ineligible recipient"
-            ),
+            lambda s: handover_trip(s, 1, _actor(), to_employee_id=1, reason_text="Ineligible recipient"),
         )
     assert (
         fetch(
             dispatcher_db,
             "SELECT assigned_dispatcher_employee_id " "FROM ops.delivery_trip WHERE id=1",
-        )[0][0]
+        )[
+            0
+        ][0]
         == 2
     )
     assert (
