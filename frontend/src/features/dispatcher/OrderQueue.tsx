@@ -177,6 +177,7 @@ export function OrderQueue({ reviewOnly = false }: { reviewOnly?: boolean }) {
   const freshness = overview.data ? summariseFreshness(overview.data, planningNow()) : null;
   const change = (changes: Record<string, string | null>) => setParams(prev => updateParams(prev, changes), { replace: true });
   const filtered = params.size > 0 || search !== "";
+  const emptyMessage = filtered ? "No orders match these filters." : reviewOnly ? "No orders are awaiting plan approval." : "No orders in the queue.";
   const refreshing = list.isFetching || countsQuery.isFetching || overview.isFetching;
   const refresh = () => { void list.refetch(); void countsQuery.refetch(); void overview.refetch(); };
   const clear = () => { setSearchInput(""); setSearch(""); setParams(new URLSearchParams(), { replace: true }); };
@@ -312,7 +313,7 @@ export function OrderQueue({ reviewOnly = false }: { reviewOnly?: boolean }) {
           {page.items.length === 0 ? (
             <div className="rounded-card border border-border bg-surface">
               <EmptyState
-                message={filtered ? "No orders match these filters." : "No orders in the queue."}
+                message={emptyMessage}
                 action={state.page > 1 ? { label: "Go to first page", onClick: () => change({ page: null }) } : filtered ? { label: "Clear filters", onClick: clear } : undefined}
               />
             </div>

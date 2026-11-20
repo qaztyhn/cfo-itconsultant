@@ -365,9 +365,9 @@ Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `
 
 ### 6.3a Sales approve (mở rộng endpoint đã có)
 
-> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
+> **Round 3 (DEC-R3-10):** [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending) mô tả quyền Sales đầy đủ. Bản demo T27 triển khai điều kiện lịch sát. Các trường hợp mở rộng theo T19.
 
-`POST /plans/{id}/approve` cho Sales **chỉ** khi đúng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, version/dữ liệu nguồn còn mới, giữ chỗ hợp lệ, không transfer/manual/replan/date change, không làm trễ đơn cũ. Dùng chính ApprovalService, locks/transaction/audit với actor Sales. Thiếu quyền 403; ngoài cửa hàng 404; không đủ điều kiện hoặc đơn đặt trước chưa duyệt có cạnh tranh chưa chứng minh đủ năng lực: 409 `PLAN_NOT_APPROVABLE`; nguồn lực đổi: 409 `RESOURCE_CONFLICT`; hold hết: 409 `HOLD_EXPIRED`. Không auto-approve.
+Trong bản demo T27, Sales dùng `POST /plans/{id}/approve` cho phương án tự động rank 1 của lần lập đầu, một xe, đúng ngày yêu cầu và đúng cửa hàng nguồn. Cần qua đủ năm gate và còn hold hợp lệ. Cả `safe` và `tight` đều được xét duyệt. ApprovalService kiểm tra lại phiên bản, nguồn lực và đơn cũ đang cạnh tranh, khóa tài nguyên và ghi audit với actor Sales. Trả `403` nếu thiếu vai trò, `404` nếu ngoài cửa hàng, `409 PLAN_NOT_APPROVABLE` nếu thiếu điều kiện, `409 RESOURCE_CONFLICT` nếu nguồn lực đã đổi và `409 HOLD_EXPIRED` nếu hết hold.
 
 ### 6.4 `POST /orders/{id}/manual-plan`
 
