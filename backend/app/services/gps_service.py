@@ -214,7 +214,6 @@ async def post_driver_position(
 ) -> dict[str, object]:
     """202 API boundary: atomic replay, one new GPS point, one risk calculation."""
     _role(actor, "driver")
-    trip, _market = await _assigned_trip(session, trip_id, actor)
     actor_id = getattr(actor, "id", None)
     if not isinstance(actor_id, int) or actor_id <= 0:
         raise DomainError("FORBIDDEN", "An authenticated driver is required.")
@@ -250,7 +249,8 @@ async def post_driver_position(
         return dict(claim.response_body)
     if claim.response_status is not None:
         raise DomainError("IDEMPOTENCY_CONFLICT", "The prior request cannot be replayed.")
-    # Important: no idempotency replay can reach record_point or RiskService.
+    # Important: no idempotency replay can reach the trip gate, recorder or RiskService.
+    trip, _market = await _assigned_trip(session, trip_id, actor)
     result = await record_point(session, trip_id, point, "driver_tap")
     order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip.id))
     if order_id is None:
