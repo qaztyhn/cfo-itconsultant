@@ -14,7 +14,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.v1 import internal
 from app.core.config import get_settings
-from app.services import driver_history, notification_delivery, planning_service, risk_service
+from app.services import notification_delivery, planning_service, risk_service
 from tests.integration import rows
 from tests.integration.api_harness import Api
 from tests.integration.api_harness import api as api
@@ -32,19 +32,21 @@ DEPARTED_AT = "2026-11-10T08:10:00Z"
 def loaded_order(execution_api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:
     execute(
         execution_api.dsn,
-        "INSERT INTO hr.employee_shift_schedule "
-        "(employee_id,warehouse_id,work_date,start_time,end_time,assigned_by,assigned_at) "
-        "VALUES (5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z'), "
-        "(11,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
+        "INSERT INTO hr.driver_availability "
+        "(driver_employee_id,work_date,available_from,available_to,max_driving_min,"
+        "verified_by,verified_at,source,source_ref) "
+        "SELECT id,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+        "'Fleet Desk','2026-11-08T09:00Z','fleet_api','T21-AV-' || id "
+        "FROM hr.employee WHERE id IN (5,11)",
+        "INSERT INTO hr.driver_vehicle_eligibility "
+        "(driver_employee_id,licence_class,verified_until,verified_by,verified_at,source,source_ref) "
+        "SELECT id,'C','2026-11-10','Fleet Desk','2026-11-08T09:00Z','fleet_api','T21-QUAL-' || id "
+        "FROM hr.employee WHERE id IN (5,11)",
         "UPDATE ref.customer SET email='t21-synthetic@cfo.test' WHERE id=1",
         "UPDATE ops.customer_order SET committed_date='2026-11-10',"
         "promise_start='2026-11-10T10:00Z',promise_end='2026-11-10T11:00Z' WHERE id=1",
     )
 
-    async def synthetic_history(*args: object) -> driver_history.HistoryProof:
-        return driver_history.HistoryProof(complete=True, reasons=())
-
-    monkeypatch.setattr(driver_history, "load_proof", synthetic_history)
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
     for kind, at, payload in (
         ("START_PREP", "07:00", {"crew_size": 3}),

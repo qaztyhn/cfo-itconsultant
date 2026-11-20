@@ -133,6 +133,15 @@ def disposable_wms(
     _product(db)
     execute(
         db,
+        "INSERT INTO hr.employee_assignment (employee_id,location_id,start_date)"
+        " VALUES (1,1,'2026-01-01')",
+        "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+        "max_driving_min,verified_by,verified_at,source,source_ref) VALUES"
+        " (1,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',240,"
+        "'Fleet desk','2026-11-04T08:00Z','fleet_api','WMS-AV')",
+        "INSERT INTO hr.driver_vehicle_eligibility (driver_employee_id,vehicle_id,verified_until,"
+        "verified_by,verified_at,source,source_ref) VALUES"
+        " (1,1,'2026-11-10','Fleet desk','2026-11-04T08:00Z','fleet_api','WMS-QUAL')",
         "INSERT INTO ref.app_user (employee_id,email,password_hash,roles)"
         " VALUES (2,'stock-review@cfo.test','x','{admin}')",
         "INSERT INTO ops.stock_scope_version (market_id,version,status,skus,warehouse_ids,"
@@ -224,6 +233,24 @@ def test_US_APR_01_concurrent_distinct_keys_do_not_release_committed_wms_hold(
     assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM audit.decision_log WHERE action='PLAN_APPROVED'")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
+
+
+def test_US_APR_01_driver_revoked_after_wms_refresh_blocks_final_approval(
+    db: str, disposable_wms: tuple[httpx.ASGITransport, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refresh = wms_reserve_phase.refresh_simulated
+
+    async def refresh_then_revoke(order_id: int, plan_id: int) -> None:
+        await refresh(order_id, plan_id)
+        await asyncio.to_thread(
+            execute, db, "UPDATE hr.driver_vehicle_eligibility SET revoked_at='2026-11-04T09:05Z'"
+        )
+
+    monkeypatch.setattr(wms_reserve_phase, "refresh_simulated", refresh_then_revoke)
+    with pytest.raises(DomainError) as caught:
+        asyncio.run(approval_service.approve(1, _actor(), {}, "revoke-after-wms", recheck=_recheck))
+    assert caught.value.code == "RESOURCE_CONFLICT"
+    _assert_not_approved(db)
 
 
 def test_release_compensates_only_an_expired_unapproved_hold(

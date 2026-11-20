@@ -1,10 +1,4 @@
-"""Verified database inputs for T14's pure planner.
-
-No external calls, optimistic inventory locks or synthetic shifts. Q12/Q12b:
-absence of an official shift or proven 56-day driver history fails closed.
-The D7 source completeness marker is not present in the current schema; a
-nonempty duty log is NOT evidence that all duty/rest records were ingested.
-"""
+"""Verified database inputs for T14 planning and approval recheck."""
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -21,7 +15,6 @@ from app.core.errors import DomainError
 from app.domain.models.hr import (
     Absence,
     Attendance,
-    DriverDutyLog,
     Employee,
     EmployeeAssignment,
     EmployeeShiftSchedule,
@@ -52,7 +45,7 @@ from app.engine.types import (
     VehicleCtx,
     WarehouseCtx,
 )
-from app.services import driver_history
+from app.services.driver_verification import load_evidence
 from app.services.planning_context import available_stock, confirmed_inbound, fleet_context, route_info
 
 
@@ -194,119 +187,37 @@ async def official_warehouse_capacity(
 
 async def official_driver_context(
     session: AsyncSession,
+    market: Market,
     warehouse_id: int,
     vehicles: tuple[VehicleCtx, ...],
     drivers: tuple[DriverCtx, ...],
     *,
     days: list[date],
     now: datetime,
-    zone: ZoneInfo,
-    market_code: str | None = None,
+    exclude_order_id: int,
 ) -> tuple[tuple[VehicleCtx, ...], tuple[DriverCtx, ...]]:
-    """Attach official shifts and the VERIFIED 56-day history proof; never infer completeness.
-
-    `history_complete` comes only from `driver_history.load_proof` (rolling 56 market-local dates, explicit
-    off-duty vs unknown, verified/unrevoked/unexpired evidence); no proof => False (fail closed).
-    """
+    """Attach fleet-verified windows and qualifications for this planning horizon."""
     if not days:
         return vehicles, drivers
     vehicle_ids = {v.id for v in vehicles}
     vehicle_rows = (await session.scalars(select(Vehicle).where(Vehicle.id.in_(vehicle_ids)))).all()
     scope = {
-        v.id: {"in_scope": True, "out_of_scope": False}.get(v.regulation_561_scope) for v in vehicle_rows
+        v.id: {"in_scope": True, "out_of_scope": False}.get(v.regulation_561_scope)
+        for v in vehicle_rows
+        if v.max_permissible_mass_kg is not None
     }
     vehicles = tuple(replace(v, regulation_561=scope.get(v.id)) for v in vehicles)
-    ids = {d.employee_id for d in drivers}
-    starts = min(days) - timedelta(days=1)
-    ends = max(days)
-    records = (
-        await session.execute(
-            select(EmployeeShiftSchedule, ShiftTemplate, Attendance.status)
-            .outerjoin(ShiftTemplate, ShiftTemplate.id == EmployeeShiftSchedule.shift_template_id)
-            .outerjoin(
-                Attendance,
-                and_(
-                    Attendance.employee_id == EmployeeShiftSchedule.employee_id,
-                    Attendance.work_date == EmployeeShiftSchedule.work_date,
-                ),
-            )
-            .where(
-                EmployeeShiftSchedule.employee_id.in_(ids),
-                EmployeeShiftSchedule.warehouse_id == warehouse_id,
-                EmployeeShiftSchedule.work_date.between(starts, ends),
-                EmployeeShiftSchedule.status == "scheduled",
-            )
-        )
-    ).all()
-    today = now.astimezone(zone).date()
-    intervals: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
-    allowed_days = {d.employee_id: d.available_days for d in drivers}
-    for shift, template, status in records:
-        if not _attendance_ok(status, shift.work_date, today):
-            continue
-        if shift.work_date not in allowed_days.get(shift.employee_id, frozenset()):
-            continue
-        times = _shift_times(shift, template)
-        if times is None:
-            continue
-        start, end, _ = times
-        begin = datetime.combine(shift.work_date, start, zone)
-        finish = datetime.combine(shift.work_date + timedelta(days=int(end < start)), end, zone)
-        if any(
-            value.replace(fold=0).utcoffset() != value.replace(fold=1).utcoffset()
-            for value in (begin, finish)
-        ):
-            continue  # Ambiguous DST: fail closed.
-        intervals[shift.employee_id].append((begin, finish))
-    logs = (
-        await session.scalars(
-            select(DriverDutyLog).where(
-                DriverDutyLog.employee_id.in_(ids),
-                DriverDutyLog.duty_end >= now - timedelta(days=56),
-            )
-        )
-    ).all()
-    histories: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
-    driving: dict[int, dict[date, int]] = defaultdict(lambda: defaultdict(int))
-    for duty in logs:
-        histories[duty.employee_id].append((duty.duty_start, duty.duty_end))
-        driving[duty.employee_id][duty.duty_start.astimezone(zone).date()] += duty.driving_min
-    out: list[DriverCtx] = []
-    for d in drivers:
-        proof = (
-            await driver_history.load_proof(session, d.employee_id, market_code, zone, now)
-            if market_code is not None
-            else driver_history.HistoryProof(False, ("EVIDENCE_MISSING",))
-        )
-        dlog = driving[d.employee_id]
-        recent = today - timedelta(days=6)
-        fortnight = today - timedelta(days=13)
-        if proof.complete:
-            # Verified evidence covers dates before today; today's recorded duty (DB log) is added on top.
-            merged = dict(proof.driving_min_by_day)
-            for day, minutes in dlog.items():
-                if day >= today:
-                    merged[day] = merged.get(day, 0) + minutes
-            week = proof.driving_min_week + sum(m for day, m in dlog.items() if day >= today)
-            fort = proof.driving_min_fortnight + sum(m for day, m in dlog.items() if day >= today)
-            merged_duty = tuple(sorted({*proof.duty_history, *histories[d.employee_id]}))
-        else:
-            merged = dict(dlog)
-            week = sum(minutes for day, minutes in dlog.items() if day >= recent)
-            fort = sum(minutes for day, minutes in dlog.items() if day >= fortnight)
-            merged_duty = tuple(sorted(histories[d.employee_id]))
-        out.append(
-            replace(
-                d,
-                shifts=tuple(sorted(intervals[d.employee_id])),
-                duty_history=merged_duty,
-                driving_min_by_day=merged,
-                driving_min_week=week,
-                driving_min_fortnight=fort,
-                history_complete=proof.complete,
-            )
-        )
-    return vehicles, tuple(out)
+    evidence = await load_evidence(
+        session,
+        market,
+        warehouse_id,
+        (d.employee_id for d in drivers),
+        min(days),
+        max(days),
+        now=now,
+        exclude_order_id=exclude_order_id,
+    )
+    return vehicles, tuple(replace(d, verification=evidence[d.employee_id]) for d in drivers)
 
 
 async def load_inputs(
@@ -465,7 +376,7 @@ async def load_inputs(
             session, wh.id, days, now=now, today=local.date(), exclude_order_id=order.id
         )
         vehicles, drivers = await official_driver_context(
-            session, wh.id, vehicles, drivers, days=days, now=now, zone=zone, market_code=market.code.strip()
+            session, market, wh.id, vehicles, drivers, days=days, now=now, exclude_order_id=order.id
         )
         warehouses.append(
             WarehouseCtx(

@@ -44,7 +44,7 @@ T26 gửi cả báo cáo kiểm tra read-only và thao tác `--exercise-main` qu
 | Ca | Mã và thao tác |
 | --- | --- |
 | Luồng chính | Sales `sales@cfo.demo`, **Sync & Check** → nhập Source `SE-2026-000249` → Sync → Check → một phương án đề xuất STO ngày **02/12**. Lấy `order_id` từ Sync rồi gọi `GET /api/v1/orders/{id}` hoặc tra `ops.customer_order` theo ID để lấy **mã CFO**. Hai lượt nghiệm thu trả `order_id=7`, mã CFO `SE-2026-000007`. Dùng mã tra được tại Mailpit, Kho và CS. |
-| Kho và Driver đơn chính | Kho STO chọn **02/12**. T27 chuyển đồng hồ CFO và browser sang giờ xuất xe thật trong plan trước khi chạy các mốc kho/driver. E0-04 cung cấp D7 thay thế để lập kế hoạch ngày 01/12; T12 cần xác thực execution ngày giao 02/12. |
+| Kho và Driver đơn chính | Kho STO chọn **02/12**. T27 chuyển đồng hồ CFO và browser sang giờ xuất xe thật trong plan trước khi chạy các mốc kho/driver. T12 nạp khung ngày 02/12 và quyền lái từ Source. Xem [bàn giao Dispatch](T12_DRIVER_VERIFICATION.md). |
 | Sales rank 2 (Malmö 000123) | Sync Source `SE-2026-000123`, giao **04/12** tại điểm giữa GBG/STO. Kỳ vọng rank 2 xuất hiện và Sales chọn bằng lý do đúng hợp đồng. Chạy lại bước 3 sau khi T12/T19 nối xong. |
 | Thiếu hàng (Malmö 000137) | Sync Source `SE-2026-000137`, yêu cầu **02/12**. GBG có 42 bao keo, STO có 0, yêu cầu 160; lô xác nhận `IN-SE-88213` về **STO 03/12**, 200 bao. Kỳ vọng `NO_FEASIBLE_DATE` cho ngày yêu cầu. Lượt thật: GBG `STOCK_SHORT`, STO `DATE_AFTER_DEADLINE`, CFO `NO_FEASIBLE_DATE`. Tính lại ngày sớm nhất sau T10/T12. |
 | Trạng thái đang giao (Malmö 000129) | CFO `SE-2026-900129`, STO, ST-001, `DISPATCHED`. Dùng cho bước 12b. Muốn chứng minh cập nhật vị trí hoặc ETA, chạy bằng chuyến thực của T27 sau T12–T17. |
@@ -56,8 +56,7 @@ Dispatcher luân phiên gồm `DEMO-DISPATCHER`, `DEMO-DISPATCHER-2`,
 `DEMO-DISPATCHER-3`; ID ghi trong `t26-seed.json`. Bước duyệt dùng
 ApprovalService hiện hành và E1 WMS giả lập. Các đơn lịch sử có trạng thái báo cáo
 đã dựng sẵn; ca hai xe và chính không có trạng thái đã duyệt dựng sẵn.
-Khung khả dụng và quyền lái T12 là hàng T09 gắn nguồn `synthetic_demo`.
-Chúng dùng làm đầu vào khi luồng ingest/gate của T12 sẵn sàng.
+Source publish fixture `t26-r3-v1` và CFO nạp hai feed T12 vào bảng T09 với nguồn `synthetic_demo`. Hai lệnh nạp lại nằm trong [bàn giao T12](T12_DRIVER_VERIFICATION.md).
 Công suất seed `06:00–14:00`, 7 người, 7 giờ hữu ích mỗi người cho mỗi kho,
 ngày 01–04/12. Roster tương thích E0-04 phủ GBG/STO đến 04/12 trước khi T10 dùng bảng công suất ngày.
 
@@ -86,9 +85,7 @@ Mỗi ô là **số đơn / giá trị đơn SEK**. Các cửa hàng ST-003–ST
 
 Đối chiếu từng `groups[].orders` với `/revenue/orders.total` theo cùng kỳ,
 `view`, `location_id` và `status_group`. Giá trị đơn lấy từ các mục drill-down.
-T27 dùng project `cfo-demo-t26` thay cho `cfo-demo-e004` nếu tích hợp
-runner #233; bắt đầu từ môi trường vừa seed và tra mã CFO bằng ID trả về.
-Thay mốc ngày chạy WMS/Kho/Driver theo `target_date` trên plan.
+Bước 12b chạy trên `cfo-demo-t26`. Dùng `cfo-demo-e004` và fixture driver T12 chung cho replay Approve/Dispatch T27. Mốc chạy kho và tài xế lấy từ thời điểm xuất xe của plan đã duyệt.
 
 ## Kết quả nghiệm thu
 

@@ -9,6 +9,18 @@ _DRIVER_PREREQUISITES = {
         ["T12", "T16"],
         "Vehicle regulatory scope was unverified for this trip.",
     ),
+    "Driver is not eligible to operate (not_verified).": (
+        ["T12"],
+        "The fleet availability or vehicle qualification is missing or revoked.",
+    ),
+    "Driver is not eligible to operate (outside_shift).": (
+        ["T12"],
+        "The trip is outside the verified fleet availability window.",
+    ),
+    "Driver is not eligible to operate (driving).": (
+        ["T12"],
+        "The trip exceeds the fleet-confirmed daily driving budget.",
+    ),
     "Event is outside the verified official driver shift.": (
         ["T12", "T16"],
         "The event was outside a verified official driver shift.",

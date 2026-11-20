@@ -37,6 +37,8 @@ def test_US_SRC_02_AC1_implemented_openapi_is_shared_by_two_instances_and_matche
                 "/stock",
                 "/inbound",
                 "/fleet/calendar",
+                "/fleet/driver-availability",
+                "/fleet/driver-eligibility",
                 "/addresses",
                 "/health",
             )

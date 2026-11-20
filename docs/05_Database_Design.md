@@ -395,7 +395,7 @@ CREATE TABLE hr.absence (
 CREATE TABLE stg.sync_run (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   market_id smallint NOT NULL REFERENCES ref.market(id),
-  entity text NOT NULL CHECK (entity IN ('orders','customers','products','stock','inbound','fleet')),
+  entity text NOT NULL CHECK (entity IN ('orders','customers','products','stock','inbound','fleet','driver-availability','driver-eligibility')),
   kind text NOT NULL DEFAULT 'api' CHECK (kind IN ('api','csv')),
   checkpoint_from timestamptz, checkpoint_to timestamptz,
   file_name text, file_sha256 text,               -- chỉ khi kind = 'csv' (adapter dự phòng)

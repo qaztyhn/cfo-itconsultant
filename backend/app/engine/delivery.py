@@ -29,6 +29,7 @@ from app.engine.types import (
     CheckNameT,
     CheckResult,
     DriverCtx,
+    DriverVerification,
     EngineConfig,
     LineCtx,
     OrderCtx,
@@ -104,6 +105,38 @@ def _rest_ok(driver: DriverCtx, start: datetime, end: datetime, cfg: EngineConfi
     return True
 
 
+def verified_driver_problem(
+    evidence: DriverVerification,
+    vehicle_id: int,
+    required_licence: str,
+    depart_at: datetime,
+    end_at: datetime,
+    driving_min: int,
+) -> str | None:
+    """DEC-R3-07. The caller supplies the departure in the market timezone."""
+    day = depart_at.date()
+    window = evidence.windows.get(day)
+    if window is None:
+        return "not_verified"
+    matching = [
+        rule
+        for rule in evidence.qualifications
+        if rule.vehicle_id == vehicle_id or rule.licence_class == required_licence
+    ]
+    if not matching:
+        return "not_verified"
+    if not any(rule.verified_until >= day for rule in matching):
+        return "expired"
+    if not window.start <= depart_at < window.end or end_at > window.end:
+        return "outside_shift"
+    if (
+        window.max_driving_min <= 0
+        or evidence.committed_driving_min.get(day, 0) + driving_min > window.max_driving_min
+    ):
+        return "driving"
+    return None
+
+
 def driver_problem(
     driver: DriverCtx,
     vehicle: VehicleCtx,
@@ -111,12 +144,20 @@ def driver_problem(
     end: datetime,
     cfg: EngineConfig,
     driving_min: int = 0,
+    depart_at: datetime | None = None,
 ) -> str | None:
     """Lý do tài xế KHÔNG chạy được chuyến [start, end) của xe; None = được.
 
     Thứ tự: `licence` (hạng bằng thấp), `busy` (trùng lịch đã nhận), `no_schedule` (không có ca nào),
     `outside_shift` (có ca nhưng không phủ trọn chuyến), `expired` (bằng hết hạn), `hours` (vượt giờ/ngày).
     """
+    if driver.verification is not None:
+        problem = verified_driver_problem(
+            driver.verification, vehicle.id, vehicle.required_licence, depart_at or start, end, driving_min
+        )
+        if problem is not None:
+            return problem
+        return "busy" if _overlaps(driver.busy, start, end) else None
     if LICENCE_RANK[driver.licence_class] < LICENCE_RANK[vehicle.required_licence]:
         return "licence"
     if _overlaps(driver.busy, start, end):
@@ -159,6 +200,8 @@ def _failure_code(problems: list[str]) -> tuple[str, str]:
     for problem in ("driving", "hours", "rest", "history", "expired", "outside_shift"):
         if problem in problems:
             return _SAFETY_CODES[problem], problem
+    if not problems or "not_verified" in problems:
+        return "NO_DRIVER", "not_verified"
     reason = "no_schedule" if "no_schedule" in problems else ("busy" if "busy" in problems else "licence")
     return "NO_DRIVER", reason
 
@@ -192,6 +235,7 @@ def assign_drivers(
     intervals: list[tuple[datetime, datetime]],
     cfg: EngineConfig,
     driving_min: int = 0,
+    depart_at: datetime | None = None,
 ) -> tuple[tuple[DriverCtx, ...] | None, str, str]:
     """Ghép mỗi xe một tài xế KHÁC nhau (bipartite, quay lui) — không tham lam (04 mục 6.7).
 
@@ -203,7 +247,7 @@ def assign_drivers(
         ok: list[DriverCtx] = []
         problems: list[str] = []
         for driver in sorted(drivers, key=lambda d: d.employee_id):
-            problem = driver_problem(driver, vehicle, start, end, cfg, driving_min)
+            problem = driver_problem(driver, vehicle, start, end, cfg, driving_min, depart_at)
             if problem is None:
                 ok.append(driver)
             else:
@@ -232,7 +276,8 @@ def assign_drivers(
             problem
             for vehicle, (start, end) in zip(vehicles, intervals, strict=True)
             for driver in drivers
-            if (problem := driver_problem(driver, vehicle, start, end, cfg, driving_min)) is not None
+            if (problem := driver_problem(driver, vehicle, start, end, cfg, driving_min, depart_at))
+            is not None
         ]
         code, reason = _failure_code(excluded)
         return None, code, ("not_enough_drivers" if code == "NO_DRIVER" else reason)
@@ -580,8 +625,14 @@ def plan_delivery(
             CheckResult("site_date", True, "DATE_OK", arrival.detail),
             rule_failure,
         )
+    assert arrival.eta_at is not None
     drivers, code, reason = assign_drivers(
-        wh.drivers, vehicle_set, list(zip(starts, trip_ends, strict=True)), cfg, driving_min
+        wh.drivers,
+        vehicle_set,
+        list(zip(starts, trip_ends, strict=True)),
+        cfg,
+        driving_min,
+        arrival.eta_at - drive,
     )
     if drivers is None and arrival.eta_at is not None and latest_anchor(arrival.eta_at) > starts[0]:
         # Bước 2c mặc định lên hàng sớm nhất (giữ dự trữ). Nếu thời gian chờ làm khoảng làm việc của tài xế
@@ -589,8 +640,14 @@ def plan_delivery(
         retry = schedule(latest_anchor(arrival.eta_at))
         if isinstance(retry[0], list):
             r_starts, r_ends, r_arrival = retry
+            assert r_arrival.eta_at is not None
             r_drivers, r_code, r_reason = assign_drivers(
-                wh.drivers, vehicle_set, list(zip(r_starts, r_ends, strict=True)), cfg, driving_min
+                wh.drivers,
+                vehicle_set,
+                list(zip(r_starts, r_ends, strict=True)),
+                cfg,
+                driving_min,
+                r_arrival.eta_at - drive,
             )
             if r_drivers is not None:
                 starts, trip_ends, arrival, drivers = r_starts, r_ends, r_arrival, r_drivers

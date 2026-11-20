@@ -1,5 +1,13 @@
 # Changelog (hợp đồng `05` / `06`)
 
+
+## 2026-11-20 — T12 · DEC-R3-07
+
+- Source publish hai feed tài xế và CFO nạp vào bảng T09. Migration `0018` thêm định danh feed
+  cho sync journal. Replay giữ nguyên khóa nguồn và trạng thái đã thu hồi.
+- Planning, Approve và Dispatch dùng khung khả dụng, quyền theo xe/hạng và số phút lái còn lại
+  theo ngày market. Demo E0-04/T26 dùng fixture tổng hợp `t26-r3-v1`.
+
 ## 20/11/2026 — T15/T17 danh sách người nhận bàn giao
 
 - `06` §19.3: `GET /trips/{id}/eligible-dispatchers` cấp ID và tên hiển thị cho dropdown, dùng chung bộ lọc người nhận với `POST /trips/{id}/handover`. Không đổi DDL.

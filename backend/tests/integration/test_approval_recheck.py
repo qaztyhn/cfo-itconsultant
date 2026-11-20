@@ -2,7 +2,7 @@
 
 The engine is replaced by a deterministic stand-in (as in test_planning_service.py): these tests prove the
 adapter's contract with approval_service, not the engine's maths. The production loader is exercised too, to
-show that a real market fails closed (the D7 history marker is not persisted).
+show that a real market fails closed (fleet driver verification is missing).
 """
 
 from dataclasses import replace
@@ -166,7 +166,7 @@ def test_five_gate_recheck_propagates_input_failures_instead_of_approving(
     _nothing_committed(db)
 
 
-def test_the_production_loader_fails_closed_without_the_d7_history_marker(db: str) -> None:
+def test_the_production_loader_fails_closed_without_fleet_driver_verification(db: str) -> None:
     """No injected loader: the real planning inputs cannot be built/approved for this market today."""
     _hold(db)
     with pytest.raises(DomainError):
