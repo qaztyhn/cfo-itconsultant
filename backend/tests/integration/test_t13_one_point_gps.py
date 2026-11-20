@@ -28,6 +28,8 @@ def prepared(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811
         "INSERT INTO ref.vehicle (home_warehouse_id, code, plate, name, capacity_kg, "
         "capacity_m3, required_licence) VALUES "
         "(1,'GPS-1','GPS-1','Synthetic GPS vehicle',10000,20,'B')",
+        "INSERT INTO ref.customer (market_id,external_ref,type,name) "
+        "VALUES (1,'T13-C1','business','Synthetic T13 customer')",
         rows.order_sql(1),
         rows.run_sql(1, 1),
         rows.plan_sql(1, 1, 1, status="approved"),
