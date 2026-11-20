@@ -508,6 +508,16 @@ def start_execution_day(report: dict, env: dict[str, str]) -> dict[str, str]:
     compose("up", "-d", "--no-deps", "--wait", "--wait-timeout", "90", "cfo-api", env=execution_env)
     if sql(query, execution_env) != row:
         raise RuntimeError("Order, approved plan or trip changed during the execution-day rollover")
+    official_shifts = sql(
+        "SELECT count(*) FROM hr.employee_shift_schedule s "
+        "JOIN ops.delivery_trip t ON t.driver_employee_id=s.employee_id "
+        "JOIN plan.plan_vehicle v ON v.id=t.plan_vehicle_id JOIN plan.fulfilment_plan p ON p.id=v.plan_id "
+        f"WHERE t.id={trip_id} AND s.work_date=p.target_date AND s.status='scheduled'",
+        execution_env,
+    )
+    report["t12_official_schedule"] = {
+        "work_date": target_date, "matching_shift_rows": int(official_shifts)
+    }
     report.update(execution_app_now=execution_env["APP_NOW"], target_date=target_date)
     return execution_env
 
