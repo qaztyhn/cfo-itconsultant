@@ -4,6 +4,7 @@
  * Owner: Dev 3 (luồng C).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { planningNow } from "../lib/useHoldExpired";
 
 export interface HoldCountdownProps {
   expiresAt: string;
@@ -23,11 +24,11 @@ function format(msLeft: number): string {
 }
 
 export function HoldCountdown({ expiresAt, extensions, maxExtensions = 2, onExpire, actions, className }: HoldCountdownProps) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(planningNow);
   const notified = useRef(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setNow(planningNow()), 1000);
     return () => clearInterval(timer);
   }, []);
 

@@ -26,7 +26,7 @@ export const RISK_OPTIONS: readonly RiskColor[] = ["green", "yellow", "orange", 
 export const SORT_OPTIONS: readonly QueueSort[] = ["submitted_at", "date_to", "promise_end", "committed_date", "order_no", "status"];
 
 export interface QueueState {
-  bucket: Bucket;
+  bucket: Bucket | "all";
   /** Một trạng thái cụ thể; nếu có thì ghi đè bucket. */
   status: string | null;
   risk: RiskColor | null;
@@ -57,7 +57,7 @@ export function parseQueueState(params: URLSearchParams): QueueState {
   const sort = pick(SORT_OPTIONS, params.get("sort"));
   const size = positiveInt(params.get("page_size"));
   return {
-    bucket: pick(BUCKETS, params.get("bucket")) ?? DEFAULT_BUCKET,
+    bucket: params.get("bucket") === "all" ? "all" : pick(BUCKETS, params.get("bucket")) ?? DEFAULT_BUCKET,
     status: pick(STATUS_OPTIONS, params.get("status")),
     risk: pick(RISK_OPTIONS, params.get("risk")),
     from: validDate(params.get("from")),
@@ -78,7 +78,7 @@ export function toQueueQuery(state: QueueState, search = ""): QueueQuery {
   const text = search.trim().slice(0, MAX_SEARCH_LENGTH);
   return {
     q: text || undefined,
-    status: (state.status ? [state.status] : BUCKET_STATUSES[state.bucket]).join(","),
+    status: (state.status ? [state.status] : state.bucket === "all" ? STATUS_OPTIONS : BUCKET_STATUSES[state.bucket]).join(","),
     riskColor: state.risk ?? undefined,
     committedFrom: rangeOk ? state.from ?? undefined : undefined,
     committedTo: rangeOk ? state.to ?? undefined : undefined,

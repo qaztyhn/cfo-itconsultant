@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { PlanningRun } from "../../api/contracts/planning";
+import { fetchIntegrationOverview, summariseFreshness } from "../../api/integration";
 import { fetchPlanningRun, planningKeys } from "../../api/planning";
 import { PATHS } from "../../app/access";
 import { useAuthStore } from "../../app/store";
@@ -17,7 +18,7 @@ import { PlanCard } from "../../components/PlanCard";
 import { RejectedCandidatesTable } from "../../components/RejectedCandidatesTable";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { gateLabel } from "../../lib/planFormat";
-import { useHoldExpired } from "../../lib/useHoldExpired";
+import { planningNow, useHoldExpired } from "../../lib/useHoldExpired";
 import { ApprovalFlow } from "./ApprovalFlow";
 import { HoldActions } from "./HoldActions";
 
@@ -70,6 +71,14 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const expired = useHoldExpired(run.hold_expires_at);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const overview = useQuery({
+    queryKey: ["dispatcher-order-queue", "freshness", userId],
+    queryFn: ({ signal }) => fetchIntegrationOverview(signal),
+    enabled: showDriver,
+    retry: false,
+  });
+  const freshness = overview.data ? summariseFreshness(overview.data, planningNow()) : null;
 
   const plans = run.plans.slice(0, MAX_PLANS);
   const selected = plans.find((p) => p.rank === selectedRank) ?? plans[0] ?? null;
@@ -104,7 +113,7 @@ function RunBody({ run, showDriver, onHoldExpire }: RunBodyProps) {
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <DataFreshness stale />
+        <DataFreshness asOf={freshness?.asOf} nextSyncAt={freshness?.nextSyncAt} stale={freshness?.stale ?? true} />
         {run.hold_expires_at && (
           <HoldCountdown
             expiresAt={run.hold_expires_at}

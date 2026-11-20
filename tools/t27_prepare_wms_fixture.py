@@ -29,7 +29,10 @@ def main() -> None:
     if not isinstance(database, str) or "@postgres:5432/cfo" not in database:
         parser.error("Private E0-04 Compose database URL required")
     # Same disposable database, host access only. Never rewrite any stock.
-    os.environ["DATABASE_URL"] = database.replace("@postgres:5432/", "@127.0.0.1:5432/")
+    port = os.environ.get("POSTGRES_PORT", data.get("POSTGRES_PORT") or "5432")
+    if not port.isdecimal() or not 0 < int(port) <= 65535:
+        parser.error("Invalid disposable PostgreSQL port")
+    os.environ["DATABASE_URL"] = database.replace("@postgres:5432/", f"@127.0.0.1:{port}/")
     # Import only AFTER replacing the URL: app.main/settings can cache the
     # connection at import time, otherwise this host process connects to
     # the Docker-only hostname and yields a false WMS fixture failure.

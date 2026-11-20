@@ -45,6 +45,63 @@ continues to allow loopback only. WMS service is synthetic and cannot execute
 production WMS writes. Worker profile `demo-worker` starts explicitly after seed
 and approval, **never** with default `docker compose up`.
 
+## Retest manually on a running `cfo-demo-e004`
+
+Use the same checkout and private `.env` used to start `cfo-demo-e004`. From
+the repo root, with the backend Python environment activated and Docker running,
+leave `SE-2026-000249` in `PLANNED`, then run in Git Bash:
+
+```sh
+PYTHONPATH=.:backend python -m tools.t27_integrated_browser --prepare-wms
+```
+
+Including `backend` lets Python import `tests.e2e.t27_http_evidence` from
+`backend/tests`.
+
+This rebuilds CFO API and web in the existing project, preserves PostgreSQL,
+and prepares WMS for the proposed rank-1 plan from the latest run. If you used
+**Plan Again**, the output shows the new `plan_id`. The command stops if an
+active WMS intent already exists. For a fresh stack, `python tools/e0_04_prepare.py`
+prepares the proposed plan first. Run both commands before the fixed E0-04
+deadline described above. Use the backend venv with `python-dotenv` and
+`playwright` installed. Manual mode starts no browser and needs no Chrome install.
+
+1. Reload CFO as Dispatcher. Check **Plan review** in both the sidebar and
+   the Order queue toolbar. The review list should contain only `PLANNED`
+   orders. In Order queue, click the selected **Open** chip to clear it, then
+   click it again to restore the Open group. Stock freshness uses the last
+   successful load in the Dispatcher's market. In this demo the hold uses the
+   same fixed Stockholm clock as the API, so its remaining time stays fixed.
+2. Open the row's **Plan review** and select the proposed plan. Before clicking
+   **Approve**, open DevTools → **Network**, enable **Preserve log**, and filter
+   by `/plans/{plan_id}/approve` using the ID printed by `--prepare-wms` (for
+   example, `/plans/2/approve`). Click **Approve** and confirm. A feasible
+   `tight` plan requires no separate acknowledgement. Capture the `POST` and
+   verify HTTP `200`, `order.status = APPROVED`, the selected `plan.id`,
+   `plan.status = approved` and `trip_ids`. The UI shows **Plan approved** and
+   disables Approve with **Only a proposed plan can be approved.** When the
+   response includes a `CONFIRMED` notification with status `queued`, the UI
+   also shows **Confirmation email queued**. The integrated runner verifies
+   simulated WMS separately against its reservation and accepted stock batch.
+   To verify Sales approval independently, use a separate clean run with an
+   eligible initial plan in the Sales user's own store, then click **Confirm
+   standard delivery plan**. This patch implements the tight-plan clause of
+   DEC-R3-10. Other T19 cases are tracked separately.
+3. For the confirmation email, start the existing disposable worker once
+   approval has queued the message. In Git Bash or a POSIX shell:
+
+   ```sh
+   APP_NOW=2026-12-01T10:05:00+01:00 docker compose --env-file .env \
+     -f docker-compose.yml -p cfo-demo-e004 --profile demo-worker \
+     up -d --no-deps cfo-worker
+   ```
+
+   Record the `CONFIRMED` notification ID from the Approve response. Check that
+   the same ID reaches `sent`, then open Mailpit at `http://localhost:8025` and
+   verify exactly one confirmation with the CFO order number and committed
+   delivery window. For Warehouse/Driver execution-day setup and evidence,
+   use the full Chrome runner on a fresh stack.
+
 Each runner writes `t27-integrated.json` and `t27-integrated.md` with **14
 rows (including 12b)**, one row per actual checklist step, `PASS / FAIL /
 BLOCKED / NOT VERIFIED`, originating fixture, requested vs actual UI start

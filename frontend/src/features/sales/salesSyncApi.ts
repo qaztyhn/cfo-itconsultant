@@ -35,7 +35,7 @@ export function isCfoRouting(result: SyncResult | null): result is SyncResult & 
 /** UI is an additional fail-closed layer. Server remains the approval authority. */
 export function eligibleStandardPlan(run: SalesRun | null, now: number): boolean {
   if (!run || run.result !== "feasible" || run.kind !== "initial" ||
-      run.reserve_class !== "safe" || run.sales_approvable !== true ||
+      run.sales_approvable !== true ||
       !run.hold_expires_at || !Number.isFinite(Date.parse(run.hold_expires_at)) ||
       Date.parse(run.hold_expires_at) <= now || run.plans.length !== 1) return false;
   const plan = run.plans[0];
