@@ -226,6 +226,8 @@ async def _collect(
             )
         ).all()
         for plan_id, action, actor_role in decisions:
+            if plan_id is None:
+                continue
             if action == "MANUAL_PLAN_CREATED":
                 manual_actions.add(plan_id)
             elif actor_role in ("sales", "dispatcher"):
@@ -245,6 +247,8 @@ async def _collect(
             )
         ).all()
         for order_id, sent_at in notices:
+            if order_id is None or sent_at is None:
+                continue
             confirmed.setdefault(order_id, sent_at)
     for row in orders:
         approved_day = _day(row.approved_at, zone)
@@ -261,9 +265,9 @@ async def _collect(
             bucket["planning_time_min"].add(None)
             if path in ("sales", "dispatcher"):
                 by_path["planning_time_min"][path].add(None)
-            if path not in ("sales", "dispatcher") or row.rank is None:
-                bucket["plan_acceptance_rate"].add(None)
-            else:
+            # Acceptance and order-to-commit use only orders with complete evidence;
+            # an incomplete order is excluded from numerator and denominator (no poisoning).
+            if path in ("sales", "dispatcher") and row.rank is not None:
                 accepted = Decimal(int(row.rank == 1 and not manual))
                 bucket["plan_acceptance_rate"].add(accepted)
                 by_path["plan_acceptance_rate"][path].add(accepted)
@@ -275,7 +279,7 @@ async def _collect(
                 elapsed = (first_confirmed - row.created_at).total_seconds()
                 if elapsed >= 0:
                     minutes = Decimal(str(elapsed)) / Decimal(60)
-            if path in ("sales", "dispatcher"):
+            if path in ("sales", "dispatcher") and minutes is not None:
                 by_path["order_to_commit_min"][path].add(minutes)
             # No explicit persisted counter commitment event exists.
             supporting["counter_commit_rate"].add(None)
