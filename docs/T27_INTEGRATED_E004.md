@@ -49,11 +49,14 @@ and approval, **never** with default `docker compose up`.
 
 Use the same checkout and private `.env` used to start `cfo-demo-e004`. From
 the repo root, with the backend Python environment activated and Docker running,
-leave `SE-2026-000249` in `PLANNED`, then run:
+leave `SE-2026-000249` in `PLANNED`, then run in Git Bash:
 
 ```sh
-python -m tools.t27_integrated_browser --prepare-wms
+PYTHONPATH=.:backend python -m tools.t27_integrated_browser --prepare-wms
 ```
+
+Including `backend` lets Python import `tests.e2e.t27_http_evidence` from
+`backend/tests`.
 
 This rebuilds CFO API and web in the existing project, preserves PostgreSQL,
 and prepares WMS for the proposed rank-1 plan from the latest run. If you used
@@ -93,9 +96,11 @@ deadline described above. Use the backend venv with `python-dotenv` and
      up -d --no-deps cfo-worker
    ```
 
-   Open Mailpit at `http://localhost:8025` and match `CONFIRMED` by the CFO
-   order number displayed in the UI. For Warehouse/Driver execution-day setup
-   and evidence, use the full Chrome runner on a fresh stack.
+   Record the `CONFIRMED` notification ID from the Approve response. Check that
+   the same ID reaches `sent`, then open Mailpit at `http://localhost:8025` and
+   verify exactly one confirmation with the CFO order number and committed
+   delivery window. For Warehouse/Driver execution-day setup and evidence,
+   use the full Chrome runner on a fresh stack.
 
 Each runner writes `t27-integrated.json` and `t27-integrated.md` with **14
 rows (including 12b)**, one row per actual checklist step, `PASS / FAIL /
