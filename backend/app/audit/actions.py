@@ -9,6 +9,7 @@ from enum import StrEnum
 class Action(StrEnum):
     PLAN_PROPOSED = "PLAN_PROPOSED"
     PLAN_APPROVED = "PLAN_APPROVED"
+    TRIP_DISPATCHER_HANDOVER = "TRIP_DISPATCHER_HANDOVER"
     ALT_SELECTED = "ALT_SELECTED"
     CRITERIA_CHANGED_RERUN = "CRITERIA_CHANGED_RERUN"
     MANUAL_PLAN_CREATED = "MANUAL_PLAN_CREATED"
@@ -60,6 +61,7 @@ class Action(StrEnum):
 REASON_REQUIRED: frozenset[Action] = frozenset(
     {
         Action.ALT_SELECTED,
+        Action.TRIP_DISPATCHER_HANDOVER,
         Action.CRITERIA_CHANGED_RERUN,
         Action.MANUAL_PLAN_CREATED,
         Action.REPLAN_KEPT,
