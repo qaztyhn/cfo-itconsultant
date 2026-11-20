@@ -69,7 +69,7 @@ describe("US-KPI-01 AC1 five cards and trend",()=>{
   });
   it("shows empty daily and audit states without synthesized points",async()=>{
     api({empty:true});mount();
-    expect(await screen.findByText(/Chưa có dữ liệu/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/Chưa có dữ liệu/)).length).toBeGreaterThan(0);
     expect(await screen.findByText(/No decisions reported/)).toBeInTheDocument();
   });
 });
