@@ -3,18 +3,24 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import ColumnElement, and_, select
+from sqlalchemy import ColumnElement, Date, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.hr import DriverAvailability, DriverStaff, Employee, EmployeeAssignment
 from app.domain.models.ops import DeliveryTrip, VehiclePosition
 from app.domain.models.ref import Location, Market
+from app.services.driver_verification import allowed_sources
 
 
-def _verified_availability() -> ColumnElement[bool]:
+def _verified_availability(now: datetime) -> ColumnElement[bool]:
     return and_(
         DriverAvailability.driver_employee_id == DeliveryTrip.driver_employee_id,
         DriverAvailability.superseded_at.is_(None),
+        DriverAvailability.source.in_(allowed_sources()),
+        DriverAvailability.verified_at <= now,
+        func.length(func.btrim(DriverAvailability.verified_by)) > 0,
+        DriverAvailability.work_date
+        == cast(func.timezone(Market.timezone, DeliveryTrip.depart_planned_at), Date),
         DriverAvailability.max_driving_min > 0,
     )
 
@@ -29,7 +35,7 @@ async def active_duty(
         select(DeliveryTrip, DriverAvailability, Market.timezone, Employee, EmployeeAssignment)
         .join(Location, Location.id == DeliveryTrip.warehouse_id)
         .join(Market, Market.id == Location.market_id)
-        .join(DriverAvailability, _verified_availability())
+        .join(DriverAvailability, _verified_availability(now))
         .join(Employee, Employee.id == DeliveryTrip.driver_employee_id)
         .join(DriverStaff, DriverStaff.employee_id == Employee.id)
         .join(
@@ -77,7 +83,7 @@ def valid_collection_point(when: datetime) -> ColumnElement[bool]:
         select(DeliveryTrip.id)
         .join(Location, Location.id == DeliveryTrip.warehouse_id)
         .join(Market, Market.id == Location.market_id)
-        .join(DriverAvailability, _verified_availability())
+        .join(DriverAvailability, _verified_availability(when))
         .where(
             DeliveryTrip.id == VehiclePosition.trip_id,
             Market.gps_enabled.is_(True),

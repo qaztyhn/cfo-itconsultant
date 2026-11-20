@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import driver_fleet
 from app import lists_read as lists
 from app.auth import require_api_key
 from app.core import clock
@@ -109,6 +110,20 @@ async def fleet_calendar(
 ) -> lists.FleetPage:
     """Khoảng bận của xe giao nửa mở [from, to) (D1-A)."""
     return await lists.fleet_calendar(paging, from_, to)
+
+
+@router.get("/fleet/driver-availability", responses=PAGE_RESPONSE)
+async def driver_availability(
+    paging: lists.PagingDep,
+) -> driver_fleet.FleetEvidencePage[driver_fleet.AvailabilityOut]:
+    return await driver_fleet.availability(paging)
+
+
+@router.get("/fleet/driver-eligibility", responses=PAGE_RESPONSE)
+async def driver_eligibility(
+    paging: lists.PagingDep,
+) -> driver_fleet.FleetEvidencePage[driver_fleet.EligibilityOut]:
+    return await driver_fleet.eligibility(paging)
 
 
 @router.post("/orders", status_code=201, response_model=OrderOut, responses={409: {"model": ErrorEnvelope}})

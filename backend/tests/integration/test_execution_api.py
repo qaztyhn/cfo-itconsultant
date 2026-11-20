@@ -392,7 +392,7 @@ def test_US_WH_04_AC1_prep_queue_scoped(execution_api: Api) -> None:
     assert legacy.status_code == 200 and legacy.json() == response.json()  # alias, same contract
 
 
-def test_US_EXE_02_AC4_outside_shift_and_incomplete_history_denied(
+def test_US_EXE_02_AC4_missing_fleet_verification_denied_even_with_a_roster_shift(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
@@ -480,7 +480,7 @@ def test_US_EXE_05_AC1_AC2_AC3_incident_scope_alert_and_eta_rules(
         "promise_start='2026-11-10T09:00Z',promise_end='2026-11-10T12:00Z' WHERE id=1",
     )
 
-    async def assigned_driver(session, actor, trip, market, at):
+    async def assigned_driver(session, actor, trip, *_args):
         if trip.driver_employee_id != actor.employee_id:
             raise DomainError("FORBIDDEN", "Driver is not assigned to this trip.")
 
@@ -652,10 +652,85 @@ def test_US_WH_04_AC1_assigned_shift_supervisor_can_record_event(
     assert result.json()["order_status"] == "PREPARING"
 
 
-def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
-    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("change", "code", "status", "another_trip"),
+    [
+        ("", None, 200, False),
+        ("", "PLAN_NOT_APPROVABLE", 409, True),
+        (
+            "UPDATE hr.driver_availability SET available_to='2026-11-10T10:59Z'",
+            "PLAN_NOT_APPROVABLE",
+            409,
+            False,
+        ),
+        ("UPDATE hr.driver_availability SET max_driving_min=239", "PLAN_NOT_APPROVABLE", 409, False),
+        ("UPDATE hr.driver_vehicle_eligibility SET licence_class='CE'", "PLAN_NOT_APPROVABLE", 409, False),
+        (
+            "UPDATE hr.driver_vehicle_eligibility SET vehicle_id=2, licence_class=NULL",
+            "PLAN_NOT_APPROVABLE",
+            409,
+            False,
+        ),
+        (
+            "UPDATE hr.driver_vehicle_eligibility SET verified_until='2026-11-09'",
+            "LICENCE_EXPIRED",
+            422,
+            False,
+        ),
+        (
+            "UPDATE hr.driver_vehicle_eligibility SET revoked_at='2026-11-10T07:10Z'",
+            "PLAN_NOT_APPROVABLE",
+            409,
+            False,
+        ),
+    ],
+    ids=[
+        "exact-budget",
+        "committed-budget",
+        "outside-return",
+        "over-budget",
+        "wrong-class",
+        "wrong-vehicle",
+        "expired",
+        "revoked",
+    ],
+)
+def test_US_EXE_02_AC4_dispatch_uses_fleet_verification(
+    execution_api: Api,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+    code: str | None,
+    status: int,
+    another_trip: bool,
 ) -> None:
+    monkeypatch.delenv("DEMO_D7_FIXTURE_DIR", raising=False)
     monkeypatch.setattr(risk_service, "recalculate", verified_risk)
+    execute(
+        execution_api.dsn,
+        "INSERT INTO hr.driver_availability "
+        "(driver_employee_id,work_date,available_from,available_to,max_driving_min,"
+        "verified_by,verified_at,source,source_ref) VALUES "
+        "(5,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',240,"
+        "'Synthetic fleet','2026-11-08T09:00Z','synthetic_demo','t12-avail')",
+        "INSERT INTO hr.driver_vehicle_eligibility "
+        "(driver_employee_id,licence_class,verified_until,verified_by,verified_at,source,source_ref) VALUES "
+        "(5,'C','2026-11-10','Synthetic fleet','2026-11-08T09:00Z','synthetic_demo','t12-qual')",
+        "UPDATE ops.customer_order SET promise_start='2026-11-10T09:00Z',"
+        "promise_end='2026-11-10T12:00Z' WHERE id=1",
+        # Existing legacy fields are irrelevant to a verified vehicle qualification.
+        "UPDATE hr.driver_staff SET licence_class='B', licence_expires_on='2026-11-09' WHERE employee_id=5",
+    )
+    if another_trip:
+        execute(
+            execution_api.dsn,
+            rows.order_sql(2),
+            rows.run_sql(2, 2),
+            rows.plan_sql(2, 2, 1, "approved"),
+            rows.plan_vehicle_sql(2, 1, 1, 5),
+            # The other trip leaves at 23:30 UTC on Nov 9, already Nov 10 in Stockholm.
+            "INSERT INTO ops.delivery_trip (plan_vehicle_id,warehouse_id,vehicle_id,driver_employee_id,"
+            "depart_planned_at) VALUES (3,1,1,5,'2026-11-09T23:30Z')",
+        )
     for event, at, payload in (
         ("START_PREP", "2026-11-10T07:00:00Z", {"crew_size": 3}),
         ("GOODS_READY", "2026-11-10T07:30:00Z", {}),
@@ -663,31 +738,17 @@ def test_US_EXE_02_AC4_expired_licence_denies_dispatch(
         ("LOADED", "2026-11-10T08:05:00Z", {"trip_id": 2}),
     ):
         assert send(execution_api, WAREHOUSE, event, at, payload).status_code == 200
-    execute(
-        execution_api.dsn,
-        "UPDATE hr.driver_staff SET licence_class='B' WHERE employee_id=5",
-    )
-    assert_error(
-        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
-        409,
-        "PLAN_NOT_APPROVABLE",
-    )
-    execute(
-        execution_api.dsn,
-        "UPDATE hr.driver_staff SET licence_class='CE', "
-        "licence_expires_on='2026-11-09' WHERE employee_id=5",
-    )
-    assert_error(
-        send(execution_api, DRIVER, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
-        422,
-        "LICENCE_EXPIRED",
-    )
-    assert_error(
-        send(execution_api, 14, "DISPATCHED", "2026-11-10T08:10:00Z", {"trip_id": 1}),
-        403,
-        "FORBIDDEN",
-    )
-    assert fetch(execution_api.dsn, "SELECT count(*) AS n FROM ops.proof_of_delivery")[0]["n"] == 0
+    if change:
+        execute(execution_api.dsn, change)
+    at = "2026-11-10T08:10:00Z"
+    assert_error(send(execution_api, 14, "DISPATCHED", at, {"trip_id": 1}), 403, "FORBIDDEN")
+    response = send(execution_api, DRIVER, "DISPATCHED", at, {"trip_id": 1})
+    if code is not None:
+        assert_error(response, status, code)
+    else:
+        assert response.status_code == status, response.text
+    trip = fetch(execution_api.dsn, "SELECT status FROM ops.delivery_trip WHERE id=1")[0][0]
+    assert trip == ("on_road" if code is None else "loading")
 
 
 def test_US_EXE_02_AC5_prior_cancelled_trip_does_not_block_current_plan(

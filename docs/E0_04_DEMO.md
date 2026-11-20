@@ -42,26 +42,15 @@ The command checks the disposable context, runs the unchanged base seed,
 provisions two dedicated Admin identities, issues separate audited `scope`
 grants to the author and independent approver through the PR #216 service,
 creates and approves scope version 1, then switches both services to the fixed
-E0 clock. It builds a hash-attested **synthetic-only** D7 fixture for driver 2,
-creates named manager-attributed Dec 1–2 shifts, records STO attendance via
-`set_attendance`, and loads the STO vehicle's separately declared synthetic
-mass/Regulation 561 context with an audit row. It publishes Source batch 2
-through `app.stock_batches.publish` using a new observation of the simulated
-WMS state after scope approval. CFO ingests it through `sync_entity` and the
-stock writer. Sales Sync now creates the CFO order; the configured fallback
-routing provider prepares route pairs before Sales Check feasibility.
+E0 clock. It creates manager-attributed warehouse shifts and loads the
+separately declared synthetic vehicle classifications with an audit row.
+Source publishes stock batch 2 and the driver feeds from `t26-r3-v1`.
+CFO ingests stock, availability and eligibility through `sync_entity`.
+Sales Sync now creates the CFO order; the configured fallback routing provider
+prepares route pairs before Sales Check feasibility.
 
-The source and CFO batch remain separate. No script writes
-`ops.stock_snapshot` directly. Synthetic driver evidence has
-`legal_verified=false`, is accepted only under `APP_ENV=test`,
-`DEMO_DISPOSABLE=1`, exact clock and hash-matched fixture, and is not an HR or
-tachograph attestation. The base 2026-11-04 fixture remains unchanged.
-
-This is a compatibility demo for the currently merged planner. The approved
-Round 3 contract replaces individual attendance/56-day D7 planning inputs
-with day capacity and driver availability. Once that migration and planner
-land, revalidate E0-04 against the new contract; these synthetic inputs are
-not production policy.
+The driver fixture is labelled `synthetic_demo` and covers Dec 1–4 in
+Stockholm. See [T12 seed commands and execution evidence](T12_DRIVER_VERIFICATION.md).
 
 ## Observed clean replay (2026-11-19)
 

@@ -31,7 +31,7 @@ that date need new approved future clock and aligned Source/driver/shift fixture
 export COMPOSE_FILE="docker-compose.yml:tools/t27_e1_compose.override.yml"
 export PYTHONPATH=".:backend"
 python tools/e0_04_prepare.py --stop-before-sync
-# This *only* seeds Source, scope, shifts, D7 synthetic proof, market stock,
+# This *only* seeds Source, scope, shifts, T12 verified demo evidence, market stock,
 # routing inputs. CFO order must still be absent; no TestClient Sync/Plan.
 export APP_NOW="2026-12-01T10:05:00+01:00"
 python tools/t27_integrated_browser.py --output t27-e004-run-01
@@ -145,11 +145,9 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
   only the CFO API at the trip's planned departure on its Stockholm
   `target_date` (Dec 2). Warehouse and Driver Chrome contexts use that same
   clock. The database, order, plan and trip remain those from Approve.
-  The Dec 1 D7 attestation stays restricted to Dec 1. Every actual UI event ID/trip ID must match
-  `ops.milestone_event`. Unknown/non-verified 56-day D7 history, shifts
-  or vehicle context must fail closed; never insert approvals or legal proof
-  merely to push Driver forward. A 409 remains BLOCKED with task and reason
-  when the specific prerequisite is known.
+  T12 must have a verified availability row for Dec 2 and a current
+  qualification for that vehicle. Each UI event ID/trip ID must match
+  `ops.milestone_event`. See [T12 commands and HTTP evidence](T12_DRIVER_VERIFICATION.md).
 - **CS**: same order lookup and ETA version-history are separate checks.
   The report records the lookup independently. ETA is `BLOCKED` under T14
   only when an HTTP 500 `INTERNAL_ERROR` matches a backend

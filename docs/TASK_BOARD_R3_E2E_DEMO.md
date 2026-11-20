@@ -82,7 +82,7 @@ Cỡ: S ≈ 0,5–1 ngày · M ≈ 2–3 · L ≈ 4–5.
 ### T12 · Tài xế đã xác minh 🔴 — Dev 2 (nạp) + Dev 1 (gate) · M · cần T09
 - **Căn cứ:** DEC-R3-07, `05` §13.3, `06` §19.6, `04` §6.7.
 - **Việc:** nguồn `/fleet/driver-availability`, `/fleet/driver-eligibility`; adapter upsert; `official_driver_context` dùng khung khả dụng, `max_driving_min`, quyền lái; seed `synthetic_demo`.
-- **Đầu ra:** gate pass với seed demo; ca bị loại → `NO_DRIVER (not_verified)`. *Cách tạm:* bật `demo_d7_reader` (#206) tới khi xong.
+- **Đầu ra:** gate pass với seed demo; ca bị loại → `NO_DRIVER (not_verified)`. [Lệnh seed/nạp và bằng chứng T27](T12_DRIVER_VERIFICATION.md).
 
 ### T10 · Công suất kho theo ngày/ca 🟡 — Dev 1 · M · cần T09
 - **Căn cứ:** US-WH-01, US-WH-02 AC1–AC4, `06` §19.5.

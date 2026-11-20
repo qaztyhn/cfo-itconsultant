@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.adapters.driver_wire import SourceDriverAvailability, SourceDriverEligibility
 from app.adapters.ingestion_feed import FeedRecord, StockFeedValue, read_feed
 from app.adapters.registry import AdapterRegistry
 from app.adapters.rest_adapter import RestMarketAdapter
@@ -24,8 +25,8 @@ from app.core.errors import DomainError
 from app.domain.models.ops import CustomerOrder
 from app.domain.models.ref import Market
 from app.domain.models.stg import SyncCheckpoint, SyncReject, SyncRun
+from app.services import ingest_drivers, ingest_references
 from app.services import ingest_orders as order_writer
-from app.services import ingest_references
 from app.services import ingest_stock as stock_writer
 from app.services.alert_service import raise_alert, resolve
 from app.services.ingest_types import (
@@ -39,7 +40,7 @@ from app.services.ingest_types import (
 )
 
 type RowWriter = Callable[[AsyncSession, Market, FeedRecord, int, datetime], Awaitable[RowOutcome]]
-ENTITIES = ("customers", "products", "orders", "inbound", "fleet")
+ENTITIES = ("customers", "products", "orders", "inbound", "fleet", *ingest_drivers.DRIVER_FEEDS)
 SUPPORTED_ENTITIES = (
     *ENTITIES,
     "stock",
@@ -323,6 +324,8 @@ async def sync_entity(
         value = record.value
         if isinstance(value, (SourceOrder, SourceCancellation)):
             return await order_writer.apply(session, market, value, replan=replan)
+        if isinstance(value, (SourceDriverAvailability, SourceDriverEligibility)):
+            return await ingest_drivers.apply(session, market, value, started)
         if isinstance(value, SourceCustomer):
             return await ingest_references.customer(session, market, value)
         if isinstance(value, SourceProduct):

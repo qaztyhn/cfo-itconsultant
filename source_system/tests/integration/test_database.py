@@ -53,6 +53,8 @@ async def test_all_source_tables_and_timestamps_exist(
             "src_stock",
             "src_inbound",
             "src_vehicle_calendar",
+            "src_driver_availability",
+            "src_driver_eligibility",
             "src_order",
             "src_order_line",
             "src_receiving_calendar",

@@ -1,4 +1,4 @@
-# Source D1 OpenAPI candidate regenerated from actual implemented routes; review required.
+# Source OpenAPI generated from implemented routes.
 openapi: 3.1.0
 info:
   title: CFO Source System (mock)
@@ -455,6 +455,134 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/fleet/driver-availability:
+    get:
+      summary: Driver Availability
+      operationId: driver_availability_api_v1_fleet_driver_availability_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetEvidencePage_AvailabilityOut_'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/fleet/driver-eligibility:
+    get:
+      summary: Driver Eligibility
+      operationId: driver_eligibility_api_v1_fleet_driver_eligibility_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: updated_since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated Since
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetEvidencePage_EligibilityOut_'
+          headers:
+            X-Total-Count:
+              description: Total matching source rows.
+              schema:
+                type: integer
+                minimum: 0
+        '400':
+          description: Missing source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Invalid source API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation errors contain loc/type/msg, never input values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/v1/orders/{order_id}:
     put:
       summary: Update Order
@@ -844,6 +972,60 @@ components:
       - page_size
       - total
       title: AddressPage
+    AvailabilityOut:
+      properties:
+        source_ref:
+          type: string
+          title: Source Ref
+        employee_no:
+          type: string
+          title: Employee No
+        verified_by:
+          type: string
+          title: Verified By
+        verified_at:
+          type: string
+          format: date-time
+          title: Verified At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        source:
+          type: string
+          title: Source
+        work_date:
+          type: string
+          format: date
+          title: Work Date
+        available_from:
+          type: string
+          format: date-time
+          title: Available From
+        available_to:
+          type: string
+          format: date-time
+          title: Available To
+        max_driving_min:
+          type: integer
+          title: Max Driving Min
+        superseded:
+          type: boolean
+          title: Superseded
+      type: object
+      required:
+      - source_ref
+      - employee_no
+      - verified_by
+      - verified_at
+      - updated_at
+      - source
+      - work_date
+      - available_from
+      - available_to
+      - max_driving_min
+      - superseded
+      title: AvailabilityOut
     CancelIn:
       properties:
         expected_version:
@@ -966,6 +1148,58 @@ components:
       - page_size
       - total
       title: CustomerPage
+    EligibilityOut:
+      properties:
+        source_ref:
+          type: string
+          title: Source Ref
+        employee_no:
+          type: string
+          title: Employee No
+        verified_by:
+          type: string
+          title: Verified By
+        verified_at:
+          type: string
+          format: date-time
+          title: Verified At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        source:
+          type: string
+          title: Source
+        vehicle_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vehicle Code
+        licence_class:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Licence Class
+        verified_until:
+          type: string
+          format: date
+          title: Verified Until
+        revoked:
+          type: boolean
+          title: Revoked
+      type: object
+      required:
+      - source_ref
+      - employee_no
+      - verified_by
+      - verified_at
+      - updated_at
+      - source
+      - vehicle_code
+      - licence_class
+      - verified_until
+      - revoked
+      title: EligibilityOut
     ErrorBody:
       properties:
         code:
@@ -1028,6 +1262,52 @@ components:
       - type
       - msg
       title: ErrorItem
+    FleetEvidencePage_AvailabilityOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AvailabilityOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: FleetEvidencePage[AvailabilityOut]
+    FleetEvidencePage_EligibilityOut_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/EligibilityOut'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: FleetEvidencePage[EligibilityOut]
     FleetPage:
       properties:
         items:
@@ -1150,6 +1430,7 @@ components:
           - type: number
             exclusiveMinimum: 0.0
           - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,3}0*$
           title: Qty
         unit_price:
           type: string

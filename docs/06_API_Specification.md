@@ -1094,14 +1094,23 @@ Nguồn (giả lập trong `source-<cc>`, cùng quy ước API key/`updated_sinc
 // GET /fleet/driver-availability?updated_since=…
 { "items": [ { "source_ref": "AV-2026-11-20-071", "employee_no": "SE-D-071", "work_date": "2026-11-20",
                "available_from": "2026-11-20T06:00:00+01:00", "available_to": "2026-11-20T16:00:00+01:00",
-               "max_driving_min": 540, "verified_by": "Fleet desk SE", "verified_at": "…", "superseded": false } ],
-  "next_cursor": null }
+               "max_driving_min": 540, "verified_by": "Fleet desk SE", "verified_at": "…", "updated_at": "…", "superseded": false } ],
+  "page": 1, "page_size": 50, "total": 1 }
 // GET /fleet/driver-eligibility?updated_since=…
 { "items": [ { "source_ref": "EL-071-C", "employee_no": "SE-D-071", "vehicle_code": null, "licence_class": "C",
-               "verified_until": "2027-03-31", "verified_by": "Fleet desk SE", "verified_at": "…", "revoked": false } ],
-  "next_cursor": null }
+               "verified_until": "2027-03-31", "verified_by": "Fleet desk SE", "verified_at": "…", "updated_at": "…", "revoked": false } ],
+  "page": 1, "page_size": 50, "total": 1 }
 ```
-CFO upsert theo `(source, source_ref)`; dòng sai (thiếu xác minh, khung giờ ngược, nhân viên không khớp) vào reject log, không đoán. Gate tài xế theo `05` §13.3; thiếu dữ liệu → reason code `DRIVER_NOT_VERIFIED` trong kết quả planning (không phải mã lỗi HTTP).
+Hai feed dùng `page`, `page_size`, `total` và `X-Total-Count` theo §16.1. Mỗi item có
+`updated_at` (ISO 8601 có offset). Lọc bao gồm `updated_at = updated_since` và sắp xếp theo
+`(updated_at, source_ref)`. Feed được xác thực theo market của Source. Item có thể kèm
+`source = synthetic_demo` cho fixture; mặc định là `fleet_api`.
+
+CFO upsert theo `(source, source_ref)`. Mỗi feed có checkpoint và sync run riêng. Dòng thiếu xác minh,
+sai market, sai khung giờ hoặc không khớp tài xế/xe được ghi vào `stg.sync_reject`. Khung mới thay
+khung cũ theo tài xế/ngày. Một `source_ref` đã bị thay hoặc thu hồi vẫn bị vô hiệu khi nạp lại.
+Gate theo `05` §13.3. Planning trả check `NO_DRIVER` với `detail.reason = "not_verified"` thiếu dữ
+liệu xác minh; Approve và Dispatch giữ mã lỗi HTTP của từng endpoint.
 
 ### 19.7 Thông báo (thay một phần §10)
 

@@ -484,8 +484,7 @@ def start_execution_day(report: dict, env: dict[str, str]) -> dict[str, str]:
     if execution_at.date().isoformat() != target_date:
         raise RuntimeError("Trip departure and approved plan use different market dates")
 
-    # Keep DB/Source/Mailpit intact. Only the API clock moves; the Dec 1 D7
-    # fixture is not attested for Dec 2, so the regular driver gate fails closed.
+    # Keep DB/Source/Mailpit intact and roll only the API clock to the T12 duty day.
     compose("--profile", "demo-worker", "stop", "cfo-worker", env=env)
     execution_env = {**env, "APP_NOW": execution_at.isoformat(), "DEMO_D7_FIXTURE_DIR": ""}
     compose("up", "-d", "--no-deps", "--wait", "--wait-timeout", "90", "cfo-api", env=execution_env)
@@ -731,7 +730,7 @@ def main() -> int:
             APP_NOW=NOW,
             COMPOSE_PROJECT_NAME="cfo-demo-e004",
             COMPOSE_FILE=os.pathsep.join(("docker-compose.yml", "tools/t27_e1_compose.override.yml")),
-            DEMO_D7_FIXTURE_DIR="/srv/e0_04_d7",
+            DEMO_D7_FIXTURE_DIR="",
             SYNTHETIC_WMS_API_KEY=env.get("SYNTHETIC_WMS_API_KEY") or secrets.token_urlsafe(32),
             MSYS_NO_PATHCONV="1",
             PYTHONPATH=os.pathsep.join(filter(None, (str(ROOT), str(ROOT / "backend"), env.get("PYTHONPATH")))),

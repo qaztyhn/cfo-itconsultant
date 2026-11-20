@@ -7,13 +7,21 @@ from datetime import datetime
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
 
 from app.adapters.base import StockSnapshotDTO
+from app.adapters.driver_wire import SourceDriverAvailability, SourceDriverEligibility
 from app.adapters.order_wire import SourceCancellation, SourceOrder
 from app.adapters.reference_wire import SourceCustomer, SourceFleet, SourceInbound, SourceProduct
 from app.adapters.rest_adapter import RestMarketAdapter, SourceReadError
 from app.adapters.stock_batches import DeclaredUnit
 
 type WireValue = (
-    SourceOrder | SourceCancellation | SourceCustomer | SourceProduct | SourceInbound | SourceFleet
+    SourceOrder
+    | SourceCancellation
+    | SourceCustomer
+    | SourceProduct
+    | SourceInbound
+    | SourceFleet
+    | SourceDriverAvailability
+    | SourceDriverEligibility
 )
 
 FEEDS: dict[str, tuple[str, type[WireValue], tuple[str, ...], dict[str, str]]] = {
@@ -22,6 +30,8 @@ FEEDS: dict[str, tuple[str, type[WireValue], tuple[str, ...], dict[str, str]]] =
     "customers": ("customers", SourceCustomer, ("id",), {}),
     "products": ("products", SourceProduct, ("sku",), {}),
     "inbound": ("inbound", SourceInbound, ("inbound_ref", "warehouse_code", "sku"), {}),
+    "driver-availability": ("fleet/driver-availability", SourceDriverAvailability, ("source_ref",), {}),
+    "driver-eligibility": ("fleet/driver-eligibility", SourceDriverEligibility, ("source_ref",), {}),
     "fleet": ("fleet/calendar", SourceFleet, ("vehicle_code", "from", "to"), {}),
 }
 
@@ -92,6 +102,8 @@ async def read_feed(
                     )
                 )
             )
+            if fields & {"verified_at", "verified_by"}:
+                reason = "DRIVER_NOT_VERIFIED"
             yield FeedRecord(None, stamp, external_key, reason)
         else:
             yield FeedRecord(value, stamp, external_key)

@@ -140,6 +140,27 @@ class VehicleCtx:
 
 
 @dataclass(frozen=True)
+class DriverWindow:
+    start: datetime
+    end: datetime
+    max_driving_min: int
+
+
+@dataclass(frozen=True)
+class DriverQualification:
+    vehicle_id: int | None
+    licence_class: str | None
+    verified_until: date
+
+
+@dataclass(frozen=True)
+class DriverVerification:
+    windows: dict[date, DriverWindow] = field(default_factory=dict)
+    qualifications: tuple[DriverQualification, ...] = ()
+    committed_driving_min: dict[date, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class DriverCtx:
     employee_id: int
     licence_class: Literal["B", "C", "CE"]
@@ -155,7 +176,8 @@ class DriverCtx:
     driving_min_by_day: dict[date, int] = field(default_factory=dict)
     driving_min_week: int = 0
     driving_min_fortnight: int = 0
-    history_complete: bool = False  # thiếu lịch sử cho khoảng cần xét → không khẳng định tuân thủ
+    history_complete: bool = False  # legacy D7 engine input
+    verification: DriverVerification | None = None
 
 
 @dataclass(frozen=True)

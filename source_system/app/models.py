@@ -206,3 +206,30 @@ class CreateRequest(Timestamps, Base):
     key: Mapped[str] = mapped_column(primary_key=True)
     request_hash: Mapped[str]
     order_id: Mapped[str] = mapped_column(ForeignKey("source.src_order.id"))
+
+
+class FleetEvidence(Timestamps):
+    source_ref: Mapped[str] = mapped_column(primary_key=True)
+    employee_no: Mapped[str]
+    verified_by: Mapped[str]
+    verified_at: Mapped[datetime]
+    source: Mapped[str] = mapped_column(server_default=text("'fleet_api'"))
+
+
+class DriverAvailability(FleetEvidence, Base):
+    __tablename__ = "src_driver_availability"
+
+    work_date: Mapped[date]
+    available_from: Mapped[datetime]
+    available_to: Mapped[datetime]
+    max_driving_min: Mapped[int]
+    superseded: Mapped[bool] = mapped_column(server_default=text("false"))
+
+
+class DriverEligibility(FleetEvidence, Base):
+    __tablename__ = "src_driver_eligibility"
+
+    vehicle_code: Mapped[str | None]
+    licence_class: Mapped[str | None]
+    verified_until: Mapped[date]
+    revoked: Mapped[bool] = mapped_column(server_default=text("false"))
