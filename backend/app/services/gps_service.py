@@ -6,6 +6,8 @@ the APIs therefore fail closed, never fall back to market-wide access.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -14,6 +16,7 @@ from typing import Literal
 from pydantic import ValidationError
 
 from sqlalchemy import ColumnElement, and_, delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import Action
@@ -22,10 +25,10 @@ from app.core import clock
 from app.core.config import MarketConfig, get_settings
 from app.core.errors import DomainError
 from app.domain.models.hr import DriverAvailability
-from app.domain.models.ops import Alert, CustomerOrder, DeliveryTrip, EtaForecast, MilestoneEvent, TripStop, VehiclePosition
+from app.domain.models.ops import Alert, CustomerOrder, DeliveryTrip, EtaForecast, IdempotencyKey, MilestoneEvent, TripStop, VehiclePosition
 from app.domain.models.ref import ComplianceRecord, Location, Market, Vehicle
 from app.providers.routing_ors import OrsRoutingProvider, RoutingUnavailable, route_with_fallback
-from app.services import alert_service
+from app.services import alert_service, risk_service
 from app.services.gps_duty import active_duty, trip_collection_windows
 
 MAX_GPS_BATCH_POSITIONS = 100  # Owner-approved G4 upload limit (DEC-OWNER-20261109)
@@ -196,6 +199,73 @@ async def trusted_remaining_for_order(
                 raise DomainError("PLAN_NOT_APPROVABLE", "GPS route duration has no verified provenance.")
             evidence[trip_id] = (latest.recorded_at, latest.remaining_min)
     return evidence
+
+
+async def post_driver_position(
+    session: AsyncSession, trip_id: int, actor: object, point: Mapping[str, object], key: str,
+) -> dict[str, object]:
+    """202 API boundary: atomic replay, one new GPS point, one risk calculation."""
+    _role(actor, "driver")
+    trip, _market = await _assigned_trip(session, trip_id, actor)
+    actor_id = getattr(actor, "id", None)
+    if not isinstance(actor_id, int) or actor_id <= 0:
+        raise DomainError("FORBIDDEN", "An authenticated driver is required.")
+    endpoint = f"POST /trips/{trip_id}/positions"
+    normalized = {
+        "lat": str(point.get("lat")), "lon": str(point.get("lon")),
+        "accuracy_m": str(point.get("accuracy_m")),
+        "recorded_at": _point_time(point.get("recorded_at")).isoformat(),
+    }
+    digest = hashlib.sha256(
+        json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    other_user = await session.scalar(
+        select(IdempotencyKey.user_id)
+        .where(IdempotencyKey.key == key, IdempotencyKey.user_id != actor_id)
+        .limit(1)
+    )
+    if other_user is not None:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The request key belongs to another actor.")
+    await session.execute(
+        insert(IdempotencyKey)
+        .values(key=key, user_id=actor_id, endpoint=endpoint, request_hash=digest)
+        .on_conflict_do_nothing(index_elements=["key", "user_id"])
+    )
+    claim = await session.scalar(
+        select(IdempotencyKey)
+        .where(IdempotencyKey.key == key, IdempotencyKey.user_id == actor_id)
+        .with_for_update()
+    )
+    if claim is None or claim.endpoint != endpoint or claim.request_hash != digest:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The request key belongs to a different payload.")
+    if claim.response_status == 202 and claim.response_body is not None:
+        return dict(claim.response_body)
+    if claim.response_status is not None:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The prior request cannot be replayed.")
+    # Important: no idempotency replay can reach record_point or RiskService.
+    result = await record_point(session, trip_id, point, "driver_tap")
+    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip.id))
+    if order_id is None:
+        raise DomainError("NOT_ON_TRIP", "Delivery stop is unavailable.")
+    await risk_service.recalculate(
+        order_id,
+        trigger="position",
+        session=session,
+        signal_at=result.recorded_at,
+        trusted_remaining=await trusted_remaining_for_order(session, order_id),
+    )
+    response: dict[str, object] = {
+        "accepted": 1,
+        "trip_id": trip_id,
+        "recorded_at": result.recorded_at.isoformat(),
+        "remaining_km": str(result.remaining_km),
+        "remaining_min": result.remaining_min,
+        "provider": result.provider,
+    }
+    claim.response_status = 202
+    claim.response_body = response
+    await session.flush()
+    return response
 
 
 async def purge_order(session: AsyncSession, order_id: int) -> int:
