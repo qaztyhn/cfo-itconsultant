@@ -7,7 +7,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { API_BASE_URL } from "../../api/config";
 import { MOCK_TOKEN_PREFIX } from "../../api/mocks/authHandlers";
 import { handlers } from "../../api/mocks/handlers";
@@ -18,15 +18,26 @@ import { currentPath, renderAt, userByEmail } from "../../test/utils";
 
 const server = setupServer(...handlers);
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+  // Node fetch rejects AbortSignal from jsdom. Keep cancellation in production.
+  const mswFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => mswFetch(input, { ...init, signal: undefined }));
+});
 beforeEach(() => {
   resetPlanningMock();
   const email = "dispatcher@cfo.demo";
   const user = userByEmail(email);
   useAuthStore.getState().setAuth({ access_token: `${MOCK_TOKEN_PREFIX}${user.id}`, token_type: "bearer", expires_in: 28_800, user }, email);
 });
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+afterEach(() => {
+  server.resetHandlers();
+  vi.unstubAllEnvs();
+});
+afterAll(() => {
+  vi.unstubAllGlobals();
+  server.close();
+});
 
 const runUrl = (id: number) => `${PATHS.dispatcherPlanReview}/${id}`;
 const approveUrl = `${API_BASE_URL}/plans/:id/approve`;
@@ -204,25 +215,23 @@ describe("Approval", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("test_US_APR_01_AC1_requires_explicit_tight_reserve_acceptance", async () => {
+  it("test_US_APR_05_AC3_allows_a_feasible_tight_plan", async () => {
     const run = await backendRun();
     server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, reserve_class: "tight" })));
     await openPlan(MOCK_RUN_IDS.normal);
-    expect(approveButton(1)).toBeDisabled();
-    await userEvent.setup().click(screen.getByLabelText("I accept the tight schedule"));
-    expect(approveButton(1)).toBeEnabled();
+    await waitFor(() => expect(approveButton(1)).toBeEnabled());
+    expect(screen.queryByLabelText("I accept the tight schedule")).toBeNull();
   });
 
-  it("resets tight reserve acceptance when the selected plan changes", async () => {
+  it("uses the frozen demo business clock for the hold and approval", async () => {
+    vi.stubEnv("VITE_DEMO_APP_NOW", "2026-12-01T10:05:00+01:00");
     const run = await backendRun();
-    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({ ...run, reserve_class: "tight" })));
+    server.use(http.get(`${API_BASE_URL}/planning-runs/:id`, () => HttpResponse.json({
+      ...run, hold_expires_at: "2026-12-01T09:20:00Z",
+    })));
     await openPlan(MOCK_RUN_IDS.normal);
-    const user = userEvent.setup();
-    await user.click(screen.getByLabelText("I accept the tight schedule"));
-    expect(approveButton(1)).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Select plan #2" }));
-    expect(screen.getByLabelText("I accept the tight schedule")).not.toBeChecked();
-    expect(approveButton(2)).toBeDisabled();
+    expect(screen.getByRole("timer", { name: "Hold expires in 15:00" })).toBeInTheDocument();
+    await waitFor(() => expect(approveButton(1)).toBeEnabled());
   });
 
   it("test_US_PLN_07_AC3_sends_only_matching_agreed_date", async () => {

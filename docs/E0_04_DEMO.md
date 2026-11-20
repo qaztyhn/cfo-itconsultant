@@ -3,6 +3,8 @@
 This is a disposable, synthetic Swedish demo on a separate PostgreSQL Compose
 project. It stops at a **proposed** plan. It never calls `/approve`, sends email,
 or claims legal driver verification. See `docs/DEMO_SETUP.md` for the base setup.
+To continue from the proposed plan with WMS and an approval in the browser,
+follow [the T27 manual retest](T27_INTEGRATED_E004.md#retest-manually-on-a-running-cfo-demo-e004).
 
 ## Fixed scenario
 

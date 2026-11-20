@@ -2,6 +2,8 @@ name: T27 integrated pre-Sync to Mailpit/Driver Chrome (disposable E0-04)
 on:
   push:
     branches: [feat/r3-t27-integrated-e004]
+  pull_request:
+    branches: [feat/r3-t27-integrated-e004]
   workflow_dispatch:
 permissions:
   contents: read

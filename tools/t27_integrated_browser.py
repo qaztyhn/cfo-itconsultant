@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -22,6 +23,8 @@ from zoneinfo import ZoneInfo
 import httpx
 from dotenv import dotenv_values
 from playwright.sync_api import APIResponse, Error, Page, Response, expect, sync_playwright
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
 
@@ -210,22 +213,48 @@ def start_disposable_wms(env: dict[str, str], report: dict) -> None:
     # The existing E1 simulator is deliberately restricted to loopback.
     # Start it inside the cfo-api container's *same* network namespace rather
     # than weakening DisposableWmsPort to permit arbitrary remote hosts.
-    fixture = ROOT / ".t27-wms-fixture.json"
-    cmd(sys.executable, "tools/t27_prepare_wms_fixture.py", "--output", str(fixture), env=env)
-    compose("cp", str(fixture), "cfo-api:/tmp/t27-wms-fixture.json", env=env)
+    compose("exec", "-T", "cfo-api", "python", "-c",
+            "import os; assert os.environ.get('WMS_RESERVATION_MODE') == 'simulated'", env=env)
+    with TemporaryDirectory(prefix="t27-wms-") as directory:
+        fixture = Path(directory) / "fixture.json"
+        result = cmd(sys.executable, "tools/t27_prepare_wms_fixture.py", "--output", str(fixture),
+                     env=env, capture=True)
+        compose("cp", str(fixture), "cfo-api:/tmp/t27-wms-fixture.json", env=env)
     compose("exec", "-d", "-e", "SYNTHETIC_WMS_FIXTURE=/tmp/t27-wms-fixture.json",
             "-e", "SYNTHETIC_WMS_DB=/tmp/t27-wms.sqlite",
             "cfo-api", "python", "-m", "app.adapters.disposable_wms_service", env=env)
-    for attempt in range(30):
+    for _ in range(30):
         try:
             compose("exec", "-T", "cfo-api", "python", "-c",
                     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8188/openapi.json',timeout=2)",
                     env=env)
             report["wms_fixture"] = "E1 SQLite synthetic WMS, private loopback, ready"
+            report["wms_plan"] = result
             return
         except RuntimeError:
             time.sleep(0.3)
     raise RuntimeError("E1 loopback WMS did not start in disposable container")
+
+
+def prepare_manual_wms(env: dict[str, str]) -> None:
+    active = sql(
+        "SELECT count(*) FROM ops.wms_reservation_intent i "
+        "JOIN ops.customer_order o ON o.id=i.order_id "
+        f"WHERE o.external_ref='{SOURCE_REF}' AND i.status NOT IN ('released','rejected')",
+        env,
+    )
+    if active != "0":
+        raise RuntimeError("This order already has an active WMS intent; use a fresh disposable demo")
+    if sql(f"SELECT status FROM ops.customer_order WHERE external_ref='{SOURCE_REF}'", env) != "PLANNED":
+        raise RuntimeError("Run Sales Sync & Check and leave the E0-04 order PLANNED before preparing WMS")
+    # Recreate the API with the scoped override and refresh the UI from this checkout.
+    # Only these two services are touched; the existing order and PostgreSQL stay in place.
+    compose("up", "-d", "--build", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90",
+            "cfo-api", "cfo-web", env=env)
+    report: dict[str, str] = {}
+    start_disposable_wms(env, report)
+    print(report["wms_plan"])
+    print("WMS simulator ready. Reload CFO and approve this plan from the UI.")
 
 
 def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
@@ -242,17 +271,9 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
     try:
         expect(page.get_by_role("heading", name="Plan review")).to_be_visible()
         # PlanReview header mounts before its async planning-run detail.
-        # Await the actual DecisionBar before looking for the conditional
-        # tight-schedule checkbox; otherwise .count() races and misses it.
         decision = page.get_by_role("region", name="Decision")
         action = decision.get_by_role("button", name="Approve #1")
         expect(action).to_be_visible(timeout=15000)
-        tight = page.get_by_role("checkbox", name="I accept the tight schedule")
-        if tight.count():
-            # Real UI user acknowledges the documented tight schedule,
-            # without disabling any server-side approval or WMS gate.
-            tight.check()
-            expect(tight).to_be_checked()
         try:
             expect(action).to_be_enabled(timeout=10000)
         except AssertionError:
@@ -687,10 +708,43 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--output", type=Path, help="Run the full Chrome scenario and save its evidence.")
+    mode.add_argument("--prepare-wms", action="store_true", help="Start WMS for an existing manual demo plan.")
     args = parser.parse_args()
     env = dict(os.environ)
     data = dotenv_values(ROOT / ".env")
+    if args.prepare_wms:
+        if (data.get("APP_ENV"), data.get("DEMO_DISPOSABLE")) != ("test", "1"):
+            parser.error("Private .env must specify APP_ENV=test and DEMO_DISPOSABLE=1")
+        env.update({key: value for key, value in data.items() if value is not None})
+        try:
+            cfo_db = make_url(env.get("DATABASE_URL", ""))
+            source_db = make_url(env.get("SOURCE_SE_DATABASE_URL", ""))
+        except (ArgumentError, ValueError):
+            parser.error("Private E0-04 Compose database URLs required")
+        if (cfo_db.host, cfo_db.port, cfo_db.database, source_db.host, source_db.database) != (
+            "postgres", 5432, "cfo", "postgres", "source_se",
+        ):
+            parser.error("Private E0-04 Compose database URLs required")
+        env.update(
+            APP_NOW=NOW,
+            COMPOSE_PROJECT_NAME="cfo-demo-e004",
+            COMPOSE_FILE=os.pathsep.join(("docker-compose.yml", "tools/t27_e1_compose.override.yml")),
+            DEMO_D7_FIXTURE_DIR="/srv/e0_04_d7",
+            SYNTHETIC_WMS_API_KEY=env.get("SYNTHETIC_WMS_API_KEY") or secrets.token_urlsafe(32),
+            MSYS_NO_PATHCONV="1",
+            PYTHONPATH=os.pathsep.join(filter(None, (str(ROOT), str(ROOT / "backend"), env.get("PYTHONPATH")))),
+        )
+        try:
+            prepare_manual_wms(env)
+        except RuntimeError as exc:
+            print(f"BLOCKED: {exc}", file=sys.stderr)
+            return 2
+        except (OSError, subprocess.TimeoutExpired):
+            print("BLOCKED: Could not run the disposable demo command or it timed out.", file=sys.stderr)
+            return 2
+        return 0
     if (env.get("APP_ENV"), env.get("DEMO_DISPOSABLE"), env.get("APP_NOW"),
         env.get("COMPOSE_PROJECT_NAME")) != ("test", "1", NOW, "cfo-demo-e004"):
         parser.error("Disposable E0-04 environment and fixed clock required")

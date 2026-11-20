@@ -48,7 +48,6 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [result, setResult] = useState<ApprovePlanResponse | null>(null);
-  const [tightAccepted, setTightAccepted] = useState(false);
   const [agreementId, setAgreementId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -78,7 +77,6 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
   else if (dateChanged && (negotiationsQuery.isPending || negotiationsQuery.isError)) blockedReason = "Checking customer date agreement…";
   else if (dateChanged && !selectedAgreement) blockedReason = "Select an agreed customer date for this plan.";
   else if (result) blockedReason = "CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.";
-  else if (run.reserve_class === "tight" && !tightAccepted) blockedReason = "Accept the tight schedule before approving.";
   else if (submitting) blockedReason = "Approval is being submitted…";
 
   async function handleConfirm({ reasonCode, reasonText }: ReasonResult) {
@@ -126,7 +124,6 @@ export function ApprovalFlow({ run, plan, showDriver, expired, onSubmitted, mock
           </select>
         </label>
       )}
-      {run.reserve_class === "tight" && <label className="flex items-center gap-2 text-body text-ink"><input type="checkbox" checked={tightAccepted} onChange={(event) => setTightAccepted(event.target.checked)} />I accept the tight schedule</label>}
       <DecisionBar
         plan={plan}
         expired={expired}

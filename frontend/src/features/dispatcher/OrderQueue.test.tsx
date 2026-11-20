@@ -136,6 +136,17 @@ describe("Order queue states", () => {
     expect(main().getByText(/Data freshness unknown/).closest("[data-component='DataFreshness']")).toHaveAttribute("data-stale", "true");
     expect(main().getAllByText("SE-2026-004021").length).toBeGreaterThan(0);
   });
+
+  it("displays the stock timestamp from the Dispatcher overview response", async () => {
+    server.use(ordersOk(), http.get(OVERVIEW_URL, () => HttpResponse.json({
+      market: "SE", sources: { stock: { data_as_of: "2026-11-20T08:00:00Z" } },
+    })));
+
+    renderAt("/dispatcher/orders");
+
+    expect(await main().findByText(/Data as of/)).toBeInTheDocument();
+    expect(main().queryByText(/Data freshness unknown/)).toBeNull();
+  });
 });
 
 describe("Order queue request parameters", () => {
@@ -155,6 +166,34 @@ describe("Order queue request parameters", () => {
     expect(params.get("committed_date_from")).toBeNull();
     expect(params.get("committed_date_to")).toBeNull();
     expect(params.get("q")).toBeNull();
+  });
+
+  it("opens a dedicated Plan review page with planned orders", async () => {
+    const calls = recordOrders();
+    renderAt("/dispatcher/orders");
+    await firstCall(calls);
+
+    await userEvent.setup().click(within(main().getByRole("navigation", { name: "Dispatcher areas" })).getByRole("link", { name: /Plan review/ }));
+
+    expect(await main().findByRole("heading", { name: "Plan review" })).toBeInTheDocument();
+    await waitFor(() => expect(lastOf(calls).get("status")).toBe("PLANNED"));
+  });
+
+  it("toggles Open off to show all relevant statuses and back on", async () => {
+    const calls = recordOrders();
+    renderAt("/dispatcher/orders");
+    await firstCall(calls);
+    const open = main().getByRole("button", { name: "Open" });
+    const user = userEvent.setup();
+    expect(open).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(open);
+    expect(open).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(lastOf(calls).get("status")).toContain("DELIVERED"));
+
+    await user.click(open);
+    expect(open).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(lastOf(calls).get("status")).not.toContain("DELIVERED"));
   });
 
   it("test_US_ORD_02_AC3_url_filters_are_sent_to_the_server", async () => {

@@ -1,4 +1,4 @@
-"""Read-only integration monitoring, scoped by the authenticated admin market.
+"""Read-only admin monitoring and market-scoped Dispatcher stock freshness.
 
 No ingestion, stock, scheduler or source-adapter writes. Only persisted evidence
 is reported; lack of scheduler heartbeat or stock-scope evidence is UNKNOWN.
@@ -244,6 +244,22 @@ async def _market_overview(session: AsyncSession, market: Market) -> dict[str, A
 
 
 async def overview(session: AsyncSession, user: CurrentUser, market: str | None) -> dict[str, Any]:
+    if "admin" not in user.roles:
+        if "dispatcher" not in user.roles:
+            raise DomainError("FORBIDDEN", "Integration overview access required.")
+        if not user.market or (market is not None and market != user.market):
+            raise DomainError("NOT_FOUND", "Market not found.")
+        scoped = await session.scalar(select(Market).where(Market.code == user.market))
+        if scoped is None:
+            raise DomainError("NOT_FOUND", "Market not found.")
+        # Dispatcher reads only the stock timestamp for the approval context.
+        as_of = await session.scalar(
+            select(SyncRun.data_as_of)
+            .where(SyncRun.market_id == scoped.id, SyncRun.entity == "stock", SyncRun.status == "ok")
+            .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+            .limit(1)
+        )
+        return {"market": scoped.code, "sources": {"stock": {"data_as_of": _time(as_of)}}}
     markets = await _markets(session, user, market)
     results = [await _market_overview(session, row) for row in markets]
     return results[0] if len(results) == 1 else {"markets": results}

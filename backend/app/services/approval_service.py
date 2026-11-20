@@ -479,13 +479,12 @@ async def _approve(
         plan.rank != 1
         or plan.vehicle_count != 1
         or run.kind != "initial"
-        or run.reserve_class != "safe"
         or plan.manual_reason_code is not None
         or plan.target_date != order.date_to
     ):
         raise _fail(
             "PLAN_NOT_APPROVABLE",
-            "Sales can only confirm an unchanged safe rank-1 plan.",
+            "Sales can only confirm an unchanged rank-1 single-vehicle plan.",
         )
     if plan.target_date != order.date_to:
         neg_id = payload.get("date_negotiation_id")
