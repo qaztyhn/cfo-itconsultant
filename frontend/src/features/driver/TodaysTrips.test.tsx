@@ -220,8 +220,8 @@ describe("R3 Driver one-fix request and event contract", () => {
 
   it("test_US_GPS_01_AC4_hanging_post_times_out_and_retry_reuses_original_point_and_key", async () => {
     const received: Array<{ key: string | null; body: unknown }> = [];
-    let releaseFirst!: (response: HttpResponse) => void;
-    const stalled = new Promise<HttpResponse>((resolve) => { releaseFirst = resolve; });
+    let releaseFirst!: (response: Response) => void;
+    const stalled = new Promise<Response>((resolve) => { releaseFirst = resolve; });
     server.use(http.post(gpsRoute, async ({ request, params }) => {
       const body = await request.json() as { recorded_at: string };
       received.push({ key: request.headers.get("Idempotency-Key"), body });
@@ -235,8 +235,8 @@ describe("R3 Driver one-fix request and event contract", () => {
     // Accelerate only the component's 15s HTTP ACK deadline; MSW still stalls the first POST.
     const rawSetTimeout = window.setTimeout.bind(window);
     vi.spyOn(window, "setTimeout").mockImplementation(
-      (handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
-        rawSetTimeout(handler, timeout === 15_000 ? 60 : timeout, ...args),
+      ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        rawSetTimeout(handler, timeout === 15_000 ? 60 : timeout, ...args)) as unknown as typeof setTimeout,
     );
     await userEvent.click(screen.getByRole("button", { name: "Update location" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry same request" })).toBeEnabled());
