@@ -328,6 +328,7 @@ describe("R3 Driver one-fix request and event contract", () => {
     await userEvent.click(screen.getByRole("button", { name: "Back to trips" }));
     await userEvent.click(screen.getAllByRole("button", { name: "Record delivery outcome" })[1]);
     expect(screen.queryByText(/Last position sent/)).toBeNull();
+    expect(screen.queryByText(/Position sent/)).toBeNull();
     expect(screen.getByRole("button", { name: "Update location" })).toBeEnabled();
   });
 
