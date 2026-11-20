@@ -15,3 +15,10 @@ Status: proposed for owner and DB/API contract review; no implementation approva
 Which persisted event or source field proves that a confirmed order was committed at the store counter? `origin_store_id` and Sales approval alone do not prove physical counter commitment. Define numerator, denominator and event time for `counter_commit_rate`. Also specify which audit actions count as an override for `manual_intervention_rate`, apart from current plan `manual` / `manual_reason_code`. Count each committed order once.
 
 These are contract questions under `docs/09_AI_Coding_Rules.md` §14. Update `docs/05_Database_Design.md`, `docs/06_API_Specification.md`, migration, code, tests and `docs/CHANGELOG.md` together after approval. T27 Step 12 remains NOT VERIFIED until the five actual metrics are checked in Chrome against API/PostgreSQL on T26 seed.
+
+## Rules implemented in #249 (not contract questions)
+
+- `plan_acceptance_rate`: denominator is every committed order in scope; numerator is rank-1 approvals without manual changes; `by_path` uses role audits only, and an order without a role audit stays in the total but in no path.
+- `order_to_commit_min`: first successful `CONFIRMED` minus `created_at`; orders with a missing or invalid pair are skipped per path, a path without samples is `null`.
+
+Still open for full T22 figures: T22-01 (start/end of the human planning interaction), T22-02 (trip-specific ETA before Dispatch) and T22-03 (counter-commitment evidence). Until answered, `planning_time_min`, ETA median/P90 and `counter_commit_rate` stay `null`.
