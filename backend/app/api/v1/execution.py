@@ -10,11 +10,27 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from app.deps import AuthUser, DbSession
 from app.domain.enums import EventType
 from app.services import execution_service
+from app.services.dispatcher_assignment import handover_trip
 
 router = APIRouter(tags=["execution"])
 
 IdempotencyHeader = Annotated[UUID, Header(alias="Idempotency-Key")]
 RequestedDate = Annotated[date | None, Query(alias="date")]
+
+
+class HandoverIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    to_employee_id: int = Field(gt=0)
+    reason_text: str = Field(min_length=1)
+
+
+@router.post("/trips/{trip_id}/handover")
+async def handover(
+    trip_id: int, user: AuthUser, db: DbSession,
+    body: Annotated[HandoverIn, Body()],
+) -> dict[str, object]:
+    return await handover_trip(db, trip_id, user, to_employee_id=body.to_employee_id,
+                               reason_text=body.reason_text)
 
 
 class ExecutionEventIn(BaseModel):
