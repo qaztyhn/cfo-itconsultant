@@ -37,9 +37,7 @@ def test_e0_04_attested_driver_window_and_tamper_fail_closed(tmp_path, monkeypat
     assert reader._load("DEMO-DRIVER-2", date(2026, 12, 1), 2) is None
 
 
-def test_T12_execution_day_has_independent_attested_synthetic_56_day_proof(
-    tmp_path, monkeypatch
-) -> None:
+def test_T12_execution_day_has_independent_attested_synthetic_56_day_proof(tmp_path, monkeypatch) -> None:
     path = Path(__file__).resolve().parents[3] / "tools" / "e0_04_d7_fixture.py"
     spec = importlib.util.spec_from_file_location("e0_04_d7_fixture", path)
     assert spec is not None and spec.loader is not None
@@ -74,7 +72,8 @@ def test_T12_execution_reader_is_frozen_to_disposable_shift_and_exact_mount(monk
 
     def enabled(at: str, environment: str = "test") -> bool:
         monkeypatch.setattr(
-            demo_d7_reader, "get_settings",
+            demo_d7_reader,
+            "get_settings",
             lambda: SimpleNamespace(app_env=environment, app_now=at),
         )
         return demo_d7_reader._demo_enabled()

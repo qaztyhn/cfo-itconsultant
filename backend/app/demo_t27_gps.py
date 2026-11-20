@@ -49,11 +49,11 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
         async with get_sessionmaker()() as session, session.begin():
             order = await session.get(CustomerOrder, order_id)
             trip = await session.get(DeliveryTrip, trip_id)
-            market = await session.scalar(
-                select(Market).where(Market.code == "SE").with_for_update()
-            )
+            market = await session.scalar(select(Market).where(Market.code == "SE").with_for_update())
             if (
-                order is None or trip is None or market is None
+                order is None
+                or trip is None
+                or market is None
                 or order.external_ref != EXTERNAL_REF
                 or order.market_id != market.id
                 or order.approved_plan_id != plan_id
@@ -61,22 +61,26 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
                 or trip.status != "loading"
                 or not await session.scalar(
                     select(TripStop.id).where(
-                        TripStop.trip_id == trip_id, TripStop.order_id == order_id,
-                        TripStop.status == "pending"
+                        TripStop.trip_id == trip_id,
+                        TripStop.order_id == order_id,
+                        TripStop.status == "pending",
                     )
                 )
             ):
                 raise ValueError("T27 GPS fixture requires the exact LOADED approved Source order/trip")
             shift = await session.scalar(
-                select(EmployeeShiftSchedule.id).where(
+                select(EmployeeShiftSchedule.id)
+                .where(
                     EmployeeShiftSchedule.employee_id == trip.driver_employee_id,
                     EmployeeShiftSchedule.warehouse_id == trip.warehouse_id,
                     EmployeeShiftSchedule.work_date == local.date(),
                     EmployeeShiftSchedule.status == "scheduled",
-                ).limit(1)
+                )
+                .limit(1)
             )
             availability = await session.scalar(
-                select(DriverAvailability.id).where(
+                select(DriverAvailability.id)
+                .where(
                     DriverAvailability.driver_employee_id == trip.driver_employee_id,
                     DriverAvailability.work_date == local.date(),
                     DriverAvailability.source == "synthetic_demo",
@@ -85,26 +89,34 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
                     DriverAvailability.available_from <= instant,
                     DriverAvailability.available_to > instant,
                     DriverAvailability.superseded_at.is_(None),
-                ).limit(1)
+                )
+                .limit(1)
             )
             if shift is None or availability is None:
                 raise ValueError("T12 official shift and synthetic Fleet availability must both be verified")
-            if await session.scalar(
-                select(ComplianceRecord.id).where(
-                    ComplianceRecord.market_id == market.id,
-                    ComplianceRecord.type == "GPS_NOTICE",
-                    ComplianceRecord.status == "approved",
-                ).limit(1)
-            ) is not None:
+            if (
+                await session.scalar(
+                    select(ComplianceRecord.id)
+                    .where(
+                        ComplianceRecord.market_id == market.id,
+                        ComplianceRecord.type == "GPS_NOTICE",
+                        ComplianceRecord.status == "approved",
+                    )
+                    .limit(1)
+                )
+                is not None
+            ):
                 raise ValueError("T27 requires fresh private synthetic GPS notice state")
-            session.add(ComplianceRecord(
-                market_id=market.id,
-                type="GPS_NOTICE",
-                status="approved",
-                approved_on=local.date(),
-                reference=REFERENCE,
-                note="Synthetic-only fixture; no real worker GPS or legal signoff",
-            ))
+            session.add(
+                ComplianceRecord(
+                    market_id=market.id,
+                    type="GPS_NOTICE",
+                    status="approved",
+                    approved_on=local.date(),
+                    reference=REFERENCE,
+                    note="Synthetic-only fixture; no real worker GPS or legal signoff",
+                )
+            )
             market.gps_enabled = True
         print("T27 synthetic GPS opt-in fixture ready; verified T12 shift/Fleet; no real legal signoff")
     finally:
