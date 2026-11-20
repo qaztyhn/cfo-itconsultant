@@ -501,11 +501,35 @@ def start_execution_day(report: dict, env: dict[str, str]) -> dict[str, str]:
     if execution_at.date().isoformat() != target_date:
         raise RuntimeError("Trip departure and approved plan use different market dates")
 
-    # Keep DB/Source/Mailpit intact. Only the API clock moves; the Dec 1 D7
-    # fixture is not attested for Dec 2, so the regular driver gate fails closed.
+    # The original D7 evidence is bound to Dec 1. Generate a NEW, fully
+    # attested 56-day synthetic document for the actual approved execution date.
+    # This does not write HR/driver duty rows or bypass verification. Fail
+    # closed for any date without a reviewed disposable fixture contract.
+    if target_date != "2026-12-02":
+        raise RuntimeError("T12 synthetic execution fixture supports only the approved Dec 2 date")
+    driver_dir = ROOT / ".e0_04_d7" / "step8_dec02"
+    cmd(
+        sys.executable, "tools/e0_04_d7_fixture.py",
+        "--target-date", target_date, "--output", str(driver_dir),
+        env=env,
+    )
+    report["t12_history"] = {
+        "source_kind": "synthetic_demo", "legal_verified": False,
+        "history_end": (execution_at.date() - timedelta(days=1)).isoformat(),
+        "manifest_sha256": hashlib.sha256(
+            (driver_dir / "manifest.json").read_bytes()
+        ).hexdigest(),
+        "verification_sha256": hashlib.sha256(
+            (driver_dir / "verification.json").read_bytes()
+        ).hexdigest(),
+    }
     compose("--profile", "demo-worker", "stop", "cfo-worker", env=env)
-    execution_env = {**env, "APP_NOW": execution_at.isoformat(), "DEMO_D7_FIXTURE_DIR": ""}
-    compose("up", "-d", "--no-deps", "--wait", "--wait-timeout", "90", "cfo-api", env=execution_env)
+    execution_env = {
+        **env, "APP_NOW": execution_at.isoformat(),
+        "DEMO_D7_FIXTURE_DIR": "/srv/e0_04_d7/step8_dec02",
+    }
+    compose("up", "-d", "--no-deps", "--force-recreate",
+            "--wait", "--wait-timeout", "90", "cfo-api", env=execution_env)
     if sql(query, execution_env) != row:
         raise RuntimeError("Order, approved plan or trip changed during the execution-day rollover")
     official_shifts = sql(
