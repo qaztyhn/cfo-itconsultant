@@ -4,13 +4,20 @@
  * "Bây giờ" được giữ trong state và cập nhật mỗi giây (không gọi Date.now() trong lúc render: react-hooks/purity).
  */
 import { useEffect, useState } from "react";
+import { isDemoEnv } from "../api/config";
+
+/** The disposable demo server can pin business time independently of the browser. */
+export function planningNow(): number {
+  const configured = Date.parse(import.meta.env.VITE_DEMO_APP_NOW ?? "");
+  return isDemoEnv() && Number.isFinite(configured) ? configured : Date.now();
+}
 
 export function useHoldExpired(expiresAt: string | null | undefined): boolean {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(planningNow);
 
   useEffect(() => {
     if (!expiresAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setNow(planningNow()), 1000);
     return () => clearInterval(timer);
   }, [expiresAt]);
 

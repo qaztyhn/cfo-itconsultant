@@ -4,11 +4,13 @@ Run from the repository root after creating private .env. Never targets a
 non-demo project, resets a database, prints secrets or approves a plan.
 """
 
+import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -19,7 +21,7 @@ PROJECT = "cfo-demo-e004"
 BASE_NOW = "2026-11-04T10:05:00+01:00"
 E0_NOW = "2026-12-01T10:05:00+01:00"
 REF = "SE-2026-000249"
-COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env"), "-p", PROJECT]
+T26_FIXTURE = ROOT / "source_system/seed/se/t26.json"
 
 
 def execute(command: list[str], env: dict[str, str], *, capture: bool = False) -> str:
@@ -40,7 +42,19 @@ def execute(command: list[str], env: dict[str, str], *, capture: bool = False) -
 
 
 def compose(env: dict[str, str], *args: str, capture: bool = False) -> str:
-    return execute([*COMPOSE, *args], env, capture=capture)
+    return execute(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(ROOT / ".env"),
+            "-p",
+            env["COMPOSE_PROJECT_NAME"],
+            *args,
+        ],
+        env,
+        capture=capture,
+    )
 
 
 def sql(env: dict[str, str], query: str) -> str:
@@ -61,6 +75,23 @@ def sql(env: dict[str, str], query: str) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--stop-before-sync",
+        action="store_true",
+        help="T27: stop after fully scoped stock/roster/Source prep; CFO order stays absent.",
+    )
+    parser.add_argument(
+        "--seed-report", type=Path, help="Write T26 seed IDs and counts to JSON."
+    )
+    parser.add_argument(
+        "--t26",
+        action="store_true",
+        help="Seed R3 on the dedicated cfo-demo-t26 project.",
+    )
+    cli = parser.parse_args()
+    fixture = json.loads(T26_FIXTURE.read_text(encoding="utf-8")) if cli.t26 else None
+    project = "cfo-demo-t26" if cli.t26 else PROJECT
     values = dotenv_values(ROOT / ".env")
     base = {**os.environ, **{k: v for k, v in values.items() if v is not None}}
     if base.get("APP_ENV") != "test" or base.get("DEMO_DISPOSABLE") != "1":
@@ -68,7 +99,7 @@ def main() -> int:
         return 2
     base.update(
         APP_NOW=BASE_NOW,
-        COMPOSE_PROJECT_NAME=PROJECT,
+        COMPOSE_PROJECT_NAME=project,
     )
     if not all(
         base.get(k)
@@ -100,9 +131,10 @@ def main() -> int:
             "BLOCKED: demo database URLs must target only local Compose cfo/source_se"
         )
         return 2
-    if datetime.now(UTC) >= datetime.fromisoformat(E0_NOW).astimezone(UTC):
+    stock_as_of = datetime.fromisoformat(E0_NOW).astimezone(UTC) - timedelta(minutes=5)
+    if datetime.now(UTC) >= stock_as_of:
         print(
-            "BLOCKED: fixed E0-04 demo instant is now past; choose a reviewed future clock"
+            "BLOCKED: fixed Source stock as_of is now past; choose a reviewed future clock"
         )
         return 2
     bash = (
@@ -129,9 +161,9 @@ def main() -> int:
         return 2
     base["MSYS_NO_PATHCONV"] = "1"
     try:
-        if compose(base, "ps", "-q", capture=True):
+        if compose(base, "ps", "--all", "-q", capture=True):
             raise RuntimeError(
-                "cfo-demo-e004 already has containers; reset only this disposable project first"
+                f"{project} already has containers; reset only this disposable project first"
             )
         execute([str(bash), "tools/demo_setup.sh"], base)
         if (
@@ -214,6 +246,18 @@ def main() -> int:
             "-m",
             "scripts.manage_stock_demo_scope",
         ]
+        scope_skus = fixture["stock_scope_skus"] if fixture else ["SE-BRD-GYP-13"]
+        warehouse_ids = ["6", "7", "8"]
+        if fixture:
+            warehouse_ids = sql(
+                base,
+                "SELECT id FROM ref.location WHERE type='warehouse' AND code IN ('GBG','STO') "
+                "AND market_id=(SELECT id FROM ref.market WHERE code='SE') ORDER BY id",
+            ).splitlines()
+            if len(warehouse_ids) != 2 or not all(
+                value.isdecimal() for value in warehouse_ids
+            ):
+                raise RuntimeError("T26 requires GBG and STO warehouse IDs")
         compose(
             base,
             *scope,
@@ -223,16 +267,10 @@ def main() -> int:
             "2",
             "--execute",
             "create",
-            "--sku",
-            "SE-BRD-GYP-13",
-            "--warehouse-id",
-            "6",
-            "--warehouse-id",
-            "7",
-            "--warehouse-id",
-            "8",
+            *(arg for sku in scope_skus for arg in ("--sku", sku)),
+            *(arg for wh in warehouse_ids for arg in ("--warehouse-id", wh)),
             "--reason",
-            "E0-04-disposable-order-scope",
+            "T26-disposable-order-scope" if fixture else "E0-04-disposable-order-scope",
         )
         compose(
             base,
@@ -277,7 +315,9 @@ def main() -> int:
             "app.demo_e0_04_fleet",
             "app.demo_ingest",
         ):
-            args = ["stock"] if module == "app.demo_ingest" else []
+            module_args = ["stock"] if module == "app.demo_ingest" else []
+            if fixture and module == "app.demo_e0_04_shifts":
+                module_args = ["--round3"]
             compose(
                 future,
                 "exec",
@@ -288,8 +328,44 @@ def main() -> int:
                 "python",
                 "-m",
                 module,
-                *args,
+                *module_args,
             )
+        if fixture:
+            compose(future, "cp", str(T26_FIXTURE), "cfo-api:/tmp/t26.json")
+            report = compose(
+                future,
+                "exec",
+                "-T",
+                "cfo-api",
+                "python",
+                "-m",
+                "app.seed.t26",
+                "/tmp/t26.json",
+                capture=True,
+            )
+            print(report)
+            if cli.seed_report:
+                cli.seed_report.write_text(report + "\n", encoding="utf-8")
+        if cli.stop_before_sync or fixture:
+            if (
+                sql(
+                    future,
+                    f"SELECT count(*) FROM ops.customer_order WHERE external_ref='{REF}'",
+                )
+                != "0"
+            ):
+                raise RuntimeError(
+                    "Main order already present in CFO before Sales Sync"
+                )
+            if fixture:
+                print(
+                    f"PASS: enter Source external_ref={REF} in Sales → Sync & Check; APP_NOW={E0_NOW}."
+                )
+            else:
+                print(
+                    "PASS: E0-04 stock/roster/Source prepared, CFO order absent; browser must Sync and Plan"
+                )
+            return 0
         execute([sys.executable, "tools/e0_04_check.py", "--sync-only"], future)
         order_id = sql(
             future, f"SELECT id FROM ops.customer_order WHERE external_ref='{REF}'"

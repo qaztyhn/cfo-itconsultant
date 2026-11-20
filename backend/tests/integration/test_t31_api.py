@@ -37,6 +37,7 @@ def test_DEC_R3_15_retired_operations_are_absent_from_openapi() -> None:
     for path in ("/employees", "/vehicles", "/locations", "/warehouses/{warehouse_id}/capacity"):
         assert "get" in paths["/api/v1" + path]
     assert "post" in paths["/api/v1/orders/{order_id}/plan"]
+    assert "post" in paths["/api/v1/trips/{trip_id}/handover"]
 
 
 def test_DEC_R3_15_retired_operations_return_404_for_all_callers(api: Api) -> None:  # noqa: F811

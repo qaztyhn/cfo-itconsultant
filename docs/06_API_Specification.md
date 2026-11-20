@@ -365,9 +365,9 @@ Lỗi: `409 HOLD_EXPIRED` (nếu không thể xác nhận lại tài nguyên), `
 
 ### 6.3a Sales approve (mở rộng endpoint đã có)
 
-> **Round 3 (DEC-R3, 18/11/2026):** mục này bị thay một phần bởi [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending).
+> **Round 3 (DEC-R3-10):** [§19](#19-round-3-contract-changes--dec-r3-2026-11-18-owner-approved-code-pending) mô tả quyền Sales đầy đủ. Bản demo T27 triển khai điều kiện lịch sát. Các trường hợp mở rộng theo T19.
 
-`POST /plans/{id}/approve` cho Sales **chỉ** khi đúng cửa hàng nguồn, rank 1, 5 gate pass, reserve safe, một xe, version/dữ liệu nguồn còn mới, giữ chỗ hợp lệ, không transfer/manual/replan/date change, không làm trễ đơn cũ. Dùng chính ApprovalService, locks/transaction/audit với actor Sales. Thiếu quyền 403; ngoài cửa hàng 404; không đủ điều kiện hoặc đơn đặt trước chưa duyệt có cạnh tranh chưa chứng minh đủ năng lực: 409 `PLAN_NOT_APPROVABLE`; nguồn lực đổi: 409 `RESOURCE_CONFLICT`; hold hết: 409 `HOLD_EXPIRED`. Không auto-approve.
+Trong bản demo T27, Sales dùng `POST /plans/{id}/approve` cho phương án tự động rank 1 của lần lập đầu, một xe, đúng ngày yêu cầu và đúng cửa hàng nguồn. Cần qua đủ năm gate và còn hold hợp lệ. Cả `safe` và `tight` đều được xét duyệt. ApprovalService kiểm tra lại phiên bản, nguồn lực và đơn cũ đang cạnh tranh, khóa tài nguyên và ghi audit với actor Sales. Trả `403` nếu thiếu vai trò, `404` nếu ngoài cửa hàng, `409 PLAN_NOT_APPROVABLE` nếu thiếu điều kiện, `409 RESOURCE_CONFLICT` nếu nguồn lực đã đổi và `409 HOLD_EXPIRED` nếu hết hold.
 
 ### 6.4 `POST /orders/{id}/manual-plan`
 
@@ -898,7 +898,7 @@ Các endpoint và trường dưới đây **bổ sung** cho các mục trước;
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
 | GET | `/orders/counts` | Số đếm cho chip lọc và huy hiệu menu: `{ "all": 34, "needs_plan": 6, "awaiting_approval": 4, "no_feasible_date": 1, "in_execution": 12, "replan_suggested": 1, "delivered_today": 9, "nav": { "order_queue": 6, "exceptions": 1, "tracking_risk": 2 } }` (theo phạm vi người gọi) |
-| GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; dispatcher đọc phần `data_as_of`) |
+| GET | `/integration/overview` | Thẻ nguồn: mỗi `entity` có `status`, `rows`, `rejected`, `unmapped` (chỉ `products`: số SKU `pending`, không phải dòng bị loại), `last_run_at`, `data_as_of`, `interval_min` (theo `MarketConfig.sync.interval_min`, mặc định 5); thêm `route_matrix { pairs, fallback_pairs, fetched_at, provider }` và `scheduler { tick_interval_min, last_tick_at, last_tick_status, jobs }` (admin; Dispatcher chỉ nhận `market` của mình và `sources.stock.data_as_of` của lượt tải tồn thành công gần nhất, hoặc `null`) |
 | GET | `/warehouses/{id}/prep-queue?date=YYYY-MM-DD` | Endpoint **chuẩn** của Prep queue (thay cho `/prep-queue?warehouse_id=&date=`): `capacity { booked_min, total_min, free_min, schedule_verified, shifts[{name,start,end,present,useful_hours,share,minutes,booked}], cutoff }` và `orders[{order_id, order_no, lines, weight_kg, handling_mix[{code,name}], work_min, prep_window{start,end}, loading[{trip_id,at,vehicle_code,after_cutoff,loaded}], prep_state ('running'|'paused'|null), status, next_action}]`. Đơn nhiều xe có nhiều dòng loading. |
 | GET | `/notifications/{id}` | Bản xem trước đã dựng: `{ order_no, market_timezone, committed_date, template, channel, status, recipient_masked, subject, body_html, body_text, eta_window: { start, end, version }, suppressed_reason }`. Người nhận đã che. `committed_date` là ngày cam kết của đơn theo múi giờ market (`YYYY-MM-DD` hoặc `null`). `version` là phiên bản ETA đã duyệt trong snapshot, `null` nếu thiếu bằng chứng. UI chặn Send khi thiếu ngày cam kết hoặc phiên bản |
 | GET | `/kpi/diagnostics` | `{ hard_constraint_violations, event_to_alert_latency_s_median }` |

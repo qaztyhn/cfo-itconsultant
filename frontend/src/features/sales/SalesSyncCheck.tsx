@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, isApiError } from "../../api/client";
+import { planningNow } from "../../lib/useHoldExpired";
 import { useAuthStore } from "../../app/store";
 import { ErrorState, LoadingState } from "../../components/StateViews";
 import {
@@ -67,7 +68,7 @@ function MissingSkus({ result }: { result: SyncResult }) {
 export function SalesSyncCheck() {
   const authorized = useAuthStore(s => s.user?.roles.includes("sales") ?? false);
   const [reference, setReference] = useState("");
-  const [eligibilityCheckedAt] = useState(() => Date.now());
+  const [eligibilityCheckedAt] = useState(planningNow);
   const [decision, setDecision] = useState<SyncResult | null>(null);
   const [activeRef, setActiveRef] = useState("");
   const [run, setRun] = useState<SalesRun | null>(null);
@@ -123,7 +124,7 @@ export function SalesSyncCheck() {
     sync.mutate({ ref, key });
   }
   function confirmClick() {
-    if (!authorized || !eligible || !eligibleStandardPlan(run, Date.now()) || !selectedPlan || confirm.isPending) return;
+    if (!authorized || !eligible || !eligibleStandardPlan(run, planningNow()) || !selectedPlan || confirm.isPending) return;
     const key = confirmKeys.current.get(selectedPlan.id) ?? newRetryKey();
     confirmKeys.current.set(selectedPlan.id, key);
     confirm.mutate({ id: selectedPlan.id, key });
@@ -199,7 +200,7 @@ export function SalesSyncCheck() {
             Not eligible for Sales confirmation. {run.sales_block_reason ?? "Eligibility or the five verified checks are incomplete."} {escalation}
           </p>}
           {eligible && <div className="space-y-2">
-            <p>Standard rank-1 plan, one truck, safe reserve, five server-confirmed gates and valid hold. Approval still requires a fresh server check.</p>
+            <p>Rank-1 plan, one truck, five server-confirmed gates and valid hold. Approval still requires a fresh server check.</p>
             <button className={button} type="button" disabled={confirm.isPending} onClick={confirmClick}>
               {confirm.isPending ? "Requesting confirmation…" : "Confirm standard delivery plan"}</button>
           </div>}

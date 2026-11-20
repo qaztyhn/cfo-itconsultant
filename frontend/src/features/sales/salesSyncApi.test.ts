@@ -49,11 +49,11 @@ describe("DEC-SALES-001: Sales confirmation is fail-closed", () => {
       ...gates, safety: { code: "SAFETY_OK" },
     } }] }, Date.parse("2027-11-20"))).toBe(false);
   });
-  it("rejects rank2, multi-vehicle, tight, rerun, expired holds and infeasible outcomes", () => {
+  it("accepts feasible tight plans and still checks rank, vehicle count, run type and hold", () => {
     const now = Date.parse("2027-11-20");
     expect(eligibleStandardPlan({ ...run, plans: [{ ...run.plans[0], rank: 2 }] }, now)).toBe(false);
     expect(eligibleStandardPlan({ ...run, plans: [{ ...run.plans[0], vehicle_count: 2 }] }, now)).toBe(false);
-    expect(eligibleStandardPlan({ ...run, reserve_class: "tight" }, now)).toBe(false);
+    expect(eligibleStandardPlan({ ...run, reserve_class: "tight" }, now)).toBe(true);
     expect(eligibleStandardPlan({ ...run, kind: "rerun" }, now)).toBe(false);
     expect(eligibleStandardPlan(run, Date.parse("2027-12-02"))).toBe(false);
     expect(eligibleStandardPlan({ ...run, result: "infeasible" }, now)).toBe(false);

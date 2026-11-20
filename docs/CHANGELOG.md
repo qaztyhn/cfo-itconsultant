@@ -5,6 +5,12 @@
 - Áp dụng DEC-R3-15 và `06` §19.1. API chuyển kho và các thao tác quản trị đã cắt trả `404 NOT_FOUND` và vắng khỏi OpenAPI. Planning giữ API đọc theo phạm vi đã có.
 - `PlanningRun` bỏ `transfer_suggestions`; giữ ngày khả thi sớm nhất, lý do loại và luồng thương lượng ngày. Không đổi DDL.
 
+## 20/11/2026 — T27 kiểm thử demo bằng tay
+
+- Áp dụng điều kiện lịch sát của DEC-R3-10. Sales có thể duyệt phương án đủ điều kiện của cửa hàng mình khi `reserve_class=tight`. Dispatcher bỏ bước xác nhận riêng cho lịch sát. Các trường hợp mở rộng của T19 tiếp tục theo task board.
+- `GET /integration/overview` cấp cho Dispatcher mốc `data_as_of` của lần nạp tồn kho thành công trong market của mình. Dữ liệu giám sát chi tiết vẫn thuộc Admin.
+- [Hướng dẫn T27](T27_INTEGRATED_E004.md#retest-manually-on-a-running-cfo-demo-e004) bổ sung lệnh chuẩn bị WMS cho plan đang chờ duyệt mới nhất trên stack demo tự chạy.
+
 ## 19/11/2026 — T21 DISPATCHED email
 
 - `06` §19.7 quy định mặc định `NOTIFY_DISPATCHED_ENABLED=true`. Giới hạn một thông báo `DISPATCHED` theo đơn bao gồm các bản ghi theo khóa cũ. Khi tắt cờ, bản ghi lưu ở `suppressed` với `SKIPPED_FLAG_DISABLED`.

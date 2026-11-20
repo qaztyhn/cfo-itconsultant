@@ -46,6 +46,8 @@ def create_app() -> FastAPI:
     cors_origins = list(settings.cors_origins)
     if settings.app_env == "local":
         cors_origins.extend(("http://localhost:5174", "http://127.0.0.1:5174"))
+    # Starlette wraps earlier middleware, so CORS must wrap the retired POST responses.
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_retired_collection_post)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(dict.fromkeys(cors_origins)),
@@ -58,7 +60,6 @@ def create_app() -> FastAPI:
         app_env=settings.app_env,
         live_enabled=settings.cs_phone_search_production_enabled,
     )
-    app.add_middleware(BaseHTTPMiddleware, dispatch=_retired_collection_post)
     app.add_middleware(CorrelationIdMiddleware)
     install_error_handlers(app)
     app.include_router(api_v1_router, prefix="/api/v1")

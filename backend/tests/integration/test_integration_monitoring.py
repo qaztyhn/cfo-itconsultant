@@ -139,15 +139,34 @@ def test_US_ADM_01_AC1_market_scope_cannot_be_bypassed(monitoring: Api) -> None:
     )
 
 
+def test_dispatcher_overview_exposes_only_market_stock_timestamp(monitoring: Api) -> None:
+    execute(
+        monitoring.dsn,
+        "INSERT INTO stg.sync_run "
+        "(market_id,entity,status,started_at,finished_at,data_as_of) VALUES "
+        "(1,'stock','ok','2026-11-08T09:00Z','2026-11-08T09:01Z','2026-11-08T08:59Z'),"
+        "(1,'stock','failed','2026-11-08T10:00Z','2026-11-08T10:01Z','2026-11-08T09:59Z'),"
+        "(2,'stock','ok','2026-11-08T11:00Z','2026-11-08T11:01Z','2026-11-08T10:59Z')",
+    )
+    result = monitoring.get("/integration/overview", 1)
+    assert result.status_code == 200, result.text
+    assert result.json() == {
+        "market": "SE",
+        "sources": {"stock": {"data_as_of": "2026-11-08T08:59:00+00:00"}},
+    }
+    assert_error(monitoring.get("/integration/overview", 1, market="ZZ"), 404, "NOT_FOUND")
+    assert_error(monitoring.get("/sync-runs", 1), 403, "FORBIDDEN")
+
+
 def test_US_ADM_01_AC1_role_gate_and_query_validation(monitoring: Api) -> None:
     for path in (
         "/sync-runs",
         "/sync-runs/2/rejects",
         "/integration/overview",
     ):
-        assert_error(monitoring.get(path, 1), 403, "FORBIDDEN")
         assert_error(monitoring.get(path, 4), 403, "FORBIDDEN")
         assert_error(monitoring.get(path, None), 401, "AUTH_INVALID")
+    assert_error(monitoring.get("/sync-runs/2/rejects", 1), 403, "FORBIDDEN")
     for params in (
         {"page": 0},
         {"page_size": 201},
