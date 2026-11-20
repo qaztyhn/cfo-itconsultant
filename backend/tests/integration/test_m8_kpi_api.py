@@ -39,10 +39,11 @@ SEED = (
     rows.plan_sql(1, 1, 1, "approved"),
     rows.plan_sql(2, 2, 2, "manual", manual="other"),
     rows.plan_sql(3, 3, 1, "approved"),
-    rows.plan_sql(4, 4, 1, "approved"),
+    rows.plan_sql(4, 4, 2, "approved"),
     "UPDATE ops.customer_order SET approved_plan_id=id, origin_store_id=2, "
-    "submitted_at='2026-11-10T08:00Z', approved_at='2026-11-10T08:15Z', "
-    "committed_date='2026-11-10', promise_end='2026-11-10T23:00Z' WHERE id IN (1,2,3,4)",
+    "created_at='2026-11-10T07:50Z', submitted_at='2026-11-10T08:00Z', approved_at='2026-11-10T08:15Z', "
+    "committed_date='2026-11-10', promise_start='2026-11-10T08:00Z', "
+    "promise_end='2026-11-10T23:00Z' WHERE id IN (1,2,3,4)",
     # Exercise the actual approved transition graph; do not bypass DB triggers.
     "UPDATE ops.customer_order SET status='PLANNED' WHERE id IN (1,2,3,4)",
     "UPDATE ops.customer_order SET status='APPROVED' WHERE id IN (1,2,3,4)",
@@ -81,23 +82,47 @@ def kpi(api: Api) -> Api:  # noqa: F811
     return api
 
 
-def test_US_KPI_01_AC1_AC2_AC3_metrics_use_approved_sources_without_costs(kpi: Api) -> None:
+def add_approval_evidence(kpi: Api) -> None:
+    for plan_id, role in ((1, "sales"), (2, "dispatcher"), (3, "dispatcher"), (4, "sales")):
+        execute(
+            kpi.dsn,
+            "INSERT INTO audit.decision_log "
+            "(correlation_id, actor_employee_id, actor_role, action, entity, order_id, plan_id, ts) "
+            f"VALUES ('00000000-0000-0000-0000-{plan_id:012d}',2,'{role}',"
+            f"'PLAN_APPROVED','plan',{plan_id},{plan_id},'2026-11-10T08:15Z')",
+            "INSERT INTO ops.notification (order_id, template, body, status, scheduled_for, "
+            "sent_at, dedupe_key) VALUES "
+            f"({plan_id},'CONFIRMED','Synthetic notice','sent','2026-11-10T08:20Z',"
+            f"'2026-11-10T08:20Z','kpi-confirm-{plan_id}')",
+        )
+
+
+def test_US_KPI_01_AC1_AC2_AC3_five_metrics_and_path_sources(kpi: Api) -> None:
+    add_approval_evidence(kpi)
     response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
     assert response.status_code == 200, response.text
-    values = {key: row["value"] for key, row in response.json()["metrics"].items()}
-    assert len(values) == 10
-    assert values["planning_time_min"] == 15
-    assert values["on_time_rate"] == 0.5
-    assert values["labour_hours_per_delivery"] == 1.5
-    assert values["km_per_delivery"] == 42
-    assert values["prep_error_min"] == 10
-    assert values["eta_error_min"] == 15
-    assert values["failed_delivery_rate"] == pytest.approx(1 / 3)
-    assert values["manual_plan_count"] == 1
-    assert values["capacity_utilisation"] == pytest.approx(4 / 12.6)
-    assert values["plan_acceptance_rate"] is None  # missing unchanged evidence is NOT zero
-    assert "cost_per_delivery" not in response.text
-    assert "revenue" not in response.text
+    body = response.json()
+    metrics = body["metrics"]
+    assert set(metrics) == {
+        "planning_time_min", "on_time_rate", "plan_acceptance_rate",
+        "manual_intervention_rate", "eta_error_min",
+    }
+    assert metrics["planning_time_min"] == {
+        "value": None, "by_path": {"sales": None, "dispatcher": None}
+    }
+    assert metrics["on_time_rate"]["value"] == 0.5
+    assert metrics["plan_acceptance_rate"] == {
+        "value": 0.5, "by_path": {"sales": 0.5, "dispatcher": 0.5}
+    }
+    assert metrics["manual_intervention_rate"]["value"] == 0.25
+    assert metrics["eta_error_min"] == {
+        "median": None, "p90": None, "target": {"median": 20, "p90": 60}
+    }
+    assert body["supporting"] == {
+        "order_to_commit_min": {"by_path": {"sales": 30.0, "dispatcher": 30.0}},
+        "counter_commit_rate": {"value": None},
+        "manual_plan_count": {"value": 1},
+    }
 
 
 def test_US_KPI_01_AC1_market_local_midnight_determines_daily_bucket(kpi: Api) -> None:
@@ -107,8 +132,10 @@ def test_US_KPI_01_AC1_market_local_midnight_determines_daily_bucket(kpi: Api) -
         {"day": "2026-11-10", "value": 1.0},
         {"day": "2026-11-11", "value": 0.0},
     ]
-    labour = kpi.get("/kpi/daily", DISPATCHER, metric="labour_hours_per_delivery", **PERIOD)
-    assert [day["value"] for day in labour.json()["points"]] == [1.5, 1.5]
+    assert_error(
+        kpi.get("/kpi/daily", DISPATCHER, metric="labour_hours_per_delivery", **PERIOD),
+        422, "VALIDATION_ERROR",
+    )
 
 
 def test_US_KPI_01_AC4_operational_scope_excludes_revenue_owner(kpi: Api) -> None:
@@ -139,8 +166,8 @@ def test_US_KPI_01_AC1_empty_period_and_validation_are_not_fabricated(kpi: Api) 
     response = kpi.get("/kpi/summary", ADMIN, **empty)
     assert response.status_code == 200, response.text
     assert response.json()["metrics"]["on_time_rate"]["value"] is None
-    assert response.json()["metrics"]["capacity_utilisation"]["value"] is None
-    assert response.json()["metrics"]["manual_plan_count"]["value"] == 0
+    assert response.json()["metrics"]["eta_error_min"]["median"] is None
+    assert response.json()["supporting"]["manual_plan_count"]["value"] is None
     assert_error(kpi.get("/kpi/daily", ADMIN, metric="unknown_metric", **PERIOD), 422, "VALIDATION_ERROR")
     assert_error(
         kpi.get("/kpi/summary", ADMIN, **{"from": "2026-12-01", "to": "2026-11-01"}), 422, "VALIDATION_ERROR"
@@ -160,12 +187,16 @@ def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
         "VALIDATION_ERROR",
     )
     assert fetch(kpi.dsn, "SELECT count(*) FROM audit.kpi_baseline")[0][0] == 0
+    assert_error(
+        kpi.send("PUT", "/kpi/baseline/eta_error_min", ADMIN, {"value": "20"}),
+        422, "VALIDATION_ERROR",
+    )
     response = kpi.send("PUT", "/kpi/baseline/planning_time_min", ADMIN, {"value": "15"})
     assert response.status_code == 200, response.text
     assert response.json()["value"] == 15
     report = kpi.get("/kpi/summary", ADMIN, **PERIOD)
     assert report.status_code == 200
-    assert report.json()["metrics"]["planning_time_min"] == {"value": 15, "baseline": 15.0, "change": 0.0}
+    assert report.json()["metrics"]["planning_time_min"] == {"value": None, "by_path": {"sales": None, "dispatcher": None}, "baseline": 15.0, "change": None}
     baselines = fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline")
     assert [tuple(record) for record in baselines] == [("planning_time_min", "15", "manual")]
     audit = fetch(kpi.dsn, "SELECT action,entity,correlation_id FROM audit.decision_log")
@@ -255,18 +286,16 @@ def test_US_LOG_01_AC2_decisions_and_milestones_remain_immutable(kpi: Api) -> No
         execute(kpi.dsn, "DELETE FROM ops.milestone_event WHERE order_id=1")
 
 
-def test_US_KPI_01_multi_vehicle_order_prep_error_is_counted_once_per_order(kpi: Api) -> None:
-    """Improvement rows are per trip_stop; one order with two vehicles must not weigh twice."""
+def test_US_KPI_01_AC1_two_vehicle_order_counts_once_and_eta_requires_snapshot(kpi: Api) -> None:
+    add_approval_evidence(kpi)
     execute(
         kpi.dsn,
-        "INSERT INTO audit.improvement_log (order_id, warehouse_id, handling_groups, prep_error_min, "
-        "eta_error_min, accepted_unchanged, delivered_at) VALUES "
-        "(4, 1, '{N1}', 10, 4, true, '2026-11-12T10:00Z'), "
-        "(4, 1, '{N1}', 10, 8, true, '2026-11-12T11:00Z'), "
-        "(3, 1, '{N1}', 40, 6, true, '2026-11-12T12:00Z')",
+        rows.trip_sql(1),
+        rows.trip_sql(2),
+        rows.stop_sql(1, 4),
+        rows.stop_sql(2, 4),
     )
-    response = kpi.get("/kpi/summary", DISPATCHER, **{"from": "2026-11-12", "to": "2026-11-12"})
+    response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
     assert response.status_code == 200, response.text
-    metrics = response.json()["metrics"]
-    assert metrics["prep_error_min"]["value"] == 25  # (10 + 40) / 2 orders, not (10 + 10 + 40) / 3
-    assert metrics["eta_error_min"]["value"] == 6  # eta error is per delivery (3 deliveries): (4 + 8 + 6) / 3
+    assert response.json()["metrics"]["plan_acceptance_rate"]["value"] == 0.5
+    assert response.json()["metrics"]["eta_error_min"]["median"] is None
