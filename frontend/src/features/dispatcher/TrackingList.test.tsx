@@ -63,6 +63,16 @@ describe("T17 Dispatcher live tracking (MSW)", () => {
     expect(main().queryByText(/lịch sử điểm/i)).toBeNull();
   });
 
+  it("test_US_GPS_02_AC1_T13_decimal_distance_and_nullable_risk_are_supported", async () => {
+    server.use(http.get(LIVE, () => HttpResponse.json([
+      trip({ remaining_km: "12.5", risk: { status: null, color: null } }),
+    ])));
+    renderAt("/dispatcher/tracking");
+    expect(await main().findByText("Chuyến #930 · STO-12-04")).toBeInTheDocument();
+    expect(within(assigned(930)).getByText("Quãng đường còn lại: 12.5 km")).toBeInTheDocument();
+    expect(within(assigned(930)).getByText("Rủi ro: Chưa xác định")).toBeInTheDocument();
+  });
+
   it("test_US_GPS_02_AC1_vehicle_breakdown_forces_unknown_eta_even_if_server_sends_forecast", async () => {
     server.use(http.get(LIVE, () => HttpResponse.json([
       trip({ open_incident: "vehicle_breakdown", forecast_eta: "2026-11-12T10:20:00Z" }),
