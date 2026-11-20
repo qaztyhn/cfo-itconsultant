@@ -44,6 +44,27 @@ function failureMessage(error: unknown): string {
   return "No verified server ACK. Retry uses exactly the same request.";
 }
 
+/** A hanging POST is an uncertain outcome, not a negative ACK. Retry retains the snapshot/key.
+ * The original network request may finish later; backend idempotency arbitrates duplicates.
+ */
+const POST_ACK_TIMEOUT_MS = 15_000;
+async function waitForServerAck<T>(request: Promise<T>): Promise<T> {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(
+          () => reject(new Error("Server acknowledgment timed out.")),
+          POST_ACK_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 /** Capture exactly one fresh fix. Browser timestamp is retained in the retry snapshot. */
 function capturePosition(): Promise<DriverPosition> {
   return new Promise((resolve, reject) => {
@@ -133,7 +154,7 @@ export function TodaysTrips() {
   async function send(request: PendingRequest): Promise<void> {
     try {
       if (request.kind === "position") {
-        const ack = await submitPosition(request.tripId, request.point, request.key);
+        const ack = await waitForServerAck(submitPosition(request.tripId, request.point, request.key));
         if (ack.accepted !== 1 || ack.trip_id !== request.tripId ||
             !Number.isFinite(Date.parse(ack.recorded_at)) ||
             Date.parse(ack.recorded_at) !== Date.parse(request.point.recorded_at)) {
@@ -143,7 +164,7 @@ export function TodaysTrips() {
         setLastAck({ userId: request.userId, tripId: request.tripId, recordedAt: request.point.recorded_at });
         setNotice(`Position sent · ${timeLabel(request.point.recorded_at)}`);
       } else {
-        const ack = await submitDriverEvent(request.orderId, request.body, request.key);
+        const ack = await waitForServerAck(submitDriverEvent(request.orderId, request.body, request.key));
         if (!Number.isSafeInteger(ack.event_id) || ack.event_id <= 0) {
           throw new Error("Unverified event acknowledgment");
         }
