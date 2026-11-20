@@ -43,3 +43,23 @@ hai feed cho bộ dữ liệu báo cáo. Trong lượt kiểm, bộ này cho Pla
 công. Approve qua E1 dừng ở `RISK_DEPENDENCY_UNAVAILABLE` tại bước nạp lại
 tồn kho WMS khi đã có đơn lịch sử đang hoạt động. Dùng project E0-04 ở trên
 để chạy bước 8 của T27.
+
+## Bằng chứng PostgreSQL 16 · 20/11/2026
+
+- Checkout replay `2c47ffe4e48e9709aff5534a0f5342a440ed1a3c`
+  có cùng Git tree `61bee1919e22c9d97859dd72d568ff2f7b05f0c7` với
+  [commit code trên GitHub](https://github.com/qaztyhn/cfo-itconsultant/commit/2edec0fd96426c6dfe4a44d098aa462f952c5bef).
+- Source `SE-2026-000249` → CFO `SE-2026-000001`. Database disposable trả
+  `order_id=1`, `plan_id=1`, `trip_id=1`. Lấy lại ID khi seed môi trường khác.
+- Kho STO, ngày plan **02/12/2026**, xuất xe lúc **06:41 +01:00** (Stockholm).
+  Khung T12 **06:00–17:00**, dự kiến **38/540 phút lái**; cả hai feed mang
+  nguồn `synthetic_demo`. Replay hai lượt nhận 16 khung và 4 quyền lái mỗi lượt.
+- Sync, Planning, Approve, `START_PREP`, `GOODS_READY`, `LOADED` và
+  `DISPATCHED` đều HTTP **200**. PostgreSQL có đơn `DISPATCHED`, plan
+  `approved`, trip `on_road`, milestone `DISPATCHED` ID **4** và WMS
+  intent `refreshed` với nguồn tồn kho `wms_synthetic`.
+- GPS của chính chuyến trả HTTP **202** và ghi đúng một điểm trên DB demo
+  có thông báo quyền riêng tư tổng hợp. Lượt replay dùng HTTP, với
+  `DEMO_D7_FIXTURE_DIR` tắt từ lúc seed. Trong
+  [lượt T27 trước đó](https://github.com/qaztyhn/cfo-itconsultant/pull/233),
+  cùng Source ref bị HTTP **409** vì D7 `EVIDENCE_MISSING` ngày 02/12.
