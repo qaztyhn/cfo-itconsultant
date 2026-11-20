@@ -7,7 +7,7 @@ import pytest
 from app.core import clock
 from app.services import approval_service, dispatcher_assignment_service
 from tests.integration import rows
-from tests.integration.api_harness import Api, api as api_fixture, assert_error
+from tests.integration.api_harness import Api, api as api_fixture, assert_error  # noqa: F401
 from tests.integration.conftest import execute, fetch
 from tests.integration.test_approval_service import (
     _actor,
@@ -16,15 +16,15 @@ from tests.integration.test_approval_service import (
     _recheck,
     _run,
     _second_order,
-    db as approval_db_fixture,
+    db as approval_db_fixture,  # noqa: F401
 )
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def t15_db(approval_db_fixture: str) -> str:
-    return approval_db_fixture
+def t15_db(request: pytest.FixtureRequest) -> str:
+    return request.getfixturevalue("approval_db_fixture")
 
 
 def _dispatchers(dsn: str) -> None:
@@ -131,9 +131,9 @@ def test_US_GPS_02_AC3_approval_rollback_does_not_advance_rotation(t15_db: str) 
 
 
 @pytest.fixture
-def handover_api(api_fixture: Api, monkeypatch: pytest.MonkeyPatch) -> Api:
+def handover_api(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Api:
     """Two active on-road trips for one order, two Dispatchers, a different market."""
-    api = api_fixture
+    api: Api = request.getfixturevalue("api_fixture")
     execute(
         api.dsn,
         *rows.REF_HR,
