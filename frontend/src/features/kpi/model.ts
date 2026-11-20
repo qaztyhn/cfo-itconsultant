@@ -2,25 +2,14 @@
 export const METRICS = [
   {key:"planning_time_min",label:"Planning time / order",unit:"min",direction:"lower"},
   {key:"on_time_rate",label:"On-time delivery",unit:"percent",direction:"higher"},
-  {key:"labour_hours_per_delivery",label:"Labour / delivery",unit:"h",direction:"lower"},
-  {key:"km_per_delivery",label:"Distance / delivery",unit:"km",direction:"lower"},
-  {key:"prep_error_min",label:"Preparation error",unit:"min",direction:"lower"},
-  {key:"eta_error_min",label:"ETA error",unit:"min",direction:"lower"},
   {key:"plan_acceptance_rate",label:"Plan acceptance",unit:"percent",direction:"higher"},
-  {key:"failed_delivery_rate",label:"Failed deliveries",unit:"percent",direction:"lower"},
-  {key:"capacity_utilisation",label:"Capacity utilisation",unit:"percent",direction:"higher"},
-  {key:"manual_plan_count",label:"Manual plans",unit:"count",direction:"lower"},
+  {key:"manual_intervention_rate",label:"Manual interventions / order",unit:"percent",direction:"lower"},
+  {key:"eta_error_min",label:"ETA error",unit:"min",direction:"lower"},
 ] as const;
 export type MetricKey = (typeof METRICS)[number]["key"];
-export const CARDS: readonly MetricKey[][] = [
-  ["planning_time_min"],["on_time_rate"],["labour_hours_per_delivery","km_per_delivery"],
-  ["prep_error_min"],["eta_error_min"],["plan_acceptance_rate","manual_plan_count"],
-  ["failed_delivery_rate"],["capacity_utilisation"],
-];
-export const DIAGNOSTICS = [
-  {key:"hard_constraint_violations",label:"Hard-constraint violations",unit:"count"},
-  {key:"event_to_alert_latency_s_median",label:"Event → alert latency (median)",unit:"s"},
-] as const;
+export const CARDS: readonly MetricKey[][] = METRICS.map(item=>[item.key]);
+export const BASELINE_METRICS = METRICS.filter(item=>
+  item.key==="planning_time_min" || item.key==="manual_intervention_rate");
 type ObjectValue=Record<string,unknown>;
 function object(raw:unknown):ObjectValue{return raw !== null && typeof raw==="object" && !Array.isArray(raw)?raw as ObjectValue:{};}
 function num(value:unknown):number|null{return typeof value==="number" && Number.isFinite(value)?value:null;}
@@ -36,13 +25,18 @@ export function validId(value:string|null):number|null {
 }
 export function metricValue(input:unknown,key:MetricKey) {
   const data=object(object(input).metrics),entry=object(data[key]);
-  return {value:num(entry.value),baseline:num(entry.baseline),change:num(entry.change)};
+  const byPath=object(entry.by_path),target=object(entry.target);
+  return {value:num(entry.value),baseline:num(entry.baseline),change:num(entry.change),
+    sales:num(byPath.sales),dispatcher:num(byPath.dispatcher),
+    median:num(entry.median),p90:num(entry.p90),
+    targetMedian:num(target.median),targetP90:num(target.p90)};
 }
-export function diagnosticValue(input:unknown,key:(typeof DIAGNOSTICS)[number]["key"]):number|null {
-  return num(object(input)[key]);
+export function supportingValue(input:unknown,key:"order_to_commit_min"|"counter_commit_rate"|"manual_plan_count") {
+  const item=object(object(input).supporting)[key],entry=object(item),byPath=object(entry.by_path);
+  return {value:num(entry.value),sales:num(byPath.sales),dispatcher:num(byPath.dispatcher)};
 }
 export function displayValue(value:number|null,unit:string):string {
-  if(value===null)return "Unavailable";
+  if(value===null)return "Chưa có dữ liệu";
   const formatted=(unit==="percent"?value*100:value).toLocaleString("en-US",{maximumFractionDigits:2});
   return unit==="percent"?formatted+"%":unit==="count"?formatted:formatted+" "+unit;
 }

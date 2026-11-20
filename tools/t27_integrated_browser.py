@@ -174,7 +174,7 @@ def login(browser, target: str, account: str, password: str, out: Path, label: s
 def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) -> tuple[int, int, int]:
     page = login(browser, "/store/sync-check", "sales@cfo.demo", password, out, "Sales")
     try:
-        expect(page.get_by_role("heading", name="Sync & confirm delivery")).to_be_visible()
+        expect(page.get_by_role("heading", name="Sync & Check")).to_be_visible()
         external_ref = page.get_by_label("External POS order reference")
         external_ref.fill(SOURCE_REF)
         expect(external_ref).to_have_value(SOURCE_REF)
@@ -213,9 +213,12 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
             page.get_by_role("button", name="Check feasibility").click()
         run = body(planned.value, report)
         plans = run.get("plans") or []
-        if run.get("result") != "feasible" or len(plans) != 1:
-            raise RuntimeError("E0-04 planner did not produce exactly one feasible proposed plan")
-        run_id, plan_id = run["id"], plans[0]["id"]
+        # Current main may return additional ranks; require feasible and exactly one rank 1,
+        # then use that rank-1 plan ID through Dispatcher approval and the loopback WMS.
+        rank_one = [plan for plan in plans if plan.get("rank") == 1]
+        if run.get("result") != "feasible" or len(rank_one) != 1:
+            raise RuntimeError("E0-04 planner did not produce a feasible run with exactly one rank-1 plan")
+        run_id, plan_id = run["id"], rank_one[0]["id"]
         if sql(f"SELECT status FROM plan.fulfilment_plan WHERE id={plan_id}", env) != "proposed":
             raise RuntimeError("Plan was already approved during setup (not browser tested)")
         expect(page.get_by_role("heading", name="Feasible — not confirmed")).to_be_visible()
@@ -224,8 +227,9 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         report["last_verified"] = "Sales UI Sync + Check feasibility; proposed plan"
         mark(report, "2", "PASS", "Both Sync and Check clicked through Chrome; two HTTP 200 responses; plan proposed",
              order_id=order_id, run_id=run_id, plan_id=plan_id)
-        mark(report, "3", "BLOCKED", "This E0-04 case returned one feasible rank; run the T26 Sales alternatives case.",
-             visible_proposals=len(plans))
+        mark(report, "3", "NOT VERIFIED",
+             "Step 3 is verified separately: SE-2026-000123 rank 2 on the T26 seed (reporting scenario).",
+             visible_proposals=len(plans), rank_one_plan_id=plan_id)
         return order_id, run_id, plan_id
     finally:
         page.close()

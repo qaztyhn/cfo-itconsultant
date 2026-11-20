@@ -267,7 +267,7 @@ rank alternative probe. Read the JSON ledgers from all applicable jobs.
 |---|---|
 | 1 | PASS. Sales entered the submitted Source reference in CFO. |
 | 2 | PASS. Browser Sync and feasibility requests returned HTTP 200. |
-| 3 | BLOCKED. Current main's T26 case SE-2026-000123 returned only rank 1. Complete the T19 rank-2 approval trace with #244. |
+| 3 | PASS ([reporting job](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44740227406/job/136301755444)). Sales selected rank 2 for SE-2026-000123 in Chrome with `reason_code=other`: `POST /plans/7/approve` HTTP 200; PostgreSQL plan `approved`, order `APPROVED`, `PLAN_APPROVED` audit actor `sales`, rank `2`, reason `other`, exactly one `CONFIRMED`. |
 | 4 | PASS. Approval and reflected synthetic WMS batch agree with the expected rotation candidate, trip assignment and PLAN_APPROVED audit. |
 | 5 | PASS. A single CONFIRMED email with the committed window reached Mailpit. |
 | 6 | PASS. Dispatcher opened the exact planning run from the order queue and approved it. |
@@ -276,10 +276,28 @@ rank alternative probe. Read the JSON ledgers from all applicable jobs.
 | 9 | PASS. Assigned live tracking and predicted-late risk, reviewed DELAY draft and explicit Send. |
 | 10 | PASS. Each expected lifecycle template reached Mailpit once with the same order reference. DELAY also matches the reviewed window. |
 | 11 | PASS. CS order lookup and every rendered ETA version match the scoped API and PostgreSQL. |
-| 12 | BLOCKED. The live KPI API still returns the legacy metrics. T22 needs the five R3 metrics, approval-path breakdown and ETA median/P90/target. |
-| 12b | PASS. Actual T26 seed showed six orders, five groups, SEK 303 recognised and the ST-001 approved-order drilldown. |
+| 12 | PASS ([reporting job](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44740227406/job/136301755444)), ops/admin account. Five cards, Sales/Dispatcher breakdown and ETA target 20/60 shown. Reconciled with PostgreSQL: `on_time_rate` (summary and daily), `manual_intervention_rate`, and `plan_acceptance_rate` total, each path and daily series. Display-only checks: `planning_time_min` and ETA median/P90 stay `null` and the UI shows "Chưa có dữ liệu" (no approved measurement source). |
+| 12b | PASS ([same job](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44740227406/job/136301755444)). Six orders, five groups, SEK 303 recognised and the ST-001 approved-order drilldown. |
 | 13 | PASS at the task-board demo checkpoint. Driver FAILED with a POD. Dispatcher saw and acknowledged the critical alert, and no new planning run appeared. Full T18 recovery stays outside this checkpoint. |
 
 The demo worker uses the latest stored scheduled-send instant for terminal
 mail, preserving quiet hours. The risk and failure artifacts omit coordinates,
 recipient data and authentication data. No decision IDs changed.
+
+## T27 closing run — PR #249 (`feat/t22-five-kpis`)
+
+- **Commit:** `9ec9a6b6a4d778a3fa6a5dc55cbd0123042a9af2`
+- **T27 workflow:** [run 55](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44740227406) — `complete`, `expired_t12`, `failed` and `reporting` all succeeded. Evidence artifacts: `t27-integrated-e004-<scenario>-synthetic-evidence` (JSON and screenshots; 3-day retention).
+- **CI:** backend, frontend and source jobs green on this commit.
+- **Not yet done:** the post-merge replay on `main`; T27 is closed only after that run.
+
+`plan_acceptance_rate` on the T26 seed (reporting job; PostgreSQL = API = UI):
+
+| Item | Value | Verified against |
+|---|---|---|
+| Orders in sample | 6 (5 synthetic audit rows added by the test fixture) | PostgreSQL |
+| Total | 5/6 = 83.3% | PostgreSQL, API, UI card |
+| Sales / Dispatcher | 75% / 100% | PostgreSQL, API, UI card |
+| Daily 2026-11-30 / 2026-12-01 | 100% / 0% (rank-2 approval only) | PostgreSQL, API, UI table cell |
+
+Display-only confirmations (no measurement source, not reconciled): `planning_time_min` and ETA median/P90 are `null` and render "Chưa có dữ liệu"; ETA target 20/60 min is shown.
