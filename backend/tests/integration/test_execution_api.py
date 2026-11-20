@@ -1074,9 +1074,7 @@ def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
     original_enqueue = notify_service.enqueue
     monkeypatch.setattr(notify_service, "enqueue", fail_notify)
     second_payload = {"trip_id": 2, "recipient_name": "Synthetic two"}
-    failed = send(
-        execution_api, 14, "DELIVERED", "2026-11-10T09:35:00Z", second_payload
-    )
+    failed = send(execution_api, 14, "DELIVERED", "2026-11-10T09:35:00Z", second_payload)
     assert_error(failed, 409, "PLAN_NOT_APPROVABLE")
     assert (
         fetch(execution_api.dsn, "SELECT status::text FROM ops.customer_order WHERE id=1")[0][0]
@@ -1084,12 +1082,13 @@ def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
     )
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.proof_of_delivery")[0][0] == 1
     assert positions(execution_api.dsn) == [(1, "09:30")]
-    assert fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0] == "pending"
+    assert (
+        fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0]
+        == "pending"
+    )
 
     monkeypatch.setattr(notify_service, "enqueue", original_enqueue)
-    second = send(
-        execution_api, 14, "DELIVERED", "2026-11-10T09:35:00Z", second_payload
-    )
+    second = send(execution_api, 14, "DELIVERED", "2026-11-10T09:35:00Z", second_payload)
     assert second.status_code == 200, second.text
     assert second.json()["order_status"] == "DELIVERED"
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.proof_of_delivery")[0][0] == 2
