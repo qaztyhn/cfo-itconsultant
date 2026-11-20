@@ -1,36 +1,297 @@
 """D3 GPS: verified trip-duty device ingestion, privacy cleanup and lost signals.
 
 All writes participate in a caller-owned AsyncSession. GPS read access requires
-a persisted dispatcher-to-trip assignment, verified on each live request.
-No market-wide fallback, including when an order has NULL assignment.
+the current dispatcher-to-trip assignment. No market-wide fallback is allowed.
 """
 
+import hashlib
+import json
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from typing import Literal
 
-from sqlalchemy import ColumnElement, and_, delete, func, or_, select
+from pydantic import ValidationError
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import Action
 from app.audit.recorder import record_decision
 from app.core import clock
-from app.core.config import MarketConfig
+from app.core.config import MarketConfig, get_settings
 from app.core.errors import DomainError
 from app.domain.models.ops import (
     Alert,
     CustomerOrder,
     DeliveryTrip,
     EtaForecast,
+    IdempotencyKey,
     MilestoneEvent,
     TripStop,
     VehiclePosition,
 )
 from app.domain.models.ref import ComplianceRecord, Location, Market, Vehicle
-from app.services import alert_service
-from app.services.gps_duty import active_duty, trip_collection_windows
+from app.providers.routing_ors import OrsRoutingProvider, RoutingUnavailable, route_with_fallback
+from app.services import alert_service, risk_service
+from app.services.gps_duty import active_duty, valid_collection_point
 
 MAX_GPS_BATCH_POSITIONS = 100  # Owner-approved G4 upload limit (DEC-OWNER-20261109)
+
+
+@dataclass(frozen=True)
+class RemainingRoute:
+    """Verified routing output for T14 (route source is NOT the GPS point source)."""
+
+    recorded_at: datetime
+    remaining_km: Decimal
+    remaining_min: int
+    provider: Literal["ors", "fallback"]
+
+
+PointSource = Literal["driver_tap", "driver_incident", "driver_completion"]
+
+
+def _number(value: object, name: str, minimum: Decimal, maximum: Decimal) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise DomainError("VALIDATION_ERROR", f"Invalid GPS {name}.")
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise DomainError("VALIDATION_ERROR", f"Invalid GPS {name}.") from exc
+    if not number.is_finite() or not minimum <= number <= maximum:
+        raise DomainError("VALIDATION_ERROR", f"Invalid GPS {name}.")
+    return number
+
+
+def _point_time(value: object) -> datetime:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise DomainError("VALIDATION_ERROR", "GPS timestamp must be ISO 8601 with timezone.") from exc
+    if not isinstance(value, datetime):
+        raise DomainError("VALIDATION_ERROR", "GPS timestamp is required.")
+    return _aware(value)
+
+
+async def _trip_context(
+    session: AsyncSession,
+    trip_id: int,
+) -> tuple[DeliveryTrip, Market, CustomerOrder]:
+    row = (
+        await session.execute(
+            select(DeliveryTrip, Market, CustomerOrder)
+            .join(Location, Location.id == DeliveryTrip.warehouse_id)
+            .join(Market, Market.id == Location.market_id)
+            .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+            .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
+            .where(DeliveryTrip.id == trip_id, TripStop.status == "pending")
+            .with_for_update(of=DeliveryTrip)
+        )
+    ).all()
+    if len(row) != 1:
+        raise DomainError("NOT_ON_TRIP", "A uniquely identified active delivery stop is required.")
+    return row[0]
+
+
+async def record_point(
+    session: AsyncSession,
+    trip_id: int,
+    point: Mapping[str, object],
+    source: PointSource,
+) -> RemainingRoute:
+    """T13/T14 shared: write one verified point, no commit, no risk/ETA side effect.
+
+    Caller owns transaction, identity/authorization and event decisions. This service
+    verifies active trip + official availability and obtains authoritative route
+    provenance; T13's endpoint calls RiskService exactly once after a new write.
+    """
+    if source not in ("driver_tap", "driver_incident", "driver_completion"):
+        raise DomainError("VALIDATION_ERROR", "Unknown GPS point source.")
+    if set(point) != {"lat", "lon", "accuracy_m", "recorded_at"}:
+        raise DomainError("VALIDATION_ERROR", "A GPS point must contain exactly four fields.")
+    at = _point_time(point["recorded_at"])
+    now = _aware(clock.now())
+    latitude = _number(point["lat"], "latitude", Decimal("-90"), Decimal("90"))
+    longitude = _number(point["lon"], "longitude", Decimal("-180"), Decimal("180"))
+    accuracy = _number(point["accuracy_m"], "accuracy", Decimal("0.000001"), Decimal("9999999"))
+    trip, market, order = await _trip_context(session, trip_id)
+    if not market.gps_enabled:
+        raise DomainError("GPS_DISABLED", "GPS is disabled for this market.")
+    if trip.status != "on_road" or trip.ended_at is not None or trip.depart_actual_at is None:
+        raise DomainError("NOT_ON_TRIP", "Trip is no longer on the road.")
+    if at > now or at < trip.depart_actual_at:
+        raise DomainError("NOT_ON_TRIP", "GPS point is outside the active trip interval.")
+    window = (await active_duty(session, now=now, trip_id=trip_id)).get(trip_id)
+    if window is None or at < window[0]:
+        raise DomainError("NOT_ON_TRIP", "Verified driver availability is missing or inactive.")
+    notice = await session.scalar(
+        select(ComplianceRecord.id)
+        .where(
+            ComplianceRecord.market_id == market.id,
+            ComplianceRecord.type == "GPS_NOTICE",
+            ComplianceRecord.status == "approved",
+        )
+        .limit(1)
+    )
+    if notice is None:
+        raise DomainError("FORBIDDEN", "Approved GPS privacy notice is unavailable.")
+    earlier = await session.scalar(
+        select(VehiclePosition.id)
+        .where(VehiclePosition.trip_id == trip_id, VehiclePosition.recorded_at >= at)
+        .limit(1)
+    )
+    if earlier is not None:
+        raise DomainError("DUPLICATE_EVENT", "GPS timestamp must be newer than the last accepted point.")
+    try:
+        config = MarketConfig.model_validate(market.config or {})
+    except ValidationError as exc:
+        raise DomainError("PLAN_NOT_APPROVABLE", "Approved routing configuration is invalid.") from exc
+    try:
+        route = await route_with_fallback(
+            OrsRoutingProvider(get_settings().ors_api_key or ""),
+            float(latitude),
+            float(longitude),
+            float(order.delivery_lat),
+            float(order.delivery_lon),
+            allow_fallback=config.routing.allow_fallback,
+        )
+    except (RoutingUnavailable, ValueError) as exc:
+        raise DomainError("PLAN_NOT_APPROVABLE", "Verified remaining route is unavailable.") from exc
+    distance = route.distance_km.quantize(Decimal("0.1"))
+    if not 0 <= distance < Decimal("1000000") or route.duration_min < 0:
+        raise DomainError("PLAN_NOT_APPROVABLE", "Remaining route exceeds accepted bounds.")
+    saved = VehiclePosition(
+        trip_id=trip_id,
+        vehicle_id=trip.vehicle_id,
+        lat=latitude.quantize(Decimal("0.00001")),
+        lon=longitude.quantize(Decimal("0.00001")),
+        accuracy_m=accuracy.quantize(Decimal("0.1")),
+        recorded_at=at,
+        received_at=func.clock_timestamp(),
+        source=source,
+        remaining_km=distance,
+        remaining_min=route.duration_min,
+        # DB provenance is "haversine_estimate"; the wire DTO calls it "fallback".
+        route_source="haversine_estimate" if route.provider == "fallback" else "ors",
+    )
+    session.add(saved)
+    await session.flush()
+    return RemainingRoute(at, distance, route.duration_min, route.provider)
+
+
+async def trusted_remaining_for_order(
+    session: AsyncSession,
+    order_id: int,
+) -> dict[int, tuple[datetime, int]]:
+    """Freshest persisted route durations for all trips in one approved order."""
+    trip_ids = (
+        await session.scalars(select(TripStop.trip_id).where(TripStop.order_id == order_id).distinct())
+    ).all()
+    evidence: dict[int, tuple[datetime, int]] = {}
+    for trip_id in trip_ids:
+        latest = await session.scalar(
+            select(VehiclePosition)
+            .where(VehiclePosition.trip_id == trip_id)
+            .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc())
+            .limit(1)
+        )
+        if latest is not None:
+            if latest.remaining_min is None or latest.route_source not in ("ors", "haversine_estimate"):
+                raise DomainError("PLAN_NOT_APPROVABLE", "GPS route duration has no verified provenance.")
+            evidence[trip_id] = (latest.recorded_at, latest.remaining_min)
+    return evidence
+
+
+async def post_driver_position(
+    session: AsyncSession,
+    trip_id: int,
+    actor: object,
+    point: Mapping[str, object],
+    key: str,
+) -> dict[str, object]:
+    """202 API boundary: atomic replay, one new GPS point, one risk calculation."""
+    _role(actor, "driver")
+    actor_id = getattr(actor, "id", None)
+    if not isinstance(actor_id, int) or actor_id <= 0:
+        raise DomainError("FORBIDDEN", "An authenticated driver is required.")
+    endpoint = f"POST /trips/{trip_id}/positions"
+    normalized = {
+        "lat": str(point.get("lat")),
+        "lon": str(point.get("lon")),
+        "accuracy_m": str(point.get("accuracy_m")),
+        "recorded_at": _point_time(point.get("recorded_at")).isoformat(),
+    }
+    digest = hashlib.sha256(
+        json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    other_user = await session.scalar(
+        select(IdempotencyKey.user_id)
+        .where(IdempotencyKey.key == key, IdempotencyKey.user_id != actor_id)
+        .limit(1)
+    )
+    if other_user is not None:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The request key belongs to another actor.")
+    await session.execute(
+        insert(IdempotencyKey)
+        .values(key=key, user_id=actor_id, endpoint=endpoint, request_hash=digest)
+        .on_conflict_do_nothing(index_elements=["key", "user_id"])
+    )
+    claim = await session.scalar(
+        select(IdempotencyKey)
+        .where(IdempotencyKey.key == key, IdempotencyKey.user_id == actor_id)
+        .with_for_update()
+    )
+    if claim is None or claim.endpoint != endpoint or claim.request_hash != digest:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The request key belongs to a different payload.")
+    if claim.response_status == 202 and claim.response_body is not None:
+        return dict(claim.response_body)
+    if claim.response_status is not None:
+        raise DomainError("IDEMPOTENCY_CONFLICT", "The prior request cannot be replayed.")
+    # Important: no idempotency replay can reach the trip gate, recorder or RiskService.
+    await _assigned_trip(session, trip_id, actor, lock=False)
+    # Match execution's order-before-trip lock sequence. Serialize point insertion
+    # with forecasts for the order so sibling uploads cannot miss the watermark.
+    order_id = await session.scalar(
+        select(CustomerOrder.id)
+        .join(TripStop, TripStop.order_id == CustomerOrder.id)
+        .where(TripStop.trip_id == trip_id, TripStop.status == "pending")
+        .with_for_update(of=CustomerOrder)
+    )
+    if order_id is None:
+        raise DomainError("NOT_ON_TRIP", "Delivery stop is unavailable.")
+    await _assigned_trip(session, trip_id, actor)
+    result = await record_point(session, trip_id, point, "driver_tap")
+    await risk_service.recalculate(
+        order_id,
+        trigger="position",
+        session=session,
+        signal_at=result.recorded_at,
+        position_trip_id=trip_id,
+    )
+    response: dict[str, object] = {
+        "accepted": 1,
+        "trip_id": trip_id,
+        "recorded_at": result.recorded_at.isoformat(),
+        "remaining_km": str(result.remaining_km),
+        "remaining_min": result.remaining_min,
+        "provider": result.provider,
+    }
+    claim.response_status = 202
+    claim.response_body = response
+    await session.flush()
+    return response
+
+
+async def purge_order(session: AsyncSession, order_id: int) -> int:
+    """T14/cancellation hook: purge coordinates in the caller transaction."""
+    ids = select(TripStop.trip_id).where(TripStop.order_id == order_id).distinct()
+    removed = await session.scalars(
+        delete(VehiclePosition).where(VehiclePosition.trip_id.in_(ids)).returning(VehiclePosition.id)
+    )
+    return len(removed.all())
 
 
 def _aware(value: datetime) -> datetime:
@@ -57,15 +318,17 @@ def _market_config(market: Market) -> MarketConfig:
         raise DomainError("VALIDATION_ERROR", "Approved GPS configuration is unavailable.") from exc
 
 
-async def _assigned_trip(session: AsyncSession, trip_id: int, actor: object) -> tuple[DeliveryTrip, Market]:
+async def _assigned_trip(
+    session: AsyncSession, trip_id: int, actor: object, *, lock: bool = True
+) -> tuple[DeliveryTrip, Market]:
     employee_id = _role(actor, "driver")
-    result = await session.execute(
+    query = (
         select(DeliveryTrip, Market)
         .join(Location, Location.id == DeliveryTrip.warehouse_id)
         .join(Market, Market.id == Location.market_id)
         .where(DeliveryTrip.id == trip_id, DeliveryTrip.driver_employee_id == employee_id)
-        .with_for_update(of=DeliveryTrip)
     )
+    result = await session.execute(query.with_for_update(of=DeliveryTrip) if lock else query)
     item = result.one_or_none()
     if item is None:
         raise DomainError("NOT_FOUND", "Trip not found.")
@@ -109,7 +372,7 @@ async def ingest_positions(
     )
     if notice is None:
         raise DomainError("FORBIDDEN", "An approved GPS privacy notice is required.")
-    duty = (await active_duty(session, now=timestamp)).get(trip_id)
+    duty = (await active_duty(session, now=timestamp, trip_id=trip_id)).get(trip_id)
     if duty is None:
         raise DomainError("NOT_ON_TRIP", "Official driver shift is not active.")
     begins, ends = duty
@@ -199,21 +462,6 @@ async def ingest_positions(
     session.add_all(new_rows)
     await session.flush()
     return {"accepted": len(new_rows), "eta": None}
-
-
-async def trip_positions(
-    trip_id: int,
-    actor: object,
-    *,
-    session: AsyncSession,
-    since: datetime | None = None,
-    until: datetime | None = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> dict[str, object]:
-    """Fail closed: dispatcher-trip mapping is not persisted/approved (D3)."""
-    _role(actor, "dispatcher")
-    raise DomainError("FORBIDDEN", "Verified dispatcher-to-trip assignment is unavailable.")
 
 
 async def live(actor: object, *, session: AsyncSession | None = None) -> list[dict[str, object]]:
@@ -317,21 +565,6 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
 RETENTION = timedelta(days=7)  # DEC-GPS-RET-20261109: absolute 7 x 24 h, never wall-clock/DST based
 
 
-def _valid_points(windows: Mapping[int, tuple[datetime, datetime]], when: datetime) -> ColumnElement[bool]:
-    return or_(
-        False,
-        *(
-            and_(
-                VehiclePosition.trip_id == trip_id,
-                VehiclePosition.recorded_at >= start,
-                VehiclePosition.recorded_at < end,
-                VehiclePosition.recorded_at <= when,  # a point from the future is never valid
-            )
-            for trip_id, (start, end) in windows.items()
-        ),
-    )
-
-
 async def close_trip_collection(session: AsyncSession, trip_id: int, *, now: datetime | None = None) -> int:
     """Terminal hook for Dev 1 (replaces the immediate raw-GPS delete): runs in the completion transaction.
 
@@ -343,12 +576,11 @@ async def close_trip_collection(session: AsyncSession, trip_id: int, *, now: dat
     trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
     if trip is None:
         raise DomainError("NOT_FOUND", "Trip not found.")
-    if trip_id in await active_duty(session, now=when):
+    if trip_id in await active_duty(session, now=when, trip_id=trip_id):
         raise DomainError("NOT_ON_TRIP", "Cannot close an active GPS tracking session.")
-    windows = await trip_collection_windows(session, [trip_id])
     removed = await session.scalars(
         delete(VehiclePosition)
-        .where(VehiclePosition.trip_id == trip_id, ~_valid_points(windows, when))
+        .where(VehiclePosition.trip_id == trip_id, ~valid_collection_point(when))
         .returning(VehiclePosition.id)
     )
     return len(removed.all())
@@ -364,16 +596,27 @@ async def purge_expired(*, session: AsyncSession | None = None, now: datetime | 
     if session is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "GPS cleanup requires a transaction.")
     when = _aware(now if now is not None else clock.now())
-    expired = await session.scalars(
+    # DELIVERED/CANCELLED never retain coordinates, regardless of the 7-day FAILED limit.
+    terminal_trip_ids = (
+        select(TripStop.trip_id)
+        .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
+        .where(CustomerOrder.status.in_(("DELIVERED", "CANCELLED")))
+        .distinct()
+    )
+    terminals = await session.scalars(
         delete(VehiclePosition)
-        .where(VehiclePosition.recorded_at < when - RETENTION)
+        .where(VehiclePosition.trip_id.in_(terminal_trip_ids))
         .returning(VehiclePosition.id)
     )
-    count = len(expired.all())
-    trip_ids = [t for (t,) in (await session.execute(select(VehiclePosition.trip_id).distinct())).all()]
-    windows = await trip_collection_windows(session, trip_ids)
+    terminal_count = len(terminals.all())
+    expired = await session.scalars(
+        delete(VehiclePosition)
+        .where(VehiclePosition.recorded_at <= when - RETENTION)
+        .returning(VehiclePosition.id)
+    )
+    count = terminal_count + len(expired.all())
     invalid = await session.scalars(
-        delete(VehiclePosition).where(~_valid_points(windows, when)).returning(VehiclePosition.id)
+        delete(VehiclePosition).where(~valid_collection_point(when)).returning(VehiclePosition.id)
     )
     return count + len(invalid.all())
 

@@ -1,0 +1,26 @@
+name: T13 R3 one-point GPS PostgreSQL acceptance
+on:
+  push:
+    branches: [feat/r3-t13-single-position-gps]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  t13-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: ./.github/actions/postgres
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: python -m pip install -e ".[dev]" tzdata
+      - name: Show Black formatting diff (diagnostic only)
+        working-directory: backend
+        run: black --diff app/services/gps_service.py tests/integration/test_t13_one_point_gps.py
+      - name: T13 one-point, ORS/fallback and PostgreSQL transaction tests
+        working-directory: backend
+        run: |
+          python -m pytest -q -s tests/integration/test_t13_one_point_gps.py tests/unit/test_routing_provider.py

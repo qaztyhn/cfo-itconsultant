@@ -64,9 +64,12 @@ def execution_api(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F8
 
 GPS_DUTY = (
     "UPDATE ref.market SET gps_enabled=true WHERE id=1",
-    "INSERT INTO hr.employee_shift_schedule (employee_id,warehouse_id,work_date,start_time,end_time,"
-    "assigned_by,assigned_at) VALUES (5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z'), "
-    "(11,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
+    "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+    "max_driving_min,verified_by,verified_at,source,source_ref) VALUES "
+    "(5,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+    "'synthetic-demo','2026-11-08T09:00Z','synthetic_demo','m6-availability-5'), "
+    "(11,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+    "'synthetic-demo','2026-11-08T09:00Z','synthetic_demo','m6-availability-11')",
 )
 
 
@@ -746,20 +749,17 @@ def test_DEC_GPS_RET_no_collection_after_the_trip_ends_and_expired_points_are_ne
         execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
     )
     assert done.status_code == 200, done.text
-    late = execution_api.send(
-        "POST",
-        "/trips/1/positions",
-        DRIVER,
-        {
-            "positions": [
-                {
-                    "lat": 59.3,
-                    "lon": 18.1,
-                    "accuracy_m": 10,
-                    "recorded_at": "2026-11-10T09:00:00Z",
-                    "source": "device",
-                }
-            ]
+    late = execution_api.client.post(
+        "/api/v1/trips/1/positions",
+        headers={
+            "Authorization": f"Bearer {issue_token(DRIVER, {})}",
+            "Idempotency-Key": str(uuid4()),
+        },
+        json={
+            "lat": 59.3,
+            "lon": 18.1,
+            "accuracy_m": 10,
+            "recorded_at": "2026-11-10T09:00:00Z",
         },
     )
     assert_error(late, 409, "NOT_ON_TRIP")  # offline upload after the trip ended is refused

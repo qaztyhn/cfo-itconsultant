@@ -21,9 +21,10 @@ def _duty(db: str) -> None:
         "VALUES(1,1,'C','2027-01-01') ON CONFLICT DO NOTHING",
         "INSERT INTO hr.employee_assignment(employee_id,location_id,start_date) "
         "SELECT 1,1,'2026-01-01' WHERE NOT EXISTS(SELECT 1 FROM hr.employee_assignment)",
-        "INSERT INTO hr.employee_shift_schedule(employee_id,warehouse_id,work_date,start_time,end_time,"
-        "assigned_by,assigned_at) SELECT 1,1,'2026-11-06','22:00','04:00',1,'2026-11-05T00:00Z' "
-        "WHERE NOT EXISTS(SELECT 1 FROM hr.employee_shift_schedule)",
+        "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+        "max_driving_min,verified_by,verified_at,source,source_ref) "
+        "VALUES (1,'2026-11-06','2026-11-06T22:00Z','2026-11-07T04:00Z',360,"
+        "'synthetic-demo','2026-11-05T00:00Z','synthetic_demo','gps-jobs-availability')",
     )
 
 
@@ -141,8 +142,8 @@ def test_US_GPS_03_AC2_finished_trip_without_end_time_does_not_keep_gps_forever(
 @pytest.mark.parametrize(
     "change",
     [
-        "UPDATE hr.employee_shift_schedule SET status='cancelled',cancelled_at='2026-11-07T00:00Z'",
-        "DELETE FROM hr.employee_shift_schedule",
+        "UPDATE hr.driver_availability SET superseded_at='2026-11-07T00:00Z'",
+        "DELETE FROM hr.driver_availability",
         "UPDATE ref.market SET gps_enabled=false",
     ],
 )
@@ -164,7 +165,7 @@ def test_US_GPS_03_AC2_loss_of_verified_duty_or_gps_switch_off_purges_points_imm
     [
         "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-11-07T00:00Z'",
         "UPDATE ops.delivery_trip SET status='cancelled'",
-        "UPDATE hr.employee_shift_schedule SET end_time='00:00'",
+        "UPDATE hr.driver_availability SET available_to='2026-11-07T00:00Z'",
         "UPDATE hr.employee SET status='terminated',end_date='2026-11-06'",
         "DELETE FROM hr.employee_assignment",
     ],
@@ -201,22 +202,22 @@ def test_US_GPS_03_AC2_only_current_trip_duty_points_survive_until_shift_end(
     after_shift = datetime(2026, 11, 7, 4, tzinfo=UTC)
     assert transact(empty_db, lambda s: purge_positions(s, now=after_shift)) == 0
     assert fetch(empty_db, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1
-    assert fetch(empty_db, "SELECT count(*) FROM hr.employee_shift_schedule")[0][0] == 1
+    assert fetch(empty_db, "SELECT count(*) FROM hr.driver_availability")[0][0] == 1
 
 
-def test_US_GPS_03_AC2_market_timezone_drives_overnight_duty(empty_db: str) -> None:
+def test_US_GPS_03_AC2_verified_instant_drives_overnight_duty(empty_db: str) -> None:
     _on_road_with_old_signal(empty_db)
     _duty(empty_db)
     execute(empty_db, "UPDATE ref.market SET timezone='Europe/Stockholm'")
-    # 00:00 UTC is 01:00 Stockholm: previous day's 22–04 schedule is still active.
+    # Changing the market timezone does not reinterpret verified availability instants.
     assert transact(empty_db, lambda s: purge_positions(s, now=NOW)) == 0
-    ended = datetime(2026, 11, 7, 3, tzinfo=UTC)  # 04:00 market-local, exclusive end.
+    ended = datetime(2026, 11, 7, 4, tzinfo=UTC)  # Exact exclusive endpoint from the source.
     assert (
         transact(empty_db, lambda s: purge_positions(s, now=ended)) == 0
     )  # collected inside the shift: kept
     execute(
         empty_db,
         "INSERT INTO ops.vehicle_position(trip_id,vehicle_id,lat,lon,recorded_at,source) "
-        "VALUES (1,1,59,18,'2026-11-07T03:00Z','simulator')",  # exactly at the (exclusive) shift end
+        "VALUES (1,1,59,18,'2026-11-07T04:00Z','simulator')",  # exactly at the exclusive end
     )
     assert transact(empty_db, lambda s: purge_positions(s, now=ended)) == 1  # invalid: outside the shift
