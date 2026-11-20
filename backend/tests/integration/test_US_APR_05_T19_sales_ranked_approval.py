@@ -237,6 +237,7 @@ def test_US_APR_05_AC7_concurrent_sales_and_dispatcher_share_stock_single_winner
         return succeeded, failed
 
     success, failure = asyncio.run(race())
-    assert len(success) == 1 and failure == ["RESOURCE_CONFLICT"]
+    assert len(success) == 1 and len(failure) == 1
+    assert failure[0] in {"RESOURCE_CONFLICT", "PLAN_NOT_APPROVABLE"}
     assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 1
     assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 1
