@@ -5,16 +5,15 @@ a persisted dispatcher-to-trip assignment, which is not yet in the approved DB:
 the APIs therefore fail closed, never fall back to market-wide access.
 """
 
-from collections.abc import Awaitable, Callable, Mapping
 import hashlib
 import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from pydantic import ValidationError
-
 from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +24,16 @@ from app.core import clock
 from app.core.config import MarketConfig, get_settings
 from app.core.errors import DomainError
 from app.domain.models.hr import DriverAvailability
-from app.domain.models.ops import Alert, CustomerOrder, DeliveryTrip, EtaForecast, IdempotencyKey, MilestoneEvent, TripStop, VehiclePosition
+from app.domain.models.ops import (
+    Alert,
+    CustomerOrder,
+    DeliveryTrip,
+    EtaForecast,
+    IdempotencyKey,
+    MilestoneEvent,
+    TripStop,
+    VehiclePosition,
+)
 from app.domain.models.ref import ComplianceRecord, Location, Market, Vehicle
 from app.providers.routing_ors import OrsRoutingProvider, RoutingUnavailable, route_with_fallback
 from app.services import alert_service, risk_service
