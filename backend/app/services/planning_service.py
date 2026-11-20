@@ -107,9 +107,6 @@ def _roles(actor: object | None) -> set[str]:
 def _validate_params(params: dict[str, object], actor: object | None) -> dict[str, object]:
     if set(params) - _VALID_KEYS:
         raise _fail("VALIDATION_ERROR", "Unknown planning parameter.")
-    roles = _roles(actor)
-    if "dispatcher" not in roles and params:
-        raise _fail("FORBIDDEN", "Sales may only request the default plan.")
     for key in ("exclude_warehouse_ids", "exclude_vehicle_ids"):
         value = params.get(key, [])
         if not isinstance(value, list) or any(type(v) is not int or v <= 0 for v in value):
@@ -294,12 +291,17 @@ async def _execute_plan(
             return existing.id  # concurrent/double-click retry; same actor and inputs
     is_rerun = existing is not None
     if is_rerun:
-        if "dispatcher" not in roles:
-            raise _fail("FORBIDDEN", "Only Dispatcher can change plan criteria or Plan Again.")
         if not (params.get("reason_code") or params.get("reason_text")):
             raise _fail("REASON_REQUIRED", "Plan Again requires an auditable reason.")
     if order.status in ("PLANNED", "NO_FEASIBLE_DATE"):
-        changed = await transition(session, order.id, OrderStatus.SUBMITTED, "dispatcher", "Plan Again")
+        changed = await transition(
+            session,
+            order.id,
+            OrderStatus.SUBMITTED,
+            "dispatcher" if "dispatcher" in roles else "sales",
+            "Plan Again",
+            sales_plan_again_order_id=order.id if "dispatcher" not in roles else None,
+        )
         await record_decision(
             session,
             Action.CRITERIA_CHANGED_RERUN,
@@ -312,7 +314,7 @@ async def _execute_plan(
             after={"requested_by": _actor_id(actor), "kind": "rerun"},
             actor_user_id=_actor_id(actor),
             actor_employee_id=getattr(actor, "employee_id", None),
-            actor_role="dispatcher",
+            actor_role="dispatcher" if "dispatcher" in roles else "sales",
         )
     inputs = await loader(session, order, market, now=now, params=params)
     result = plan_order(
@@ -495,7 +497,17 @@ async def _plan_out(
         "vehicles": [_vehicle_out(v, compact=compact, catalog=catalog) for v in allocations],
     }
     if compact:
-        return basic
+        warehouse = await session.get(Location, row.warehouse_id)
+        # Sales receives option-level feasibility, not driver identities, gate diagnostics or scores.
+        checks = row.checks if isinstance(row.checks, dict) else {}
+        return basic | {
+            "warehouse": {"id": row.warehouse_id, "name": warehouse.name if warehouse else ""},
+            "checks": {
+                name: {"passed": checks[name].get("passed") is True, "code": checks[name].get("code")}
+                for name in ("stock", "preparation", "truck", "site_date", "safety")
+                if isinstance(checks.get(name), dict)
+            },
+        }
     warehouse = await session.get(Location, row.warehouse_id)
     return basic | {
         "warehouse": {"id": row.warehouse_id, "name": warehouse.name if warehouse else ""},
@@ -521,7 +533,7 @@ async def _plan_out(
 
 
 async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = None) -> dict[str, object]:
-    """Read the persisted run; Sales sees rank1/hold/ETA only, never scores or driver/GPS."""
+    """Read ranked options with role-scoped DTOs; never disclose drivers/GPS to Sales."""
     if session is None:
         async with get_sessionmaker()() as db:
             return await get_run(run_id, actor, session=db)
@@ -535,8 +547,6 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
             select(FulfilmentPlan).where(FulfilmentPlan.run_id == run.id).order_by(FulfilmentPlan.rank)
         )
     ).all()
-    if compact:
-        plans = [plan for plan in plans if plan.rank == 1]
     by_plan = await _load_allocations(session, [plan.id for plan in plans])
     catalog = None if compact else await _load_catalog(session, (a for v in by_plan.values() for a in v))
     response: dict[str, object] = {
@@ -548,22 +558,39 @@ async def get_run(run_id: int, actor: object, *, session: AsyncSession | None = 
         "reserve_class": run.reserve_class,
         "hold_expires_at": run.hold_expires_at.isoformat() if run.hold_expires_at else None,
         "hold_extensions": run.hold_extensions,
+        "requested_date": order.date_to.isoformat(),
         "plans": [
             await _plan_out(session, plan, compact=compact, allocations=by_plan[plan.id], catalog=catalog)
             for plan in plans
         ],
     }
     if compact:
-        response["sales_approvable"] = bool(
-            plans
+        latest = await _latest_run(session, order.id)
+        live = (
+            latest is not None
+            and latest.id == run.id
+            and order.status == "PLANNED"
+            and order.version == run.order_version
             and run.result == "feasible"
+            and run.kind in ("initial", "rerun")
             and run.hold_expires_at is not None
             and run.hold_expires_at > clock.now()
-            and plans[0].status == "proposed"
-            and plans[0].vehicle_count == 1
-            and plans[0].target_date == order.date_to
-            and run.kind == "initial"
         )
+        for item in response["plans"]:
+            stored = next(p for p in plans if p.id == item["id"])
+            item["requires_date_agreement"] = stored.target_date != order.date_to
+            item["approvable"] = bool(
+                live
+                and stored.rank in (1, 2, 3)
+                and stored.status == "proposed"
+                and all(
+                    isinstance(stored.checks, dict)
+                    and isinstance(stored.checks.get(g), dict)
+                    and stored.checks[g].get("passed") is True
+                    for g in ("stock", "preparation", "truck", "site_date", "safety")
+                )
+            )
+        response["sales_approvable"] = any(p["approvable"] for p in response["plans"])
         response["sales_block_reason"] = None if response["sales_approvable"] else "PLAN_NOT_APPROVABLE"
     else:
         response.update(
@@ -584,11 +611,14 @@ async def get_plan(plan_id: int, actor: object, *, session: AsyncSession) -> dic
     plan = await session.get(FulfilmentPlan, plan_id)
     if plan is None:
         raise _fail("NOT_FOUND", "Plan not found.")
-    await _authorize(session, plan.order_id, actor, lock=False)
+    order, _ = await _authorize(session, plan.order_id, actor, lock=False)
     compact = "dispatcher" not in _roles(actor)
-    if compact and plan.rank != 1:
+    if compact and plan.rank not in (1, 2, 3):
         raise _fail("NOT_FOUND", "Plan not found.")
-    return await _plan_out(session, plan, compact=compact)
+    detail = await _plan_out(session, plan, compact=compact)
+    if compact:
+        detail["requires_date_agreement"] = plan.target_date != order.date_to
+    return detail
 
 
 async def list_runs(order_id: int, actor: object, *, session: AsyncSession) -> dict[str, object]:
@@ -615,8 +645,6 @@ async def list_runs(order_id: int, actor: object, *, session: AsyncSession) -> d
 
 
 async def list_date_negotiations(order_id: int, actor: object, *, session: AsyncSession) -> dict[str, object]:
-    if "dispatcher" not in _roles(actor):
-        raise _fail("FORBIDDEN", "Only Dispatcher may read negotiation history.")
     await _authorize(session, order_id, actor, lock=False)
     rows = (
         await session.scalars(

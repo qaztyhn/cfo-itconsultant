@@ -30,7 +30,7 @@ def secured(api: Api) -> Api:  # noqa: F811
         *SEED,
         # Unlike order 3, order 2 belongs to the Sales user's store.
         "UPDATE ops.customer_order SET origin_store_id=2 WHERE id=2",
-        # One alternative for the same run must remain invisible to Sales.
+        # DEC-R3-10: Sales sees ranked alternatives, with sensitive details still stripped.
         rows.plan_sql(1, 2, 2),
         # Seed a synthetic diagnostic marker; it must not leak via compact responses.
         'UPDATE plan.fulfilment_plan SET checks=\'{"safety":{"detail":'
@@ -53,16 +53,23 @@ def test_T28_planning_details_forbidden_for_non_planning_roles(
         assert_error(secured.get(url, user_id), status, code)
 
 
-def test_T28_sales_compact_plan_does_not_leak_alternatives_or_diagnostics(secured: Api) -> None:
+def test_T28_sales_ranked_options_still_hide_driver_and_diagnostics(secured: Api) -> None:
     run = secured.get("/planning-runs/1", SALES)
     assert run.status_code == 200, run.text
-    assert [p["rank"] for p in run.json()["plans"]] == [1]
-    assert [p["id"] for p in run.json()["plans"]] == [1]
+    plans = run.json()["plans"]
+    assert [p["rank"] for p in plans] == [1, 2]
+    assert len({p["id"] for p in plans}) == 2
+    assert all(p["warehouse"]["id"] == 1 for p in plans)
+    assert all(all(set(gate) <= {"passed", "code"} for gate in p["checks"].values()) for p in plans)
     assert "RESTRICTED_TEST_ONLY" not in run.text
-    for disallowed in ("driver_employee_id", "score", "checks", "rejected_candidates", "load_lines", "gps"):
+    for disallowed in ("driver_employee_id", "score", "rejected_candidates", "load_lines", "gps"):
         assert disallowed not in run.text.lower()
-    assert_error(secured.get("/plans/3", SALES), 404, "NOT_FOUND")
-    assert secured.get("/plans/3", DISPATCHER).status_code == 200
+    alternative = secured.get(f"/plans/{plans[1]['id']}", SALES)
+    assert alternative.status_code == 200
+    assert alternative.json()["rank"] == 2
+    assert "RESTRICTED_TEST_ONLY" not in alternative.text
+    assert_error(secured.get("/plans/2", SALES), 404, "NOT_FOUND")
+    assert secured.get("/plans/2", DISPATCHER).status_code == 200
 
 
 def test_T28_sales_cannot_enumerate_out_of_scope_planning_objects(secured: Api) -> None:
@@ -90,7 +97,9 @@ def test_T28_old_jwt_cannot_keep_dispatcher_permissions_after_db_downgrade(secur
     assert fetch(secured.dsn, "SELECT count(*) FROM audit.decision_log")[0][0] == 0
 
 
-def test_T28_sales_cannot_read_dispatcher_date_negotiation_history(secured: Api) -> None:
-    assert_error(secured.get("/orders/2/date-negotiations", SALES), 403, "FORBIDDEN")
+def test_T28_sales_can_read_own_store_date_negotiations_only(secured: Api) -> None:
+    permitted = secured.get("/orders/2/date-negotiations", SALES)
+    assert permitted.status_code == 200 and permitted.json()["items"] == []
+    assert_error(secured.get("/orders/3/date-negotiations", SALES), 404, "NOT_FOUND")
     response = secured.get("/orders/2/date-negotiations", DISPATCHER)
     assert response.status_code == 200 and response.json()["items"] == []

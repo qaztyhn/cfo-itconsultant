@@ -51,7 +51,7 @@ async def list_runs(order_id: int, user: AuthUser, db: DbSession) -> dict[str, o
 
 @router.get("/planning-runs/{run_id}")
 async def get_run(run_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """Dispatcher: diagnostics; Sales: rank1, ETA and hold only."""
+    """Dispatcher: diagnostics; Sales: ranked 1–3 with sanitized gates and warehouse."""
     return await planning_service.get_run(run_id, user, session=db)
 
 
@@ -79,7 +79,7 @@ async def keep_current(
 
 @router.get("/plans/{plan_id}")
 async def get_plan(plan_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """Scoped detail. Sales cannot enumerate alternative ranks or see driver data."""
+    """Scoped detail. Sales may read ranks 1–3 without driver data."""
     return await planning_service.get_plan(plan_id, user, session=db)
 
 
@@ -117,14 +117,14 @@ async def manual_plan(
 
 @router.post("/orders/{order_id}/date-negotiations")
 async def create_date_negotiation(
-    order_id: int, user: AuthUser, body: Annotated[dict[str, object], Body()]
+    order_id: int, user: AuthUser, db: DbSession, body: Annotated[dict[str, object], Body()]
 ) -> dict[str, object]:
     """Record customer negotiation; does not silently change the promised date."""
-    record_id = await approval_service.record_date_negotiation(order_id, user, body)
+    record_id = await approval_service.record_date_negotiation(order_id, user, body, session=db)
     return {"id": record_id}
 
 
 @router.get("/orders/{order_id}/date-negotiations")
 async def list_date_negotiations(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """Dispatcher-only scoped negotiation history."""
+    """Scoped negotiation history for Dispatcher and own-store Sales."""
     return await planning_service.list_date_negotiations(order_id, user, session=db)
