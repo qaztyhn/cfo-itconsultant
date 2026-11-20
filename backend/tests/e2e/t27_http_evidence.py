@@ -37,6 +37,13 @@ _DRIVER_PREREQUISITES = {
 
 
 def dispatch_rejection(http: int, code: str | None, message: str | None) -> dict[str, object]:
+    if (http, code) == (422, "LICENCE_EXPIRED"):
+        return {
+            "status": "BLOCKED",
+            "dispatch_status": "BLOCKED",
+            "tasks": ["T12"],
+            "reason": "The verified T12 driver qualification expired before Dispatch.",
+        }
     prerequisite = (
         _DRIVER_PREREQUISITES.get(message or "") if (http, code) == (409, "PLAN_NOT_APPROVABLE") else None
     )

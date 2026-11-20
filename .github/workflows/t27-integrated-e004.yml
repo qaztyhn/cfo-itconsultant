@@ -1,7 +1,7 @@
 name: T27 integrated pre-Sync to Mailpit/Driver Chrome (disposable E0-04)
 on:
   push:
-    branches: [feat/r3-t27-integrated-e004]
+    branches: [feat/r3-t27-integrated-e004, feat/r3-t27-same-order-driver-step8]
   pull_request:
     branches: [feat/r3-t27-integrated-e004]
   workflow_dispatch:
@@ -11,6 +11,10 @@ jobs:
   e0-e1-e2-e3-t27:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [complete, expired_t12]
     env:
       APP_ENV: test
       DEMO_DISPOSABLE: "1"
@@ -31,6 +35,8 @@ jobs:
         run: |
           python -m pip install -e ".[dev]" "playwright>=1.50,<2" python-dotenv tzdata
           python -m playwright install chrome
+      - name: Validate strict Driver step-8 evidence classifier
+        run: python -m unittest discover -s tools/tests -p 'test_t27_driver_step8.py' -v
       - name: Install real frontend
         working-directory: frontend
         run: npm ci
@@ -71,12 +77,36 @@ jobs:
       - name: Playwright real CFO Sales Sync → Dispatcher Approve → E2 Mailpit → E3 → Driver → CS
         env:
           APP_NOW: "2026-12-01T10:05:00+01:00"
+          T27_TEST_EXPIRE_LICENCE: ${{ matrix.scenario == 'expired_t12' && '1' || '0' }}
         run: |
           set -a
           source .env
           set +a
           export APP_NOW="2026-12-01T10:05:00+01:00"
+          set +e
           python tools/t27_integrated_browser.py --output t27-integrated-e004
+          result=$?
+          set -e
+          python - "${{ matrix.scenario }}" "$result" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          scenario, exit_code = sys.argv[1], int(sys.argv[2])
+          report = json.loads(Path("t27-integrated-e004/t27-integrated.json").read_text())
+          stages = report["driver_step8"]["stages"]
+          if scenario == "complete":
+              assert exit_code == 0 and report["result"] == "PASS_WITH_BLOCKERS"
+              assert all(stages[name]["status"] == "PASS" for name in ("dispatch", "gps", "delivered"))
+          else:
+              assert exit_code == 2 and report["result"] == "BLOCKED_STEP8"
+              assert stages["dispatch"]["status"] == "BLOCKED"
+              assert (stages["dispatch"]["http"], stages["dispatch"]["error_code"]) == (422, "LICENCE_EXPIRED")
+              assert stages["gps"]["status"] == stages["delivered"]["status"] == "NOT VERIFIED"
+          print("T27 scenario", scenario, "result", report["result"],
+                "dispatch HTTP", stages["dispatch"].get("http"),
+                "code", stages["dispatch"].get("error_code"),
+                "GPS", stages["gps"]["status"], "Delivered", stages["delivered"]["status"])
+          PY
       - name: Summarize evidence (synthetic IDs and statuses only)
         if: always()
         run: |
@@ -92,11 +122,11 @@ jobs:
               print("T27", x["step"], x["status"], x["task"])
           PY
           fi
-      - name: Upload approved synthetic screenshot + sanitized 14-row ledger only
+      - name: Upload synthetic UI screenshots + sanitized per-milestone Driver ledger
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: t27-integrated-e004-synthetic-evidence
+          name: t27-integrated-e004-${{ matrix.scenario }}-synthetic-evidence
           path: |
             t27-integrated-e004/*.png
             t27-integrated-e004/t27-integrated.json
