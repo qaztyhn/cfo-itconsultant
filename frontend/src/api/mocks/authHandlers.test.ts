@@ -6,9 +6,10 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "../../app/store";
 import { fetchMe, login, logout } from "../auth";
-import { apiGet } from "../client";
+import { apiGet, apiPost } from "../client";
 import { MOCK_ACCOUNTS, resetLoginRateLimit } from "./authHandlers";
 import { handlers } from "./handlers";
+import { resetTrackingMockAssignments } from "./trackingHandlers";
 import { API_BASE_URL } from "../config";
 
 const server = setupServer(...handlers);
@@ -22,6 +23,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 beforeEach(() => {
   useAuthStore.setState({ token: null, user: null });
   resetLoginRateLimit();
+  resetTrackingMockAssignments();
 });
 afterEach(() => {
   server.resetHandlers();
@@ -282,10 +284,30 @@ describe("mock authorization: xác thực, role/scope, lọc trường (docs/06 
   });
 
   describe("GET /gps/live chỉ dispatcher", () => {
-    it("dispatcher chỉ thấy chuyến được phân công, tài xế trong ca, on_road (D3)", async () => {
+    it("dispatcher chỉ thấy mảng chuyến được phân công/on_road (R3, không có lịch sử)", async () => {
       await signInAs("dispatcher@cfo.demo");
-      const body = await apiGet<{ positions: { trip_id: number }[] }>("/gps/live");
-      expect(body.positions.map((p) => p.trip_id)).toEqual([1]);
+      const body = await apiGet<{ trip_id: number; last_position: unknown }[]>("/gps/live");
+      expect(body.map((p) => p.trip_id)).toEqual([930, 931, 932]);
+      expect(body[1].last_position).toBeNull();
+    });
+
+    it("one-trip handover revokes old Dispatcher and exposes only that trip to receiver (MSW)", async () => {
+      await signInAs("dispatcher2@cfo.demo");
+      expect(await apiGet<unknown[]>("/gps/live")).toEqual([]);
+
+      await signInAs("dispatcher@cfo.demo");
+      const before = await apiGet<{ trip_id: number }[]>("/gps/live");
+      expect(before.map((t) => t.trip_id)).toEqual([930, 931, 932]);
+
+      await apiPost("/trips/930/handover", {
+        to_employee_id: 109, reason_text: "Dispatcher shift transfer",
+      });
+      const oldOwner = await apiGet<{ trip_id: number }[]>("/gps/live");
+      expect(oldOwner.map((t) => t.trip_id)).toEqual([931, 932]);
+
+      await signInAs("dispatcher2@cfo.demo");
+      const newOwner = await apiGet<{ trip_id: number }[]>("/gps/live");
+      expect(newOwner.map((t) => t.trip_id)).toEqual([930]);
     });
 
     it.each(["admin@cfo.demo", "wm.got@cfo.demo", "sales@cfo.demo", "driver1@cfo.demo", "cs@cfo.demo", "owner@cfo.demo"])(

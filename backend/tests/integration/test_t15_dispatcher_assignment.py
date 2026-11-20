@@ -180,12 +180,48 @@ def _handover(api: Api, user: int, target: int = 2, reason: str = "Shift reassig
     return api.send("POST", "/trips/1/handover", user, {"to_employee_id": target, "reason_text": reason})
 
 
+def test_US_GPS_02_AC3_eligible_receivers_share_handover_permissions(handover_api: Api) -> None:
+    api = handover_api
+    path = "/trips/1/eligible-dispatchers"
+    available = api.get(path, 1)
+    assert available.status_code == 200, available.text
+    name = fetch(api.dsn, "SELECT first_name || ' ' || last_name FROM hr.employee WHERE id=2")[0][0]
+    assert available.json() == {"items": [{"employee_id": 2, "display_name": name}]}
+    assert_error(api.get(path, 4), 403, "FORBIDDEN")
+    assert_error(api.get(path, 3), 404, "NOT_FOUND")
+    assert_error(api.get("/trips/999/eligible-dispatchers", 1), 404, "NOT_FOUND")
+
+    for disable, restore in (
+        (
+            "UPDATE hr.dispatcher_staff SET in_rotation=false WHERE employee_id=2",
+            "UPDATE hr.dispatcher_staff SET in_rotation=true WHERE employee_id=2",
+        ),
+        (
+            "UPDATE ref.app_user SET is_active=false WHERE employee_id=2",
+            "UPDATE ref.app_user SET is_active=true WHERE employee_id=2",
+        ),
+        (
+            "UPDATE ref.app_user SET roles='{sales}' WHERE employee_id=2",
+            "UPDATE ref.app_user SET roles='{dispatcher}' WHERE employee_id=2",
+        ),
+        (
+            "UPDATE hr.employee SET status='terminated' WHERE id=2",
+            "UPDATE hr.employee SET status='active' WHERE id=2",
+        ),
+    ):
+        execute(api.dsn, disable)
+        assert api.get(path, 1).json() == {"items": []}
+        assert_error(_handover(api, 1), 422, "VALIDATION_ERROR")
+        execute(api.dsn, restore)
+
+
 def test_US_GPS_02_AC3_handover_revokes_old_live_scope_after_commit(handover_api: Api) -> None:
     api = handover_api
     initial_old = api.get("/gps/live", 1)
     assert initial_old.status_code == 200, initial_old.text
     assert {t["trip_id"] for t in initial_old.json()} == {1, 2}
     assert api.get("/gps/live", 2).json() == []
+    assert_error(api.get("/gps/live", 4), 403, "FORBIDDEN")
 
     changed = _handover(api, 1)
     assert changed.status_code == 200, changed.text

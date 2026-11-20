@@ -1,5 +1,9 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 20/11/2026 — T15/T17 danh sách người nhận bàn giao
+
+- `06` §19.3: `GET /trips/{id}/eligible-dispatchers` cấp ID và tên hiển thị cho dropdown, dùng chung bộ lọc người nhận với `POST /trips/{id}/handover`. Không đổi DDL.
+
 ## 20/11/2026 — T31 phạm vi API pilot Round 3
 
 - Áp dụng DEC-R3-15 và `06` §19.1. API chuyển kho và các thao tác quản trị đã cắt trả `404 NOT_FOUND` và vắng khỏi OpenAPI. Planning giữ API đọc theo phạm vi đã có.

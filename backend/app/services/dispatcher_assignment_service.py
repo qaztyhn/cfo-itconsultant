@@ -5,7 +5,7 @@ trip assignments without that evidence are considered as a legacy baseline.
 All methods join the caller's transaction; no independent commits.
 """
 
-from sqlalchemy import BigInteger, func, select, text
+from sqlalchemy import BigInteger, Select, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.actions import Action
@@ -26,6 +26,21 @@ async def lock_market_rotation(session: AsyncSession, market_id: int) -> None:
     )
 
 
+def _eligible_dispatchers(market_id: int) -> Select[Employee]:
+    return (
+        select(Employee)
+        .join(DispatcherStaff, DispatcherStaff.employee_id == Employee.id)
+        .join(AppUser, AppUser.employee_id == Employee.id)
+        .where(
+            Employee.market_id == market_id,
+            Employee.status == "active",
+            DispatcherStaff.in_rotation.is_(True),
+            AppUser.is_active.is_(True),
+            AppUser.roles.contains(["dispatcher"]),
+        )
+    )
+
+
 async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None:
     """Call once per approved order, after acquiring lock_market_rotation.
 
@@ -35,16 +50,8 @@ async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None
     """
     eligible = (
         await session.scalars(
-            select(Employee.id)
-            .join(DispatcherStaff, DispatcherStaff.employee_id == Employee.id)
-            .join(AppUser, AppUser.employee_id == Employee.id)
-            .where(
-                Employee.market_id == market_id,
-                Employee.status == "active",
-                DispatcherStaff.in_rotation.is_(True),
-                AppUser.is_active.is_(True),
-                AppUser.roles.contains(["dispatcher"]),
-            )
+            _eligible_dispatchers(market_id)
+            .with_only_columns(Employee.id)
             .order_by(Employee.id)
             .with_for_update(read=True, of=(Employee, DispatcherStaff, AppUser))
         )
@@ -97,6 +104,58 @@ async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None
     return min(eligible, key=priority)
 
 
+def _dispatcher_identity(actor: object) -> tuple[int, int]:
+    if "dispatcher" not in getattr(actor, "roles", ()):
+        raise DomainError("FORBIDDEN", "Dispatcher role required.")
+    actor_user_id = getattr(actor, "id", None)
+    actor_employee_id = getattr(actor, "employee_id", None)
+    if not isinstance(actor_user_id, int) or not isinstance(actor_employee_id, int):
+        raise DomainError("FORBIDDEN", "Active Dispatcher account required.")
+    return actor_user_id, actor_employee_id
+
+
+async def _trip_market(session: AsyncSession, trip_id: int, actor: object) -> Market:
+    market = await session.scalar(
+        select(Market)
+        .join(Location, Location.market_id == Market.id)
+        .join(DeliveryTrip, DeliveryTrip.warehouse_id == Location.id)
+        .where(DeliveryTrip.id == trip_id)
+    )
+    if market is None or market.code.strip() != str(getattr(actor, "market", "")).strip():
+        raise DomainError("NOT_FOUND", "Trip not found.")
+    return market
+
+
+async def _trip_order(session: AsyncSession, trip_id: int, market_id: int) -> CustomerOrder:
+    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip_id).limit(1))
+    order = await session.get(CustomerOrder, order_id) if order_id is not None else None
+    if order is None or order.market_id != market_id:
+        raise DomainError("NOT_FOUND", "Trip order not found.")
+    return order
+
+
+async def eligible_receivers(session: AsyncSession, trip_id: int, actor: object) -> list[tuple[int, str]]:
+    _dispatcher_identity(actor)
+    market = await _trip_market(session, trip_id, actor)
+    trip = await session.get(DeliveryTrip, trip_id)
+    if trip is None:
+        raise DomainError("NOT_FOUND", "Trip not found.")
+    await _trip_order(session, trip.id, market.id)
+    recipients = (
+        await session.execute(
+            _eligible_dispatchers(market.id)
+            .with_only_columns(Employee.id, Employee.first_name, Employee.last_name)
+            .where(Employee.id.is_distinct_from(trip.assigned_dispatcher_employee_id))
+            .distinct()
+            .order_by(Employee.id)
+        )
+    ).all()
+    return [
+        (employee_id, f"{first_name} {last_name}".strip())
+        for employee_id, first_name, last_name in recipients
+    ]
+
+
 async def handover(
     trip_id: int,
     actor: object,
@@ -106,12 +165,7 @@ async def handover(
     session: AsyncSession | None = None,
 ) -> dict[str, int | str | None]:
     """Authorized Dispatcher in the trip's market may reassign exactly one trip."""
-    if "dispatcher" not in getattr(actor, "roles", ()):
-        raise DomainError("FORBIDDEN", "Dispatcher role required.")
-    actor_user_id = getattr(actor, "id", None)
-    actor_employee_id = getattr(actor, "employee_id", None)
-    if not isinstance(actor_user_id, int) or not isinstance(actor_employee_id, int):
-        raise DomainError("FORBIDDEN", "Active Dispatcher account required.")
+    actor_user_id, actor_employee_id = _dispatcher_identity(actor)
     if not isinstance(to_employee_id, int) or to_employee_id <= 0:
         raise DomainError("VALIDATION_ERROR", "Invalid receiving Dispatcher.")
     reason = reason_text.strip() if isinstance(reason_text, str) else ""
@@ -121,30 +175,15 @@ async def handover(
         async with get_sessionmaker()() as db, db.begin():
             return await handover(trip_id, actor, to_employee_id, reason, session=db)
 
-    market = await session.scalar(
-        select(Market)
-        .join(Location, Location.market_id == Market.id)
-        .join(DeliveryTrip, DeliveryTrip.warehouse_id == Location.id)
-        .where(DeliveryTrip.id == trip_id)
-    )
-    if market is None or market.code.strip() != str(getattr(actor, "market", "")).strip():
-        raise DomainError("NOT_FOUND", "Trip not found.")
+    market = await _trip_market(session, trip_id, actor)
     await lock_market_rotation(session, market.id)
     trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
     if trip is None:
         raise DomainError("NOT_FOUND", "Trip not found.")
     recipient = await session.scalar(
-        select(Employee.id)
-        .join(DispatcherStaff, DispatcherStaff.employee_id == Employee.id)
-        .join(AppUser, AppUser.employee_id == Employee.id)
-        .where(
-            Employee.id == to_employee_id,
-            Employee.market_id == market.id,
-            Employee.status == "active",
-            DispatcherStaff.in_rotation.is_(True),
-            AppUser.is_active.is_(True),
-            AppUser.roles.contains(["dispatcher"]),
-        )
+        _eligible_dispatchers(market.id)
+        .with_only_columns(Employee.id)
+        .where(Employee.id == to_employee_id)
         .with_for_update(read=True, of=(Employee, DispatcherStaff, AppUser))
     )
     if recipient is None:
@@ -152,10 +191,7 @@ async def handover(
     before_id = trip.assigned_dispatcher_employee_id
     if before_id == to_employee_id:
         raise DomainError("ILLEGAL_TRANSITION", "Trip is already assigned to this Dispatcher.")
-    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip_id).limit(1))
-    order = await session.get(CustomerOrder, order_id) if order_id is not None else None
-    if order is None or order.market_id != market.id:
-        raise DomainError("NOT_FOUND", "Trip order not found.")
+    order = await _trip_order(session, trip.id, market.id)
     trip.assigned_dispatcher_employee_id = to_employee_id
     await session.flush()
     await record_decision(
