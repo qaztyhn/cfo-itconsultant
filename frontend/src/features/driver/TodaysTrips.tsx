@@ -228,7 +228,7 @@ export function TodaysTrips() {
       <header className="rounded-b-card bg-deepPine px-5 pb-8 pt-7 text-white">
         <div className="mx-auto max-w-lg">
           <p className="text-caption uppercase tracking-wide text-white/80">Driver PWA</p>
-          <h1 className="text-h2 font-semibold">Today's trips</h1>
+          <h1 className="text-h2 font-semibold">Today&apos;s trips</h1>
           <p className="text-body text-white/80">Only trips assigned to your driver account</p>
         </div>
       </header>
