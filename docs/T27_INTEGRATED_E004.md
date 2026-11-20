@@ -62,10 +62,13 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 
 ## Acceptance boundaries
 
-- **Step 1** passes when Sales opens CFO Sync & Check and enters the
-  pre-submitted Source reference. The Source fixture prepares the submitted
-  order before the session.
-- **Sales**: Sync and Check are two real browser button clicks. The E0
+- **Step 1 (POS)** is **NOT VERIFIED** for the POS UI: Source `SE-2026-000249`
+  is submitted by a synthetic seed **before** the browser starts, and the
+  runner never clicks POS Create/Submit. Source fixture existence is setup
+  evidence, not a user-interface PASS.
+- **Step 2 (Sales)**: Chrome opens CFO Sync & Check, enters the Source
+  reference and clicks both Sync and Check; HTTP 200 and the still-proposed
+  plan are checked. The E0
   route-matrix import between them is explicitly recorded as setup and
   never labelled a UI step. After Sync, the runner reads the CFO `order_no`
   from the returned `order_id` and uses it in Mailpit, Prep Queue and CS.
@@ -117,3 +120,19 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 
 **Assumptions:** existing DEC-R3 and WMS-simulation gates reviewed; no new
 business decisions, no data-gate or privacy bypass. No merge/deployment by QA.
+
+## Strict T27 14-row accounting (after 2026-11-20 QA correction)
+
+The previous runner called CFO Sales reference entry “step 1 PASS”. The task
+board's **step 1 is POS submit**, so that historical label was too broad.
+The current runner leaves step 1 `NOT VERIFIED` and records the real CFO
+Sales actions in step 2. A successful current-head same-order run should show
+**4 PASS, 5 BLOCKED, 5 NOT VERIFIED, 0 FAIL**, with CS order lookup as an
+independent PASS subcheck under a step 11 that remains NOT VERIFIED until ETA
+version-history rendering is verified. These numbers are an **expected rubric**,
+not execution evidence; consult exact-head Actions JSON before accepting them.
+
+The Source external reference `SE-2026-000249` and CFO-generated
+`SE-2026-000001` are **different identifiers** linked by the persisted
+`external_ref`. Mailpit, Prep Queue, Driver and CS assertions follow the
+single CFO order ID; the test must never count them as two orders.
