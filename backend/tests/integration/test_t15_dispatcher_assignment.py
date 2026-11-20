@@ -92,9 +92,7 @@ def test_US_GPS_02_AC3_no_eligible_dispatcher_keeps_approval_and_alert(t15_db: s
     _hold(db)
     result = _run(
         db,
-        lambda s: approval_service.approve(
-            1, _actor(), {}, "no-dispatcher", session=s, recheck=_recheck
-        ),
+        lambda s: approval_service.approve(1, _actor(), {}, "no-dispatcher", session=s, recheck=_recheck),
     )
     assert result["order"]["status"] == "APPROVED"
     assert fetch(db, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip")[0][0] is None
@@ -111,9 +109,7 @@ def test_US_GPS_02_AC3_approval_rollback_does_not_advance_rotation(t15_db: str) 
     _hold(db)
 
     async def rollback(session):
-        await approval_service.approve(
-            1, _actor(), {}, "rollback-t15", session=session, recheck=_recheck
-        )
+        await approval_service.approve(1, _actor(), {}, "rollback-t15", session=session, recheck=_recheck)
         raise RuntimeError("force rollback after approval")
 
     with pytest.raises(RuntimeError, match="force rollback"):
@@ -168,8 +164,7 @@ def handover_api(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
         "INSERT INTO ref.app_user(employee_id,email,password_hash,roles) "
         "VALUES(3,'market2@cfo.test','not-a-real-hash','{dispatcher}')",
         "INSERT INTO hr.dispatcher_staff(employee_id,in_rotation) VALUES (3,true)",
-        "INSERT INTO hr.employee_assignment(employee_id,location_id,start_date) "
-        "VALUES(3,3,'2026-01-01')",
+        "INSERT INTO hr.employee_assignment(employee_id,location_id,start_date) " "VALUES(3,3,'2026-01-01')",
         "INSERT INTO hr.employee(market_id,employee_no,first_name,last_name,position_code,hire_date) "
         "VALUES (1,'S4','Sales','Worker','TEST_POS','2026-01-01')",
         "INSERT INTO ref.app_user(employee_id,email,password_hash,roles) "
@@ -180,9 +175,7 @@ def handover_api(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 
 
 def _handover(api: Api, user: int, target: int = 2, reason: str = "Shift reassignment"):
-    return api.send(
-        "POST", "/trips/1/handover", user, {"to_employee_id": target, "reason_text": reason}
-    )
+    return api.send("POST", "/trips/1/handover", user, {"to_employee_id": target, "reason_text": reason})
 
 
 def test_US_GPS_02_AC3_handover_revokes_old_live_scope_after_commit(handover_api: Api) -> None:
@@ -204,9 +197,9 @@ def test_US_GPS_02_AC3_handover_revokes_old_live_scope_after_commit(handover_api
     assert old.status_code == 200 and {t["trip_id"] for t in old.json()} == {2}
     assert new.status_code == 200 and {t["trip_id"] for t in new.json()} == {1}
     assert new.json()[0]["last_position"] == {"lat": 59.3, "lon": 18.1}
-    assert fetch(
-        api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=2"
-    )[0][0] == 1
+    assert (
+        fetch(api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=2")[0][0] == 1
+    )
     audits = fetch(
         api.dsn,
         "SELECT actor_user_id,actor_employee_id,reason_text,before,after FROM audit.decision_log "
@@ -218,9 +211,12 @@ def test_US_GPS_02_AC3_handover_revokes_old_live_scope_after_commit(handover_api
     assert audits[0]["before"]["assigned_dispatcher_employee_id"] == 1
     assert audits[0]["after"]["assigned_dispatcher_employee_id"] == 2
     assert_error(_handover(api, 1), 409, "ILLEGAL_TRANSITION")
-    assert fetch(
-        api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'"
-    )[0][0] == 1
+    assert (
+        fetch(api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][
+            0
+        ]
+        == 1
+    )
 
 
 def test_US_GPS_02_AC3_handover_rejections_are_atomic(handover_api: Api) -> None:
@@ -231,12 +227,18 @@ def test_US_GPS_02_AC3_handover_rejections_are_atomic(handover_api: Api) -> None
     assert_error(_handover(api, 1, target=3), 422, "VALIDATION_ERROR")
     execute(api.dsn, "UPDATE hr.dispatcher_staff SET in_rotation=false WHERE employee_id=2")
     assert_error(_handover(api, 1), 422, "VALIDATION_ERROR")
-    execute(api.dsn, "UPDATE hr.dispatcher_staff SET in_rotation=true WHERE employee_id=2",
-            "UPDATE hr.employee SET status='terminated' WHERE id=2")
+    execute(
+        api.dsn,
+        "UPDATE hr.dispatcher_staff SET in_rotation=true WHERE employee_id=2",
+        "UPDATE hr.employee SET status='terminated' WHERE id=2",
+    )
     assert_error(_handover(api, 1), 422, "VALIDATION_ERROR")
-    assert fetch(
-        api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1"
-    )[0][0] == 1
-    assert fetch(
-        api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'"
-    )[0][0] == 0
+    assert (
+        fetch(api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1")[0][0] == 1
+    )
+    assert (
+        fetch(api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][
+            0
+        ]
+        == 0
+    )
