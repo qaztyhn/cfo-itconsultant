@@ -35,6 +35,15 @@ function optionalNumber(value: unknown): number | null {
   return value;
 }
 
+/** T13 serializes PostgreSQL Numeric distance as a decimal string; accept both representations. */
+function optionalDistance(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value :
+    (typeof value === "string" && /^\\d+(?:\\.\\d+)?$/.test(value) ? Number(value) : NaN);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error("Invalid live trip response");
+  return parsed;
+}
+
 function optionalDate(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
@@ -61,7 +70,8 @@ function parseTrip(value: unknown): LiveTrip {
   }
   const risk = value.risk;
   if (risk !== null && risk !== undefined &&
-      (!object(risk) || typeof risk.status !== "string" || typeof risk.color !== "string")) {
+      (!object(risk) || (risk.status !== null && typeof risk.status !== "string") ||
+        (risk.color !== null && typeof risk.color !== "string"))) {
     throw new Error("Invalid live trip response");
   }
   if (value.open_incident !== null && value.open_incident !== undefined &&
@@ -71,10 +81,13 @@ function parseTrip(value: unknown): LiveTrip {
   return {
     trip_id: Number(value.trip_id), order_id: Number(value.order_id),
     vehicle_code: value.vehicle_code,
-    last_position: position, remaining_km: optionalNumber(value.remaining_km),
+    last_position: position, remaining_km: optionalDistance(value.remaining_km),
     updated_at: optionalDate(value.updated_at), forecast_eta: optionalDate(value.forecast_eta),
-    risk: risk == null ? null : { status: (risk as { status: string }).status,
-      color: (risk as { color: string }).color },
+    risk: risk == null || (risk as { status: string | null }).status === null ||
+      (risk as { color: string | null }).color === null ? null : {
+        status: (risk as { status: string }).status,
+        color: (risk as { color: string }).color,
+      },
     open_incident: (value.open_incident as string | null | undefined) ?? null,
   };
 }
