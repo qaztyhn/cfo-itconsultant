@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import ColumnElement, Date, and_, cast, func, select
+from sqlalchemy import ColumnElement, Date, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.hr import DriverAvailability, DriverStaff, Employee, EmployeeAssignment
@@ -19,8 +19,12 @@ def _verified_availability(now: datetime) -> ColumnElement[bool]:
         DriverAvailability.source.in_(allowed_sources()),
         DriverAvailability.verified_at <= now,
         func.length(func.btrim(DriverAvailability.verified_by)) > 0,
-        DriverAvailability.work_date
-        == cast(func.timezone(Market.timezone, DeliveryTrip.depart_planned_at), Date),
+        or_(
+            # Historical trips without a plan vehicle use the verified instants below.
+            DeliveryTrip.plan_vehicle_id.is_(None),
+            DriverAvailability.work_date
+            == cast(func.timezone(Market.timezone, DeliveryTrip.depart_actual_at), Date),
+        ),
         DriverAvailability.max_driving_min > 0,
     )
 

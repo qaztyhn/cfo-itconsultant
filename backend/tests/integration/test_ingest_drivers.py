@@ -108,6 +108,12 @@ def test_US_PLN_03_AC2_fleet_ingest_replays_replacements_and_revocations(db: str
     assert sync(db, "driver-availability", availability("AV-OLD")).rows_ok == 1
     assert not fetch(db, "SELECT id FROM hr.driver_availability WHERE superseded_at IS NULL")
 
+    # The feed can publish the replacement and the old tombstone at one instant.
+    same_stamp = availability("AV-0", verified_at=NOW.isoformat(), max_driving_min=180)
+    assert sync(db, "driver-availability", same_stamp, {**newer, "superseded": True}).rows_ok == 2
+    active = fetch(db, "SELECT source_ref FROM hr.driver_availability WHERE superseded_at IS NULL")
+    assert [r[0] for r in active] == ["AV-0"]
+
     assert sync(db, "driver-eligibility", qualification("EL-A")).rows_ok == 1
     assert sync(db, "driver-eligibility", revoked).rows_ok == 1
     assert sync(db, "driver-eligibility", qualification("EL-A")).rows_ok == 1

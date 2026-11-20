@@ -81,20 +81,22 @@ async def _availability(
         )
         .order_by(
             DriverAvailability.verified_at.desc(),
-            DriverAvailability.source_ref.desc(),
-            DriverAvailability.source.desc(),
+            DriverAvailability.superseded_at.desc().nulls_first(),
+            DriverAvailability.id.desc(),
         )
         .limit(1)
     )
     if latest is not None:
-        # A replay cannot restore evidence that pre-dates a replacement or tombstone.
-        if (item.verified_at, item.source_ref, item.source) < (
-            latest.verified_at,
-            latest.source_ref,
-            latest.source,
-        ):
+        # Use the Source feed order for equally verified active records. A known
+        # or older revision cannot reactivate availability after a tombstone.
+        older = item.verified_at < latest.verified_at or (
+            item.verified_at == latest.verified_at
+            and latest.superseded_at is not None
+            and item.updated_at < latest.superseded_at
+        )
+        if older:
             retired = max(latest.verified_at, item.updated_at)
-        elif latest.superseded_at is None:
+        elif latest.superseded_at is None and (not item.superseded or item.verified_at > latest.verified_at):
             latest.superseded_at = item.updated_at
             await session.flush()  # release the partial unique index before inserting its successor
     session.add(
