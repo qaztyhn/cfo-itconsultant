@@ -814,10 +814,7 @@ def test_US_EXE_02_AC2_terminal_purge_and_pod_rollback_together(
     )
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.proof_of_delivery")[0][0] == 1
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == before
-    assert (
-        fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0]
-        == "pending"
-    )
+    assert fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0] == "pending"
 
 
 def _dispatch_both_vehicles(client: Api, monkeypatch: pytest.MonkeyPatch, notices: list[str]) -> None:
@@ -1082,10 +1079,7 @@ def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
     )
     assert fetch(execution_api.dsn, "SELECT count(*) FROM ops.proof_of_delivery")[0][0] == 1
     assert positions(execution_api.dsn) == [(1, "09:30")]
-    assert (
-        fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0]
-        == "pending"
-    )
+    assert fetch(execution_api.dsn, "SELECT status::text FROM ops.trip_stop WHERE id=2")[0][0] == "pending"
 
     monkeypatch.setattr(notify_service, "enqueue", original_enqueue)
     second = send(execution_api, 14, "DELIVERED", "2026-11-10T09:35:00Z", second_payload)
