@@ -430,6 +430,10 @@ async def _approve(
         order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
     ):
         raise _fail("NOT_FOUND", "Plan not found.")
+    # Serialize Approves for the same market *before* acquiring any shared
+    # stock/labour/vehicle locks. Locking only at DeliveryTrip creation allows
+    # cross-order lock inversion (and deadlocks) upstream in _reserve_locks.
+    await dispatcher_assignment_service.lock_market_rotation(session, order.market_id)
     if (
         order.status != "PLANNED"
         or plan.status != "proposed"
@@ -607,7 +611,6 @@ async def _approve(
         sales_approved_plan_id=plan.id if sales else None,
     )
     # One rotation turn per ORDER, never per vehicle, under the same approval transaction.
-    await dispatcher_assignment_service.lock_market_rotation(session, order.market_id)
     assigned_dispatcher = await dispatcher_assignment_service.choose_dispatcher(session, order.market_id)
     trips: list[int] = []
     for vehicle in selected:
