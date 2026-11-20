@@ -168,3 +168,11 @@ def test_US_GPS_01_AC3_no_transactional_state_leak_on_invalid_timestamp(prepared
     assert_error(send(prepared, value, key=str(uuid4())), 409, "NOT_ON_TRIP")
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.idempotency_key")[0][0] == 0
+
+
+def test_US_GPS_03_AC2_retention_deletes_at_exact_seven_day_boundary(prepared: Api) -> None:
+    assert send(prepared, key=str(uuid4())).status_code == 202
+    boundary = datetime(2026, 11, 17, 8, 5, tzinfo=UTC)
+    assert transact(prepared.dsn, lambda session: gps_service.purge_expired(session=session, now=boundary)) == 1
+    assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
+    assert transact(prepared.dsn, lambda session: gps_service.purge_expired(session=session, now=boundary)) == 0
