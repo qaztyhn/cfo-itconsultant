@@ -7,7 +7,6 @@ from uuid import uuid4
 import pytest
 
 from app.core.security import issue_token
-from app.core.errors import DomainError
 from app.providers.routing_ors import RouteEstimate
 from app.services import gps_service
 from tests.integration import rows
@@ -101,7 +100,11 @@ def test_US_GPS_01_AC2_batch_without_key_wrong_owner_or_shift_is_denied(prepared
 
 
 def test_US_GPS_01_AC3_not_on_road_fails_closed(prepared: Api) -> None:
-    execute(prepared.dsn, "UPDATE ops.delivery_trip SET status='completed',ended_at='2026-11-10T08:20Z' WHERE id=1")
+    execute(
+        prepared.dsn,
+        "UPDATE ops.delivery_trip SET status='completed',"
+        "ended_at='2026-11-10T08:20Z' WHERE id=1",
+    )
     assert_error(send(prepared, key=str(uuid4())), 409, "NOT_ON_TRIP")
 
 
@@ -129,7 +132,9 @@ def test_US_GPS_03_AC1_purge_terminal_order_and_no_history_route(prepared: Api) 
     assert_error(prepared.get("/trips/1/positions", 2), 404, "NOT_FOUND")
 
 
-def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(prepared: Api, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(
+    prepared: Api, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def ors(*_args: object, **_kwargs: object) -> RouteEstimate:
         return RouteEstimate(Decimal("3.20"), 6, "ors")
 
@@ -137,7 +142,10 @@ def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(prepared: Api, monkeyp
     response = send(prepared, key=str(uuid4()))
     assert response.status_code == 202, response.text
     assert response.json()["provider"] == "ors"
-    assert fetch(prepared.dsn, "SELECT route_source,remaining_km,remaining_min FROM ops.vehicle_position")[0] == (
+    assert fetch(
+        prepared.dsn,
+        "SELECT route_source,remaining_km,remaining_min FROM ops.vehicle_position",
+    )[0] == (
         "ors", Decimal("3.2"), 6
     )
 
