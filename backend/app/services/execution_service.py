@@ -8,7 +8,7 @@ No GPS coordinates, customer prices or inferred driver-hour eligibility.
 import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Date, cast, func, or_, select
@@ -36,6 +36,7 @@ from app.domain.models.ops import (
     MilestoneEvent,
     ProofOfDelivery,
     TripStop,
+    VehiclePosition,
 )
 from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import Location, Market, MarketHoliday, Vehicle
@@ -43,6 +44,7 @@ from app.domain.transitions import transition
 from app.engine.actuals import LabourSegment, actual_labour_hours
 from app.engine.delivery import LICENCE_RANK, driver_problem
 from app.engine.types import DriverCtx, VehicleCtx
+from app.providers.routing_fallback import haversine_km
 from app.services import (
     alert_service,
     driver_history,
@@ -65,7 +67,8 @@ WAREHOUSE_EVENTS = frozenset(
         "SHIFT_CHANGE",
     }
 )
-DRIVER_EVENTS = frozenset({"DISPATCHED", "DELIVERED", "FAILED"})
+DRIVER_EVENTS = frozenset({"DISPATCHED", "DELIVERED", "FAILED", "DRIVER_INCIDENT"})
+INCIDENT_REASONS = frozenset({"vehicle_breakdown", "traffic_or_accident", "site_inaccessible", "other"})
 FAILURE_CODES = frozenset(
     {
         "customer_absent",
@@ -98,7 +101,8 @@ def _employee(actor: object) -> int:
 
 
 def _has_role(actor: object, role: str) -> bool:
-    return role in tuple(_attr(actor, "roles") or ())
+    roles = _attr(actor, "roles")
+    return isinstance(roles, (tuple, list, set, frozenset)) and role in roles
 
 
 async def _market(session: AsyncSession, actor: object) -> Market:
@@ -114,7 +118,8 @@ async def _market(session: AsyncSession, actor: object) -> Market:
 async def _warehouse(session: AsyncSession, actor: object, warehouse_id: int, market: Market) -> Location:
     if not _has_role(actor, "warehouse"):
         raise DomainError("FORBIDDEN", "Warehouse role required.")
-    if warehouse_id not in tuple(_attr(actor, "location_ids") or ()):
+    location_ids = _attr(actor, "location_ids")
+    if not isinstance(location_ids, (tuple, list, set, frozenset)) or warehouse_id not in location_ids:
         raise DomainError("NOT_FOUND", "Warehouse not found.")
     warehouse = await session.scalar(
         select(Location).where(
@@ -196,7 +201,75 @@ def _require_positive(value: object, name: str) -> int:
     return value
 
 
+def _position_payload(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {"lat", "lon", "accuracy_m", "recorded_at"}:
+        raise DomainError("VALIDATION_ERROR", "Invalid driver position.")
+    try:
+        lat = Decimal(str(value["lat"]))
+        lon = Decimal(str(value["lon"]))
+        accuracy = Decimal(str(value["accuracy_m"]))
+        recorded_at = datetime.fromisoformat(str(value["recorded_at"]).replace("Z", "+00:00"))
+    except (ValueError, TypeError, InvalidOperation) as exc:
+        raise DomainError("VALIDATION_ERROR", "Invalid driver position.") from exc
+    if (
+        not lat.is_finite()
+        or not lon.is_finite()
+        or not accuracy.is_finite()
+        or not -90 <= lat <= 90
+        or not -180 <= lon <= 180
+        or accuracy <= 0
+        or recorded_at.tzinfo is None
+        or recorded_at.utcoffset() is None
+    ):
+        raise DomainError("VALIDATION_ERROR", "Invalid driver position.")
+    return {"lat": lat, "lon": lon, "accuracy_m": accuracy, "recorded_at": recorded_at}
+
+
+async def _record_driver_point(
+    session: AsyncSession, trip_id: int, point: dict[str, object], source: str
+) -> datetime:
+    route = await gps_service.record_point(session, trip_id, point, source)
+    recorded_at = route.recorded_at
+    remaining_km = route.remaining_km
+    remaining_min = route.remaining_min
+    provider = route.provider
+    if (
+        not isinstance(recorded_at, datetime)
+        or recorded_at.utcoffset() is None
+        or type(remaining_min) is not int
+        or remaining_min < 0
+        or not isinstance(remaining_km, Decimal)
+        or not remaining_km.is_finite()
+        or remaining_km < 0
+        or provider not in ("ors", "fallback")
+    ):
+        raise DomainError("PLAN_NOT_APPROVABLE", "Verified driver route is unavailable.")
+    saved = await session.scalar(
+        select(VehiclePosition)
+        .where(
+            VehiclePosition.trip_id == trip_id,
+            VehiclePosition.source == source,
+            VehiclePosition.recorded_at == recorded_at,
+        )
+        .order_by(VehiclePosition.id.desc())
+        .limit(1)
+    )
+    expected_source = "ors" if provider == "ors" else "haversine_estimate"
+    if (
+        saved is None
+        or saved.remaining_min != remaining_min
+        or saved.route_source != expected_source
+        or saved.remaining_km is None
+    ):
+        raise DomainError("PLAN_NOT_APPROVABLE", "Driver position was not persisted with its route.")
+    return recorded_at
+
+
 def _validate(event_type: str, data: dict[str, object]) -> None:
+    if event_type in ("DELIVERED", "FAILED") and data.get("position") is None:
+        raise DomainError(
+            "VALIDATION_ERROR", "Driver completion requires a position.", {"reason": "position_required"}
+        )
     required: dict[str, tuple[str, ...]] = {
         "START_PREP": ("crew_size",),
         "PREP_RESUMED": ("crew_size",),
@@ -204,6 +277,7 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         "DISPATCHED": ("trip_id",),
         "DELIVERED": ("trip_id", "recipient_name"),
         "FAILED": ("trip_id", "failure_reason"),
+        "DRIVER_INCIDENT": ("trip_id", "reason"),
         "VEHICLE_ISSUE": ("vehicle_id",),
         "SHORTAGE": ("sku", "qty_missing"),
         "BREAKAGE": ("sku", "qty"),
@@ -216,8 +290,9 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         "GOODS_READY": frozenset({"crew_size"}),
         "LOADED": frozenset({"trip_id"}),
         "DISPATCHED": frozenset({"trip_id"}),
-        "DELIVERED": frozenset({"trip_id", "recipient_name", "note"}),
-        "FAILED": frozenset({"trip_id", "failure_reason", "note"}),
+        "DELIVERED": frozenset({"trip_id", "recipient_name", "note", "position"}),
+        "FAILED": frozenset({"trip_id", "failure_reason", "note", "position"}),
+        "DRIVER_INCIDENT": frozenset({"trip_id", "reason", "note", "position"}),
         "VEHICLE_ISSUE": frozenset({"vehicle_id", "note"}),
         "SHORTAGE": frozenset({"sku", "qty_missing", "note"}),
         "BREAKAGE": frozenset({"sku", "qty", "note"}),
@@ -240,12 +315,20 @@ def _validate(event_type: str, data: dict[str, object]) -> None:
         except ValueError as exc:
             raise DomainError("VALIDATION_ERROR", "Invalid shift date.") from exc
     for field in ("recipient_name", "failure_reason", "sku", "note"):
-        if field in data and (
-            not isinstance(data[field], str) or (field != "note" and not data[field].strip())
-        ):
+        value = data.get(field)
+        if field == "note" and value is None:
+            continue
+        if field in data and (not isinstance(value, str) or (field != "note" and not value.strip())):
             raise DomainError("VALIDATION_ERROR", f"Invalid {field}.")
     if event_type == "FAILED" and data["failure_reason"] not in FAILURE_CODES:
         raise DomainError("VALIDATION_ERROR", "Unknown failure reason.")
+    if event_type == "DRIVER_INCIDENT":
+        if not isinstance(data["reason"], str) or data["reason"] not in INCIDENT_REASONS:
+            raise DomainError("VALIDATION_ERROR", "Unknown driver incident reason.")
+        if data["reason"] == "other" and not str(data.get("note") or "").strip():
+            raise DomainError("VALIDATION_ERROR", "Other incident requires a note.")
+    if "position" in data:
+        _position_payload(data["position"])
 
 
 async def _claim(
@@ -478,7 +561,7 @@ async def record_event(
     if event_type in WAREHOUSE_EVENTS:
         await _warehouse(session, actor, plan.warehouse_id, market)
     trips = await _trips(session, order.id, plan.id)
-    if event_type in {"LOADED", "DISPATCHED", "DELIVERED", "FAILED"} and not trips:
+    if event_type in {"LOADED", "DISPATCHED", "DELIVERED", "FAILED", "DRIVER_INCIDENT"} and not trips:
         raise DomainError("ILLEGAL_TRANSITION", "No approved trips are assigned.")
     trip: DeliveryTrip | None = None
     stop: TripStop | None = None
@@ -501,13 +584,15 @@ async def record_event(
         raise DomainError("ILLEGAL_TRANSITION", "Event occurred before the last recorded event.")
     segments: list[LabourSegment] = []
     changed_to: str | None = None
-    event_data = dict(payload)
+    # Coordinates belong only in ops.vehicle_position, never in the immutable milestone payload.
+    event_data = {key: value for key, value in payload.items() if key != "position"}
+    position_at: datetime | None = None
     if event_type in {"START_PREP", "PREP_PAUSED", "PREP_RESUMED", "GOODS_READY"}:
         if event_type == "START_PREP" and order.status != "APPROVED":
             raise DomainError("ILLEGAL_TRANSITION", "Preparation must start on an approved order.")
         if event_type != "START_PREP" and order.status != "PREPARING":
             raise DomainError("ILLEGAL_TRANSITION", "Order is not being prepared.")
-        segments, running = _labour(previous, event_type, occurred_at, payload)
+        segments, running = _labour(list(previous), event_type, occurred_at, payload)
         if event_type in {"START_PREP", "PREP_RESUMED"} and not running:
             raise DomainError("ILLEGAL_TRANSITION", "Preparation could not be resumed.")
         if event_type == "GOODS_READY":
@@ -540,13 +625,20 @@ async def record_event(
         assert trip is not None and stop is not None
         if order.status != "DISPATCHED" or trip.status != "on_road" or stop.status != "pending":
             raise DomainError("ILLEGAL_TRANSITION", "Trip stop cannot be completed.")
+        point = _position_payload(payload["position"])
+        position_at = await _record_driver_point(session, trip.id, point, "driver_completion")
+        site_distance_m = round(
+            haversine_km(
+                float(str(point["lat"])),
+                float(str(point["lon"])),
+                float(order.delivery_lat),
+                float(order.delivery_lon),
+            )
+            * 1000
+        )
         outcome = "delivered" if event_type == "DELIVERED" else "failed"
         stop.status, stop.completed_at = outcome, occurred_at
         trip.status, trip.ended_at = "completed", occurred_at
-        # DEC-GPS-RET-20261109: collection and live access stop with the trip. Valid points are kept for
-        # the restricted 7-day retention; only INVALID points are removed here, in THIS transaction
-        # (no commit of its own). Other vehicles' trips are untouched (one trip row lock per call).
-        await gps_service.close_trip_collection(session, trip.id)
         session.add(
             ProofOfDelivery(
                 trip_stop_id=stop.id,
@@ -560,6 +652,7 @@ async def record_event(
                     payload.get("failure_reason") if isinstance(payload.get("failure_reason"), str) else None
                 ),
                 note=payload.get("note") if isinstance(payload.get("note"), str) else None,
+                site_distance_m=site_distance_m,
             )
         )
         if all(s.status in ("delivered", "failed") for _, s in trips):
@@ -567,6 +660,7 @@ async def record_event(
                 await transition(session, order.id, OrderStatus.DELIVERED, "driver")
                 changed_to = "DELIVERED"
                 order.delivered_at = occurred_at
+                await gps_service.purge_order(session, order.id)
             else:
                 failed_reason = (
                     str(payload["failure_reason"])
@@ -585,13 +679,35 @@ async def record_event(
                     session,
                     market_id=market.id,
                     order_id=order.id,
-                    type_="EXCEPTION",
+                    type_="DELIVERY_FAILED",
                     level="critical",
                     message="Delivery failed; dispatcher action required.",
                     target_roles=["dispatcher"],
-                    dedupe_key=f"delivery-failed:{order.id}:{order.approved_plan_id}",
+                    dedupe_key=f"DELIVERY_FAILED:{order.id}:{order.approved_plan_id}",
                 )
-                await planning_service.suggest_replan(order.id, "delivery_failed", session=session)
+    elif event_type == "DRIVER_INCIDENT":
+        assert trip is not None and stop is not None
+        if order.status != "DISPATCHED" or trip.status != "on_road" or stop.status != "pending":
+            raise DomainError("NOT_ON_TRIP", "Trip is not actively on the road.")
+        reason = str(payload["reason"])
+        if "position" in payload:
+            position_at = await _record_driver_point(
+                session, trip.id, _position_payload(payload["position"]), "driver_incident"
+            )
+        await alert_service.raise_alert(
+            session,
+            market_id=market.id,
+            order_id=order.id,
+            type_="DRIVER_INCIDENT",
+            level="critical" if reason == "vehicle_breakdown" else "warning",
+            message=(
+                "Driver incident: vehicle_breakdown. ETA không xác định."
+                if reason == "vehicle_breakdown"
+                else f"Driver incident: {reason}."
+            ),
+            target_roles=["dispatcher"],
+            dedupe_key=f"DRIVER_INCIDENT:{trip.id}:{idempotency_key}",
+        )
     elif event_type == "SHORTAGE" and order.status != "PREPARING":
         raise DomainError("ILLEGAL_TRANSITION", "Shortage reporting requires active preparation.")
     elif event_type == "VEHICLE_ISSUE":
@@ -607,7 +723,6 @@ async def record_event(
             target_roles=["dispatcher"],
             dedupe_key=f"vehicle-issue:{order.id}:{payload['vehicle_id']}",
         )
-        await planning_service.suggest_replan(order.id, "vehicle_issue", session=session)
     elif event_type in ("SHORTAGE", "BREAKAGE"):
         await alert_service.raise_alert(
             session,
@@ -640,9 +755,20 @@ async def record_event(
     assert new_event is not None
     try:
         # M7 runs in THIS transaction (session-aware): a rolled-back event never leaves a forecast/alert.
-        risk = await risk_service.recalculate(order.id, f"event:{event_type}", session=session)
-        # Terminal DELIVERED orders produce no new forecast (open risk alerts are closed by M7 instead).
-        if risk is None and order.status != "DELIVERED":
+        should_recalculate = not (
+            event_type == "DRIVER_INCIDENT"
+            and (payload["reason"] == "vehicle_breakdown" or position_at is None)
+        )
+        if should_recalculate:
+            if event_type == "DRIVER_INCIDENT":
+                risk = await risk_service.recalculate(
+                    order.id, f"event:{event_type}", session=session, signal_at=position_at
+                )
+            else:
+                risk = await risk_service.recalculate(order.id, f"event:{event_type}", session=session)
+        else:
+            risk = None
+        if risk is None and order.status not in ("DELIVERED", "FAILED") and should_recalculate:
             raise DomainError("PLAN_NOT_APPROVABLE", "ETA recalculation did not produce a verified result.")
         # Notify only when the *order* changes, after a verified risk update.
         # Second-vehicle dispatch must not duplicate the DISPATCHED notification.
