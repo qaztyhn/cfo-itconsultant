@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isApiError, newIdempotencyKey } from "../../api/client";
 import { useAuthStore } from "../../app/store";
-import { assignedTrips, type DriverStop, type DriverTrip, type DriverEventType } from "./driverApi";
+import { assignedTrips, stopScopedPodEnabled, type DriverStop, type DriverTrip, type DriverEventType } from "./driverApi";
 import { discardEvent, enqueueEvent, pendingForUser, replayEvents, type PendingEvent } from "./offlineEvents";
 
 const card = "rounded-card border border-border bg-surface p-5 shadow-card";
@@ -53,8 +53,12 @@ function labelForTrip(status: string): string {
 }
 
 function detailAction(trip: DriverTrip): "DISPATCHED" | "POD" | null {
+  // A trip is exclusively one order: never guess which order to dispatch.
+  const orderIds = new Set(trip.stops.map((stop) => stop.order_id));
+  if (trip.stops.length === 0 || orderIds.size !== 1) return null;
   if (trip.status === "loading") return "DISPATCHED";
-  if (trip.status === "on_road" && trip.stops.length === 1 && trip.stops[0].status === "pending") return "POD";
+  if (trip.status === "on_road" && trip.stops.some((stop) => stop.status === "pending") &&
+      (trip.stops.length === 1 || stopScopedPodEnabled())) return "POD";
   return null;
 }
 
@@ -66,6 +70,7 @@ export function TodaysTrips() {
   const [trips, setTrips] = useState<DriverTrip[]>([]);
   const [tripOwner, setTripOwner] = useState<number | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
+  const [selectedStop, setSelectedStop] = useState<number | null>(null);
   const [pending, setPending] = useState<PendingEvent[]>([]);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   const [permission, setPermission] = useState(() => "permissions" in navigator ? "not requested" : "unavailable");
@@ -175,6 +180,8 @@ export function TodaysTrips() {
   const pendingForTrip = activeTrip
     ? safePending.some((event) => event.tripId === activeTrip.trip_id)
     : false;
+  const pendingStops = activeTrip?.stops.filter((stop) => stop.status === "pending") ?? [];
+  const currentStop = pendingStops.find((stop) => stop.trip_stop_id === selectedStop) ?? null;
 
   async function record(
     trip: DriverTrip,
@@ -185,14 +192,20 @@ export function TodaysTrips() {
     if (!trip.stops.some((item) => item.trip_stop_id === stop.trip_stop_id && item.order_id === stop.order_id)) return;
     const action = detailAction(trip);
     if ((type === "DISPATCHED" && action !== "DISPATCHED") ||
-        (type !== "DISPATCHED" && action !== "POD")) return;
+        (type !== "DISPATCHED" && (action !== "POD" || stop.status !== "pending" ||
+          stop.trip_stop_id !== selectedStop))) return;
+    if (type !== "DISPATCHED" && trip.stops.length > 1 && !stopScopedPodEnabled()) return;
     if (type === "DELIVERED" && !recipient.trim()) { setError("Recipient name is required for delivery proof."); return; }
     if (type === "FAILED" && !failure) { setError("Select a failure reason."); return; }
     const payload = type === "DISPATCHED"
       ? { trip_id: trip.trip_id }
       : type === "DELIVERED"
-        ? { trip_id: trip.trip_id, recipient_name: recipient.trim(), ...(note.trim() ? { note: note.trim() } : {}) }
-        : { trip_id: trip.trip_id, failure_reason: failure, ...(note.trim() ? { note: note.trim() } : {}) };
+        ? { trip_id: trip.trip_id, ...(stopScopedPodEnabled() ? { trip_stop_id: stop.trip_stop_id } : {}),
+            recipient_name: recipient.trim(),
+            ...(note.trim() ? { note: note.trim() } : {}) }
+        : { trip_id: trip.trip_id, ...(stopScopedPodEnabled() ? { trip_stop_id: stop.trip_stop_id } : {}),
+            failure_reason: failure,
+            ...(note.trim() ? { note: note.trim() } : {}) };
     const event: PendingEvent = {
       key: newIdempotencyKey(),
       userId,
@@ -207,6 +220,7 @@ export function TodaysTrips() {
     try {
       await enqueueEvent(event);
       await refreshPending();
+      setSelectedStop(null);
       setRecipient("");
       setFailure("");
       setNote("");
@@ -271,7 +285,9 @@ export function TodaysTrips() {
         {!loading && safeTrips.length === 0 && !error ? <div className={card}>No assigned trips for today.</div> : null}
         {activeTrip ? (
           <section className={card} aria-label="Trip details">
-            <button type="button" className={secondary} onClick={() => { setSelectedTrip(null); setOutcome("DELIVERED"); }}>Back to trips</button>
+            <button type="button" className={secondary} onClick={() => {
+              setSelectedTrip(null); setSelectedStop(null); setOutcome("DELIVERED");
+            }}>Back to trips</button>
             <div className="mt-4 flex items-center justify-between gap-2">
               <h2 className="text-h3 font-semibold">Trip {activeTrip.trip_id} · {activeTrip.vehicle_code}</h2>
               <span className="text-caption">{labelForTrip(activeTrip.status)}</span>
@@ -286,14 +302,38 @@ export function TodaysTrips() {
                 <p className="text-caption">Stop status: {stop.status}</p>
               </div>
             ))}
-            {activeTrip.stops.length !== 1 && <p role="alert" className="mt-3 text-body">
-              Multiple stops need an explicit stop identity in the execution event API. POD action is disabled to prevent recording the wrong stop.
-            </p>}
-            {activeTrip.stops.length === 1 && detailAction(activeTrip) === "DISPATCHED" && (
+            {activeTrip.stops.length > 0 && new Set(activeTrip.stops.map((stop) => stop.order_id)).size > 1 && (
+              <p role="alert" className="mt-3 text-body">
+                This trip references multiple orders and cannot be verified. Contact Dispatcher.
+              </p>
+            )}
+            {activeTrip.status === "on_road" && activeTrip.stops.length > 1 && !stopScopedPodEnabled() && (
+              <p role="alert" className="mt-3 text-body">
+                Multi-stop POD requires the verified stop-scoped execution API. Recording is disabled until deployment.
+              </p>
+            )}
+            {detailAction(activeTrip) === "DISPATCHED" && (
               <button type="button" className={`${primary} mt-4`} disabled={busy || pendingForTrip}
                 onClick={() => void record(activeTrip, activeTrip.stops[0], "DISPATCHED")}>Mark dispatched</button>
             )}
-            {activeTrip.stops.length === 1 && detailAction(activeTrip) === "POD" && (
+            {detailAction(activeTrip) === "POD" && (
+              <div className="mt-4 space-y-3">
+                <h3 className="font-semibold">Choose the delivery stop</h3>
+                <p className="text-caption text-inkMuted">
+                  Each stop needs its own proof of delivery. Choose the correct stop before recording an outcome.
+                </p>
+                {pendingStops.map((stop) => (
+                  <button key={stop.trip_stop_id} type="button"
+                    className={`${secondary} w-full text-left ${selectedStop === stop.trip_stop_id ? "border-pine" : ""}`}
+                    aria-pressed={selectedStop === stop.trip_stop_id}
+                    disabled={busy || pendingForTrip}
+                    onClick={() => { setSelectedStop(stop.trip_stop_id); setRecipient(""); setFailure(""); setNote(""); }}>
+                    Select stop {stop.trip_stop_id} · {stop.order_no}
+                  </button>
+                ))}
+              </div>
+            )}
+            {detailAction(activeTrip) === "POD" && currentStop && (
               <div className="mt-4 space-y-4">
                 <fieldset>
                   <legend className="font-semibold">Delivery outcome</legend>
@@ -321,11 +361,15 @@ export function TodaysTrips() {
                     value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={2} />
                 </label>
                 <button type="button" className={primary} disabled={busy || pendingForTrip || (outcome === "DELIVERED" ? !recipient.trim() : !failure)}
-                  onClick={() => void record(activeTrip, activeTrip.stops[0], outcome)}>
+                  onClick={() => void record(activeTrip, currentStop, outcome)}>
                   {outcome === "DELIVERED" ? "Confirm delivered" : "Confirm failed"}
                 </button>
               </div>
             )}
+            <p className="mt-3 text-caption text-inkMuted">
+              Driver duty and licence eligibility are checked by CFO on every event; no verified shift
+              window is available in this trip response. Do not infer availability from a trip card.
+            </p>
             {pendingForTrip && <p role="status" className="mt-3 text-body">An update for this trip is awaiting acknowledgment. New actions are paused.</p>}
             {terminal.has(activeTrip.status) && <p className="mt-3 text-body">Trip ended. No further updates or location sharing are permitted.</p>}
           </section>
@@ -338,7 +382,7 @@ export function TodaysTrips() {
                 <p className="text-body">{labelForTrip(trip.status)} · {trip.stops.length} stop{trip.stops.length === 1 ? "" : "s"}</p>
                 <p className="text-caption text-inkMuted">Depart: {timeLabel(trip.depart_actual_at ?? trip.depart_planned_at)}</p>
                 {trip.stops.map((stop) => <p key={stop.trip_stop_id} className="mt-2 text-body">{stop.order_no} · {stop.delivery_address}</p>)}
-                <button type="button" className={`${primary} mt-4`} onClick={() => setSelectedTrip(trip.trip_id)}>
+                <button type="button" className={`${primary} mt-4`} onClick={() => { setSelectedTrip(trip.trip_id); setSelectedStop(null); }}>
                   {trip.status === "loading" ? "Review and dispatch" : trip.status === "on_road" ? "Record delivery outcome" : "View trip"}
                 </button>
               </article>

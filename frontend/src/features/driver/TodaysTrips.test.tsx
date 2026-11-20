@@ -2,10 +2,10 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentPath, renderAt, signInAs, userByEmail } from "../../test/utils";
-import { assignedTrips, type DriverTrip } from "./driverApi";
+import { assignedTrips, stopScopedPodEnabled, type DriverTrip } from "./driverApi";
 import { enqueueEvent, pendingForUser, replayEvents } from "./offlineEvents";
 
-vi.mock("./driverApi", () => ({ assignedTrips: vi.fn(), assignedTrip: vi.fn(), submitDriverEvent: vi.fn() }));
+vi.mock("./driverApi", () => ({ assignedTrips: vi.fn(), assignedTrip: vi.fn(), submitDriverEvent: vi.fn(), stopScopedPodEnabled: vi.fn() }));
 vi.mock("./offlineEvents", () => ({
   pendingForUser: vi.fn(), enqueueEvent: vi.fn(), replayEvents: vi.fn(),
   discardEvent: vi.fn(),
@@ -35,6 +35,7 @@ const loaded: DriverTrip = {
 
 beforeEach(() => {
   vi.mocked(assignedTrips).mockReset().mockResolvedValue([loaded]);
+  vi.mocked(stopScopedPodEnabled).mockReset().mockReturnValue(false);
   vi.mocked(pendingForUser).mockReset().mockResolvedValue([]);
   vi.mocked(enqueueEvent).mockReset().mockResolvedValue(undefined);
   vi.mocked(replayEvents).mockReset().mockResolvedValue({ sent: 0, conflict: 0, waiting: 0 });
@@ -86,6 +87,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     renderAt("/driver");
     await screen.findByText("SE-44 · Gothenburg demo site");
     await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    await userEvent.click(screen.getByRole("button", { name: /Select stop 30/ }));
     const confirm = screen.getByRole("button", { name: "Confirm delivered" });
     expect(confirm).toBeDisabled();
     await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Demo recipient");
@@ -108,6 +110,7 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     renderAt("/driver");
     await screen.findByText("SE-44 · Gothenburg demo site");
     await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    await userEvent.click(screen.getByRole("button", { name: /Select stop 30/ }));
     await userEvent.click(screen.getByRole("radio", { name: "Failed" }));
     expect(screen.getByRole("button", { name: "Confirm failed" })).toBeDisabled();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Failure reason" }), "customer_absent");
@@ -128,15 +131,71 @@ describe("Driver PWA assigned-trip and privacy boundaries", () => {
     expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
   });
 
-  it("fails closed on multi-stop POD until the API accepts stop identity", async () => {
+  it("records the selected stop ID on a multi-stop POD and never auto-confirms", async () => {
+    vi.mocked(stopScopedPodEnabled).mockReturnValue(true);
     vi.mocked(assignedTrips).mockResolvedValue([{
-      ...loaded, status: "on_road", stops: [loaded.stops[0], { ...loaded.stops[0], trip_stop_id: 31, order_id: 45 }],
+      ...loaded, status: "on_road", stops: [
+        loaded.stops[0],
+        { ...loaded.stops[0], trip_stop_id: 31, order_no: "SE-44", status: "pending" },
+      ],
+    }]);
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findAllByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
+    expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Select stop 31/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Sample recipient");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delivered" }));
+    await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
+    const item = vi.mocked(enqueueEvent).mock.calls[0][0];
+    expect(item.stopId).toBe(31);
+    expect(item.event.payload).toEqual({ trip_id: 12, trip_stop_id: 31, recipient_name: "Sample recipient" });
+    expect(replayEvents).not.toHaveBeenCalled();
+    expect(screen.getByText(/Not yet confirmed by CFO/)).toBeInTheDocument();
+  });
+
+  it("keeps multi-stop POD disabled before the stop-scoped backend is deployed", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{
+      ...loaded, status: "on_road", stops: [loaded.stops[0], { ...loaded.stops[0], trip_stop_id: 31 }],
     }]);
     signInAs(userByEmail("driver1@cfo.demo"));
     renderAt("/driver");
     await screen.findAllByText("SE-44 · Gothenburg demo site");
     await userEvent.click(screen.getByRole("button", { name: "Record delivery outcome" }));
-    expect(screen.getByText(/Multiple stops need an explicit stop identity/)).toBeInTheDocument();
+    expect(screen.getByText(/Multi-stop POD requires the verified stop-scoped execution API/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm delivered" })).toBeNull();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it("blocks ambiguous cross-order trips without guessing which order to dispatch", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{
+      ...loaded, status: "loading", stops: [
+        loaded.stops[0],
+        { ...loaded.stops[0], order_id: 45, trip_stop_id: 31 },
+      ],
+    }]);
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findAllByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Review and dispatch" }));
+    expect(screen.getByText(/references multiple orders/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark dispatched" })).toBeNull();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it("allows explicit dispatch of the sole order on a multi-stop trip", async () => {
+    vi.mocked(assignedTrips).mockResolvedValue([{
+      ...loaded, stops: [loaded.stops[0], { ...loaded.stops[0], trip_stop_id: 31 }],
+    }]);
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    signInAs(userByEmail("driver1@cfo.demo"));
+    renderAt("/driver");
+    await screen.findAllByText("SE-44 · Gothenburg demo site");
+    await userEvent.click(screen.getByRole("button", { name: "Review and dispatch" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mark dispatched" }));
+    await waitFor(() => expect(enqueueEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(enqueueEvent).mock.calls[0][0].event.payload).toEqual({ trip_id: 12 });
   });
 });
