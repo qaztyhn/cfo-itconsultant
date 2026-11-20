@@ -1,8 +1,8 @@
 """D3 GPS: verified trip-duty device ingestion, privacy cleanup and lost signals.
 
 All writes participate in a caller-owned AsyncSession. GPS read access requires
-a persisted dispatcher-to-trip assignment, which is not yet in the approved DB:
-the APIs therefore fail closed, never fall back to market-wide access.
+a persisted dispatcher-to-trip assignment, verified on each live request.
+No market-wide fallback, including when an order has NULL assignment.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -230,7 +230,7 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
         .join(Market, Market.id == Location.market_id)
         .where(
             DeliveryTrip.assigned_dispatcher_employee_id == employee_id,
-            DeliveryTrip.id.in_(live_duty),
+            DeliveryTrip.id.in_(tuple(live_duty)),
             DeliveryTrip.status == "on_road",
             DeliveryTrip.ended_at.is_(None),
             CustomerOrder.market_id == Market.id,
@@ -240,7 +240,7 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
         .order_by(DeliveryTrip.id)
     )
     output: list[dict[str, object]] = []
-    for trip, vehicle, stop, order in result:
+    for trip, vehicle, _stop, order in result:
         begins, ends = live_duty[trip.id]
         position = await session.scalar(
             select(VehiclePosition)
