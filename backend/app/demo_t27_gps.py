@@ -83,7 +83,7 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
                     )
                 )
             ):
-                raise ValueError("T27 GPS fixture requires the exact DISPATCHED approved Source order/plan/trip")
+                raise ValueError("T27 GPS fixture requires the exact DISPATCHED order, plan and trip")
             shift = await session.scalar(
                 select(EmployeeShiftSchedule.id)
                 .where(
