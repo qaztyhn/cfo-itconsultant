@@ -605,9 +605,14 @@ def _advance_driver_clock(
     """R3 demo: the frozen API MUST advance with Chrome before each GPS fix."""
     if env.get("APP_ENV") != "test" or env.get("DEMO_DISPOSABLE") != "1":
         raise RuntimeError("Clock rollover requires the disposable synthetic demo")
-    when = aware(env["APP_NOW"]) + timedelta(seconds=seconds)
-    at = when.astimezone(ZoneInfo(ZONE)).isoformat(timespec="seconds")
-    page.clock.fast_forward(seconds * 1000)
+    # Freeze Chrome while Docker recreates the API. A two-second server
+    # allowance prevents native geolocation callback scheduling from creating
+    # a fix ahead of the API's immutable clock.
+    chrome_now = aware(page.evaluate("new Date().toISOString()")).astimezone(ZoneInfo(ZONE))
+    browser_at = (chrome_now + timedelta(seconds=seconds)).replace(microsecond=0)
+    page.clock.pause_at(browser_at)
+    server_at = browser_at + timedelta(seconds=2)
+    at = server_at.isoformat(timespec="seconds")
     updated = {**env, "APP_NOW": at}
     compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90",
             "cfo-api", env=updated)
@@ -620,7 +625,10 @@ def _advance_driver_clock(
     )
     if configured != at:
         raise RuntimeError("API clock not synchronized to Chrome demo clock")
-    report.setdefault("driver_clocks", {})[stage] = at
+    report.setdefault("driver_clocks", {})[stage] = {
+        "api": at, "chrome": browser_at.isoformat(timespec="seconds"),
+        "skew_seconds": 2,
+    }
     return updated
 
 
