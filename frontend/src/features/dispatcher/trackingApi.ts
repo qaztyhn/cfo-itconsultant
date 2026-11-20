@@ -39,7 +39,7 @@ function optionalNumber(value: unknown): number | null {
 function optionalDistance(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === "number" ? value :
-    (typeof value === "string" && /^\\d+(?:\\.\\d+)?$/.test(value) ? Number(value) : NaN);
+    (typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN);
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error("Invalid live trip response");
   return parsed;
 }
