@@ -82,7 +82,7 @@ export function TodaysTrips() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [lastAckTime, setLastAckTime] = useState<string | null>(null);
+  const [lastAck, setLastAck] = useState<{ userId: number; tripId: number; recordedAt: string } | null>(null);
   const [outcome, setOutcome] = useState<"DELIVERED" | "FAILED">("DELIVERED");
   const [recipient, setRecipient] = useState("");
   const [failure, setFailure] = useState("");
@@ -111,7 +111,17 @@ export function TodaysTrips() {
 
   useEffect(() => {
     let active = true;
-    void Promise.resolve().then(() => { if (active) void refreshTrips(); });
+    // Do not carry a previous driver's position consent, ACK or retry snapshot into a new session.
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      pendingRef.current = null;
+      setPending(null);
+      setLastAck(null);
+      setNotice(null);
+      setAcceptedPrivacy(false);
+      setSelectedTrip(null);
+      void refreshTrips();
+    });
     return () => { active = false; };
   }, [refreshTrips]);
 
@@ -129,13 +139,15 @@ export function TodaysTrips() {
             Date.parse(ack.recorded_at) !== Date.parse(request.point.recorded_at)) {
           throw new Error("Unverified GPS acknowledgment");
         }
-        setLastAckTime(request.point.recorded_at);
+        if (useAuthStore.getState().user?.id !== request.userId || pendingRef.current?.key !== request.key) return;
+        setLastAck({ userId: request.userId, tripId: request.tripId, recordedAt: request.point.recorded_at });
         setNotice(`Position sent · ${timeLabel(request.point.recorded_at)}`);
       } else {
         const ack = await submitDriverEvent(request.orderId, request.body, request.key);
         if (!Number.isSafeInteger(ack.event_id) || ack.event_id <= 0) {
           throw new Error("Unverified event acknowledgment");
         }
+        if (useAuthStore.getState().user?.id !== request.userId || pendingRef.current?.key !== request.key) return;
         setNotice(`${request.body.event_type.replaceAll("_", " ")} acknowledged by CFO.`);
       }
       pendingRef.current = null;
@@ -143,6 +155,7 @@ export function TodaysTrips() {
       setError(null);
       void refreshTrips();
     } catch (cause) {
+      if (useAuthStore.getState().user?.id !== request.userId || pendingRef.current?.key !== request.key) return;
       setError(failureMessage(cause));
       if (isApiError(cause) && [400, 401, 403, 404, 409, 422].includes(cause.status ?? -1)) {
         // A definitive rejected request is not retried. Unknown network/server outcome is retained.
@@ -191,6 +204,8 @@ export function TodaysTrips() {
           // Incident reporting is allowed without a location fix.
         }
       }
+      // The user may have signed out while the browser permission prompt was open.
+      if (useAuthStore.getState().user?.id !== userId) return;
       const key = newIdempotencyKey();
       let request: PendingRequest;
       if (action === "POSITION") {
@@ -269,7 +284,8 @@ export function TodaysTrips() {
               <div className="mt-4 space-y-3">
                 <button type="button" className={primary} disabled={busy || unconfirmed || !acceptedPrivacy}
                   onClick={() => void act("POSITION")}>Update location</button>
-                {lastAckTime && <p role="status">Last position sent: {timeLabel(lastAckTime)}</p>}
+                {lastAck?.userId === userId && lastAck.tripId === trip.trip_id &&
+                  <p role="status">Last position sent: {timeLabel(lastAck.recordedAt)}</p>}
                 <fieldset className="space-y-3 rounded-control border border-border p-3">
                   <legend className="font-semibold">Report incident</legend>
                   <label className="block">Incident reason
