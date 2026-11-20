@@ -57,6 +57,7 @@ from app.domain.models.ref import Market, Vehicle
 from app.domain.models.wms import WmsReservationIntent
 from app.domain.transitions import transition
 from app.services import alert_service, dispatcher_assignment_service, notify_service, reservation_service
+from app.services.driver_verification import stored_driver_problem
 from app.services.wms_mode import require_simulated_or_off
 
 
@@ -578,6 +579,13 @@ async def _approve(
                 "Fresh engine/source gate validation failed.",
                 conflict="five_gates",
             )
+    else:
+        # The simulated WMS refresh already reflects this plan's stock. Recheck
+        # its exact driver assignments again under the same driver locks.
+        now = clock.now()
+        for assignment in selected:
+            if await stored_driver_problem(session, market, plan, assignment, now=now) is not None:
+                raise _fail("RESOURCE_CONFLICT", "Fresh driver validation failed.", conflict="five_gates")
     if preflight_only:
         return {"preflight": "ok"}
     if not simulated and (get_settings().app_env != "test" or os.environ.get("DEMO_DISPOSABLE") == "1"):

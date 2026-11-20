@@ -26,6 +26,13 @@
     ["DEMO-DRIVER-4", "GBG-26-01"],
     ["DEMO-DRIVER-7", "GBG-18-01"]
   ],
+  "driver_feed": {
+    "days": 4,
+    "available_from": "06:00",
+    "available_to": "17:00",
+    "max_driving_min": 540,
+    "vehicle_mass_kg": {"STO-12-04": 12000, "STO-CR-01": 18000, "GBG-26-01": 26000, "GBG-18-01": 18000}
+  },
   "report_orders": [
     ["000131", "APPROVED", "101.00", "ST-001", "STO"],
     ["000129", "DISPATCHED", "202.00", "ST-001", "STO"],

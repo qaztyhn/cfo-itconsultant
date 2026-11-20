@@ -26,7 +26,7 @@ env.update(
     APP_NOW="2026-12-01T10:05:00+01:00",
     WMS_RESERVATION_MODE="simulated",
     SYNTHETIC_WMS_URL="http://127.0.0.1:8188",
-    DEMO_D7_FIXTURE_DIR=str((env_file.parent / ".e0_04_d7").resolve()),
+    DEMO_D7_FIXTURE_DIR="",
     SYNTHETIC_WMS_FIXTURE=str((ROOT / ".e1_wms_fixture.json").resolve()),
     SYNTHETIC_WMS_DB=str((ROOT / ".e1_wms.sqlite").resolve()),
     PYTHONPATH=str(ROOT / "backend"),
@@ -37,8 +37,6 @@ env["SYNTHETIC_WMS_SHARED_KEY"] = key
 env["DATABASE_URL"] = env["DATABASE_URL"].replace("@postgres:5432", "@127.0.0.1:5432")
 if "@127.0.0.1:5432" not in env["DATABASE_URL"]:
     raise SystemExit("Only the disposable local PostgreSQL is supported")
-if not Path(env["DEMO_D7_FIXTURE_DIR"]).is_dir():
-    raise SystemExit("E0-04 D7 fixture is missing")
 subprocess.run(
     [sys.executable, "-m", "alembic", "upgrade", "head"],
     cwd=ROOT / "backend",

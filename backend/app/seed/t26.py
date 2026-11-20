@@ -29,7 +29,7 @@ from app.domain.models.hr import (
 )
 from app.domain.models.ops import CustomerOrder
 from app.domain.models.plan import FulfilmentPlan, PlanningRun
-from app.domain.models.ref import AppUser, Customer, Location, Market, ProductGlobal, ProductSE, Vehicle
+from app.domain.models.ref import AppUser, Customer, Location, Market, ProductGlobal, ProductSE
 from app.domain.transitions import transition
 from app.providers.route_cache import ensure_route
 from app.providers.routing_ors import OrsRoutingProvider
@@ -188,33 +188,6 @@ async def seed(path: Path) -> dict[str, object]:
                             change_reason=VERSION,
                         )
                     )
-            for employee_no, vehicle_code in fixture["driver_vehicle_pairs"]:
-                vehicle = (await session.scalars(select(Vehicle).where(Vehicle.code == vehicle_code))).one()
-                for day in days:
-                    session.add(
-                        DriverAvailability(
-                            driver_employee_id=employees[employee_no],
-                            work_date=day,
-                            available_from=datetime.combine(day, time(6), zone),
-                            available_to=datetime.combine(day, time(17), zone),
-                            max_driving_min=540,
-                            verified_by=VERSION,
-                            verified_at=clock.now(),
-                            source="synthetic_demo",
-                            source_ref=f"{VERSION}:{employee_no}:{day}",
-                        )
-                    )
-                session.add(
-                    DriverVehicleEligibility(
-                        driver_employee_id=employees[employee_no],
-                        vehicle_id=vehicle.id,
-                        verified_until=days[-1],
-                        verified_by=VERSION,
-                        verified_at=clock.now(),
-                        source="synthetic_demo",
-                        source_ref=f"{VERSION}:{employee_no}:{vehicle_code}",
-                    )
-                )
             dispatchers = ("DEMO-DISPATCHER", "DEMO-DISPATCHER-2", "DEMO-DISPATCHER-3")
             for employee_no in dispatchers:
                 employee_id = employees[employee_no]
@@ -271,6 +244,20 @@ async def seed(path: Path) -> dict[str, object]:
             )
             if main is not None:
                 raise ValueError("Main order was already synced into CFO")
+            driver_counts = []
+            for model in (DriverAvailability, DriverVehicleEligibility):
+                driver_counts.append(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(model)
+                        .where(model.source == "synthetic_demo", model.source_ref.startswith(f"{VERSION}:"))
+                    )
+                )
+            if driver_counts != [
+                fixture["driver_feed"]["days"] * len(fixture["driver_vehicle_pairs"]),
+                len(fixture["driver_vehicle_pairs"]),
+            ]:
+                raise ValueError("T26 requires the full driver feed ingested from Source")
             return {
                 "version": VERSION,
                 "app_now": settings.app_now,
@@ -281,8 +268,8 @@ async def seed(path: Path) -> dict[str, object]:
                 "stores": {code: locations[code].id for code in fixture["stores"]},
                 "dispatchers": {number: employees[number] for number in dispatchers},
                 "day_capacity_rows": len(days) * len(fixture["warehouses"]),
-                "driver_availability_rows": len(days) * len(fixture["driver_vehicle_pairs"]),
-                "vehicle_eligibility_rows": len(fixture["driver_vehicle_pairs"]),
+                "driver_availability_rows": driver_counts[0],
+                "vehicle_eligibility_rows": driver_counts[1],
                 "report_rows": len(fixture["report_orders"]),
             }
     finally:

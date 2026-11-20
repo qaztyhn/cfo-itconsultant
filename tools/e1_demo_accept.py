@@ -1,7 +1,7 @@
 """Run the E1 approval against the isolated E0-04 PostgreSQL scenario.
 
-Requires the private E0-04 environment in the process, migration head, and
-DEMO_D7_FIXTURE_DIR. Creates only a disposable WMS fixture/SQLite file.
+Requires the private E0-04 environment, migration head and ingested fleet evidence.
+Creates a disposable WMS fixture/SQLite file.
 """
 
 import asyncio

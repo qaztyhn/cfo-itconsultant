@@ -14,10 +14,10 @@ import os
 from app.core import clock
 from app.core.config import get_settings
 from app.core.db import get_engine
-from app.services.ingest_service import sync_entity
+from app.services.ingest_service import SUPPORTED_ENTITIES, sync_entity
 
 DEMO_CLOCKS = {"2026-11-04T10:05:00+01:00", "2026-12-01T10:05:00+01:00"}
-ENTITIES = ("customers", "products", "inbound", "fleet", "orders", "stock")
+ENTITIES = SUPPORTED_ENTITIES
 
 
 async def run(entity: str) -> int:

@@ -145,20 +145,6 @@ def main() -> int:
     if not bash.is_file():
         print("BLOCKED: Git Bash or a POSIX bash is required for base demo setup")
         return 2
-    # Compose bind mounts create missing host directories as root on Linux.
-    # Make the synthetic fixture directory writable by the invoking user first.
-    fixture_dir = ROOT / ".e0_04_d7"
-    if fixture_dir.is_symlink():
-        print("BLOCKED: disposable D7 fixture directory must not be a symlink")
-        return 2
-    try:
-        fixture_dir.mkdir(mode=0o700, exist_ok=True)
-        if not os.access(fixture_dir, os.W_OK):
-            print("BLOCKED: D7 fixture directory is not writable by this user")
-            return 2
-    except OSError:
-        print("BLOCKED: cannot create disposable D7 fixture directory")
-        return 2
     base["MSYS_NO_PATHCONV"] = "1"
     try:
         if compose(base, "ps", "--all", "-q", capture=True):
@@ -284,8 +270,7 @@ def main() -> int:
             "--scope-id",
             "1",
         )
-        execute([sys.executable, "tools/e0_04_d7_fixture.py"], base)
-        future = {**base, "APP_NOW": E0_NOW, "DEMO_D7_FIXTURE_DIR": "/srv/e0_04_d7"}
+        future = {**base, "APP_NOW": E0_NOW, "DEMO_D7_FIXTURE_DIR": ""}
         compose(
             future,
             "up",
@@ -310,14 +295,18 @@ def main() -> int:
             "-m",
             "app.seed_e0_04",
         )
-        for module in (
-            "app.demo_e0_04_shifts",
-            "app.demo_e0_04_fleet",
-            "app.demo_ingest",
+        compose(
+            future, "exec", "-T", "-e", "APP_ENV=test", "-e", "DEMO_DISPOSABLE=1",
+            "source-se", "python", "-m", "app.seed_t26", "--driver-feed",
+        )
+        compose(future, "cp", str(T26_FIXTURE), "cfo-api:/tmp/t26.json")
+        for module, module_args in (
+            ("app.demo_e0_04_shifts", ["--round3"] if fixture else []),
+            ("app.demo_e0_04_fleet", ["/tmp/t26.json"]),
+            ("app.demo_ingest", ["stock"]),
+            ("app.demo_ingest", ["driver-availability"]),
+            ("app.demo_ingest", ["driver-eligibility"]),
         ):
-            module_args = ["stock"] if module == "app.demo_ingest" else []
-            if fixture and module == "app.demo_e0_04_shifts":
-                module_args = ["--round3"]
             compose(
                 future,
                 "exec",
@@ -331,7 +320,6 @@ def main() -> int:
                 *module_args,
             )
         if fixture:
-            compose(future, "cp", str(T26_FIXTURE), "cfo-api:/tmp/t26.json")
             report = compose(
                 future,
                 "exec",

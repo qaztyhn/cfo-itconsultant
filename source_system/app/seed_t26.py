@@ -4,15 +4,18 @@ import asyncio
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import create_engine
+from app.models import DriverAvailability, DriverEligibility
 from app.seed_demo import _inbound_and_fleet, _orders, check_manifest
 from app.seed_reference import (
     seed_catalog,
@@ -23,6 +26,64 @@ from app.seed_reference import (
 from app.stock_batches import StockInput, publish
 
 FIXTURE = Path(__file__).resolve().parents[1] / "seed/se/t26.json"
+
+
+async def seed_driver_feed() -> int:
+    """Publish the same versioned driver fixture for T26 and the T27 E0-04 replay."""
+    settings = Settings.from_env()
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    database = make_url(settings.database_url)
+    if (
+        os.environ.get("APP_ENV") != "test"
+        or os.environ.get("DEMO_DISPOSABLE") != "1"
+        or settings.app_now != fixture["app_now"]
+        or settings.source_schema != "src_se"
+        or database.host not in ("postgres", "127.0.0.1")
+        or database.database != "source_se"
+    ):
+        raise ValueError("Disposable T26 Source context required")
+    now = datetime.fromisoformat(fixture["app_now"])
+    zone = ZoneInfo(fixture["timezone"])
+    config = fixture["driver_feed"]
+    days = [now.astimezone(zone).date() + timedelta(days=n) for n in range(config["days"])]
+    version = fixture["version"]
+    availability: list[dict[str, object]] = []
+    eligibility: list[dict[str, object]] = []
+    for employee_no, vehicle_code in fixture["driver_vehicle_pairs"]:
+        common = dict(
+            source="synthetic_demo",
+            employee_no=employee_no,
+            verified_by=version,
+            verified_at=now,
+            updated_at=now,
+        )
+        availability.extend(
+            dict(
+                **common,
+                source_ref=f"{version}:{employee_no}:{day}",
+                work_date=day,
+                available_from=datetime.combine(day, time.fromisoformat(config["available_from"]), zone),
+                available_to=datetime.combine(day, time.fromisoformat(config["available_to"]), zone),
+                max_driving_min=config["max_driving_min"],
+            )
+            for day in days
+        )
+        eligibility.append(
+            dict(
+                **common,
+                source_ref=f"{version}:{employee_no}:{vehicle_code}",
+                vehicle_code=vehicle_code,
+                verified_until=days[-1],
+            )
+        )
+    engine = create_engine(settings)
+    try:
+        async with AsyncSession(engine) as session, session.begin():
+            await session.execute(insert(DriverAvailability).values(availability).on_conflict_do_nothing())
+            await session.execute(insert(DriverEligibility).values(eligibility).on_conflict_do_nothing())
+    finally:
+        await engine.dispose()
+    return len(availability) + len(eligibility)
 
 
 async def run(manifest: Path) -> int:
@@ -90,7 +151,7 @@ async def run(manifest: Path) -> int:
 
 if __name__ == "__main__":
     try:
-        result = asyncio.run(run(Path(sys.argv[1])))
+        result = asyncio.run(seed_driver_feed() if sys.argv[1] == "--driver-feed" else run(Path(sys.argv[1])))
     except Exception:
         raise SystemExit("BLOCKED: T26 Source seed failed; verify disposable context and manifest.") from None
     print(f"T26 Source scenario rows added={result}")

@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
 
 class ContactIn(BaseModel):
@@ -18,7 +18,14 @@ class LineIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     line_no: int = Field(gt=0, strict=True)
     sku: str = Field(min_length=1)
-    qty: Decimal = Field(gt=0, decimal_places=3, allow_inf_nan=False)
+    # Publish the same number/string schema across supported Pydantic versions.
+    qty: Annotated[
+        Decimal,
+        WithJsonSchema(
+            {"anyOf": [{"type": "number", "exclusiveMinimum": 0.0}, {"type": "string"}]},
+            mode="validation",
+        ),
+    ] = Field(gt=0, decimal_places=3, allow_inf_nan=False)
     unit_price: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]{2}$")]
 
 
