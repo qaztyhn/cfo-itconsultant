@@ -1097,6 +1097,52 @@ def main() -> int:
                 "", "| Step | Status | Evidence | Task |", "|---|---|---|---|"]
         for item in report["steps"]:
             rows.append(f"| {item['step']} | {item['status']} | {item['evidence'].replace('|','/')} | {item['task']} |")
+        rows.extend([
+            "", "## Driver Step 8 — same Source order / plan / trip",
+            "",
+            f"Order ID: {report.get('order_id', 'NOT VERIFIED')} · "
+            f"CFO order: {report.get('order_no', 'NOT VERIFIED')} · "
+            f"Plan ID: {report.get('plan_id', 'NOT VERIFIED')} · "
+            f"Trip IDs: {report.get('trip_ids', 'NOT VERIFIED')}",
+            "",
+            f"Seed source SHA256: {report['seed']['source_t26_sha256']}",
+            f"Seed backend SHA256: {report['seed']['backend_t26_sha256']}",
+            "",
+            "| Milestone | Status | HTTP | Error code | Event / position ID | PostgreSQL |",
+            "|---|---|---|---|---|---|",
+        ])
+        milestones = (report.get("driver_step8") or {}).get("stages") or {}
+        for key in ("dispatch", "gps", "delivered"):
+            stage = milestones.get(key) or {}
+            identifier = stage.get("position_id") if key == "gps" else stage.get("event_id")
+            rows.append(
+                f"| {key.upper()} | {stage.get('status', 'NOT VERIFIED')} | "
+                f"{stage.get('http', '—')} | {stage.get('error_code') or '—'} | "
+                f"{identifier if identifier is not None else '—'} | "
+                f"{'verified' if stage.get('db_verified') is True else 'not verified'} |"
+            )
+        rows.extend(["", "### API / Chrome clocks (Europe/Stockholm)", "",
+                     "| Milestone | Chrome clock | Fixed API clock |",
+                     "|---|---|---|"])
+        for stage, clock_row in (report.get("driver_clocks") or {}).items():
+            rows.append(f"| {stage} | {clock_row['chrome']} | {clock_row['api']} |")
+        gps_db = milestones.get("gps", {}).get("db", {})
+        if gps_db:
+            rows.extend([
+                "", "### GPS checkpoint before terminal purge",
+                f"One driver_tap point: {gps_db['count']}; ETA forecast ID: "
+                f"{gps_db['eta_id']}; trigger: {gps_db['eta_trigger']}; "
+                f"route provenance: {gps_db['route_source']}.",
+                "The screenshot and report omit raw coordinates, headers, recipient and other PII.",
+            ])
+        delivered = milestones.get("delivered", {})
+        if delivered:
+            rows.append(
+                f"POD ID: {delivered.get('pod_id', 'NOT VERIFIED')}; "
+                f"site_distance_m: {delivered.get('site_distance_m', 'NOT VERIFIED')}; "
+                f"remaining GPS points: {delivered.get('remaining_gps_points', 'NOT VERIFIED')}."
+            )
+        rows.append("")
         (args.output / "t27-integrated.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
         print("T27 result", report["result"], "| last verified", report["last_verified"])
         print("T27 statuses", json.dumps({s: sum(item["status"] == s for item in report["steps"])
