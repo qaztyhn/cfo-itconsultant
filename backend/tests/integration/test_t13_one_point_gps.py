@@ -56,12 +56,12 @@ def prepared(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811
     return api
 
 
-def send(api: Api, point: object = POINT, *, key: str | None = None, user: int = 5, trip: int = 1):
+def send(client: Api, point: object = POINT, *, key: str | None = None, user: int = 5, trip: int = 1):
     token = issue_token(user, {})
     headers = {"Authorization": f"Bearer {token}"}
     if key is not None:
         headers["Idempotency-Key"] = key
-    return api.client.post(f"/api/v1/trips/{trip}/positions", headers=headers, json=point)
+    return client.client.post(f"/api/v1/trips/{trip}/positions", headers=headers, json=point)
 
 
 def test_US_GPS_01_AC1_one_point_202_writes_exactly_once_with_eta(prepared: Api) -> None:
