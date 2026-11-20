@@ -470,20 +470,21 @@ def test_US_EXE_02_AC8_completion_without_position_preserves_transaction(
 def test_US_EXE_05_AC1_AC2_AC3_incident_scope_alert_and_eta_rules(
     execution_api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _dispatch_both_vehicles(execution_api, monkeypatch, [])
+    with monkeypatch.context() as dispatch_setup:
+        _dispatch_both_vehicles(execution_api, dispatch_setup, [])
+    _enable_real_gps(execution_api, monkeypatch)
+    clock.set_now(datetime(2026, 11, 10, 9, 45, tzinfo=UTC))
+    execute(
+        execution_api.dsn,
+        "UPDATE ops.customer_order SET committed_date='2026-11-10',"
+        "promise_start='2026-11-10T09:00Z',promise_end='2026-11-10T12:00Z' WHERE id=1",
+    )
 
     async def assigned_driver(session, actor, trip, market, at):
         if trip.driver_employee_id != actor.employee_id:
             raise DomainError("FORBIDDEN", "Driver is not assigned to this trip.")
 
-    calls: list[tuple[str, datetime | None]] = []
-
-    async def forecast(order_id, trigger, *, session, signal_at=None):
-        calls.append((trigger, signal_at))
-        return {"version": len(calls)}
-
     monkeypatch.setattr(execution_service, "_driver_gate", assigned_driver)
-    monkeypatch.setattr(risk_service, "recalculate", forecast)
     at = "2026-11-10T09:30:00Z"
     assert_error(
         send(execution_api, DRIVER, "DRIVER_INCIDENT", at, {"trip_id": 2, "reason": "traffic_or_accident"}),
@@ -503,7 +504,8 @@ def test_US_EXE_05_AC1_AC2_AC3_incident_scope_alert_and_eta_rules(
         {"trip_id": 1, "reason": "other", "note": "Synthetic incident"},
     )
     assert ordinary.status_code == 200, ordinary.text
-    assert calls == []
+    assert ordinary.json()["risk"] is None
+    assert fetch(execution_api.dsn, "SELECT version FROM ops.eta_forecast") == []
     with_position = send(
         execution_api,
         DRIVER,
@@ -517,7 +519,14 @@ def test_US_EXE_05_AC1_AC2_AC3_incident_scope_alert_and_eta_rules(
         },
     )
     assert with_position.status_code == 200, with_position.text
-    assert calls == [("event:DRIVER_INCIDENT", datetime(2026, 11, 10, 9, 35, tzinfo=UTC))]
+    forecast_sql = "SELECT version, trigger, forecast_eta FROM ops.eta_forecast ORDER BY version"
+    forecasts = fetch(execution_api.dsn, forecast_sql)
+    assert len(forecasts) == 1
+    forecast = forecasts[0]
+    assert (forecast["version"], forecast["trigger"]) == (1, "event:DRIVER_INCIDENT")
+    risk = with_position.json()["risk"]
+    assert risk["version"] == forecast["version"]
+    assert datetime.fromisoformat(risk["forecast_eta"]) == forecast["forecast_eta"]
     breakdown = send(
         execution_api,
         DRIVER,
@@ -530,8 +539,11 @@ def test_US_EXE_05_AC1_AC2_AC3_incident_scope_alert_and_eta_rules(
         },
     )
     assert breakdown.status_code == 200, breakdown.text
-    assert len(calls) == 1
-    alerts = fetch(execution_api.dsn, "SELECT type,level,message FROM ops.alert ORDER BY id")
+    assert breakdown.json()["risk"] is None
+    assert fetch(execution_api.dsn, forecast_sql) == forecasts
+    alerts = fetch(
+        execution_api.dsn, "SELECT type,level,message FROM ops.alert WHERE type='DRIVER_INCIDENT' ORDER BY id"
+    )
     assert [(a["type"], a["level"]) for a in alerts] == [
         ("DRIVER_INCIDENT", "warning"),
         ("DRIVER_INCIDENT", "warning"),
@@ -982,20 +994,14 @@ def test_DEC_GPS_RET_no_collection_after_the_trip_ends_and_expired_points_are_ne
         execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
     )
     assert done.status_code == 200, done.text
-    late = execution_api.send(
-        "POST",
-        "/trips/1/positions",
-        DRIVER,
-        {
-            "positions": [
-                {
-                    "lat": 59.3,
-                    "lon": 18.1,
-                    "accuracy_m": 10,
-                    "recorded_at": "2026-11-10T09:00:00Z",
-                    "source": "device",
-                }
-            ]
+    late = execution_api.client.post(
+        "/api/v1/trips/1/positions",
+        headers={"Authorization": "Bearer " + issue_token(DRIVER, {}), "Idempotency-Key": str(uuid4())},
+        json={
+            "lat": 59.3,
+            "lon": 18.1,
+            "accuracy_m": 10,
+            "recorded_at": "2026-11-10T09:00:00Z",
         },
     )
     assert_error(late, 409, "NOT_ON_TRIP")  # offline upload after the trip ended is refused
@@ -1027,12 +1033,7 @@ def test_DEC_GPS_RET_no_collection_after_the_trip_ends_and_expired_points_are_ne
         transact(execution_api.dsn, denied)  # default authorizer: Dispatcher never reads history
 
 
-def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
-    execution_api: Api, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """T13 GPS writes and T14 completion/POD share the actual PostgreSQL transaction."""
-    notices: list[str] = []
-    _dispatch_both_vehicles(execution_api, monkeypatch, notices)
+def _enable_real_gps(execution_api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
     execute(
         execution_api.dsn,
         *GPS_DUTY,
@@ -1053,6 +1054,15 @@ def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
         return RouteEstimate(Decimal("1.0"), 10, "ors")
 
     monkeypatch.setattr(gps_service, "route_with_fallback", route)
+
+
+def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
+    execution_api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T13 GPS writes and T14 completion/POD share the actual PostgreSQL transaction."""
+    notices: list[str] = []
+    _dispatch_both_vehicles(execution_api, monkeypatch, notices)
+    _enable_real_gps(execution_api, monkeypatch)
     first = send(
         execution_api,
         DRIVER,
