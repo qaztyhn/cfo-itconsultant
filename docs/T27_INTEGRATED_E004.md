@@ -127,10 +127,13 @@ The previous runner called CFO Sales reference entry “step 1 PASS”. The task
 board's **step 1 is POS submit**, so that historical label was too broad.
 The current runner leaves step 1 `NOT VERIFIED` and records the real CFO
 Sales actions in step 2. A successful current-head same-order run should show
-**4 PASS, 5 BLOCKED, 5 NOT VERIFIED, 0 FAIL**, with CS order lookup as an
-independent PASS subcheck under a step 11 that remains NOT VERIFIED until ETA
-version-history rendering is verified. These numbers are an **expected rubric**,
-not execution evidence; consult exact-head Actions JSON before accepting them.
+**4 PASS, 4 BLOCKED, 6 NOT VERIFIED, 0 FAIL** in the real Chrome run
+[`d809ed8`](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44655314259).
+CS order lookup is an independent PASS subcheck under step 11, while its ETA
+version-history rendering is NOT VERIFIED despite HTTP 200 from the history API.
+Step 8 remains BLOCKED (D7 56-day verified history missing for the trip day).
+Always correlate a report with its exact commit and disposable run; a later
+document-only SHA is not a newly executed browser test.
 
 The Source external reference `SE-2026-000249` and CFO-generated
 `SE-2026-000001` are **different identifiers** linked by the persisted
