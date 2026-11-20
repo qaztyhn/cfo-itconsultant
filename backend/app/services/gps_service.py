@@ -462,7 +462,19 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
     if session is None:
         raise DomainError("PLAN_NOT_APPROVABLE", "GPS live read requires a transaction.")
     now = _aware(clock.now())
-    active = await active_duty(session, now=now)
+    # R3 verified availability replaces the legacy per-person shift reader.
+    available_drivers = set(
+        (
+            await session.scalars(
+                select(DriverAvailability.driver_employee_id).where(
+                    DriverAvailability.superseded_at.is_(None),
+                    DriverAvailability.available_from <= now,
+                    DriverAvailability.available_to > now,
+                    DriverAvailability.max_driving_min > 0,
+                )
+            )
+        ).all()
+    )
     rows = (
         await session.execute(
             select(DeliveryTrip, Market, Vehicle, CustomerOrder)
@@ -475,6 +487,8 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                 DeliveryTrip.assigned_dispatcher_employee_id == dispatcher_id,
                 DeliveryTrip.status == "on_road",
                 DeliveryTrip.ended_at.is_(None),
+                DeliveryTrip.depart_actual_at.is_not(None),
+                DeliveryTrip.depart_actual_at <= now,
                 Market.gps_enabled.is_(True),
             )
             .order_by(DeliveryTrip.id)
@@ -482,7 +496,10 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
     ).all()
     output: list[dict[str, object]] = []
     for trip, market, vehicle, order in rows:
-        if market.code.strip() != str(getattr(actor, "market", "")).strip() or trip.id not in active:
+        if (
+            market.code.strip() != str(getattr(actor, "market", "")).strip()
+            or trip.driver_employee_id not in available_drivers
+        ):
             continue
         point = await session.scalar(
             select(VehiclePosition)
