@@ -1,7 +1,7 @@
 name: T27 integrated pre-Sync to Mailpit/Driver Chrome (disposable E0-04)
 on:
   push:
-    branches: [feat/r3-t27-integrated-e004, feat/r3-t27-same-order-driver-step8]
+    branches: [feat/r3-t27-integrated-e004, feat/r3-t27-same-order-driver-step8, feat/r3-t27-complete-replay]
   pull_request:
     branches: [feat/r3-t27-integrated-e004]
   workflow_dispatch:
@@ -14,12 +14,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [complete, expired_t12]
+        scenario: [complete, expired_t12, reporting]
     env:
       APP_ENV: test
       DEMO_DISPOSABLE: "1"
       APP_NOW: "2026-11-04T10:05:00+01:00"
-      COMPOSE_PROJECT_NAME: cfo-demo-e004
+      COMPOSE_PROJECT_NAME: ${{ matrix.scenario == 'reporting' && 'cfo-demo-t26' || 'cfo-demo-e004' }}
       COMPOSE_FILE: "docker-compose.yml:tools/t27_e1_compose.override.yml"
       PYTHONPATH: ".:backend"
     steps:
@@ -43,6 +43,7 @@ jobs:
       - name: Generate ephemeral LOCAL disposable secrets (not uploaded or printed)
         run: |
           python - <<'PY'
+          from os import environ
           from pathlib import Path
           from secrets import token_urlsafe
           from urllib.parse import quote
@@ -50,7 +51,7 @@ jobs:
           def key():
               return token_urlsafe(38)
           values = [
-              "APP_ENV=test", "DEMO_DISPOSABLE=1", "COMPOSE_PROJECT_NAME=cfo-demo-e004",
+              "APP_ENV=test", "DEMO_DISPOSABLE=1", "COMPOSE_PROJECT_NAME=" + environ["COMPOSE_PROJECT_NAME"],
               "APP_NOW=2026-11-04T10:05:00+01:00",
               "POSTGRES_PASSWORD=" + password,
               "DATABASE_URL=postgresql+asyncpg://cfo:" + password + "@postgres:5432/cfo",
@@ -69,12 +70,24 @@ jobs:
           path.chmod(0o600)
           PY
       - name: E0-04 prepare Source, scope, fleet, shifts, stock WITHOUT Sales Sync/Plan
+        if: matrix.scenario != 'reporting'
         run: |
           set -a
           source .env
           set +a
           python tools/e0_04_prepare.py --stop-before-sync
+      - name: Prepare official T26 reporting fixture
+        if: matrix.scenario == 'reporting'
+        run: |
+          set -a
+          source .env
+          set +a
+          python tools/e0_04_prepare.py --t26 --seed-report t26-seed-report.json
+      - name: Playwright verify KPI and Revenue on official T26
+        if: matrix.scenario == 'reporting'
+        run: python tools/t27_reporting_browser.py --seed-report t26-seed-report.json --output t27-integrated-e004
       - name: Playwright real CFO Sales Sync → Dispatcher Approve → E2 Mailpit → E3 → Driver → CS
+        if: matrix.scenario != 'reporting'
         env:
           APP_NOW: "2026-12-01T10:05:00+01:00"
           T27_TEST_EXPIRE_LICENCE: ${{ matrix.scenario == 'expired_t12' && '1' || '0' }}
@@ -94,9 +107,11 @@ jobs:
           scenario, exit_code = sys.argv[1], int(sys.argv[2])
           report = json.loads(Path("t27-integrated-e004/t27-integrated.json").read_text())
           stages = report["driver_step8"]["stages"]
+          statuses = {row["step"]: row["status"] for row in report["steps"]}
           if scenario == "complete":
               assert exit_code == 0 and report["result"] == "PASS_WITH_BLOCKERS"
               assert all(stages[name]["status"] == "PASS" for name in ("dispatch", "gps", "delivered"))
+              assert all(statuses[step] == "PASS" for step in ("1", "2", "4", "5", "6", "7", "8", "10", "11"))
           else:
               assert exit_code == 2 and report["result"] == "BLOCKED_STEP8"
               assert stages["dispatch"]["status"] == "BLOCKED"
@@ -131,11 +146,15 @@ jobs:
             t27-integrated-e004/*.png
             t27-integrated-e004/t27-integrated.json
             t27-integrated-e004/t27-integrated.md
+            t27-integrated-e004/t27-reporting.json
           if-no-files-found: ignore
           retention-days: 3
-      - name: Destroy ONLY dedicated disposable cfo-demo-e004 DB/containers
+      - name: Remove the scenario's disposable Compose project
         if: always()
         run: |
-          if [ "${COMPOSE_PROJECT_NAME}" = "cfo-demo-e004" ] && [ -f .env ]; then
-            docker compose --env-file .env -p cfo-demo-e004 down -v --remove-orphans
+          if [ -f .env ]; then
+            case "$COMPOSE_PROJECT_NAME" in
+              cfo-demo-e004|cfo-demo-t26)
+                docker compose --env-file .env -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans ;;
+            esac
           fi
