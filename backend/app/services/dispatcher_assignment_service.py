@@ -59,9 +59,7 @@ async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None
             .join(CustomerOrder, CustomerOrder.id == DecisionLog.order_id)
             .where(
                 CustomerOrder.market_id == market_id,
-                DecisionLog.action.in_(
-                    (Action.PLAN_APPROVED.value, Action.TRIP_DISPATCHER_HANDOVER.value)
-                ),
+                DecisionLog.action.in_((Action.PLAN_APPROVED.value, Action.TRIP_DISPATCHER_HANDOVER.value)),
                 assigned_id.in_(eligible),
             )
             .group_by(assigned_id)
@@ -118,9 +116,7 @@ async def handover(
         raise DomainError("REASON_REQUIRED", "A handover reason is required.")
     if session is None:
         async with get_sessionmaker()() as db, db.begin():
-            return await handover(
-                trip_id, actor, to_employee_id, reason, session=db
-            )
+            return await handover(trip_id, actor, to_employee_id, reason, session=db)
 
     market = await session.scalar(
         select(Market)
@@ -131,9 +127,7 @@ async def handover(
     if market is None or market.code.strip() != str(getattr(actor, "market", "")).strip():
         raise DomainError("NOT_FOUND", "Trip not found.")
     await lock_market_rotation(session, market.id)
-    trip = await session.scalar(
-        select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update()
-    )
+    trip = await session.scalar(select(DeliveryTrip).where(DeliveryTrip.id == trip_id).with_for_update())
     if trip is None:
         raise DomainError("NOT_FOUND", "Trip not found.")
     recipient = await session.scalar(
@@ -155,9 +149,7 @@ async def handover(
     before_id = trip.assigned_dispatcher_employee_id
     if before_id == to_employee_id:
         raise DomainError("ILLEGAL_TRANSITION", "Trip is already assigned to this Dispatcher.")
-    order_id = await session.scalar(
-        select(TripStop.order_id).where(TripStop.trip_id == trip_id).limit(1)
-    )
+    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip_id).limit(1))
     order = await session.get(CustomerOrder, order_id) if order_id is not None else None
     if order is None or order.market_id != market.id:
         raise DomainError("NOT_FOUND", "Trip order not found.")
