@@ -289,8 +289,11 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
         for day, value in acc_daily.items():
             if value is not None:
                 trend_table = page.get_by_role("table", name="Accessible daily KPI values")
-                row = trend_table.get_by_role("row").filter(has_text=day)
-                if ui_has(f"daily_{day}", row, percent_text(expected_acc["days"].get(day))):
+                # Exact date cell -> its own row -> the percentage cell of that row only.
+                date_cell = trend_table.get_by_role("cell", name=day, exact=True)
+                row = trend_table.get_by_role("row").filter(has=date_cell)
+                percent_cell = row.get_by_role("cell").nth(1)
+                if ui_has(f"daily_{day}", percent_cell, percent_text(expected_acc["days"].get(day))):
                     ui_days[day] = percent_text(value)
         acceptance_check = {
             "orders": expected_acc["orders"], "fixture_audit_rows": audit_rows,
