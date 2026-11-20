@@ -646,7 +646,11 @@ def _driver_error(response: Response, report: dict, stage: str, trip_id: int,
                   order_id: int) -> dict[str, object]:
     info = metadata(response)
     report["api"].append(info)
-    status = "BLOCKED" if response.status in (409, 422, 503) else "FAIL"
+    # A bad timestamp, wrong trip or malformed payload is a test failure, NOT
+    # a T12 blocker; only explicit missing authority/evidence stays BLOCKED.
+    status = ("BLOCKED" if info["error_code"] in {
+        "PLAN_NOT_APPROVABLE", "GPS_DISABLED", "LICENCE_EXPIRED"
+    } and response.status in (403, 409, 422, 503) else "FAIL")
     reason = "Backend rejected driver action; retain exact error code and T12/T13/T14 gate"
     if stage == "dispatch":
         try:
