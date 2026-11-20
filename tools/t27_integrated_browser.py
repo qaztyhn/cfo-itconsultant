@@ -1314,10 +1314,10 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scenario", choices=("complete", "failed"), default="complete")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--output", type=Path, help="Run the full Chrome scenario and save its evidence.")
     mode.add_argument("--prepare-wms", action="store_true", help="Start WMS for an existing manual demo plan.")
-    parser.add_argument("--scenario", choices=("complete", "failed"), default="complete")
     args = parser.parse_args()
     env = dict(os.environ)
     data = dotenv_values(ROOT / ".env")
