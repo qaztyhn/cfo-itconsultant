@@ -108,8 +108,7 @@ def test_US_GPS_01_AC2_batch_without_key_wrong_owner_or_shift_is_denied(prepared
 def test_US_GPS_01_AC3_not_on_road_fails_closed(prepared: Api) -> None:
     execute(
         prepared.dsn,
-        "UPDATE ops.delivery_trip SET status='completed',"
-        "ended_at='2026-11-10T08:20Z' WHERE id=1",
+        "UPDATE ops.delivery_trip SET status='completed'," "ended_at='2026-11-10T08:20Z' WHERE id=1",
     )
     assert_error(send(prepared, key=str(uuid4())), 409, "NOT_ON_TRIP")
 
@@ -126,8 +125,11 @@ def test_US_GPS_02_AC1_assigned_dispatcher_only_live_and_hidden_after_trip_end(p
     assert_error(prepared.get("/trips/1/positions", 2), 405, "VALIDATION_ERROR")
     execute(prepared.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=NULL WHERE id=1")
     assert prepared.get("/gps/live", 2).json() == []
-    execute(prepared.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=2,"
-        "status='completed',ended_at='2026-11-10T09:00Z' WHERE id=1")
+    execute(
+        prepared.dsn,
+        "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=2,"
+        "status='completed',ended_at='2026-11-10T09:00Z' WHERE id=1",
+    )
     assert prepared.get("/gps/live", 2).json() == []
 
 
@@ -139,7 +141,8 @@ def test_US_GPS_03_AC1_purge_terminal_order_and_no_history_route(prepared: Api) 
 
 
 def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(
-    prepared: Api, monkeypatch: pytest.MonkeyPatch,
+    prepared: Api,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def ors(*_args: object, **_kwargs: object) -> RouteEstimate:
         return RouteEstimate(Decimal("3.20"), 6, "ors")
@@ -152,9 +155,7 @@ def test_US_GPS_01_AC1_ors_route_provenance_on_postgresql(
         prepared.dsn,
         "SELECT route_source,remaining_km,remaining_min FROM ops.vehicle_position",
     )[0]
-    assert (row["route_source"], row["remaining_km"], row["remaining_min"]) == (
-        "ors", Decimal("3.2"), 6
-    )
+    assert (row["route_source"], row["remaining_km"], row["remaining_min"]) == ("ors", Decimal("3.2"), 6)
 
 
 def test_US_GPS_01_AC3_no_transactional_state_leak_on_invalid_timestamp(prepared: Api) -> None:
