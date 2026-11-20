@@ -267,8 +267,20 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
         acc_card = page.locator('section[data-metric="plan_acceptance_rate"]')
         sales_text = percent_text(expected_acc["by_path"]["sales"])
         dispatcher_text = percent_text(expected_acc["by_path"]["dispatcher"])
-        expect(acc_card).to_contain_text(percent_text(expected_acc["value"]))
-        expect(acc_card).to_contain_text(f"Sales {sales_text} · Dispatcher {dispatcher_text}")
+        ui_checks: dict[str, object] = {}
+
+        def ui_has(name: str, locator, text: str) -> bool:
+            try:
+                expect(locator).to_contain_text(text, timeout=8000)
+                ui_checks[name] = True
+                return True
+            except AssertionError:
+                # Synthetic KPI text only (no customer data); recorded to explain a mismatch.
+                ui_checks[name] = {"expected": text, "actual": locator.inner_text()[:240]}
+                return False
+
+        ui_has("card_total", acc_card, percent_text(expected_acc["value"]))
+        ui_has("card_paths", acc_card, f"Sales {sales_text} · Dispatcher {dispatcher_text}")
         with page.expect_response(lambda r: urlsplit(r.url).path == "/api/v1/kpi/daily"
                                   and "plan_acceptance_rate" in r.url) as acc_trend:
             page.get_by_label("Trend metric").select_option("plan_acceptance_rate")
@@ -277,8 +289,8 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
         for day, value in acc_daily.items():
             if value is not None:
                 row = page.locator("tbody tr").filter(has_text=day)
-                expect(row).to_contain_text(percent_text(expected_acc["days"].get(day)))
-                ui_days[day] = percent_text(value)
+                if ui_has(f"daily_{day}", row, percent_text(expected_acc["days"].get(day))):
+                    ui_days[day] = percent_text(value)
         acceptance_check = {
             "orders": expected_acc["orders"], "fixture_audit_rows": audit_rows,
             "postgres": {"value": expected_acc["value"], "by_path": expected_acc["by_path"]},
@@ -289,11 +301,13 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
             "daily": acc_trend.value.status == 200 and all(
                 _close(acc_daily.get(day), expected_acc["days"].get(day)) for day in acc_daily
             ) and {d for d, v in acc_daily.items() if v is not None} == set(expected_acc["days"]),
-            "ui_daily_days": sorted(ui_days),
+            "ui_daily_days": sorted(ui_days), "ui_checks": ui_checks,
+            "postgres_daily": expected_acc["days"], "api_daily": acc_daily,
         }
         reconciled["plan_acceptance_rate"] = (
             expected_acc["orders"] > 0 and expected_acc["value"] is not None
             and all(acceptance_check[key] for key in ("total", "sales", "dispatcher", "daily"))
+            and all(value is True for value in ui_checks.values())
         )
         page.get_by_label("Operational KPIs").screenshot(path=output / "12-kpi.png")
         status = "PASS" if (not missing and not legacy and by_path and eta_r3 and all(reconciled.values())
