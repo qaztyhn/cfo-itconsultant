@@ -1430,7 +1430,6 @@ components:
           - type: number
             exclusiveMinimum: 0.0
           - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,3}0*$
           title: Qty
         unit_price:
           type: string
