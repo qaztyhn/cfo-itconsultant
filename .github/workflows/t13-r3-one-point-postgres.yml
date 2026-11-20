@@ -23,4 +23,4 @@ jobs:
       - name: T13 one-point, ORS/fallback and PostgreSQL transaction tests
         working-directory: backend
         run: |
-          python -m pytest -q tests/integration/test_t13_one_point_gps.py tests/unit/test_routing_provider.py
+          python -m pytest -q -s tests/integration/test_t13_one_point_gps.py tests/unit/test_routing_provider.py
