@@ -3,6 +3,7 @@
 These tests require TEST_DATABASE_URL and a disposable PostgreSQL 16 database.
 """
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.errors import DomainError
+from app.domain.models.ops import DeliveryTrip
 from app.services.dispatcher_assignment import choose_dispatcher, handover_trip
 from tests.integration import rows
 from tests.integration.conftest import alembic_config, async_url, execute, fetch
@@ -64,16 +66,16 @@ def test_T15_rotation_unassigned_first_then_oldest_then_id(dispatcher_db: str) -
     assert _run(db, lambda s: choose_dispatcher(s, 1)) == 1
     execute(db, "UPDATE hr.dispatcher_staff SET in_rotation=false WHERE employee_id=1")
     assert _run(db, lambda s: choose_dispatcher(s, 1)) == 2
-    execute(db, "UPDATE hr.employee SET status='inactive' WHERE id=2")
+    execute(db, "UPDATE hr.employee SET status='terminated' WHERE id=2")
     assert _run(db, lambda s: choose_dispatcher(s, 1)) is None
 
 
 def test_T15_rollback_does_not_consume_turn(dispatcher_db: str) -> None:
     async def failed(session):
         selected = await choose_dispatcher(session, 1)
-        session.add(__import__("app.domain.models.ops", fromlist=["DeliveryTrip"]).DeliveryTrip(
+        session.add(DeliveryTrip(
             warehouse_id=1, vehicle_id=1, driver_employee_id=1,
-            depart_planned_at=__import__("datetime").datetime.fromisoformat("2026-11-10T07:00:00+00:00"),
+            depart_planned_at=datetime.fromisoformat("2026-11-10T07:00:00+00:00"),
             assigned_dispatcher_employee_id=selected,
         ))
         await session.flush()
