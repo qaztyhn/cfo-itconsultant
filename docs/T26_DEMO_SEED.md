@@ -60,6 +60,52 @@ Source publish fixture `t26-r3-v1` và CFO nạp hai feed T12 vào bảng T09 v�
 Công suất seed `06:00–14:00`, 7 người, 7 giờ hữu ích mỗi người cho mỗi kho,
 ngày 01–04/12. Roster tương thích E0-04 phủ GBG/STO đến 04/12 trước khi T10 dùng bảng công suất ngày.
 
+### Bật E1 cho proposal rank 2 đã có
+
+Trong checkout dùng để chạy stack T26 có T19, giữ trang Sales đang hiển thị
+plan #7 `proposed` của Source `SE-2026-000123`. Chạy từ repo root
+trong môi trường Python đã cài backend, Playwright và `python-dotenv`.
+Trên PowerShell, thay dòng đặt `PYTHONPATH` bằng `$env:PYTHONPATH = ".;backend"`.
+
+```sh
+PYTHONPATH=.:backend python -m tools.t27_integrated_browser --prepare-wms \
+  --project cfo-demo-t26 --source-ref SE-2026-000123 --plan-id 7 --rank 2
+```
+
+Helper đọc proposal và batch tồn kho đã được chấp nhận trong DB của project.
+Nó dùng image API hiện có, giữ volume PostgreSQL và chỉ tạo lại `cfo-api`
+để bật WMS tại `127.0.0.1:8188` bên trong container. Đồng hồ Planning
+là `2026-12-01T10:05:00+01:00`. Trên trang Sales đang mở, chọn **Rank 2**,
+nhập `other` và chọn **Approve rank 2**. Ghi HTTP của
+`POST /api/v1/plans/7/approve` rồi đối chiếu DB.
+
+```sql
+SELECT p.id, p.rank, p.status AS plan_status, o.status AS order_status,
+       o.approved_plan_id, d.actor_role, d.snapshot->>'rank' AS audit_rank,
+       d.reason_code,
+       (SELECT count(*) FROM ops.notification n
+        WHERE n.order_id = o.id AND n.template = 'CONFIRMED') AS confirmed_count
+FROM plan.fulfilment_plan p
+JOIN ops.customer_order o ON o.id = p.order_id
+LEFT JOIN audit.decision_log d
+  ON d.order_id = o.id AND d.plan_id = p.id AND d.action = 'PLAN_APPROVED'
+WHERE o.external_ref = 'SE-2026-000123' AND p.id = 7;
+```
+
+Kỳ vọng HTTP `200`, `approved`, `APPROVED`, `approved_plan_id=7`,
+audit của `sales` có rank `2` và `reason_code=other`, cùng đúng một
+`CONFIRMED`. Nếu HTTP báo `RESOURCE_CONFLICT` khi refresh WMS, kiểm tra
+`stg.sync_run` và `stg.sync_reject` của lượt stock sync tương ứng.
+PR #245 đã ghi nhận `RISK_DEPENDENCY_UNAVAILABLE` ở bước này khi stack có
+dữ liệu báo cáo.
+
+Replay bằng Chromium, PostgreSQL 16 và API chạy local với T19 + #245, sáu đơn
+báo cáo và đồng hồ trên cũng gặp lỗi này. Simulator ACK bốn dòng của plan #7
+tại STO; refresh từ chối cả 12 dòng tồn kho. Approve trả HTTP `409`, plan
+vẫn `proposed`, đơn `PLANNED`, có 0 audit `PLAN_APPROVED` và 0
+`CONFIRMED` cho đơn. Giữ container simulator khi intent còn `acked` để
+bảo toàn ledger phục vụ retry.
+
 ## Bước 12b · số liệu cố định
 
 Kỳ `from=2026-11-26&to=2026-12-01`, tính cả hai đầu theo Stockholm.

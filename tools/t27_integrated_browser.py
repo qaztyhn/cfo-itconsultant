@@ -1,8 +1,8 @@
 """T27 E0-04 real Chrome → E1 loopback WMS → E2 Mailpit → E3 → Driver → CS.
 
-Starts with the Source order submitted but ABSENT from CFO. No TestClient performs
-Sync, Plan or Approve. Existing E0-04 --stop-before-sync builds only inputs.
-Runs exclusively against cfo-demo-e004; never touches production resources.
+The full runner uses E0-04 --stop-before-sync, with Sync, Plan and Approve
+performed in Chrome. Manual WMS preparation also supports an existing T26
+proposal in the dedicated cfo-demo-t26 project.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
+from tools.t27_prepare_wms_fixture import E0_PROJECT, T26_PROJECT
 
 SOURCE_REF = "SE-2026-000249"
 NOW = "2026-12-01T10:05:00+01:00"
@@ -35,7 +36,7 @@ API = "http://localhost:8000"
 WEB = "http://localhost:5173"
 MAILPIT = "http://127.0.0.1:8025"
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env"), "-p", "cfo-demo-e004"]
+COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env")]
 STEPS = (
     ("1", "Open CFO Sales Sync & Check and enter Source reference", "E0, T26"),
     ("2", "Sales Sync and feasibility", "E0, E1"),
@@ -115,7 +116,8 @@ def cmd(*args: str, env: dict[str, str], capture: bool = False) -> str:
 
 
 def compose(*args: str, env: dict[str, str], capture: bool = False) -> str:
-    return cmd(*COMPOSE, *args, env=env, capture=capture)
+    return cmd(*COMPOSE, "-p", env.get("COMPOSE_PROJECT_NAME", E0_PROJECT),
+               *args, env=env, capture=capture)
 
 
 def sql(query: str, env: dict[str, str]) -> str:
@@ -209,17 +211,13 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         page.close()
 
 
-def start_disposable_wms(env: dict[str, str], report: dict) -> None:
+def install_disposable_wms(env: dict[str, str], fixture: Path) -> None:
     # The existing E1 simulator is deliberately restricted to loopback.
     # Start it inside the cfo-api container's *same* network namespace rather
     # than weakening DisposableWmsPort to permit arbitrary remote hosts.
     compose("exec", "-T", "cfo-api", "python", "-c",
             "import os; assert os.environ.get('WMS_RESERVATION_MODE') == 'simulated'", env=env)
-    with TemporaryDirectory(prefix="t27-wms-") as directory:
-        fixture = Path(directory) / "fixture.json"
-        result = cmd(sys.executable, "tools/t27_prepare_wms_fixture.py", "--output", str(fixture),
-                     env=env, capture=True)
-        compose("cp", str(fixture), "cfo-api:/tmp/t27-wms-fixture.json", env=env)
+    compose("cp", str(fixture), "cfo-api:/tmp/t27-wms-fixture.json", env=env)
     compose("exec", "-d", "-e", "SYNTHETIC_WMS_FIXTURE=/tmp/t27-wms-fixture.json",
             "-e", "SYNTHETIC_WMS_DB=/tmp/t27-wms.sqlite",
             "cfo-api", "python", "-m", "app.adapters.disposable_wms_service", env=env)
@@ -228,12 +226,52 @@ def start_disposable_wms(env: dict[str, str], report: dict) -> None:
             compose("exec", "-T", "cfo-api", "python", "-c",
                     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8188/openapi.json',timeout=2)",
                     env=env)
-            report["wms_fixture"] = "E1 SQLite synthetic WMS, private loopback, ready"
-            report["wms_plan"] = result
             return
         except RuntimeError:
             time.sleep(0.3)
     raise RuntimeError("E1 loopback WMS did not start in disposable container")
+
+
+def start_disposable_wms(env: dict[str, str], report: dict) -> None:
+    with TemporaryDirectory(prefix="t27-wms-") as directory:
+        fixture = Path(directory) / "fixture.json"
+        report["wms_plan"] = cmd(
+            sys.executable, "tools/t27_prepare_wms_fixture.py", "--output", str(fixture),
+            env=env, capture=True,
+        )
+        install_disposable_wms(env, fixture)
+    report["wms_fixture"] = "E1 SQLite synthetic WMS, private loopback, ready"
+
+
+def prepare_t26_wms(env: dict[str, str], source_ref: str, plan_id: int, rank: int) -> None:
+    # Validate the existing stack and plan before recreating its API container.
+    compose(
+        "exec", "-T", "cfo-api", "python", "-c",
+        "import os; assert [os.environ.get(k) for k in ('APP_ENV','DEMO_DISPOSABLE','APP_NOW')]"
+        f" == ['test','1',{NOW!r}]",
+        env=env,
+    )
+    endpoint = compose("port", "postgres", "5432", env=env, capture=True)
+    host, _, port = endpoint.rpartition(":")
+    if host != "127.0.0.1" or not port.isdecimal():
+        raise RuntimeError("T26 PostgreSQL must have a local loopback port")
+    env["POSTGRES_PORT"] = port
+    with TemporaryDirectory(prefix="t26-wms-") as directory:
+        fixture = Path(directory) / "fixture.json"
+        result = cmd(
+            sys.executable, "tools/t27_prepare_wms_fixture.py", "--output", str(fixture),
+            "--project", T26_PROJECT, "--source-ref", source_ref, "--plan-id", str(plan_id),
+            "--rank", str(rank), env=env, capture=True,
+        )
+        # Use the running project's application build (which must include T19)
+        # and leave the browser, PostgreSQL and Source containers in place.
+        compose(
+            "up", "-d", "--no-deps", "--no-build", "--force-recreate", "--wait",
+            "--wait-timeout", "90", "cfo-api", env=env,
+        )
+        install_disposable_wms(env, fixture)
+    print(result)
+    print(f"WMS simulator ready at cfo-api loopback. Approve existing rank {rank}, plan #{plan_id}.")
 
 
 def prepare_manual_wms(env: dict[str, str]) -> None:
@@ -710,7 +748,17 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--output", type=Path, help="Run the full Chrome scenario and save its evidence.")
     mode.add_argument("--prepare-wms", action="store_true", help="Start WMS for an existing manual demo plan.")
+    parser.add_argument("--project", choices=(E0_PROJECT, T26_PROJECT), default=E0_PROJECT)
+    parser.add_argument("--source-ref")
+    parser.add_argument("--plan-id", type=int)
+    parser.add_argument("--rank", type=int, choices=(1, 2, 3))
     args = parser.parse_args()
+    selector = (args.source_ref, args.plan_id, args.rank)
+    if args.project == T26_PROJECT:
+        if not args.prepare_wms or not args.source_ref or not args.plan_id or args.plan_id < 1 or args.rank is None:
+            parser.error("T26 requires --prepare-wms, --source-ref, --plan-id and --rank")
+    elif any(value is not None for value in selector):
+        parser.error("Plan selection is available only for cfo-demo-t26")
     env = dict(os.environ)
     data = dotenv_values(ROOT / ".env")
     if args.prepare_wms:
@@ -721,22 +769,25 @@ def main() -> int:
             cfo_db = make_url(env.get("DATABASE_URL", ""))
             source_db = make_url(env.get("SOURCE_SE_DATABASE_URL", ""))
         except (ArgumentError, ValueError):
-            parser.error("Private E0-04 Compose database URLs required")
+            parser.error("Private demo Compose database URLs required")
         if (cfo_db.host, cfo_db.port, cfo_db.database, source_db.host, source_db.database) != (
             "postgres", 5432, "cfo", "postgres", "source_se",
         ):
-            parser.error("Private E0-04 Compose database URLs required")
+            parser.error("Private demo Compose database URLs required")
         env.update(
             APP_NOW=NOW,
-            COMPOSE_PROJECT_NAME="cfo-demo-e004",
+            COMPOSE_PROJECT_NAME=args.project,
             COMPOSE_FILE=os.pathsep.join(("docker-compose.yml", "tools/t27_e1_compose.override.yml")),
-            DEMO_D7_FIXTURE_DIR="",
             SYNTHETIC_WMS_API_KEY=env.get("SYNTHETIC_WMS_API_KEY") or secrets.token_urlsafe(32),
             MSYS_NO_PATHCONV="1",
             PYTHONPATH=os.pathsep.join(filter(None, (str(ROOT), str(ROOT / "backend"), env.get("PYTHONPATH")))),
         )
         try:
-            prepare_manual_wms(env)
+            if args.project == T26_PROJECT:
+                prepare_t26_wms(env, *selector)
+            else:
+                env["DEMO_D7_FIXTURE_DIR"] = ""
+                prepare_manual_wms(env)
         except RuntimeError as exc:
             print(f"BLOCKED: {exc}", file=sys.stderr)
             return 2
