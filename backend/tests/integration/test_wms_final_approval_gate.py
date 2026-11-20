@@ -24,6 +24,7 @@ from app.core import clock
 from app.core.config import get_settings
 from app.core.errors import DomainError
 from app.services import approval_service, ingest_service, wms_intent, wms_mode, wms_reserve_phase
+from tests.integration import rows
 from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.test_approval_service import _actor, _hold, _recheck, _run
 from tests.integration.test_approval_service import db as db  # noqa: F401
@@ -187,6 +188,55 @@ def disposable_wms(
     finally:
         asyncio.run(engine.dispose())
         get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("report_fixture", [True, False], ids=["t26-report", "missing-trip"])
+def test_US_APR_01_AC1_refresh_acked_wms_stock_hands_off_risk_in_same_transaction(
+    db: str, disposable_wms: tuple[httpx.ASGITransport, str], report_fixture: bool
+) -> None:
+    execute(
+        db,
+        rows.order_sql(2),
+        rows.run_sql(2, 1),
+        rows.plan_sql(2, 2, 1, "approved"),
+        rows.plan_vehicle_sql(2, 1, 2),
+        rows.trip_sql(2),
+        "UPDATE ops.delivery_trip SET plan_vehicle_id=2,status='on_road',"
+        "depart_actual_at='2026-11-04T08:30Z' WHERE id=1",
+        rows.stop_sql(1, 2),
+        rows.order_sql(3),
+        rows.run_sql(3, 1),
+        rows.plan_sql(3, 3, 1, "approved"),
+        "UPDATE ops.customer_order SET approved_plan_id=id,"
+        "promise_start='2026-11-10T09:00Z',promise_end='2026-11-10T11:00Z' WHERE id IN (2,3)",
+        *(
+            f"UPDATE ops.customer_order SET status='{status}' WHERE id IN (2,3)"
+            for status in ("PLANNED", "APPROVED", "PREPARING", "GOODS_READY", "LOADED", "DISPATCHED")
+        ),
+    )
+    if report_fixture:
+        execute(db, """UPDATE plan.planning_run SET input_snapshot='{"fixture":"t26-r3-v1"}' WHERE id=3""")
+
+    async def refresh_after_ack() -> None:
+        assert await wms_reserve_phase.reserve_simulated(1, 1) == "acked"
+        if report_fixture:
+            await wms_reserve_phase.refresh_simulated(1, 1)
+            await wms_reserve_phase.refresh_simulated(1, 1)
+        else:
+            with pytest.raises(DomainError, match="WMS stock batch was not accepted"):
+                await wms_reserve_phase.refresh_simulated(1, 1)
+
+    asyncio.run(refresh_after_ack())
+    forecasts = fetch(db, "SELECT order_id,trigger FROM ops.eta_forecast ORDER BY order_id")
+    writes = fetch(db, "SELECT source_batch_id FROM ops.stock_write_run WHERE source_kind='wms_synthetic'")
+    intent = fetch(db, "SELECT status FROM ops.wms_reservation_intent")[0][0]
+    if report_fixture:
+        assert [tuple(row) for row in forecasts] == [(2, "source_change")]
+        assert [row[0] for row in writes] == [2]
+        assert intent == "refreshed"
+    else:
+        assert not forecasts and not writes
+        assert intent == "acked"
 
 
 def test_US_APR_01_concurrent_distinct_keys_do_not_release_committed_wms_hold(
