@@ -2,8 +2,8 @@
 
 import importlib.util
 from datetime import date, datetime
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.adapters import demo_d7_reader
