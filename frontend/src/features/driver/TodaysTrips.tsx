@@ -283,7 +283,7 @@ export function TodaysTrips() {
         {!loading && safeTrips.length === 0 && <div className={card}>No assigned trips for today.</div>}
         {trip ? (
           <section aria-label="Trip details" className={card}>
-            <button type="button" className={secondary} disabled={busy} onClick={() => setSelectedTrip(null)}>Back to trips</button>
+            <button type="button" className={secondary} disabled={busy} onClick={() => { setSelectedTrip(null); setNotice(null); }}>Back to trips</button>
             <h2 className="mt-4 text-h3 font-semibold">Trip {trip.trip_id} · {trip.vehicle_code}</h2>
             <p className="text-body">{trip.status === "on_road" ? "On the road" : trip.status}</p>
             <p className="text-caption text-inkMuted">Departure: {timeLabel(trip.depart_actual_at ?? trip.depart_planned_at)}</p>
@@ -363,7 +363,7 @@ export function TodaysTrips() {
               <h2 className="font-semibold">Trip {item.trip_id} · {item.vehicle_code}</h2>
               <p>{item.status} · {item.stops.length} stop(s)</p>
               {item.stops.map((s) => <p key={s.trip_stop_id}>{s.order_no} · {s.delivery_address}</p>)}
-              <button type="button" className={primary} onClick={() => setSelectedTrip(item.trip_id)}>
+              <button type="button" className={primary} onClick={() => { setSelectedTrip(item.trip_id); setNotice(null); }}>
                 {item.status === "loading" ? "Review and dispatch" : item.status === "on_road" ? "Record delivery outcome" : "View trip"}
               </button>
             </article>)}
