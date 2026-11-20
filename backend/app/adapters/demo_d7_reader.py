@@ -38,7 +38,10 @@ def _demo_enabled() -> bool:
     if os.environ.get("DEMO_D7_FIXTURE_DIR") != "/srv/e0_04_d7/step8_dec02":
         return False
     try:
-        at = datetime.fromisoformat(s.app_now or "").astimezone(ZoneInfo("Europe/Stockholm"))
+        stamp = datetime.fromisoformat(s.app_now or "")
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            return False
+        at = stamp.astimezone(ZoneInfo("Europe/Stockholm"))
     except (ValueError, TypeError):
         return False
     return (
