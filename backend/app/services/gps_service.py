@@ -179,7 +179,8 @@ async def record_point(
         source=source,
         remaining_km=distance,
         remaining_min=route.duration_min,
-        route_source=route.provider,
+        # DB provenance is "haversine_estimate"; the wire DTO calls it "fallback".
+        route_source="haversine_estimate" if route.provider == "fallback" else "ors",
     )
     session.add(saved)
     await session.flush()
@@ -203,7 +204,7 @@ async def trusted_remaining_for_order(
             .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc()).limit(1)
         )
         if latest is not None:
-            if latest.remaining_min is None or latest.route_source not in ("ors", "fallback"):
+            if latest.remaining_min is None or latest.route_source not in ("ors", "haversine_estimate"):
                 raise DomainError("PLAN_NOT_APPROVABLE", "GPS route duration has no verified provenance.")
             evidence[trip_id] = (latest.recorded_at, latest.remaining_min)
     return evidence
