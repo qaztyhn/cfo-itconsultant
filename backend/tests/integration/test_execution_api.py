@@ -1091,5 +1091,3 @@ def test_US_EXE_02_AC2_AC8_real_gps_completion_purge_and_rollback(
         execution_api.dsn, "SELECT payload::text FROM ops.milestone_event ORDER BY id DESC LIMIT 1"
     )[0][0]
     assert "position" not in milestone and "59.0" not in milestone
-
-
