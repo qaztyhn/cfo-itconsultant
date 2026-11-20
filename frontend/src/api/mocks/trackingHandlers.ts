@@ -56,8 +56,7 @@ export const trackingHandlers = [
     const employeeId = auth.account!.user.employee_id;
     return HttpResponse.json(liveTrips.filter((trip) => assignments.get(trip.trip_id) === employeeId));
   }),
-  // Deliberately NOT in docs/06: mocked candidate discovery only.
-  http.get(BASE + "/__mock/t17/trips/:id/eligible-dispatchers", ({ request, params }) => {
+  http.get(BASE + "/trips/:id/eligible-dispatchers", ({ request, params }) => {
     const auth = dispatcher(request);
     if (auth.denied) return auth.denied;
     const tripId = Number(params.id);
@@ -65,7 +64,7 @@ export const trackingHandlers = [
         !assignments.has(tripId)) {
       return errorResponse(request, 404, "NOT_FOUND", "Trip not found.");
     }
-    return HttpResponse.json({ items: eligible });
+    return HttpResponse.json({ items: eligible.filter(({ employee_id }) => employee_id !== assignments.get(tripId)) });
   }),
   http.post(BASE + "/trips/:id/handover", async ({ request, params }) => {
     const auth = dispatcher(request);

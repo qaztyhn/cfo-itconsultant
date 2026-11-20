@@ -6,7 +6,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { API_BASE_URL } from "../../api/config";
 import { handlers } from "../../api/mocks/handlers";
 import { MOCK_RUN_IDS, resetPlanningMock } from "../../api/mocks/planningHandlers";
@@ -16,10 +16,18 @@ import { renderAt, userByEmail } from "../../test/utils";
 
 const server = setupServer(...handlers);
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+  // Node fetch rejects AbortSignal from jsdom. Keep cancellation in production.
+  const mswFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => mswFetch(input, { ...init, signal: undefined }));
+});
 beforeEach(() => resetPlanningMock());
 afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+afterAll(() => {
+  vi.unstubAllGlobals();
+  server.close();
+});
 
 /** Mock authorize() cần token dạng `mock-jwt.<id>`, nên không dùng signInAs mặc định ("test-token"). */
 function signIn(email: string): void {
@@ -237,7 +245,7 @@ describe("PlanReview — states", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("shows unknown freshness without requesting the unimplemented integration endpoint", async () => {
+  it("shows unknown freshness when the integration endpoint returns an error", async () => {
     let overviewCalls = 0;
     server.use(http.get(`${API_BASE_URL}/integration/overview`, () => { overviewCalls += 1; return apiError(404, "NOT_FOUND", "Not found."); }));
     renderAt(runUrl(MOCK_RUN_IDS.normal));
@@ -245,7 +253,7 @@ describe("PlanReview — states", () => {
     expect(await screen.findByText(/Data freshness unknown/)).toBeInTheDocument();
     expect(screen.getByText(/Verify before approving/)).toBeInTheDocument();
     expect(await screen.findAllByRole("article")).toHaveLength(3);
-    expect(overviewCalls).toBe(0);
+    await waitFor(() => expect(overviewCalls).toBe(1));
   });
 });
 

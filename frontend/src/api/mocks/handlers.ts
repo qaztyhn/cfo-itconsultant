@@ -695,7 +695,7 @@ export const handlers = [
     return HttpResponse.json({ event_id: 998, status: "recorded" });
   }),
 
-  // T17: GET /gps/live array + mock-only eligible receiver discovery and handover.
+  // T17: live tracking, eligible receivers and handover.
   ...trackingHandlers,
 
   // Revenue — use the current US-REV-01 read DTOs. Legacy demo responses lacked period/points/rows

@@ -8,7 +8,7 @@ import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { resolveTimeZone, type LocationWithTimeZone } from "../warehouse/prep-queue/timezone";
 import {
-  candidatesAreMockOnly, getLiveTrips, getMockEligibleDispatchers, handoverTrip,
+  getEligibleDispatchers, getLiveTrips, handoverTrip,
   type LiveTrip,
 } from "./trackingApi";
 
@@ -147,9 +147,10 @@ export function TrackingList() {
   const [saving, setSaving] = useState(false);
   const [hiddenTrips, setHiddenTrips] = useState<{ owner: number | null; ids: number[] }>({ owner: null, ids: [] });
   const candidates = useQuery({
-    queryKey: ["t17-mock-candidates", user?.id, user?.market, handoverTripId],
-    enabled: allowed && handoverTripId !== null && candidatesAreMockOnly,
-    queryFn: ({ signal }) => getMockEligibleDispatchers(handoverTripId!, signal),
+    queryKey: ["t17-eligible-dispatchers", user?.id, user?.market, handoverTripId],
+    enabled: allowed && handoverTripId !== null,
+    queryFn: ({ signal }) => getEligibleDispatchers(handoverTripId!, signal),
+    staleTime: 0,
     retry: false,
   });
 
@@ -181,8 +182,8 @@ export function TrackingList() {
       setHandoverError("Lý do bàn giao là bắt buộc.");
       return;
     }
-    if (!candidatesAreMockOnly || !candidates.data?.some((c) => c.employee_id === employee)) {
-      setHandoverError("Danh sách người nhận chưa được backend xác minh.");
+    if (!candidates.data?.some((c) => c.employee_id === employee)) {
+      setHandoverError("Chọn Dispatcher đủ điều kiện.");
       return;
     }
     setSaving(true);
@@ -249,11 +250,7 @@ export function TrackingList() {
           className="rounded-card border border-border bg-surface p-5 shadow-lg">
           <h2 id="t17-handover-title" className="text-h3 font-semibold">Bàn giao chuyến #{selectedTrip.trip_id}</h2>
           <p className="mt-1 text-sm text-inkMuted">Xe {selectedTrip.vehicle_code} · chỉ thay đổi chuyến này.</p>
-          {!candidatesAreMockOnly ? (
-            <p role="alert" className="mt-4 text-sm text-risk-predictedLate-fg">
-              Chờ T15 xác nhận API đọc Dispatcher đủ điều kiện. Không thể bàn giao trên môi trường thật.
-            </p>
-          ) : candidates.isPending ? (
+          {candidates.isPending ? (
             <LoadingState rows={1} />
           ) : candidates.isError ? (
             <p role="alert" className="mt-4 text-sm text-risk-predictedLate-fg">
@@ -265,11 +262,11 @@ export function TrackingList() {
               <select id="t17-recipient" value={recipient} onChange={(event) => setRecipient(event.target.value)}
                 className="w-full rounded-control border border-border bg-surface p-2" required>
                 <option value="">Chọn Dispatcher đủ điều kiện</option>
-                {candidates.data?.filter((c) => c.employee_id !== user?.employee_id).map((candidate) => (
+                {candidates.data?.map((candidate) => (
                   <option key={candidate.employee_id} value={candidate.employee_id}>{candidate.display_name}</option>
                 ))}
               </select>
-              {candidates.data?.filter((c) => c.employee_id !== user?.employee_id).length === 0 && (
+              {candidates.data?.length === 0 && (
                 <p role="status" className="text-sm text-inkMuted">Không có Dispatcher khác đủ điều kiện.</p>
               )}
               <label className="block text-sm font-semibold" htmlFor="t17-reason">Lý do bàn giao (bắt buộc)</label>
@@ -288,7 +285,7 @@ export function TrackingList() {
               </div>
             </form>
           )}
-          {!saving && (candidates.isError || !candidatesAreMockOnly) && (
+          {(candidates.isPending || candidates.isError) && (
             <button type="button" onClick={closeHandover} className="mt-4 rounded-control border border-border px-4 py-2 text-sm">
               Đóng
             </button>

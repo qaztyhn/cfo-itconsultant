@@ -6,6 +6,7 @@ Bí mật JWT sinh lúc chạy, không ghi vào mã (09 bất biến 25).
 
 import secrets
 from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -27,6 +28,7 @@ from tests.integration.conftest import alembic_config
 class Api:
     client: TestClient
     dsn: str
+    maker: async_sessionmaker[AsyncSession]
 
     def get(self, path: str, user_id: int | None, **params: object) -> Response:
         headers = {"Authorization": f"Bearer {issue_token(user_id, {})}"} if user_id is not None else {}
@@ -40,12 +42,11 @@ class Api:
         return response
 
 
-@pytest.fixture
-def api(empty_db: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Api]:
-    command.upgrade(alembic_config(empty_db), "head")
+@contextmanager
+def api_for_db(dsn: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Api]:
     monkeypatch.setenv("JWT_SECRET", secrets.token_urlsafe(32))
     get_settings.cache_clear()
-    maker = async_sessionmaker(create_async_engine(to_async_url(empty_db), poolclass=NullPool))
+    maker = async_sessionmaker(create_async_engine(to_async_url(dsn), poolclass=NullPool))
 
     async def test_db() -> AsyncIterator[AsyncSession]:
         async for session in session_scope(maker):
@@ -53,9 +54,18 @@ def api(empty_db: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Api]:
 
     app = create_app()
     app.dependency_overrides[get_db] = test_db
-    with TestClient(app) as client:
-        yield Api(client, empty_db)
-    get_settings.cache_clear()
+    try:
+        with TestClient(app) as client:
+            yield Api(client, dsn, maker)
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.fixture
+def api(empty_db: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Api]:
+    command.upgrade(alembic_config(empty_db), "head")
+    with api_for_db(empty_db, monkeypatch) as client:
+        yield client
 
 
 def assert_error(response: Response, status: int, code: str) -> None:

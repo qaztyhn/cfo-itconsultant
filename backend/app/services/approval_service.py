@@ -56,7 +56,7 @@ from app.domain.models.plan import (
 from app.domain.models.ref import Market, Vehicle
 from app.domain.models.wms import WmsReservationIntent
 from app.domain.transitions import transition
-from app.services import alert_service, notify_service, reservation_service
+from app.services import alert_service, dispatcher_assignment_service, notify_service, reservation_service
 from app.services.wms_mode import require_simulated_or_off
 
 
@@ -430,6 +430,10 @@ async def _approve(
         order.origin_store_id is None or order.origin_store_id not in getattr(actor, "location_ids", ())
     ):
         raise _fail("NOT_FOUND", "Plan not found.")
+    # Serialize Approves for the same market *before* acquiring any shared
+    # stock/labour/vehicle locks. Locking only at DeliveryTrip creation allows
+    # cross-order lock inversion (and deadlocks) upstream in _reserve_locks.
+    await dispatcher_assignment_service.lock_market_rotation(session, order.market_id)
     if (
         order.status != "PLANNED"
         or plan.status != "proposed"
@@ -479,13 +483,12 @@ async def _approve(
         plan.rank != 1
         or plan.vehicle_count != 1
         or run.kind != "initial"
-        or run.reserve_class != "safe"
         or plan.manual_reason_code is not None
         or plan.target_date != order.date_to
     ):
         raise _fail(
             "PLAN_NOT_APPROVABLE",
-            "Sales can only confirm an unchanged safe rank-1 plan.",
+            "Sales can only confirm an unchanged rank-1 single-vehicle plan.",
         )
     if plan.target_date != order.date_to:
         neg_id = payload.get("date_negotiation_id")
@@ -606,6 +609,8 @@ async def _approve(
         "sales" if sales else "dispatcher",
         sales_approved_plan_id=plan.id if sales else None,
     )
+    # One rotation turn per ORDER, never per vehicle, under the same approval transaction.
+    assigned_dispatcher = await dispatcher_assignment_service.choose_dispatcher(session, order.market_id)
     trips: list[int] = []
     for vehicle in selected:
         trip = DeliveryTrip(
@@ -613,6 +618,7 @@ async def _approve(
             warehouse_id=plan.warehouse_id,
             vehicle_id=vehicle.vehicle_id,
             driver_employee_id=vehicle.driver_employee_id,
+            assigned_dispatcher_employee_id=assigned_dispatcher,
             depart_planned_at=vehicle.depart_at,
         )
         session.add(trip)
@@ -666,9 +672,21 @@ async def _approve(
         after={
             "status": "approved",
             "trip_ids": trips,
+            "assigned_dispatcher_employee_id": assigned_dispatcher,
             "committed_date": plan.target_date.isoformat(),
         },
     )
+    if assigned_dispatcher is None:
+        await alert_service.raise_alert(
+            session,
+            market_id=order.market_id,
+            order_id=order.id,
+            type_="NO_DISPATCHER_IN_ROTATION",
+            level="warning",
+            message="Approved order has no eligible Dispatcher in the market rotation.",
+            dedupe_key=f"NO_DISPATCHER_IN_ROTATION:{order.id}:{plan.id}",
+            target_roles=("dispatcher", "admin"),
+        )
     # T21 (historical T23 handoff): stage exactly one CONFIRMED in this
     # approval transaction after the order has its committed plan and window.
     # The E2 worker owns delivery after commit; never connect to SMTP here.

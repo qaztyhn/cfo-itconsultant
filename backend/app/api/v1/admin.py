@@ -14,22 +14,11 @@ from app.deps import CurrentUser, DbSession, require_roles
 from app.services import integration_monitor_service as monitor
 
 Admin = Annotated[CurrentUser, Depends(require_roles("admin"))]
+IntegrationReader = Annotated[CurrentUser, Depends(require_roles("admin", "dispatcher"))]
 Feed = Literal["orders", "customers", "products", "stock", "inbound", "fleet"]
 RunStatus = Literal["running", "ok", "partial", "failed"]
 
 router = APIRouter(tags=["admin"])
-
-
-@router.get("/markets/{code}/config")
-async def get_market_config(code: str) -> dict[str, object]:
-    """GET /markets/{code}/config — admin."""
-    raise NotImplementedError
-
-
-@router.put("/markets/{code}/config")
-async def put_market_config(code: str) -> dict[str, object]:
-    """PUT /markets/{code}/config — admin; validate MarketConfig; CONFIG_CHANGED."""
-    raise NotImplementedError
 
 
 @router.get("/sync-runs")
@@ -76,7 +65,7 @@ async def sync_rejects(
 @router.get("/integration/overview")
 async def integration_overview(
     db: DbSession,
-    user: Admin,
+    user: IntegrationReader,
     market: str | None = Query(None, min_length=2, max_length=2),
 ) -> dict[str, object]:
     """GET overview: persisted source, route and scheduler evidence only."""

@@ -1,6 +1,4 @@
-/** T17 API boundary: the backend is authoritative for trip visibility and handover.
- * Candidate discovery is MSW-only until T15 approves a read contract in docs/06.
- */
+/** T17 API boundary for trip visibility and handover. */
 import { apiGet, apiPost } from "../../api/client";
 
 export interface LiveTrip {
@@ -19,11 +17,6 @@ export interface EligibleDispatcher {
   employee_id: number;
   display_name: string;
 }
-
-/** Not a real endpoint: never request receiver candidates from production. */
-export const candidatesAreMockOnly =
-  import.meta.env.MODE === "test" ||
-  (import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === "true");
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -103,10 +96,8 @@ export async function getLiveTrips(signal?: AbortSignal): Promise<LiveTrip[]> {
   return trips;
 }
 
-export async function getMockEligibleDispatchers(tripId: number, signal?: AbortSignal): Promise<EligibleDispatcher[]> {
-  if (!candidatesAreMockOnly) throw new Error("Eligible Dispatcher API contract pending T15");
-  // Clearly namespaced MSW fixture, NOT a production API contract or fallback to /employees.
-  const value = await apiGet<unknown>("/__mock/t17/trips/" + tripId + "/eligible-dispatchers", undefined, signal);
+export async function getEligibleDispatchers(tripId: number, signal?: AbortSignal): Promise<EligibleDispatcher[]> {
+  const value = await apiGet<unknown>("/trips/" + tripId + "/eligible-dispatchers", undefined, signal);
   if (!object(value) || !Array.isArray(value.items)) throw new Error("Invalid candidate list");
   const items: EligibleDispatcher[] = [];
   const seen = new Set<number>();
@@ -123,10 +114,6 @@ export async function getMockEligibleDispatchers(tripId: number, signal?: AbortS
 }
 
 export function handoverTrip(tripId: number, toEmployeeId: number, reasonText: string): Promise<unknown> {
-  if (!candidatesAreMockOnly) {
-    // Remove the block only after the real candidate-list read contract is approved and wired.
-    throw new Error("Eligible Dispatcher API contract pending T15");
-  }
   return apiPost<unknown>("/trips/" + tripId + "/handover", {
     to_employee_id: toEmployeeId, reason_text: reasonText.trim(),
   });

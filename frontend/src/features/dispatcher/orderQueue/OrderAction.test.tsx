@@ -35,11 +35,11 @@ const main = () => within(screen.getByRole("main"));
 const firstButton = async (name: string) => (await main().findAllByRole("button", { name }))[0];
 
 describe("OrderAction", () => {
-  it("general Plan Review entry redirects to the PLANNED queue instead of a blank page", async () => {
+  it("keeps the general Plan Review entry on its own page when no plans are pending", async () => {
     renderAt("/dispatcher/plan-review");
-    await waitFor(() => expect(currentPath()).toBe("/dispatcher/orders"));
-    expect(await main().findByText("No orders match these filters.")).toBeInTheDocument();
-    expect(main().getAllByRole("button", { name: "Clear filters" }).length).toBeGreaterThan(0);
+    expect(await main().findByText("No orders are awaiting plan approval.")).toBeInTheDocument();
+    expect(main().getByRole("heading", { name: "Plan review" })).toBeInTheDocument();
+    expect(currentPath()).toBe("/dispatcher/plan-review");
   });
 
   it("planned run history forbidden does not navigate or fabricate a run", async () => {

@@ -8,7 +8,7 @@ import { setupOrderQueueMsw } from "./orderQueue/testServer";
 
 const LIVE = API_BASE_URL + "/gps/live";
 const LOCATIONS = API_BASE_URL + "/locations";
-const RECEIVERS = API_BASE_URL + "/__mock/t17/trips/:id/eligible-dispatchers";
+const RECEIVERS = API_BASE_URL + "/trips/:id/eligible-dispatchers";
 const HANDOVER = API_BASE_URL + "/trips/:id/handover";
 
 function trip(over: Record<string, unknown> = {}) {
@@ -121,9 +121,14 @@ describe("T17 Dispatcher live tracking (MSW)", () => {
     let calls = 0;
     let body: unknown;
     let tripId = "";
+    let receiverTripId = "";
     let rows = [...TWO];
     server.use(
       http.get(LIVE, () => { getCount += 1; return HttpResponse.json(rows); }),
+      http.get(RECEIVERS, ({ params }) => {
+        receiverTripId = String(params.id);
+        return HttpResponse.json({ items: [{ employee_id: 109, display_name: "Erik Holm" }] });
+      }),
       http.post(HANDOVER, async ({ params, request }) => {
         calls += 1;
         tripId = String(params.id);
@@ -148,6 +153,7 @@ describe("T17 Dispatcher live tracking (MSW)", () => {
     await waitFor(() => expect(getCount).toBeGreaterThanOrEqual(2));
     await waitFor(() => expect(main().queryByText("Chuyến #930 · STO-12-04")).toBeNull());
     expect(main().getByText("Chuyến #931 · STO-18-01")).toBeInTheDocument();
+    expect(receiverTripId).toBe("930");
     expect(tripId).toBe("930");
     expect(body).toEqual({ to_employee_id: 109, reason_text: "End of shift" });
     expect(calls).toBe(1);
