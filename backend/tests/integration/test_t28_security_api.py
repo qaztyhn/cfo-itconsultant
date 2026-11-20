@@ -68,8 +68,8 @@ def test_T28_sales_ranked_options_still_hide_driver_and_diagnostics(secured: Api
     assert alternative.status_code == 200
     assert alternative.json()["rank"] == 2
     assert "RESTRICTED_TEST_ONLY" not in alternative.text
-    assert_error(secured.get("/plans/3", SALES), 404, "NOT_FOUND")
-    assert secured.get("/plans/3", DISPATCHER).status_code == 200
+    assert_error(secured.get("/plans/2", SALES), 404, "NOT_FOUND")
+    assert secured.get("/plans/2", DISPATCHER).status_code == 200
 
 
 def test_T28_sales_cannot_enumerate_out_of_scope_planning_objects(secured: Api) -> None:
