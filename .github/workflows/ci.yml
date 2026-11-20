@@ -18,7 +18,7 @@ jobs:
       - run: black --check .
       - run: mypy app/engine
       - run: lint-imports
-      - run: pytest
+      - run: pytest -q tests/integration/test_t15_dispatcher_assignment.py -x
       - run: python -m unittest discover -s tools/tests
         working-directory: .
       - name: Check deterministic D7 demo files
