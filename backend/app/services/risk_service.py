@@ -6,7 +6,6 @@ risk atomicity. Missing planned prep, GPS duration, or approved DELAY window
 remains unknown, never estimated or promoted to verified.
 """
 
-from collections.abc import Mapping
 from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -28,6 +27,7 @@ from app.domain.models.ops import (
 )
 from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import Location, Market
+from app.engine.delivery import handling_minutes
 from app.engine.forecast import MilestoneState, assess_risk, forecast_eta, order_forecast
 from app.services import alert_service, notify_service
 
@@ -45,6 +45,7 @@ _EVENT_KINDS = frozenset(
         "BREAKAGE",
         "VEHICLE_ISSUE",
         "SHIFT_CHANGE",
+        "DRIVER_INCIDENT",
     }
 )
 _FIXED_SIGNALS = frozenset(
@@ -53,7 +54,6 @@ _FIXED_SIGNALS = frozenset(
         "source_change",
         "overdue_milestone",
         "morning_check",
-        "gps",
         "position",
     }
 )
@@ -112,6 +112,21 @@ async def _valid_signal(
         relevant = [e for e in events if e.event_type == event_type]
         if not relevant:
             return False
+        if event_type == "DRIVER_INCIDENT":
+            latest = max(relevant, key=lambda event: (event.received_at, event.id))
+            if signal_at is None or latest.trip_id is None:
+                return False
+            point = await session.scalar(
+                select(VehiclePosition.id)
+                .where(
+                    VehiclePosition.trip_id == latest.trip_id,
+                    VehiclePosition.source == "driver_incident",
+                    VehiclePosition.recorded_at == signal_at,
+                )
+                .limit(1)
+            )
+            if point is None:
+                return False
         observed = max(e.received_at for e in relevant)
         # Both timestamps are assigned by PostgreSQL. Using computed_at here
         # mixes the injectable application clock with the database receive clock,
@@ -119,25 +134,38 @@ async def _valid_signal(
         return previous is None or observed > previous.created_at
     if trigger not in _FIXED_SIGNALS:
         raise DomainError("VALIDATION_ERROR", "Unsupported forecast signal.")
+    if trigger in {"overdue_milestone", "morning_check"}:
+        # R3 checks may raise alerts, but a clock tick is not a new ETA input.
+        return False
     if trigger == "approval":
-        observed = order.approved_at
-        if observed is None:
+        approved_at = order.approved_at
+        if approved_at is None:
             return False
-        return previous is None or observed > previous.computed_at
-    if trigger == "overdue_milestone":
-        if any(e.event_type == "GOODS_READY" for e in events):
-            return False
-        if now <= plan.goods_ready_at + timedelta(minutes=config.risk.milestone_grace_min):
-            return False
-        return previous is None or now - previous.computed_at >= timedelta(
-            minutes=config.risk.consecutive_min_gap_min
-        )
-    # Source, GPS and morning jobs must supply a trusted, aware source watermark.
+        return previous is None or approved_at > previous.computed_at
+    # Source changes and positions must supply a trusted, aware source watermark.
     # Otherwise calling the service twice would create bogus consecutive forecasts.
     if signal_at is None or signal_at.tzinfo is None or signal_at.utcoffset() is None:
         raise _missing("Verified source signal timestamp is required.")
     if signal_at > now:
         raise DomainError("VALIDATION_ERROR", "Source signal cannot be in the future.")
+    if trigger == "position":
+        point = await session.scalar(
+            select(VehiclePosition.id)
+            .join(DeliveryTrip, DeliveryTrip.id == VehiclePosition.trip_id)
+            .join(PlanVehicle, PlanVehicle.id == DeliveryTrip.plan_vehicle_id)
+            .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+            .where(
+                PlanVehicle.plan_id == plan.id,
+                TripStop.order_id == order.id,
+                VehiclePosition.source == "driver_tap",
+                VehiclePosition.recorded_at == signal_at,
+                VehiclePosition.remaining_min.is_not(None),
+                VehiclePosition.route_source.in_(("ors", "haversine_estimate")),
+            )
+            .limit(1)
+        )
+        if point is None:
+            return False
     return previous is None or signal_at > previous.computed_at
 
 
@@ -163,7 +191,6 @@ async def _vehicle_inputs(
     events: list[MilestoneEvent],
     now: datetime,
     config: MarketConfig,
-    trusted_remaining: Mapping[int, tuple[datetime, int]] | None,
 ) -> list[tuple[int, datetime, datetime]]:
     """Only approved plan vehicles with their matching trips; never infer route from GPS."""
     assignments = (
@@ -206,6 +233,8 @@ async def _vehicle_inputs(
         raise _missing("Approved warehouse loading cutoff is unavailable.")
     output: list[tuple[int, datetime, datetime]] = []
     for pv, trip, stop in assignments:
+        if stop.status in ("delivered", "failed") or trip.status == "completed":
+            continue
         drive = _validated_minutes(pv.eta_at - pv.depart_at, "vehicle drive")
         loading = _validated_minutes(pv.depart_at - pv.loading_start_at, "vehicle loading")
         loaded = max(
@@ -217,21 +246,20 @@ async def _vehicle_inputs(
         gps_at: datetime | None = None
         remaining: int | None = None
         gps_point = await session.scalar(
-            select(VehiclePosition.recorded_at)
+            select(VehiclePosition)
             .where(VehiclePosition.trip_id == trip.id)
-            .order_by(VehiclePosition.recorded_at.desc())
+            .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc())
             .limit(1)
         )
-        if gps_point is not None and now - gps_point <= timedelta(minutes=config.gps.lost_min):
-            if trusted_remaining is None or trip.id not in trusted_remaining:
-                raise _missing("Recent GPS requires verified remaining route duration.")
-            gps_at, remaining = trusted_remaining[trip.id]
+        if gps_point is not None and now - gps_point.recorded_at <= timedelta(minutes=config.gps.lost_min):
+            gps_at, remaining = gps_point.recorded_at, gps_point.remaining_min
             if (
-                gps_at != gps_point
-                or gps_at.tzinfo is None
+                gps_at.tzinfo is None
                 or gps_at.utcoffset() is None
                 or not isinstance(remaining, int)
                 or remaining < 0
+                or gps_point.route_source not in ("ors", "haversine_estimate")
+                or gps_at > now
             ):
                 raise _missing("GPS remaining route evidence is invalid.")
         cutoff_date = pv.loading_start_at.astimezone(zone).date()
@@ -254,15 +282,12 @@ async def _vehicle_inputs(
             departed_at=trip.depart_actual_at,
             gps_recorded_at=gps_at,
             gps_remaining_min=remaining,
+            unload_min=handling_minutes(pv.load_kg, config.unloading.base_min, config.unloading.min_per_ton),
             paused=paused,
             cutoff_at=cutoff_at,
         )
         try:
-            eta = (
-                stop.completed_at
-                if stop.status == "delivered"
-                else forecast_eta(state, now, config.eta_round_min, config.after_loaded_min)
-            )
+            eta = forecast_eta(state, now, config.eta_round_min, config.after_loaded_min)
         except ValueError as exc:
             raise _missing("Verified preparation or routing evidence is insufficient.") from exc
         if eta is None:
@@ -277,7 +302,6 @@ async def recalculate(
     *,
     session: AsyncSession | None = None,
     signal_at: datetime | None = None,
-    trusted_remaining: Mapping[int, tuple[datetime, int]] | None = None,
     delay_window: dict[str, object] | None = None,
     delay_actor: object | None = None,
 ) -> dict[str, object] | None:
@@ -324,9 +348,7 @@ async def recalculate(
     ).all()
     if not await _valid_signal(session, order, plan, trigger, list(events), previous, now, signal_at, config):
         return None
-    vehicle_inputs = await _vehicle_inputs(
-        session, order, plan, market, list(events), now, config, trusted_remaining
-    )
+    vehicle_inputs = await _vehicle_inputs(session, order, plan, market, list(events), now, config)
     try:
         overall_eta = order_forecast([eta for _, _, eta in vehicle_inputs])
         # Gap applies between the TWO ACTUAL consecutive persisted calculations.

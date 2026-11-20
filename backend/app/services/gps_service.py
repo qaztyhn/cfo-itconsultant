@@ -1,8 +1,7 @@
 """D3 GPS: verified trip-duty device ingestion, privacy cleanup and lost signals.
 
 All writes participate in a caller-owned AsyncSession. GPS read access requires
-a persisted dispatcher-to-trip assignment, which is not yet in the approved DB:
-the APIs therefore fail closed, never fall back to market-wide access.
+the current dispatcher-to-trip assignment. No market-wide fallback is allowed.
 """
 
 import hashlib
@@ -275,7 +274,6 @@ async def post_driver_position(
         trigger="position",
         session=session,
         signal_at=result.recorded_at,
-        trusted_remaining=await trusted_remaining_for_order(session, order_id),
     )
     response: dict[str, object] = {
         "accepted": 1,
@@ -469,57 +467,51 @@ async def ingest_positions(
 
 
 async def live(actor: object, *, session: AsyncSession | None = None) -> list[dict[str, object]]:
-    """One latest point per assigned active trip, never market-wide or historical."""
-    dispatcher_id = _role(actor, "dispatcher")
+    """R3: read only this Dispatcher's currently assigned on-road trips.
+
+    The current trip assignment is authoritative after a handover. Keep the
+    T13 live DTO while restricting points to verified trip-duty windows.
+    """
+    employee_id = _role(actor, "dispatcher")
     if session is None:
-        raise DomainError("PLAN_NOT_APPROVABLE", "GPS live read requires a transaction.")
-    now = _aware(clock.now())
-    # R3 verified availability replaces the legacy per-person shift reader.
-    available_drivers = set(
-        (
-            await session.scalars(
-                select(DriverAvailability.driver_employee_id).where(
-                    DriverAvailability.superseded_at.is_(None),
-                    DriverAvailability.available_from <= now,
-                    DriverAvailability.available_to > now,
-                    DriverAvailability.max_driving_min > 0,
-                )
-            )
-        ).all()
-    )
-    rows = (
-        await session.execute(
-            select(DeliveryTrip, Market, Vehicle, CustomerOrder)
-            .join(Location, Location.id == DeliveryTrip.warehouse_id)
-            .join(Market, Market.id == Location.market_id)
-            .join(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
-            .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
-            .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
-            .where(
-                DeliveryTrip.assigned_dispatcher_employee_id == dispatcher_id,
-                DeliveryTrip.status == "on_road",
-                DeliveryTrip.ended_at.is_(None),
-                DeliveryTrip.depart_actual_at.is_not(None),
-                DeliveryTrip.depart_actual_at <= now,
-                Market.gps_enabled.is_(True),
-            )
-            .order_by(DeliveryTrip.id)
+        raise DomainError("PLAN_NOT_APPROVABLE", "GPS read requires a DB transaction.")
+    when = clock.now()
+    live_duty = await active_duty(session, now=when)
+    if not live_duty:
+        return []
+    result = await session.execute(
+        select(DeliveryTrip, Vehicle, TripStop, CustomerOrder)
+        .join(Vehicle, Vehicle.id == DeliveryTrip.vehicle_id)
+        .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
+        .join(CustomerOrder, CustomerOrder.id == TripStop.order_id)
+        .join(Location, Location.id == DeliveryTrip.warehouse_id)
+        .join(Market, Market.id == Location.market_id)
+        .where(
+            DeliveryTrip.assigned_dispatcher_employee_id == employee_id,
+            DeliveryTrip.id.in_(tuple(live_duty)),
+            DeliveryTrip.status == "on_road",
+            DeliveryTrip.ended_at.is_(None),
+            CustomerOrder.market_id == Market.id,
+            Market.code == getattr(actor, "market", ""),
+            Market.gps_enabled.is_(True),
         )
-    ).all()
+        .order_by(DeliveryTrip.id)
+    )
     output: list[dict[str, object]] = []
-    for trip, market, vehicle, order in rows:
-        if (
-            market.code.strip() != str(getattr(actor, "market", "")).strip()
-            or trip.driver_employee_id not in available_drivers
-        ):
-            continue
-        point = await session.scalar(
+    for trip, vehicle, _stop, order in result:
+        begins, ends = live_duty[trip.id]
+        position = await session.scalar(
             select(VehiclePosition)
-            .where(VehiclePosition.trip_id == trip.id)
+            .where(
+                VehiclePosition.trip_id == trip.id,
+                VehiclePosition.recorded_at >= begins,
+                VehiclePosition.recorded_at < ends,
+                VehiclePosition.recorded_at <= when,
+            )
             .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc())
             .limit(1)
         )
-        forecast = await session.scalar(
+        eta = await session.scalar(
             select(EtaForecast)
             .where(EtaForecast.order_id == order.id)
             .order_by(EtaForecast.version.desc(), EtaForecast.id.desc())
@@ -551,13 +543,19 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                 "trip_id": trip.id,
                 "order_id": order.id,
                 "vehicle_code": vehicle.code,
-                "last_position": {"lat": float(point.lat), "lon": float(point.lon)} if point else None,
-                "remaining_km": str(point.remaining_km) if point and point.remaining_km is not None else None,
-                "updated_at": point.recorded_at.isoformat() if point else None,
-                "forecast_eta": forecast.forecast_eta.isoformat() if forecast else None,
+                "last_position": (
+                    {"lat": float(position.lat), "lon": float(position.lon)} if position is not None else None
+                ),
+                "remaining_km": (
+                    str(position.remaining_km)
+                    if position is not None and position.remaining_km is not None
+                    else None
+                ),
+                "updated_at": position.recorded_at.isoformat() if position is not None else None,
+                "forecast_eta": eta.forecast_eta.isoformat() if eta is not None else None,
                 "risk": (
-                    {"status": forecast.risk_status, "color": forecast.risk_color}
-                    if forecast
+                    {"status": eta.risk_status, "color": eta.risk_color}
+                    if eta is not None
                     else {"status": None, "color": None}
                 ),
                 "open_incident": incident,

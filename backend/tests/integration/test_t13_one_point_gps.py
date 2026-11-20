@@ -1,6 +1,5 @@
 """T13 Round 3 single-point HTTP/PG acceptance (synthetic market only)."""
 
-import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -77,7 +76,6 @@ def test_US_GPS_01_AC1_one_point_202_writes_exactly_once_with_eta(prepared: Api)
     first = send(prepared, key=key)
     assert first.status_code == 202, first.text
     ack = first.json()
-    print("T13 SYNTHETIC HTTP 202 ACK:", json.dumps(ack, sort_keys=True))
     assert ack["accepted"] == 1 and ack["trip_id"] == 1 and ack["provider"] == "fallback"
     assert datetime.fromisoformat(ack["recorded_at"]) == datetime.fromisoformat("2026-11-10T08:05:00Z")
     assert fetch(prepared.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 1

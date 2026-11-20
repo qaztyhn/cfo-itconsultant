@@ -28,7 +28,7 @@ flowchart LR
   H --> I{"Có phương án khả thi?"}
   I -- "Có (một hoặc nhiều xe)" --> J["PLANNED: 3 phương án, giữ chỗ 15 phút"]
   I -- "Không" --> K["NO_FEASIBLE_DATE"]
-  J --> M["DISP duyệt"]
+  J --> M["Sales trong phạm vi cửa hàng hoặc Dispatcher duyệt"]
   K --> N["DISP thương lượng ngày với khách"] --> H
   K --> O["DISP lập kế hoạch tay (một hoặc nhiều xe)"] --> M
   M --> P["APPROVED: cam kết và thông báo CONFIRMED"]

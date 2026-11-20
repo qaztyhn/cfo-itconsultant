@@ -95,6 +95,90 @@ def test_US_RSK_01_AC1_no_unverified_trigger_no_extra_version(
     assert fetch(dsn, "SELECT count(*) AS n FROM ops.eta_forecast")[0]["n"] == 1
 
 
+def test_US_RSK_01_AC1_multi_vehicle_eta_ignores_completed_trip(
+    risk_db: tuple[str, dict[str, datetime]],
+) -> None:
+    dsn, _ = risk_db
+    execute(
+        dsn,
+        "UPDATE ops.trip_stop SET status='delivered', completed_at='2026-11-10T08:40Z' WHERE trip_id=1",
+        "UPDATE ops.delivery_trip SET status='completed', ended_at='2026-11-10T08:40Z' WHERE id=1",
+    )
+    result = _recalc(dsn, at=NOW - timedelta(minutes=1))
+    assert result is not None
+    assert [vehicle["trip_id"] for vehicle in result["vehicles"]] == [2]
+
+
+def test_US_RSK_01_AC1_periodic_checks_do_not_create_eta_version(
+    risk_db: tuple[str, dict[str, datetime]],
+) -> None:
+    dsn, state = risk_db
+    assert _recalc(dsn, at=NOW - timedelta(minutes=1)) is not None
+    state["now"] += timedelta(hours=1)
+    for trigger in ("overdue_milestone", "morning_check"):
+        assert run(dsn, lambda s, signal=trigger: risk_service.recalculate(1, signal, session=s)) is None
+    assert fetch(dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 1
+
+
+def test_US_RSK_01_AC1_position_uses_stored_route_and_replay_keeps_version(
+    risk_db: tuple[str, dict[str, datetime]],
+) -> None:
+    dsn, _ = risk_db
+    signal_at = NOW - timedelta(minutes=5)
+    assert _recalc(dsn, at=signal_at, trigger="position") is None
+    execute(
+        dsn,
+        "INSERT INTO ops.vehicle_position "
+        "(trip_id, vehicle_id, lat, lon, recorded_at, source, remaining_km, remaining_min, route_source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:40Z', 'driver_tap', 12.0, 40, 'haversine_estimate')",
+    )
+    first = _recalc(dsn, at=signal_at, trigger="position")
+    assert first is not None and first["version"] == 1
+    assert first["vehicles"][0]["forecast_eta"] == "2026-11-10T10:00:00+00:00"
+    assert _recalc(dsn, at=signal_at, trigger="position") is None
+    assert fetch(dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 1
+
+
+def test_US_EXE_05_AC2_incident_requires_position_and_replay_keeps_one_version(
+    risk_db: tuple[str, dict[str, datetime]],
+) -> None:
+    dsn, _ = risk_db
+    signal_at = NOW - timedelta(minutes=5)
+    execute(
+        dsn,
+        "INSERT INTO ops.milestone_event (order_id, plan_id, trip_id, event_type, occurred_at, "
+        "actor_user_id, idempotency_key, payload) VALUES "
+        "(1, 1, 1, 'DRIVER_INCIDENT', '2026-11-10T08:40Z', 5, 'incident-risk-1', "
+        '\'{"trip_id":1,"reason":"traffic_or_accident"}\')',
+    )
+    assert (
+        run(
+            dsn,
+            lambda s: risk_service.recalculate(1, "event:DRIVER_INCIDENT", session=s, signal_at=signal_at),
+        )
+        is None
+    )
+    execute(
+        dsn,
+        "INSERT INTO ops.vehicle_position "
+        "(trip_id, vehicle_id, lat, lon, recorded_at, source, remaining_km, remaining_min, route_source) "
+        "VALUES (1, 1, 59, 18, '2026-11-10T08:40Z', 'driver_incident', 12.0, 40, 'ors')",
+    )
+    first = run(
+        dsn,
+        lambda s: risk_service.recalculate(1, "event:DRIVER_INCIDENT", session=s, signal_at=signal_at),
+    )
+    assert first is not None and first["version"] == 1
+    assert (
+        run(
+            dsn,
+            lambda s: risk_service.recalculate(1, "event:DRIVER_INCIDENT", session=s, signal_at=signal_at),
+        )
+        is None
+    )
+    assert fetch(dsn, "SELECT count(*) FROM ops.eta_forecast")[0][0] == 1
+
+
 def test_US_RSK_02_AC4_AC5_negative_slack_twice_min_gap_and_dedupe(
     risk_db: tuple[str, dict[str, datetime]],
 ) -> None:

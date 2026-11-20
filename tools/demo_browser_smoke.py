@@ -195,7 +195,7 @@ def main() -> int:
             report(checks, observed, "NOT_VERIFIED")
             return 2
 
-        if "CFO reports APPROVED" in browser.page_source:
+        if "Plan approved" in browser.page_source:
             add("approval_safety", "FAIL", "UI incorrectly presented APPROVED without an approval request.")
             report(checks, observed, "FAIL")
             return 1
