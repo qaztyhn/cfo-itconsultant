@@ -30,11 +30,19 @@ export type DriverTrip = {
 
 type TripList = { items: DriverTrip[] };
 
-export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED";
+export type DriverPosition = {
+  lat: number;
+  lon: number;
+  accuracy_m: number;
+  recorded_at: string;
+};
+
+export type DriverEventType = "DISPATCHED" | "DELIVERED" | "FAILED" | "DRIVER_INCIDENT";
 export type DriverEventPayload =
   | { trip_id: number }
-  | { trip_id: number; recipient_name: string; note?: string }
-  | { trip_id: number; failure_reason: string; note?: string };
+  | { trip_id: number; recipient_name: string; position: DriverPosition }
+  | { trip_id: number; failure_reason: string; position: DriverPosition; note?: string }
+  | { trip_id: number; reason: "vehicle_breakdown" | "traffic_or_accident" | "site_inaccessible" | "other"; note?: string; position?: DriverPosition };
 
 export type DriverEvent = {
   event_type: DriverEventType;
@@ -69,7 +77,19 @@ export function submitDriverEvent(orderId: number, event: DriverEvent, key: stri
   return apiPost<EventAck>(`/orders/${orderId}/events`, event, key);
 }
 
-/** No GPS POST here: current main registers a NotImplementedError endpoint,
- * and real-worker consent, qualified duty windows and privacy approval are not proven.
- * Never collect, persist or upload coordinates without that reviewed handoff.
+/**
+ * T13 receives one driver-initiated position per POST. A retry reuses the
+ * exact point and key; the browser does not batch, persist, or poll GPS.
  */
+export type PositionAck = {
+  accepted: number;
+  trip_id: number;
+  recorded_at: string;
+  remaining_km: string | number;
+  remaining_min: number;
+  provider: "ors" | "fallback";
+};
+
+export function submitPosition(tripId: number, point: DriverPosition, key: string): Promise<PositionAck> {
+  return apiPost<PositionAck>(`/trips/${tripId}/positions`, point, key);
+}
