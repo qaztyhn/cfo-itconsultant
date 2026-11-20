@@ -1068,14 +1068,20 @@ def main() -> int:
                 browser.close()
         statuses = {row["step"]: row["status"] for row in report["steps"]}
         required = ("1", "2", "5", "7")
-        report["result"] = (
-            "PASS_WITH_BLOCKERS"
-            if all(statuses[step] == "PASS" for step in required)
-            and report.get("approval_subcheck") == "PASS"
-            and report.get("dispatch_attempt")
-            and "FAIL" not in statuses.values()
-            else "FAIL"
-        )
+        report["step8_status"] = statuses["8"]
+        if statuses["8"] == "BLOCKED":
+            report["result"] = "BLOCKED_STEP8"
+        elif statuses["8"] == "NOT VERIFIED":
+            report["result"] = "BLOCKED_UPSTREAM"
+        else:
+            report["result"] = (
+                "PASS_WITH_BLOCKERS"
+                if all(statuses[step] == "PASS" for step in required)
+                and report.get("approval_subcheck") == "PASS"
+                and statuses["8"] == "PASS"
+                and "FAIL" not in statuses.values()
+                else "FAIL"
+            )
     except Exception as exc:
         report["result"] = "FAIL"
         report["failure_type"] = type(exc).__name__
@@ -1161,7 +1167,8 @@ def main() -> int:
         print("T27 result", report["result"], "| last verified", report["last_verified"])
         print("T27 statuses", json.dumps({s: sum(item["status"] == s for item in report["steps"])
             for s in ("PASS", "FAIL", "BLOCKED", "NOT VERIFIED")}))
-    return 0 if report["result"] == "PASS_WITH_BLOCKERS" else 1
+    return (0 if report["result"] == "PASS_WITH_BLOCKERS"
+            else 2 if report["result"].startswith("BLOCKED") else 1)
 
 
 if __name__ == "__main__":
