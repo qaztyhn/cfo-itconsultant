@@ -53,7 +53,7 @@ function intercept(trips: DriverTrip[] = [base]) {
 
 async function openTrip(index = 0) {
   renderAt("/driver");
-  await screen.findByText("SE-44 · Synthetic site");
+  await screen.findAllByText("SE-44 · Synthetic site");
   const buttons = screen.getAllByRole("button", { name: "Record delivery outcome" });
   await userEvent.click(buttons[index]);
 }
@@ -109,6 +109,27 @@ describe("R3 Driver one-fix request and event contract", () => {
     });
   });
 
+  it("test_US_EXE_02_AC8_two_vehicles_same_order_target_only_the_selected_trip", async () => {
+    const sibling = { ...other, stops: [{ ...other.stops[0], order_id: 44, order_no: "SE-44" }] };
+    intercept([base, sibling]);
+    await openTrip(1);
+    await consent();
+    await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Synthetic recipient");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delivered" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].path).toBe("/orders/44/events");
+    expect(calls[0].body).toMatchObject({
+      event_type: "DELIVERED",
+      payload: { trip_id: 13, recipient_name: "Synthetic recipient", position: {
+        lat: 57.7, lon: 11.97, accuracy_m: 12, recorded_at: "2026-11-09T08:05:00.000Z",
+      } },
+    });
+    expect(geo).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Back to trips" }));
+    expect(screen.getByText("Trip 12 · V-12")).toBeInTheDocument();
+    expect(screen.getByText("Trip 13 · V-13")).toBeInTheDocument();
+  });
+
   it("test_US_EXE_02_AC8_FAILED_includes_position_and_reason", async () => {
     await openTrip();
     await consent();
@@ -141,6 +162,23 @@ describe("R3 Driver one-fix request and event contract", () => {
     });
   });
 
+  it("test_US_EXE_02_AC8_timeout_blocks_failed_but_not_incident", async () => {
+    geo.mockImplementation((_success: unknown, failure: (error: unknown) => void) => failure({ code: 3 }));
+    await openTrip();
+    await consent();
+    await userEvent.click(screen.getByRole("radio", { name: "Failed" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Failure reason" }), "customer_absent");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm failed" }));
+    expect(await screen.findByText(/Location denied or timed out/)).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+    await userEvent.click(screen.getByRole("button", { name: "Report incident" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toMatchObject({
+      event_type: "DRIVER_INCIDENT", payload: { trip_id: 12, reason: "traffic_or_accident" },
+    });
+    expect((calls[0].body as { payload: Record<string, unknown> }).payload).not.toHaveProperty("position");
+  });
+
   it("test_US_EXE_05_AC1_other_without_note_never_posts_and_breakdown_uses_incident_reason", async () => {
     await openTrip();
     await consent();
@@ -156,6 +194,28 @@ describe("R3 Driver one-fix request and event contract", () => {
         position: { lat: 57.7, lon: 11.97, accuracy_m: 12, recorded_at: "2026-11-09T08:05:00.000Z" },
       },
     });
+  });
+
+  it("test_US_GPS_01_AC4_does_not_show_position_sent_until_real_202_ACK", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    server.use(http.post(gpsRoute, async ({ request, params }) => {
+      const body = await request.json() as { recorded_at: string };
+      calls.push({ path: `/trips/${params.id}/positions`, key: request.headers.get("Idempotency-Key"), body });
+      await gate;
+      return HttpResponse.json({
+        accepted: 1, trip_id: Number(params.id), recorded_at: body.recorded_at,
+        remaining_km: "5.200", remaining_min: 9, provider: "fallback",
+      }, { status: 202 });
+    }));
+    await openTrip();
+    await consent();
+    await userEvent.click(screen.getByRole("button", { name: "Update location" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(screen.queryByText(/Position sent/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Update location" })).toBeDisabled();
+    release();
+    expect(await screen.findByText(/Position sent/)).toBeInTheDocument();
   });
 
   it("test_US_GPS_01_AC4_network_unknown_retry_keeps_same_key_and_body_and_does_not_resample", async () => {
@@ -196,6 +256,46 @@ describe("R3 Driver one-fix request and event contract", () => {
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[0]).toEqual(posts[1]);
     expect(geo).toHaveBeenCalledTimes(1);
+  });
+
+  it("test_US_EXE_02_AC8_uncertain_DELIVERED_retry_keeps_endpoint_key_timestamps_and_point", async () => {
+    const posts: Array<{ path: string; key: string | null; body: unknown }> = [];
+    server.use(http.post(eventRoute, async ({ request, params }) => {
+      posts.push({
+        path: `/orders/${params.id}/events`, key: request.headers.get("Idempotency-Key"),
+        body: await request.json(),
+      });
+      return posts.length === 1 ? HttpResponse.error()
+        : HttpResponse.json({ event_id: 1001, order_status: "DELIVERED" });
+    }));
+    await openTrip();
+    await consent();
+    await userEvent.type(screen.getByRole("textbox", { name: "Received by" }), "Test recipient");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delivered" }));
+    expect(await screen.findByRole("button", { name: "Retry same request" })).toBeEnabled();
+    expect(screen.queryByText(/DELIVERED acknowledged/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Retry same request" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[0].path).toBe("/orders/44/events");
+    expect(posts[1]).toEqual(posts[0]);
+    expect(posts[0].body).toMatchObject({
+      event_type: "DELIVERED", occurred_at: expect.any(String),
+      payload: { trip_id: 12, position: { recorded_at: "2026-11-09T08:05:00.000Z" } },
+    });
+    expect(geo).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/DELIVERED acknowledged/)).toBeInTheDocument();
+  });
+
+  it("test_US_GPS_01_AC4_position_ack_is_scoped_to_the_selected_trip", async () => {
+    intercept([base, other]);
+    await openTrip(0);
+    await consent();
+    await userEvent.click(screen.getByRole("button", { name: "Update location" }));
+    expect(await screen.findByText(/Last position sent/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Back to trips" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Record delivery outcome" })[1]);
+    expect(screen.queryByText(/Last position sent/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Update location" })).toBeEnabled();
   });
 
   it("test_US_GPS_01_AC4_terminal_trip_has_no_location_or_completion_action", async () => {
