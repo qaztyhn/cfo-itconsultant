@@ -9,6 +9,7 @@ from enum import StrEnum
 class Action(StrEnum):
     PLAN_PROPOSED = "PLAN_PROPOSED"
     PLAN_APPROVED = "PLAN_APPROVED"
+    TRIP_DISPATCHER_HANDOVER = "TRIP_DISPATCHER_HANDOVER"
     ALT_SELECTED = "ALT_SELECTED"
     CRITERIA_CHANGED_RERUN = "CRITERIA_CHANGED_RERUN"
     MANUAL_PLAN_CREATED = "MANUAL_PLAN_CREATED"
@@ -66,6 +67,7 @@ REASON_REQUIRED: frozenset[Action] = frozenset(
         Action.MAPPING_REJECTED,
         Action.ORDER_REPLAN,
         Action.ORDER_CANCELLED,
+        Action.TRIP_DISPATCHER_HANDOVER,
         Action.NOTIFICATION_SUPPRESSED,
         Action.GPS_HISTORY_ACCESSED,  # mandatory case/reason for restricted review
         Action.TRANSFER_CANCELLED,  # dispatcher: mandatory reason
