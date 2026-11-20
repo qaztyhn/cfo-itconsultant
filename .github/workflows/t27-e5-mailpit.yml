@@ -1,0 +1,98 @@
+name: T27 E5 standalone DELAY Chrome and Mailpit (synthetic)
+on:
+  push:
+    branches: [feat/r3-t27-integrated-e004]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e5-delay-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: test
+      DEMO_DISPOSABLE: "1"
+      COMPOSE_PROJECT_NAME: cfo-demo-e5
+      APP_NOW: "2026-11-09T11:00:00+01:00"
+      POSTGRES_PORT: "5434"
+      SOURCE_PORT: "8104"
+      CFO_API_PORT: "8004"
+      CFO_WEB_PORT: "5174"
+      MAILPIT_HTTP_PORT: "8027"
+      MAILPIT_SMTP_PORT: "1027"
+      VITE_API_URL: "http://localhost:8004/api/v1"
+      CORS_ORIGINS: '["http://localhost:5174"]'
+      PYTHONPATH: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Python E5 and real Chrome
+        working-directory: backend
+        run: |
+          python -m pip install -e ".[dev]" "playwright>=1.50,<2" tzdata python-dotenv
+          python -m playwright install chrome
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Create isolated untracked credentials
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from secrets import token_urlsafe
+          from urllib.parse import quote
+          password = quote(token_urlsafe(24), safe="")
+          def key():
+              return token_urlsafe(38)
+          values = [
+              "APP_ENV=test", "DEMO_DISPOSABLE=1", "COMPOSE_PROJECT_NAME=cfo-demo-e5",
+              "APP_NOW=2026-11-09T11:00:00+01:00",
+              "POSTGRES_PORT=5434", "SOURCE_PORT=8104", "CFO_API_PORT=8004",
+              "CFO_WEB_PORT=5174", "MAILPIT_HTTP_PORT=8027", "MAILPIT_SMTP_PORT=1027",
+              "POSTGRES_PASSWORD=" + password,
+              "DATABASE_URL=postgresql+asyncpg://cfo:" + password + "@postgres:5432/cfo",
+              "SOURCE_SE_DATABASE_URL=postgresql+asyncpg://cfo:" + password + "@postgres:5432/source_se",
+              "SOURCE_SE_API_KEY=" + key(), "JWT_SECRET=" + key(),
+              "SEED_DEMO_PASSWORD=" + key(), "INTERNAL_TICK_KEY=" + key(),
+              "SOURCE_DB_NAME=source_se", "SOURCE_SCHEMA=src_se",
+              "VITE_API_URL=http://localhost:8004/api/v1", "VITE_USE_MOCKS=false",
+              "CORS_ORIGINS='[\"http://localhost:5174\"]'",
+          ]
+          file = Path(".env")
+          file.write_text("\n".join(values) + "\n", encoding="utf-8")
+          file.chmod(0o600)
+          PY
+      - name: Boot dedicated E5 stack (worker intentionally off)
+        run: docker compose --env-file .env -p cfo-demo-e5 up -d --build
+      - name: Prepare one synthetic DELAY draft with latest migration
+        run: |
+          set -a
+          source .env
+          set +a
+          python tools/e5_demo_fixture.py
+      - name: Chrome Dispatcher Send, opt-in E2 worker, PostgreSQL, Mailpit
+        run: |
+          set -a
+          source .env
+          set +a
+          python tools/t27_e5_mailpit_browser.py --output t27-e5-synthetic
+      - name: Upload sanitized E5 fixture evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t27-e5-synthetic-delay-evidence
+          path: |
+            t27-e5-synthetic/*.png
+            t27-e5-synthetic/e5-synthetic-evidence.json
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Destroy only cfo-demo-e5 and its dedicated volumes
+        if: always()
+        run: |
+          if [ "${COMPOSE_PROJECT_NAME}" = "cfo-demo-e5" ] && [ -f .env ]; then
+            docker compose --env-file .env -p cfo-demo-e5 --profile demo-worker down -v --remove-orphans
+          fi
