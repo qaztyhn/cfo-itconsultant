@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 20/11/2026 — T31 phạm vi API pilot Round 3
+
+- Áp dụng DEC-R3-15 và `06` §19.1. API chuyển kho và các thao tác quản trị đã cắt trả `404 NOT_FOUND` và vắng khỏi OpenAPI. Planning giữ API đọc theo phạm vi đã có.
+- `PlanningRun` bỏ `transfer_suggestions`; giữ ngày khả thi sớm nhất, lý do loại và luồng thương lượng ngày. Không đổi DDL.
+
 ## 20/11/2026 — T27 kiểm thử demo bằng tay
 
 - Áp dụng điều kiện lịch sát của DEC-R3-10. Sales có thể duyệt phương án đủ điều kiện của cửa hàng mình khi `reserve_class=tight`. Dispatcher bỏ bước xác nhận riêng cho lịch sát. Các trường hợp mở rộng của T19 tiếp tục theo task board.

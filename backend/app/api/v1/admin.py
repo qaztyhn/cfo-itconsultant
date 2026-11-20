@@ -21,18 +21,6 @@ RunStatus = Literal["running", "ok", "partial", "failed"]
 router = APIRouter(tags=["admin"])
 
 
-@router.get("/markets/{code}/config")
-async def get_market_config(code: str) -> dict[str, object]:
-    """GET /markets/{code}/config — admin."""
-    raise NotImplementedError
-
-
-@router.put("/markets/{code}/config")
-async def put_market_config(code: str) -> dict[str, object]:
-    """PUT /markets/{code}/config — admin; validate MarketConfig; CONFIG_CHANGED."""
-    raise NotImplementedError
-
-
 @router.get("/sync-runs")
 async def list_sync_runs(
     db: DbSession,

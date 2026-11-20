@@ -11,12 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import DomainError
 from app.deps import AuthUser, DbSession
-from app.services import (
-    approval_service,
-    planning_service,
-    reservation_service,
-    transfer_service,
-)
+from app.services import approval_service, planning_service, reservation_service
 from app.services.approval_recheck import five_gate_recheck
 
 router = APIRouter(tags=["planning"])
@@ -133,9 +128,3 @@ async def create_date_negotiation(
 async def list_date_negotiations(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
     """Dispatcher-only scoped negotiation history."""
     return await planning_service.list_date_negotiations(order_id, user, session=db)
-
-
-@router.get("/orders/{order_id}/transfer-suggestions")
-async def transfer_suggestions(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
-    """Only verified market stock/route data; T18 owns the suggestion lifecycle."""
-    return await transfer_service.suggestions(db, user, order_id)

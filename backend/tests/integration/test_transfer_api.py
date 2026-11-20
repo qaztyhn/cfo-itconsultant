@@ -1,11 +1,18 @@
-"""T18 real-PostgreSQL transfer API tests (US-ATP-02 AC1-3, US-ATP-03 AC1-3)."""
+"""Historical T18 behavior under a test-only router (US-ATP-02/03).
+
+The public Round 3 mount is tested separately in test_t31_api.py.
+"""
 
 import json
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
 
+from app.api.v1.transfers import router as historical_router
 from app.core.security import issue_token
+from app.deps import AuthUser, DbSession
+from app.services import transfer_service
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
 from tests.integration.conftest import execute, fetch
 from tests.integration.hr_fixture import ADMIN, DISPATCHER, SALES, SETUP, WAREHOUSE, ZZ_WAREHOUSE
@@ -39,6 +46,14 @@ SEED = (
 @pytest.fixture
 def transfer_api(api: Api) -> Api:  # noqa: F811
     execute(api.dsn, *SETUP, *SEED)
+    app = api.client.app
+    assert isinstance(app, FastAPI)
+    app.include_router(historical_router, prefix="/api/v1")
+
+    @app.get("/api/v1/orders/{order_id}/transfer-suggestions")
+    async def historical_suggestions(order_id: int, user: AuthUser, db: DbSession) -> dict[str, object]:
+        return await transfer_service.suggestions(db, user, order_id)
+
     return api
 
 
