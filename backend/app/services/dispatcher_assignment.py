@@ -107,9 +107,7 @@ async def handover_trip(
     if previous == to_employee_id:
         raise DomainError("VALIDATION_ERROR", "Trip is already assigned to this Dispatcher.")
     trip.assigned_dispatcher_employee_id = to_employee_id
-    order_id = await session.scalar(
-        select(TripStop.order_id).where(TripStop.trip_id == trip.id).limit(1)
-    )
+    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip.id).limit(1))
     await record_decision(
         session,
         Action.TRIP_DISPATCHER_HANDOVER,
