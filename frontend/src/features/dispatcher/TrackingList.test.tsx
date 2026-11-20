@@ -126,11 +126,12 @@ describe("T17 Dispatcher live tracking (MSW)", () => {
     expect(await main().findByText("Chuyến #930 · STO-12-04")).toBeInTheDocument();
     await userEvent.setup().click(within(assigned(930)).getByRole("button", { name: "Bàn giao chuyến" }));
     const dialog = await screen.findByRole("dialog");
-    const confirm = within(dialog).getByRole("button", { name: "Xác nhận bàn giao" });
+    const confirm = await within(dialog).findByRole("button", { name: "Xác nhận bàn giao" });
     expect(confirm).toBeDisabled();
     expect(within(dialog).getByText("Lý do bàn giao là bắt buộc.")).toBeInTheDocument();
     expect(calls).toBe(0);
     const user = userEvent.setup();
+    await within(dialog).findByLabelText("Dispatcher nhận chuyến");
     await user.selectOptions(within(dialog).getByLabelText("Dispatcher nhận chuyến"), "109");
     await user.type(within(dialog).getByLabelText("Lý do bàn giao (bắt buộc)"), "End of shift");
     await user.click(confirm);
