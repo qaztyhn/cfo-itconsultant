@@ -17,7 +17,15 @@ from app.audit.recorder import record_decision
 from app.core import clock
 from app.core.config import MarketConfig
 from app.core.errors import DomainError
-from app.domain.models.ops import Alert, CustomerOrder, DeliveryTrip, EtaForecast, TripStop, VehiclePosition
+from app.domain.models.ops import (
+    Alert,
+    CustomerOrder,
+    DeliveryTrip,
+    EtaForecast,
+    MilestoneEvent,
+    TripStop,
+    VehiclePosition,
+)
 from app.domain.models.ref import ComplianceRecord, Location, Market, Vehicle
 from app.services import alert_service
 from app.services.gps_duty import active_duty, trip_collection_windows
@@ -211,8 +219,8 @@ async def trip_positions(
 async def live(actor: object, *, session: AsyncSession | None = None) -> list[dict[str, object]]:
     """R3: read only this Dispatcher's currently assigned on-road trips.
 
-    T15 makes the assignment authoritative for this path. T13 owns further
-    driver-tap/ETA integration; never fall back to market-wide visibility.
+    The current trip assignment is authoritative after a handover. Keep the
+    T13 live DTO while restricting points to verified trip-duty windows.
     """
     employee_id = _role(actor, "dispatcher")
     if session is None:
@@ -259,6 +267,27 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
             .order_by(EtaForecast.version.desc(), EtaForecast.id.desc())
             .limit(1)
         )
+        unresolved = await session.scalar(
+            select(Alert.id)
+            .where(Alert.order_id == order.id, Alert.type == "DRIVER_INCIDENT", Alert.resolved_at.is_(None))
+            .limit(1)
+        )
+        incident = None
+        if unresolved is not None:
+            incident_event = await session.scalar(
+                select(MilestoneEvent)
+                .where(
+                    MilestoneEvent.order_id == order.id,
+                    MilestoneEvent.trip_id == trip.id,
+                    MilestoneEvent.event_type == "DRIVER_INCIDENT",
+                )
+                .order_by(MilestoneEvent.id.desc())
+                .limit(1)
+            )
+            if incident_event is not None:
+                candidate = incident_event.payload.get("reason")
+                if candidate in ("vehicle_breakdown", "traffic_or_accident", "site_inaccessible", "other"):
+                    incident = candidate
         output.append(
             {
                 "trip_id": trip.id,
@@ -268,14 +297,18 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                     {"lat": float(position.lat), "lon": float(position.lon)} if position is not None else None
                 ),
                 "remaining_km": (
-                    float(position.remaining_km)
+                    str(position.remaining_km)
                     if position is not None and position.remaining_km is not None
                     else None
                 ),
                 "updated_at": position.recorded_at.isoformat() if position is not None else None,
                 "forecast_eta": eta.forecast_eta.isoformat() if eta is not None else None,
-                "risk": ({"status": eta.risk_status, "color": eta.risk_color} if eta is not None else None),
-                "open_incident": None,
+                "risk": (
+                    {"status": eta.risk_status, "color": eta.risk_color}
+                    if eta is not None
+                    else {"status": None, "color": None}
+                ),
+                "open_incident": incident,
             }
         )
     return output

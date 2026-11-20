@@ -1,0 +1,19 @@
+# T27 disposable E0-04 / E1 browser-only WMS endpoint, never used in production.
+# WMS is started separately INSIDE cfo-api network namespace because DisposableWmsPort
+# intentionally rejects non-loopback hosts. Do not relax that security validation.
+services:
+  cfo-api:
+    environment:
+      WMS_RESERVATION_MODE: simulated
+      # The approval API ALSO reads the verified native SKU/line mapping.
+      # Copy it into this container after Sales Check, before Approve.
+      SYNTHETIC_WMS_FIXTURE: /tmp/t27-wms-fixture.json
+      SYNTHETIC_WMS_URL: http://127.0.0.1:8188
+      SYNTHETIC_WMS_API_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
+      SYNTHETIC_WMS_SHARED_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
+  cfo-worker:
+    environment:
+      WMS_RESERVATION_MODE: simulated
+      SYNTHETIC_WMS_URL: http://127.0.0.1:8188
+      SYNTHETIC_WMS_API_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
+      SYNTHETIC_WMS_SHARED_KEY: "${SYNTHETIC_WMS_API_KEY:?private disposable key required}"
