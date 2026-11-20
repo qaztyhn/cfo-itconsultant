@@ -196,7 +196,12 @@ def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
     assert response.json()["value"] == 15
     report = kpi.get("/kpi/summary", ADMIN, **PERIOD)
     assert report.status_code == 200
-    assert report.json()["metrics"]["planning_time_min"] == {"value": None, "by_path": {"sales": None, "dispatcher": None}, "baseline": 15.0, "change": None}
+    assert report.json()["metrics"]["planning_time_min"] == {
+        "value": None,
+        "by_path": {"sales": None, "dispatcher": None},
+        "baseline": 15.0,
+        "change": None,
+    }
     baselines = fetch(kpi.dsn, "SELECT metric,value::text,source FROM audit.kpi_baseline")
     assert [tuple(record) for record in baselines] == [("planning_time_min", "15", "manual")]
     audit = fetch(kpi.dsn, "SELECT action,entity,correlation_id FROM audit.decision_log")

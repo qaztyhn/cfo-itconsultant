@@ -242,7 +242,11 @@ async def _collect(
         committed = row.plan_id is not None and row.committed_date is not None and row.approved_at is not None
         if committed and approved_day in days:
             bucket = days[approved_day]
-            manual = row.plan_status == "manual" or row.manual_reason_code is not None or row.plan_id in manual_actions
+            manual = (
+                row.plan_status == "manual"
+                or row.manual_reason_code is not None
+                or row.plan_id in manual_actions
+            )
             path = "dispatcher" if manual else approvals.get(row.plan_id)
             # No start/end timestamps for actual human planning interaction are persisted.
             bucket["planning_time_min"].add(None)
@@ -331,7 +335,10 @@ async def summary(
         "metrics": output,
         "supporting": {
             "order_to_commit_min": {
-                "by_path": {path: by_path["order_to_commit_min"][path].value() for path in ("sales", "dispatcher")}
+                "by_path": {
+                    path: by_path["order_to_commit_min"][path].value()
+                    for path in ("sales", "dispatcher")
+                }
             },
             "counter_commit_rate": {"value": supporting["counter_commit_rate"].value()},
             "manual_plan_count": {"value": int(manual_count.sum) if manual_count.count else None},
