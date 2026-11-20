@@ -26,11 +26,14 @@ class HandoverIn(BaseModel):
 
 @router.post("/trips/{trip_id}/handover")
 async def handover(
-    trip_id: int, user: AuthUser, db: DbSession,
+    trip_id: int,
+    user: AuthUser,
+    db: DbSession,
     body: Annotated[HandoverIn, Body()],
 ) -> dict[str, object]:
-    return await handover_trip(db, trip_id, user, to_employee_id=body.to_employee_id,
-                               reason_text=body.reason_text)
+    return await handover_trip(
+        db, trip_id, user, to_employee_id=body.to_employee_id, reason_text=body.reason_text
+    )
 
 
 class ExecutionEventIn(BaseModel):
