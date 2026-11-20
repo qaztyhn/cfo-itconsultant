@@ -99,12 +99,13 @@ audit của `sales` có rank `2` và `reason_code=other`, cùng đúng một
 PR #245 đã ghi nhận `RISK_DEPENDENCY_UNAVAILABLE` ở bước này khi stack có
 dữ liệu báo cáo.
 
-Replay bằng Chromium, PostgreSQL 16 và API chạy local với T19 + #245, sáu đơn
-báo cáo và đồng hồ trên cũng gặp lỗi này. Simulator ACK bốn dòng của plan #7
-tại STO; refresh từ chối cả 12 dòng tồn kho. Approve trả HTTP `409`, plan
-vẫn `proposed`, đơn `PLANNED`, có 0 audit `PLAN_APPROVED` và 0
-`CONFIRMED` cho đơn. Giữ container simulator khi intent còn `acked` để
-bảo toàn ledger phục vụ retry.
+Replay bằng Chromium, PostgreSQL 16 và API chạy local với T19 + #245 từng trả
+HTTP `409` sau ACK `synthetic:2` cho plan #7. Sau khi nối callback risk,
+retry dùng bản sao PostgreSQL và ledger SQLite của lần lỗi cùng Idempotency-Key: refresh nhận
+đủ 12 dòng, Approve trả HTTP `200` và khớp audit/outbox ở truy vấn trên.
+Ledger vẫn có đúng một reservation tại batch `2`, số lượng giữ nguyên và
+log WMS không có lần gọi `POST /v1/reserve` mới. Giữ fixture và SQLite cùng
+nhau khi intent còn `acked` để có thể tiếp tục từ ACK.
 
 ## Bước 12b · số liệu cố định
 

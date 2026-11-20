@@ -6,6 +6,7 @@ cùng khóa idempotency.
 """
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import StockSnapshotDTO
 from app.adapters.disposable_wms_client import DisposableWmsPort
@@ -24,7 +25,7 @@ from app.core.db import get_sessionmaker
 from app.core.errors import DomainError
 from app.domain.models.audit import DecisionLog
 from app.domain.models.ops import CustomerOrder, StockWriteRun
-from app.domain.models.plan import FulfilmentPlan, PlanningRun
+from app.domain.models.plan import FulfilmentPlan, PlanningRun, PlanVehicle
 from app.domain.models.ref import Market, ProductSE
 from app.domain.models.wms import WmsReservationIntent
 from app.services.wms_intent import (
@@ -155,6 +156,7 @@ async def fetch_verified_batch(
 async def refresh_simulated(order_id: int, plan_id: int) -> None:
     """Ingest the signed post-ACK WMS batch through T07 scope checks, then bind its accepted write."""
     from app.adapters.wms_batch_stock import WmsBatchStockAdapter
+    from app.services import risk_service
     from app.services.ingest_service import sync_entity
 
     batch_id, snapshot, batch = await fetch_verified_batch(order_id, plan_id)
@@ -183,12 +185,32 @@ async def refresh_simulated(order_id: int, plan_id: int) -> None:
             for p in products
         ]
         market_code = market.code
+
+    async def recalculate_risk(session: AsyncSession, affected_order_id: int, trigger: str) -> None:
+        if simulated_enabled():
+            # T26 seeds report-only statuses with a marked plan and no vehicle assignments.
+            report_only = await session.scalar(
+                select(FulfilmentPlan.id)
+                .join(CustomerOrder, CustomerOrder.approved_plan_id == FulfilmentPlan.id)
+                .join(PlanningRun, PlanningRun.id == FulfilmentPlan.run_id)
+                .where(
+                    CustomerOrder.id == affected_order_id,
+                    FulfilmentPlan.order_id == affected_order_id,
+                    PlanningRun.input_snapshot == {"fixture": "t26-r3-v1"},
+                    ~select(PlanVehicle.id).where(PlanVehicle.plan_id == FulfilmentPlan.id).exists(),
+                )
+            )
+            if report_only is not None:
+                return
+        await risk_service.recalculate(affected_order_id, trigger, session=session, signal_at=snapshot.as_of)
+
     result = await sync_entity(
         market_code,
         "stock",
         adapter=WmsBatchStockAdapter(market_code, snapshot, catalog),
         stock_origin="wms_synthetic",
         now=snapshot.as_of,
+        risk=recalculate_risk,
     )
     if result.status != "ok":
         raise DomainError("RESOURCE_CONFLICT", "WMS stock batch was not accepted by CFO ingestion.")
