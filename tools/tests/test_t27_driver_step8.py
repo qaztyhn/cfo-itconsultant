@@ -1,6 +1,7 @@
 """T27 step 8: no UI/PG checkpoint may be promoted by a mock or wrong trip."""
 import unittest
 
+from tests.e2e.t27_http_evidence import dispatch_rejection
 from tools.t27_driver_step8 import (
     EvidenceMismatch,
     step8_pass,
@@ -20,6 +21,13 @@ POINT = {
 
 
 class TestT27DriverStep8(unittest.TestCase):
+    def test_US_EXE_02_AC4_expired_t12_qualification_blocks_dispatch(self):
+        result = dispatch_rejection(422, "LICENCE_EXPIRED", "Verified driver qualification has expired.")
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["dispatch_status"], "BLOCKED")
+        self.assertEqual(result["tasks"], ["T12"])
+        self.assertEqual(dispatch_rejection(422, "VALIDATION_ERROR", "bad timestamp")["status"], "FAIL")
+
     def test_US_GPS_01_AC1_point_must_be_aware_and_within_server_clock(self):
         self.assertEqual(
             verify_position_request(POINT, server_now=NOW, not_before=EARLIER),

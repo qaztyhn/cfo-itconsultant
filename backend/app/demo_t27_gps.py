@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.db import get_engine, get_sessionmaker
 from app.domain.models.hr import DriverAvailability, EmployeeShiftSchedule
 from app.domain.models.ops import CustomerOrder, DeliveryTrip, TripStop
+from app.domain.models.plan import FulfilmentPlan, PlanVehicle
 from app.domain.models.ref import ComplianceRecord, Market
 
 EXTERNAL_REF = "SE-2026-000249"
@@ -49,16 +50,31 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
         async with get_sessionmaker()() as session, session.begin():
             order = await session.get(CustomerOrder, order_id)
             trip = await session.get(DeliveryTrip, trip_id)
+            plan = await session.get(FulfilmentPlan, plan_id)
             market = await session.scalar(select(Market).where(Market.code == "SE").with_for_update())
             if (
                 order is None
                 or trip is None
+                or plan is None
                 or market is None
                 or order.external_ref != EXTERNAL_REF
                 or order.market_id != market.id
                 or order.approved_plan_id != plan_id
-                or order.status != "LOADED"
-                or trip.status != "loading"
+                or plan.order_id != order_id
+                or plan.status not in ("approved", "manual")
+                or trip.plan_vehicle_id is None
+                or not await session.scalar(
+                    select(PlanVehicle.id).where(
+                        PlanVehicle.id == trip.plan_vehicle_id,
+                        PlanVehicle.plan_id == plan_id,
+                        PlanVehicle.vehicle_id == trip.vehicle_id,
+                        PlanVehicle.driver_employee_id == trip.driver_employee_id,
+                    )
+                )
+                or order.status != "DISPATCHED"
+                or trip.status != "on_road"
+                or trip.depart_actual_at is None
+                or trip.ended_at is not None
                 or not await session.scalar(
                     select(TripStop.id).where(
                         TripStop.trip_id == trip_id,
@@ -67,7 +83,7 @@ async def prepare(order_id: int, trip_id: int, plan_id: int) -> None:
                     )
                 )
             ):
-                raise ValueError("T27 GPS fixture requires the exact LOADED approved Source order/trip")
+                raise ValueError("T27 GPS fixture requires the exact DISPATCHED approved Source order/plan/trip")
             shift = await session.scalar(
                 select(EmployeeShiftSchedule.id)
                 .where(

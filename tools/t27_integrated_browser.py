@@ -717,7 +717,12 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         raise EvidenceMismatch("Assigned trip has no active demo Driver account")
     evidence = {
         "source_ref": SOURCE_REF, "order_id": order_id, "order_no": order_no,
-        "plan_id": plan_id, "trip_id": trip_id, "stages": {},
+        "plan_id": plan_id, "trip_id": trip_id,
+        "stages": {
+            name: {"status": "NOT VERIFIED", "order_id": order_id, "trip_id": trip_id,
+                   "db_verified": False}
+            for name in ("dispatch", "gps", "delivered")
+        },
     }
     report["driver_step8"] = evidence
     page = login(browser, "/driver", account, password, out, "Driver", app_now=env["APP_NOW"])
@@ -800,6 +805,18 @@ def driver(browser, password: str, trip_id: int, order_id: int,
                                       "trip_id": trip_id, "http": 200})
         report["last_verified"] = "Driver DISPATCHED HTTP200 + PostgreSQL on_road"
         _driver_screenshot(page, out, "09-driver-dispatched.png")
+        # The fixture is allowed only after the real Dispatch HTTP and DB checkpoint.
+        compose(
+            "exec", "-T", "-e", "COMPOSE_PROJECT_NAME=cfo-demo-e004",
+            "cfo-api", "python", "-m", "app.demo_t27_gps",
+            "--order-id", str(order_id), "--trip-id", str(trip_id),
+            "--plan-id", str(plan_id), env=env,
+        )
+        report["gps_demo_fixture"] = {
+            "source": "synthetic_demo",
+            "notice": "SYNTHETIC-T27-STEP8-NOT-LEGAL-SIGNOFF",
+            "real_worker_collection": False,
+        }
         # T13: one manual Chrome geolocation tap; snapshot DB BEFORE DELIVERED
         # purges the points, otherwise the evidence disappears by design.
         env = _advance_driver_clock(page, env, 60, report, "gps")
@@ -1074,22 +1091,22 @@ def main() -> int:
                     execution_env = start_execution_day(report, env)
                     if warehouse(browser, password, order_id, trip_ids, args.output, report, execution_env):
                         report["active_step"] = "8"
-                        # Explicit synthetic-only GPS opt-in and notice fixture.
-                        # The driver still performs every position/event via Chrome;
-                        # this setup only unlocks the narrowly scoped R3 test gate.
-                        compose(
-                            "exec", "-T", "-e", "COMPOSE_PROJECT_NAME=cfo-demo-e004",
-                            "cfo-api", "python", "-m", "app.demo_t27_gps",
-                            "--order-id", str(order_id),
-                            "--trip-id", str(trip_ids[0]),
-                            "--plan-id", str(plan_id),
-                            env=execution_env,
-                        )
-                        report["gps_demo_fixture"] = {
-                            "source": "synthetic_demo",
-                            "notice": "SYNTHETIC-T27-STEP8-NOT-LEGAL-SIGNOFF",
-                            "real_worker_collection": False,
-                        }
+                        if execution_env.get("T27_TEST_EXPIRE_LICENCE") == "1":
+                            expired = compose(
+                                "exec", "-T", "postgres", "psql", "-U", "cfo", "-d", "cfo",
+                                "-v", "ON_ERROR_STOP=1", "-Atc",
+                                "UPDATE hr.driver_vehicle_eligibility q "
+                                "SET verified_until=DATE '2026-12-01' "
+                                "FROM ops.delivery_trip t "
+                                f"WHERE t.id={trip_ids[0]} "
+                                "AND q.driver_employee_id=t.driver_employee_id "
+                                "AND q.source='synthetic_demo' AND q.revoked_at IS NULL "
+                                "RETURNING q.id",
+                                env=execution_env, capture=True,
+                            )
+                            if not any(line.isdecimal() for line in expired.splitlines()):
+                                raise EvidenceMismatch("No exact-trip T12 qualification to expire")
+                            report["t12_test_case"] = "expired_qualification_after_loading"
                         driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env)
                     report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, execution_env)
