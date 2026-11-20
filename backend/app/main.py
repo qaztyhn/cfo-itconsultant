@@ -10,16 +10,24 @@ Owner: Dev 1 (luồng A) — M0.
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.api.v1 import router as api_v1_router
 from app.core import clock
 from app.core.config import get_settings
 from app.core.correlation import CorrelationIdMiddleware
 from app.core.cs_phone_gate import CsPhoneProductionGate
-from app.core.errors import install_error_handlers
+from app.core.errors import error_response, install_error_handlers
 from app.core.logging import configure_logging
+
+
+async def _retired_collection_post(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    # These GET collections still exist, so Starlette would otherwise treat POST as 405.
+    if request.method == "POST" and request.url.path.rstrip("/") in ("/api/v1/employees", "/api/v1/vehicles"):
+        return error_response(request, 404, "NOT_FOUND", "Not Found")
+    return await call_next(request)
 
 
 def create_app() -> FastAPI:
@@ -38,6 +46,8 @@ def create_app() -> FastAPI:
     cors_origins = list(settings.cors_origins)
     if settings.app_env == "local":
         cors_origins.extend(("http://localhost:5174", "http://127.0.0.1:5174"))
+    # Starlette wraps earlier middleware, so CORS must wrap the retired POST responses.
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_retired_collection_post)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(dict.fromkeys(cors_origins)),

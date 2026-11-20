@@ -9,12 +9,12 @@ import { useAuthStore } from "../../app/store";
 import { NoFeasibleDate } from "./NoFeasibleDate";
 
 const mock = vi.hoisted(() => ({
-  run: vi.fn(), transfers: vi.fn(), history: vi.fn(), record: vi.fn(),
+  run: vi.fn(), history: vi.fn(), record: vi.fn(),
   overview: vi.fn(),
 }));
 vi.mock("./noFeasibleDateApi", async importOriginal => {
   const actual = await importOriginal<typeof import("./noFeasibleDateApi")>();
-  return { ...actual, fetchInfeasibleRun: mock.run, fetchVerifiedTransfers: mock.transfers,
+  return { ...actual, fetchInfeasibleRun: mock.run,
     fetchNegotiations: mock.history, recordNegotiation: mock.record };
 });
 vi.mock("../../api/integration", async importOriginal => {
@@ -34,7 +34,6 @@ const run = {
 };
 beforeEach(() => {
   mock.run.mockResolvedValue(run);
-  mock.transfers.mockResolvedValue({ items: [] });
   mock.history.mockResolvedValue({ items: [] });
   mock.record.mockResolvedValue({ id: 84 });
   mock.overview.mockResolvedValue({ sources: [{ name: "WMS", data_as_of: new Date().toISOString() }], stale: false });
@@ -42,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   useAuthStore.getState().clearAuth();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 function mount(user: AuthUser = dispatcher) {
   useAuthStore.getState().setAuth({
@@ -71,7 +71,7 @@ describe("US-PLN-07 AC1/2 — No Feasible Date diagnostics", () => {
     expect(screen.getByText(/Search horizon cannot be verified/)).toBeInTheDocument();
     expect(mock.record).not.toHaveBeenCalled();
   });
-  it("renders verified dates, all five API checks, stock and shortage, transfers without execution", async () => {
+  it("renders verified dates, all five API checks, stock and shortage", async () => {
     mock.run.mockResolvedValue({
       ...run, dates_searched: [{ date: "2026-11-09", result: "requested" },
         { date: "2026-11-12", result: "first_feasible" }],
@@ -83,15 +83,12 @@ describe("US-PLN-07 AC1/2 — No Feasible Date diagnostics", () => {
         inbound: { MLM: [{ qty: 100, eta: "2026-11-11" }] },
       }] },
     });
-    mock.transfers.mockResolvedValue({ items: [{ from_warehouse_id: 1, to_warehouse_id: 2,
-      lead_days: 2, distance_km: 19, lines: [{ global_product_id: 4, qty: "50" }] }] });
     mount();
     expect(await screen.findByText("Malmö DC")).toBeInTheDocument();
     expect(screen.getByText("First feasible")).toBeInTheDocument();
     expect(screen.getByText("Short 50")).toBeInTheDocument();
     expect(screen.getByText("GBG: Unknown")).toBeInTheDocument();
-    expect(await screen.findByText(/Source: Warehouse #1/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Approve transfer/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /transfer suggestions/i })).not.toBeInTheDocument();
   });
   it("does not invent earliest feasible date on unverified response", async () => {
     mock.run.mockResolvedValue({ ...run, earliest_feasible_date: null, rejected_candidates: [] });
@@ -168,4 +165,37 @@ describe("US-PLN-07 AC2–AC5 — explicit customer agreement", () => {
     expect(await screen.findByText("Order changed")).toBeInTheDocument();
     expect(screen.queryByText(/Customer outcome recorded by server/)).not.toBeInTheDocument();
   });
+});
+
+it("uses the R3 HTTP contract for opening, refreshing and recording a customer agreement", async () => {
+  const actual = await vi.importActual<typeof import("./noFeasibleDateApi")>("./noFeasibleDateApi");
+  mock.run.mockImplementation(actual.fetchInfeasibleRun);
+  mock.history.mockImplementation(actual.fetchNegotiations);
+  mock.record.mockImplementation(actual.recordNegotiation);
+  const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/v1/planning-runs/701") return Response.json(run);
+    if (path === "/api/v1/orders/42/date-negotiations") {
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({ proposed_date: "2026-11-12", outcome: "agreed" });
+        return Response.json({ id: 84 });
+      }
+      return Response.json({ items: [] });
+    }
+    throw new Error(`Unexpected request to ${path}`);
+  });
+  mount();
+  expect(await screen.findByText("2026-11-12")).toBeVisible();
+  expect(screen.getByText("STOCK_SHORT")).toBeVisible();
+  expect(screen.getByText("No confirmed goods by the requested date.")).toBeVisible();
+  await screen.findByText("No customer date negotiations recorded.");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh evidence" }));
+  await waitFor(() => expect(mock.run).toHaveBeenCalledTimes(2));
+  fireEvent.change(screen.getByLabelText("Actual contact time"), { target: { value: "2026-11-08T12:30" } });
+  fireEvent.change(screen.getByLabelText("Negotiation reason / contact note"), { target: { value: "Agreed by phone" } });
+  fireEvent.click(screen.getByRole("button", { name: "Record customer outcome" }));
+  expect(await screen.findByText(/Customer outcome recorded by server: agreed/)).toBeVisible();
+  expect(new Set(request.mock.calls.map(([input]) => new URL(String(input)).pathname))).toEqual(new Set([
+    "/api/v1/planning-runs/701", "/api/v1/orders/42/date-negotiations",
+  ]));
 });
