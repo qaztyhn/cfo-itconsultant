@@ -20,7 +20,7 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 API = "http://127.0.0.1:8004/api/v1"
-WEB = "http://127.0.0.1:5174"
+WEB = "http://localhost:5174"
 MAILPIT = "http://127.0.0.1:8027"
 NOW = "2026-11-09T11:00:00+01:00"
 ORDER_NO = "ZZ-000001"
