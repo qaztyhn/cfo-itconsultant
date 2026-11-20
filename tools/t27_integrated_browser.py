@@ -34,7 +34,7 @@ MAILPIT = "http://127.0.0.1:8025"
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env"), "-p", "cfo-demo-e004"]
 STEPS = (
-    ("1", "Open CFO Sync & Check and enter the Source reference", "E0, T26"),
+    ("1", "POS submit at Source (outside CFO-start browser run)", "E0, T26"),
     ("2", "Sales Sync and feasibility", "E0, E1"),
     ("3", "Sales rank alternatives", "T19, T26"),
     ("4", "Dispatcher Approve + WMS", "E1, T12, T15"),
@@ -155,7 +155,12 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         external_ref = page.get_by_label("External POS order reference")
         external_ref.fill(SOURCE_REF)
         expect(external_ref).to_have_value(SOURCE_REF)
-        mark(report, "1", "PASS", f"Sales opened CFO Sync & Check and entered Source reference {SOURCE_REF}")
+        mark(
+            report, "1", "NOT VERIFIED",
+            "Source pre-submitted fixture exists, but no POS UI submit click was exercised. "
+            "Sales entered the external reference in the CFO UI (counted under step 2).",
+            source_ref=SOURCE_REF, origin="Source pre-SUBMITTED fixture",
+        )
         report["last_verified"] = "Sales entered the Source reference in CFO Sync & Check"
         screenshot(page, out, "01-sales-reference.png")
         report["active_step"] = "2"
@@ -700,7 +705,7 @@ def main() -> int:
             finally:
                 browser.close()
         statuses = {row["step"]: row["status"] for row in report["steps"]}
-        required = ("1", "2", "4", "5", "7")
+        required = ("2", "4", "5", "7")
         report["result"] = (
             "PASS_WITH_BLOCKERS"
             if all(statuses[step] == "PASS" for step in required)
