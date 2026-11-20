@@ -626,11 +626,14 @@ async def _approve(
         trips.append(trip.id)
     if assigned_dispatcher is None:
         await alert_service.raise_alert(
-            session, market_id=order.market_id,
-            type_="NO_DISPATCHER_IN_ROTATION", level="warning",
+            session,
+            market_id=order.market_id,
+            type_="NO_DISPATCHER_IN_ROTATION",
+            level="warning",
             message="No active Dispatcher is enrolled in this market rotation.",
             dedupe_key=f"NO_DISPATCHER_IN_ROTATION:order:{order.id}",
-            target_roles=["dispatcher", "admin"], order_id=order.id,
+            target_roles=["dispatcher", "admin"],
+            order_id=order.id,
         )
     session.add(
         EtaForecast(
