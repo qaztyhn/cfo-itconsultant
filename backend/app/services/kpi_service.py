@@ -189,18 +189,30 @@ async def _collect(
     if store_id is not None:
         constraints.append(o.origin_store_id == store_id)
     orders = (
-        await session.execute(
-            select(
-                o.id, o.status, o.created_at, o.approved_at, o.delivered_at,
-                o.promise_start, o.promise_end, o.committed_date,
-                p.id.label("plan_id"), p.rank, p.status.label("plan_status"),
-                p.manual_reason_code,
+        (
+            await session.execute(
+                select(
+                    o.id,
+                    o.status,
+                    o.created_at,
+                    o.approved_at,
+                    o.delivered_at,
+                    o.promise_start,
+                    o.promise_end,
+                    o.committed_date,
+                    p.id.label("plan_id"),
+                    p.rank,
+                    p.status.label("plan_status"),
+                    p.manual_reason_code,
+                )
+                .select_from(o)
+                .outerjoin(p, p.id == o.approved_plan_id)
+                .where(*constraints)
             )
-            .select_from(o)
-            .outerjoin(p, p.id == o.approved_plan_id)
-            .where(*constraints)
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     plan_ids = [row.plan_id for row in orders if row.plan_id is not None]
     order_ids = [row.id for row in orders]
     approvals: dict[int, str] = {}
@@ -306,9 +318,7 @@ async def summary(
     market, zone = await _context(session, user)
     scope = await _scope(session, user, market.id, warehouse_id, store_id)
     period = Period.resolve(date_from, date_to, clock.now().astimezone(zone).date())
-    days, by_path, supporting = await _collect(
-        session, market, period, zone, scope, warehouse_id, store_id
-    )
+    days, by_path, supporting = await _collect(session, market, period, zone, scope, warehouse_id, store_id)
     totals = {name: Measure() for name in METRICS}
     for group in days.values():
         for metric in METRICS:
@@ -336,14 +346,14 @@ async def summary(
         "supporting": {
             "order_to_commit_min": {
                 "by_path": {
-                    path: by_path["order_to_commit_min"][path].value()
-                    for path in ("sales", "dispatcher")
+                    path: by_path["order_to_commit_min"][path].value() for path in ("sales", "dispatcher")
                 }
             },
             "counter_commit_rate": {"value": supporting["counter_commit_rate"].value()},
             "manual_plan_count": {"value": int(manual_count.sum) if manual_count.count else None},
         },
     }
+
 
 async def daily(
     session: AsyncSession,

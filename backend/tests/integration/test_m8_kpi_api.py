@@ -104,20 +104,17 @@ def test_US_KPI_01_AC1_AC2_AC3_five_metrics_and_path_sources(kpi: Api) -> None:
     body = response.json()
     metrics = body["metrics"]
     assert set(metrics) == {
-        "planning_time_min", "on_time_rate", "plan_acceptance_rate",
-        "manual_intervention_rate", "eta_error_min",
+        "planning_time_min",
+        "on_time_rate",
+        "plan_acceptance_rate",
+        "manual_intervention_rate",
+        "eta_error_min",
     }
-    assert metrics["planning_time_min"] == {
-        "value": None, "by_path": {"sales": None, "dispatcher": None}
-    }
+    assert metrics["planning_time_min"] == {"value": None, "by_path": {"sales": None, "dispatcher": None}}
     assert metrics["on_time_rate"]["value"] == 0.5
-    assert metrics["plan_acceptance_rate"] == {
-        "value": 0.5, "by_path": {"sales": 0.5, "dispatcher": 0.5}
-    }
+    assert metrics["plan_acceptance_rate"] == {"value": 0.5, "by_path": {"sales": 0.5, "dispatcher": 0.5}}
     assert metrics["manual_intervention_rate"]["value"] == 0.25
-    assert metrics["eta_error_min"] == {
-        "median": None, "p90": None, "target": {"median": 20, "p90": 60}
-    }
+    assert metrics["eta_error_min"] == {"median": None, "p90": None, "target": {"median": 20, "p90": 60}}
     assert body["supporting"] == {
         "order_to_commit_min": {"by_path": {"sales": 30.0, "dispatcher": 30.0}},
         "counter_commit_rate": {"value": None},
@@ -134,7 +131,8 @@ def test_US_KPI_01_AC1_market_local_midnight_determines_daily_bucket(kpi: Api) -
     ]
     assert_error(
         kpi.get("/kpi/daily", DISPATCHER, metric="labour_hours_per_delivery", **PERIOD),
-        422, "VALIDATION_ERROR",
+        422,
+        "VALIDATION_ERROR",
     )
 
 
