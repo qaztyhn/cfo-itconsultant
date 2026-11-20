@@ -1,5 +1,6 @@
 """T15 PostgreSQL regression: rotation, atomicity, handover and GPS revocation."""
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -208,8 +209,8 @@ def test_US_GPS_02_AC3_handover_revokes_old_live_scope_after_commit(handover_api
     assert len(audits) == 1
     assert audits[0]["actor_user_id"] == audits[0]["actor_employee_id"] == 1
     assert audits[0]["reason_text"] == "Shift reassignment"
-    assert audits[0]["before"]["assigned_dispatcher_employee_id"] == 1
-    assert audits[0]["after"]["assigned_dispatcher_employee_id"] == 2
+    assert json.loads(audits[0]["before"])["assigned_dispatcher_employee_id"] == 1
+    assert json.loads(audits[0]["after"])["assigned_dispatcher_employee_id"] == 2
     assert_error(_handover(api, 1), 409, "ILLEGAL_TRANSITION")
     assert (
         fetch(api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'")[0][
