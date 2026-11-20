@@ -9,8 +9,9 @@ Official future shifts still come solely from the existing database workflow.
 import hashlib
 import json
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,10 +28,23 @@ FILES = ("manifest.json", "drivers.json", *WEEKS)
 
 def _demo_enabled() -> bool:
     s = get_settings()
+    if s.app_env != "test" or os.environ.get("DEMO_DISPOSABLE") != "1":
+        return False
+    if s.app_now in (DEMO_NOW, E0_04_NOW):
+        return True
+    # Only the explicitly attested E0-04 execution-day D7 fixture may be read
+    # after midnight rollover. This is NOT a production importer and does not
+    # convert missing historic evidence into rest or inferred availability.
+    if os.environ.get("DEMO_D7_FIXTURE_DIR") != "/srv/e0_04_d7/step8_dec02":
+        return False
+    try:
+        at = datetime.fromisoformat(s.app_now or "").astimezone(ZoneInfo("Europe/Stockholm"))
+    except (ValueError, TypeError):
+        return False
     return (
-        s.app_env == "test"
-        and s.app_now in (DEMO_NOW, E0_04_NOW)
-        and os.environ.get("DEMO_DISPOSABLE") == "1"
+        at.date() == date(2026, 12, 2)
+        and time(6) <= at.time() < time(14)
+        and at.utcoffset() == timedelta(hours=1)
     )
 
 
