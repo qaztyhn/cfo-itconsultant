@@ -659,6 +659,44 @@ async def counts(session: AsyncSession, scope: OrderScope) -> dict[str, object]:
 
 
 TIMELINE_ROLES = frozenset({"admin", "dispatcher", "warehouse", "customer_service"})
+
+
+async def eta_forecasts(session: AsyncSession, scope: OrderScope, order_id: int) -> list[dict[str, object]]:
+    """Read stored ETA versions for an in-scope order, oldest version first."""
+    if scope.role not in TIMELINE_ROLES:
+        raise DomainError("FORBIDDEN", "Role cannot read order ETA forecasts.")
+    order = await session.scalar(
+        select(CustomerOrder.id).where(CustomerOrder.id == order_id, scope_condition(scope))
+    )
+    if order is None:
+        raise _not_found()
+    rows = (
+        await session.scalars(
+            select(EtaForecast)
+            .where(EtaForecast.order_id == order_id)
+            .order_by(EtaForecast.version, EtaForecast.id)
+        )
+    ).all()
+    if scope.role == "customer_service":
+        return [
+            {
+                "version": row.version,
+                "forecast_eta": row.forecast_eta,
+                "risk_status": row.risk_status,
+            }
+            for row in rows
+        ]
+    return [
+        {
+            "version": row.version,
+            "forecast_eta": row.forecast_eta,
+            "risk_status": row.risk_status,
+            "risk_color": row.risk_color,
+        }
+        for row in rows
+    ]
+
+
 _KIND_ORDER = {
     "order_submitted": 0,
     "planning_run": 1,
