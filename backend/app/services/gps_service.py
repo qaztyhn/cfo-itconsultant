@@ -631,7 +631,7 @@ async def purge_expired(*, session: AsyncSession | None = None, now: datetime | 
     terminal_count = len(terminals.all())
     expired = await session.scalars(
         delete(VehiclePosition)
-        .where(VehiclePosition.recorded_at < when - RETENTION)
+        .where(VehiclePosition.recorded_at <= when - RETENTION)
         .returning(VehiclePosition.id)
     )
     count = terminal_count + len(expired.all())
