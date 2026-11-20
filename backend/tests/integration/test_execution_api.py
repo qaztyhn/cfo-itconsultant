@@ -746,20 +746,17 @@ def test_DEC_GPS_RET_no_collection_after_the_trip_ends_and_expired_points_are_ne
         execution_api, DRIVER, "DELIVERED", "2026-11-10T09:30:00Z", {"trip_id": 1, "recipient_name": "S"}
     )
     assert done.status_code == 200, done.text
-    late = execution_api.send(
-        "POST",
-        "/trips/1/positions",
-        DRIVER,
-        {
-            "positions": [
-                {
-                    "lat": 59.3,
-                    "lon": 18.1,
-                    "accuracy_m": 10,
-                    "recorded_at": "2026-11-10T09:00:00Z",
-                    "source": "device",
-                }
-            ]
+    late = execution_api.client.post(
+        "/api/v1/trips/1/positions",
+        headers={
+            "Authorization": f"Bearer {issue_token(DRIVER, {})}",
+            "Idempotency-Key": str(uuid4()),
+        },
+        json={
+            "lat": 59.3,
+            "lon": 18.1,
+            "accuracy_m": 10,
+            "recorded_at": "2026-11-10T09:00:00Z",
         },
     )
     assert_error(late, 409, "NOT_ON_TRIP")  # offline upload after the trip ended is refused
