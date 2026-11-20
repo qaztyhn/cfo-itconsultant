@@ -1,5 +1,10 @@
 # Changelog (hợp đồng `05` / `06`)
 
+## 20/11/2026 — T31 phạm vi API pilot Round 3
+
+- Áp dụng DEC-R3-15 và `06` §19.1. API chuyển kho và các thao tác quản trị đã cắt trả `404 NOT_FOUND` và vắng khỏi OpenAPI. Planning giữ API đọc theo phạm vi đã có.
+- `PlanningRun` bỏ `transfer_suggestions`; giữ ngày khả thi sớm nhất, lý do loại và luồng thương lượng ngày. Không đổi DDL.
+
 ## 19/11/2026 — T21 DISPATCHED email
 
 - `06` §19.7 quy định mặc định `NOTIFY_DISPATCHED_ENABLED=true`. Giới hạn một thông báo `DISPATCHED` theo đơn bao gồm các bản ghi theo khóa cũ. Khi tắt cờ, bản ghi lưu ở `suppressed` với `SKIPPED_FLAG_DISABLED`.

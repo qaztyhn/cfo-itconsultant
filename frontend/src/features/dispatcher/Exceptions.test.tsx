@@ -14,7 +14,7 @@ const DISPATCHER: AuthUser = {
 function signIn(user:AuthUser) {
   useAuthStore.getState().setAuth({access_token:"synthetic",token_type:"bearer",expires_in:3600,user},"demo@synthetic.invalid");
 }
-const failures={items:[{id:31,order_no:"SE-31",status:"NO_FEASIBLE_DATE",latest_run_id:88,
+const failures={items:[{id:31,order_no:"SE-31",status:"NO_FEASIBLE_DATE",
   date_request:{mode:"latest",date_to:"2026-11-13"},block_reason:"STOCK_SHORT",risk:{status:"AT_RISK"}}]};
 const blocked={items:[{id:41,order_no:"SE-41",status:"BLOCKED_UNMAPPED_SKU",block_reason:"SKU_UNMAPPED"}]};
 const alerts={items:[{id:51,order_id:31,type:"REPLAN_SUGGESTED",resolved:false,level:"HIGH",details:{run_id:89}}]};
@@ -28,7 +28,8 @@ function apiMock(options:{fail?:boolean;unavailable?:boolean}={}) {
     let data:unknown={items:[]};
     if(path.endsWith("/orders")) data=url.searchParams.get("status")==="BLOCKED_UNMAPPED_SKU"?blocked:failures;
     if(path.endsWith("/alerts")) data=alerts;
-    if(path.endsWith("/planning-runs/88")) data={result:"infeasible",failed_check:"stock",earliest_feasible_date:null,
+    if(path.endsWith("/orders/31/planning-runs")) data={items:[{id:88,result:"infeasible"},{id:87,result:"feasible"}]};
+    if(path.endsWith("/planning-runs/88")) data={id:88,order_id:31,run_no:2,result:"infeasible",failed_check:"stock",earliest_feasible_date:null,
       dates_searched:[{date:"2026-11-09",result:"FAIL",check:"STOCK"}],
       per_warehouse_checks:[{warehouse:"STO",stock:{passed:false,code:"STOCK_SHORT"}}]};
     if(path.endsWith("/planning-runs/89")) data={kind:"replan_suggestion",result:"feasible",hold_expires_at:null};
@@ -52,10 +53,13 @@ describe("US-PLN-07 AC1 / US-APR-04 AC1: exception tabs",()=>{
     renderScreen();
     expect(await screen.findByText("SE-31")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button",{name:"Inspect infeasibility"}));
-    expect(await screen.findByText(/STOCK_SHORT/,{selector:"li"})).toBeInTheDocument();
-    expect(screen.getByText(/Earliest feasible date:/)).toHaveTextContent("Not verified");
-    expect(calls.some(x=>x.includes("/planning-runs/88"))).toBe(true);
-    expect(calls.every(x=>!x.includes("/approve")&&!x.includes("/extend")&&!x.includes("/plan?"))).toBe(true);
+    const checks = await screen.findByRole("region",{name:"Warehouse feasibility checks"});
+    expect(within(checks).getByText("STOCK_SHORT")).toBeVisible();
+    expect(screen.getByText("Not verified within the search horizon")).toBeVisible();
+    expect(screen.getByRole("form",{name:"Customer date negotiation"})).toBeVisible();
+    expect(calls.some(x=>x.endsWith("/orders/31/planning-runs"))).toBe(true);
+    expect(calls.some(x=>x.endsWith("/planning-runs/88"))).toBe(true);
+    expect(calls.every(x=>!x.includes("/transfer-suggestions")&&!x.includes("/approve")&&!x.includes("/extend")&&!x.includes("/plan?"))).toBe(true);
   });
   it("preserves URL tab and search, and filters loaded results",async()=>{
     apiMock();

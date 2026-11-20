@@ -1,6 +1,5 @@
 /**
- * Dispatcher Exceptions (M5). Read-only operational evidence; no planning/hold/
- * approval/mapping mutations. docs/06 §5, §6.2, §6.6, §10; ASM-005.
+ * Dispatcher Exceptions (M5). Operational evidence and customer date negotiations. docs/06 §5, §6.2, §6.6, §10; ASM-005.
  */
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowUpRight, RefreshCcw, ShieldAlert } from "lucide-react";
@@ -11,6 +10,7 @@ import { PATHS } from "../../app/access";
 import { useAuthStore } from "../../app/store";
 import { EmptyState, LoadingState } from "../../components/StateViews";
 import { evidence, orders, skuDetails, suggestions, type Tab } from "./exceptions/model";
+import { NoFeasibleDate } from "./NoFeasibleDate";
 
 const TABS: { key: Tab; title: string }[] = [
   { key:"no-feasible", title:"No Feasible Date" },
@@ -31,13 +31,31 @@ function FetchError({ error, retry }: {error: unknown; retry: ()=>void}) {
   </div>;
 }
 
-function Detail({ type, id, onClose }: { type: Tab; id: number; onClose: ()=>void }) {
+function InfeasibleOrderDetail({ orderId, onClose }: { orderId: number; onClose: () => void }) {
+  const user = useAuthStore(s => s.user);
+  const runs = useQuery({
+    queryKey: ["dispatcher-exception-runs", user?.id, user?.market, orderId],
+    queryFn: ({ signal }) => apiGet<{ items: { id: number; result: string }[] }>(
+      `/orders/${orderId}/planning-runs`, undefined, signal),
+    retry: false,
+  });
+  const latest = runs.data?.items[0];
+  return <section aria-label="Exception evidence" className="space-y-4">
+    <button type="button" onClick={onClose} className="rounded-control border px-3 py-2 text-xs">Close</button>
+    {runs.isPending ? <LoadingState rows={2} /> :
+      runs.isError ? <FetchError error={runs.error} retry={() => void runs.refetch()} /> :
+      latest?.result === "infeasible" ? <NoFeasibleDate key={latest.id} runId={latest.id} /> :
+      <EmptyState message="The latest planning run is unavailable or no longer infeasible." />}
+  </section>;
+}
+
+function Detail({ type, id, onClose }: { type: Exclude<Tab, "no-feasible">; id: number; onClose: ()=>void }) {
   const user = useAuthStore(s=>s.user);
   const query = useQuery({
     queryKey: ["dispatcher-exception-detail",user?.id,user?.market,type,id],
     enabled: Boolean(user?.roles.includes("dispatcher")),
     queryFn: ({signal}) => apiGet<unknown>(
-      type === "no-feasible" || type === "replan" ? `/planning-runs/${id}` : `/orders/${id}`,
+      type === "replan" ? `/planning-runs/${id}` : `/orders/${id}`,
       undefined,signal),
     retry:false,
   });
@@ -58,7 +76,6 @@ function Detail({ type, id, onClose }: { type: Tab; id: number; onClose: ()=>voi
     </div>}
     {query.isSuccess && type !== "blocked" && <div className="mt-4 space-y-4">
       <p className="text-sm">Result: <strong>{info.result}</strong> · failed check: <strong>{info.failedCheck}</strong></p>
-      {type === "no-feasible" && <p className="text-sm">Earliest feasible date: <strong>{info.earliest ?? "Not verified"}</strong>. Do not change a promised date without a recorded agreement.</p>}
       {type === "replan" && <div className="rounded-control bg-stone p-4 text-sm">
         <strong>Suggestion only · {info.kind}</strong>
         <p className="mt-2">The committed plan remains in force. This inspection creates no hold and cannot approve the suggestion. Server-authorised replacement/keep-current workflow is not yet verified.</p>
@@ -74,7 +91,6 @@ function Detail({ type, id, onClose }: { type: Tab; id: number; onClose: ()=>voi
           : <p className="mt-2 text-sm text-inkMuted">Per-warehouse checks not provided.</p>}
         {info.candidateCodes.length > 0 && <p className="mt-2 text-xs text-inkMuted">Rejected candidate codes: {info.candidateCodes.join(", ")}</p>}
       </div>
-      {type === "no-feasible" && <p className="text-sm text-inkMuted">Any alternative date, transfer or manual plan must be reviewed in its authorised order workflow; no action is initiated here.</p>}
     </div>}
   </section>;
 }
@@ -154,14 +170,16 @@ export function Exceptions() {
           <p className="mt-1 text-xs text-inkMuted">Requested date: {item.requestedDate ?? "Not reported"}</p>
         </div><AlertTriangle className="h-5 w-5 text-risk-predictedLate-fg" aria-hidden="true" /></div>
         <div className="mt-4 flex flex-wrap gap-3">
-          {tab==="no-feasible" && item.latestRunId && <button className="rounded-control border px-4 py-2 text-sm" type="button"
-            onClick={()=>setDetail({type:tab,id:item.latestRunId!})}>Inspect infeasibility</button>}
+          {tab==="no-feasible" && <button className="rounded-control border px-4 py-2 text-sm" type="button"
+            onClick={()=>setDetail({type:tab,id:item.id})}>Inspect infeasibility</button>}
           {tab==="blocked" && <button type="button" className="rounded-control border px-4 py-2 text-sm" onClick={()=>setDetail({type:tab,id:item.id})}>Inspect mapped SKU evidence</button>}
           {tab==="no-feasible" && <Link className="inline-flex items-center gap-1 rounded-control bg-pine px-4 py-2 text-sm text-white" to={item.latestRunId ? `${PATHS.dispatcherPlanReview}/${item.latestRunId}` : PATHS.dispatcherOrders}>
             Open planning review <ArrowUpRight className="h-4 w-4" /></Link>}
         </div>
       </article>)}
     </div>}
-    {detail && <Detail key={`${detail.type}-${detail.id}`} type={detail.type} id={detail.id} onClose={()=>setDetail(null)} />}
+    {detail?.type === "no-feasible" ?
+      <InfeasibleOrderDetail key={detail.id} orderId={detail.id} onClose={() => setDetail(null)} /> :
+      detail && <Detail key={`${detail.type}-${detail.id}`} type={detail.type} id={detail.id} onClose={()=>setDetail(null)} />}
   </section>;
 }
