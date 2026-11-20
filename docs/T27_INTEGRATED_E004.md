@@ -202,3 +202,51 @@ Keep Source external ref and generated CFO order number distinct.
 
 Assumptions: reviewed; new decisions none. No WMS production writes,
 actual GPS or unverified driving-duty bypass.
+
+## T27 Step 8 — Round 3 same-order Driver continuation (T12/T13/T14)
+
+The updated runner **does not** use TestClient to dispatch, upload GPS or deliver. In
+one Playwright Chrome session as the driver assigned to the actual trip generated
+from Source `SE-2026-000249`, it presses **Mark dispatched**, **Update location**
+and **Confirm delivered**, recording the real API response and a PostgreSQL
+checkpoint at each stage. The run cross-checks the Source reference, CFO order
+number, `order_id`, approved `plan_id` and exact `trip_id` before interacting.
+
+The `APP_NOW` clock is frozen on FastAPI, so the runner recreates **only**
+`cfo-api` between milestones with an incremented Sweden-local timestamp, while
+pausing Playwright's Chrome clock at each matching synthetic milestone. The
+server stays two seconds ahead as a scheduling allowance. In the disposable
+synthetic browser only, Chrome's **actual geolocation override** supplies the
+coordinates and the browser test aligns the native fix timestamp with its
+Playwright clock. No TestClient or hidden API call creates a driver event,
+position or POD. The completion fix is newer than the preceding tap, never
+earlier than the actual departure or later than `APP_NOW`.
+
+The `t27-integrated.json` and `t27-integrated.md` artifact contains separate
+Dispatch/GPS/Delivered statuses, HTTP status/error, event/position IDs, DB
+assertions, SHA, T26 seed file SHA256 digests and milestone clocks. Screenshots
+mask the delivery stop/address block, and no GPS coordinates, request bodies,
+authentication tokens, demo recipient names or real PII are serialized.
+
+Acceptance conditions: Dispatch HTTP 200 + `DISPATCHED` milestone +
+`on_road` trip/order; GPS HTTP 202 + one `driver_tap` point + newly stored
+`eta_forecast(trigger=position)` captured **before** terminal cleanup;
+Delivered HTTP 200 with a new `payload.position`, persisted POD with
+`site_distance_m`, completed trip and DELIVERED order, with **zero** remaining
+`ops.vehicle_position` for that order. All three must involve the same
+trip; an earlier PASS never implies later stages passed.
+
+**T12 integration (current main):** the E0-04 setup ingests the authoritative
+synthetic Fleet availability and vehicle-eligibility feeds for December 2.
+Driver Dispatch must pass the unchanged DEC-R3-07 stored verification (official
+shift, verified feed, licence and driving budget); the legacy D7 reader remains
+disabled after the execution-day clock rollover. There is no custom 56-day
+historical-data generator or production gate bypass. Before GPS testing, a
+synthetic-only, exact-order fixture enables GPS and records a synthetic notice;
+this is never real-worker GPS approval or evidence of legal sign-off. Real Chrome
+still supplies the two independent fixes, and a missing Fleet/notice gate
+continues to produce an actual backend BLOCKED/FAIL checkpoint.
+
+Run via the isolated `t27-integrated-e004.yml` workflow on branch
+`feat/r3-t27-same-order-driver-step8` or by the full `--output` invocation
+above, never against a non-disposable environment.
