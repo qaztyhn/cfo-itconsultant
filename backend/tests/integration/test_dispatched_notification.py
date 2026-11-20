@@ -21,8 +21,8 @@ from tests.integration.api_harness import api as api
 from tests.integration.conftest import async_url, execute, fetch
 from tests.integration.hr_fixture import DRIVER, WAREHOUSE
 from tests.integration.test_e2_mailpit import _mailpit_messages
-from tests.integration.test_execution_api import GPS_DUTY, send, verified_risk
 from tests.integration.test_execution_api import execution_api as execution_api
+from tests.integration.test_execution_api import send, verified_risk
 
 pytestmark = pytest.mark.integration
 DEPARTED_AT = "2026-11-10T08:10:00Z"
@@ -32,7 +32,10 @@ DEPARTED_AT = "2026-11-10T08:10:00Z"
 def loaded_order(execution_api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:
     execute(
         execution_api.dsn,
-        GPS_DUTY[1],
+        "INSERT INTO hr.employee_shift_schedule "
+        "(employee_id,warehouse_id,work_date,start_time,end_time,assigned_by,assigned_at) "
+        "VALUES (5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z'), "
+        "(11,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
         "UPDATE ref.customer SET email='t21-synthetic@cfo.test' WHERE id=1",
         "UPDATE ops.customer_order SET committed_date='2026-11-10',"
         "promise_start='2026-11-10T10:00Z',promise_end='2026-11-10T11:00Z' WHERE id=1",
