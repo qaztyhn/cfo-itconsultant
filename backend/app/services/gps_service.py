@@ -41,6 +41,7 @@ from app.services.gps_duty import active_duty, trip_collection_windows
 
 MAX_GPS_BATCH_POSITIONS = 100  # Owner-approved G4 upload limit (DEC-OWNER-20261109)
 
+
 @dataclass(frozen=True)
 class RemainingRoute:
     """Verified routing output for T14 (route source is NOT the GPS point source)."""
@@ -78,7 +79,8 @@ def _point_time(value: object) -> datetime:
 
 
 async def _trip_context(
-    session: AsyncSession, trip_id: int,
+    session: AsyncSession,
+    trip_id: int,
 ) -> tuple[DeliveryTrip, Market, CustomerOrder]:
     row = (
         await session.execute(
@@ -97,7 +99,10 @@ async def _trip_context(
 
 
 async def record_point(
-    session: AsyncSession, trip_id: int, point: Mapping[str, object], source: PointSource,
+    session: AsyncSession,
+    trip_id: int,
+    point: Mapping[str, object],
+    source: PointSource,
 ) -> RemainingRoute:
     """T13/T14 shared: write one verified point, no commit, no risk/ETA side effect.
 
@@ -143,7 +148,8 @@ async def record_point(
             ComplianceRecord.market_id == market.id,
             ComplianceRecord.type == "GPS_NOTICE",
             ComplianceRecord.status == "approved",
-        ).limit(1)
+        )
+        .limit(1)
     )
     if notice is None:
         raise DomainError("FORBIDDEN", "Approved GPS privacy notice is unavailable.")
@@ -161,7 +167,10 @@ async def record_point(
     try:
         route = await route_with_fallback(
             OrsRoutingProvider(get_settings().ors_api_key or ""),
-            float(latitude), float(longitude), float(order.delivery_lat), float(order.delivery_lon),
+            float(latitude),
+            float(longitude),
+            float(order.delivery_lat),
+            float(order.delivery_lon),
             allow_fallback=config.routing.allow_fallback,
         )
     except (RoutingUnavailable, ValueError) as exc:
@@ -188,20 +197,20 @@ async def record_point(
 
 
 async def trusted_remaining_for_order(
-    session: AsyncSession, order_id: int,
+    session: AsyncSession,
+    order_id: int,
 ) -> dict[int, tuple[datetime, int]]:
     """Freshest persisted route durations for all trips in one approved order."""
     trip_ids = (
-        await session.scalars(
-            select(TripStop.trip_id).where(TripStop.order_id == order_id).distinct()
-        )
+        await session.scalars(select(TripStop.trip_id).where(TripStop.order_id == order_id).distinct())
     ).all()
     evidence: dict[int, tuple[datetime, int]] = {}
     for trip_id in trip_ids:
         latest = await session.scalar(
             select(VehiclePosition)
             .where(VehiclePosition.trip_id == trip_id)
-            .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc()).limit(1)
+            .order_by(VehiclePosition.recorded_at.desc(), VehiclePosition.id.desc())
+            .limit(1)
         )
         if latest is not None:
             if latest.remaining_min is None or latest.route_source not in ("ors", "haversine_estimate"):
@@ -211,7 +220,11 @@ async def trusted_remaining_for_order(
 
 
 async def post_driver_position(
-    session: AsyncSession, trip_id: int, actor: object, point: Mapping[str, object], key: str,
+    session: AsyncSession,
+    trip_id: int,
+    actor: object,
+    point: Mapping[str, object],
+    key: str,
 ) -> dict[str, object]:
     """202 API boundary: atomic replay, one new GPS point, one risk calculation."""
     _role(actor, "driver")
@@ -220,7 +233,8 @@ async def post_driver_position(
         raise DomainError("FORBIDDEN", "An authenticated driver is required.")
     endpoint = f"POST /trips/{trip_id}/positions"
     normalized = {
-        "lat": str(point.get("lat")), "lon": str(point.get("lon")),
+        "lat": str(point.get("lat")),
+        "lon": str(point.get("lon")),
         "accuracy_m": str(point.get("accuracy_m")),
         "recorded_at": _point_time(point.get("recorded_at")).isoformat(),
     }
@@ -284,9 +298,6 @@ async def purge_order(session: AsyncSession, order_id: int) -> int:
         delete(VehiclePosition).where(VehiclePosition.trip_id.in_(ids)).returning(VehiclePosition.id)
     )
     return len(removed.all())
-
-
-
 
 
 def _aware(value: datetime) -> datetime:
@@ -528,24 +539,30 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                     MilestoneEvent.trip_id == trip.id,
                     MilestoneEvent.event_type == "DRIVER_INCIDENT",
                 )
-                .order_by(MilestoneEvent.id.desc()).limit(1)
+                .order_by(MilestoneEvent.id.desc())
+                .limit(1)
             )
             if incident_event is not None:
                 candidate = incident_event.payload.get("reason")
                 if candidate in ("vehicle_breakdown", "traffic_or_accident", "site_inaccessible", "other"):
                     incident = candidate
-        output.append({
-            "trip_id": trip.id,
-            "order_id": order.id,
-            "vehicle_code": vehicle.code,
-            "last_position": {"lat": float(point.lat), "lon": float(point.lon)} if point else None,
-            "remaining_km": str(point.remaining_km) if point and point.remaining_km is not None else None,
-            "updated_at": point.recorded_at.isoformat() if point else None,
-            "forecast_eta": forecast.forecast_eta.isoformat() if forecast else None,
-            "risk": {"status": forecast.risk_status, "color": forecast.risk_color}
-            if forecast else {"status": None, "color": None},
-            "open_incident": incident,
-        })
+        output.append(
+            {
+                "trip_id": trip.id,
+                "order_id": order.id,
+                "vehicle_code": vehicle.code,
+                "last_position": {"lat": float(point.lat), "lon": float(point.lon)} if point else None,
+                "remaining_km": str(point.remaining_km) if point and point.remaining_km is not None else None,
+                "updated_at": point.recorded_at.isoformat() if point else None,
+                "forecast_eta": forecast.forecast_eta.isoformat() if forecast else None,
+                "risk": (
+                    {"status": forecast.risk_status, "color": forecast.risk_color}
+                    if forecast
+                    else {"status": None, "color": None}
+                ),
+                "open_incident": incident,
+            }
+        )
     return output
 
 
