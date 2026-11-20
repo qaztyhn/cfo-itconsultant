@@ -8,7 +8,7 @@ from app.core import clock
 from app.services import approval_service, dispatcher_assignment_service
 from tests.integration import rows
 from tests.integration.api_harness import Api, assert_error
-from tests.integration.api_harness import api as api_fixture
+from tests.integration.api_harness import api as api_fixture  # noqa: F401
 from tests.integration.conftest import execute, fetch
 from tests.integration.test_approval_service import (
     _actor,
@@ -18,7 +18,7 @@ from tests.integration.test_approval_service import (
     _run,
     _second_order,
 )
-from tests.integration.test_approval_service import db as approval_db_fixture
+from tests.integration.test_approval_service import db as approval_db_fixture  # noqa: F401
 
 pytestmark = pytest.mark.integration
 
