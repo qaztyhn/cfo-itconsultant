@@ -287,7 +287,9 @@ def test_US_GPS_02_AC1_dispatcher_without_explicit_trip_mapping_is_denied(gps: A
     assert submit(gps, [position("2026-11-10T07:00:00Z")]).status_code == 202
     assert_error(gps.get("/trips/1/positions", DISPATCHER), 403, "FORBIDDEN")
     assert_error(gps.get("/trips/999/positions", DISPATCHER), 403, "FORBIDDEN")
-    assert_error(gps.get("/gps/live", DISPATCHER), 403, "FORBIDDEN")
+    # R3 T15: authorized Dispatcher sees an empty list, not a market-wide fallback.
+    response = gps.get("/gps/live", DISPATCHER)
+    assert response.status_code == 200 and response.json() == []
 
 
 def _count(gps: Api) -> int:
