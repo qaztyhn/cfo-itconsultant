@@ -138,8 +138,7 @@ def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db:
     assert (
         fetch(
             dispatcher_db,
-            "SELECT count(*) FROM audit.decision_log "
-            "WHERE action='TRIP_DISPATCHER_HANDOVER'",
+            "SELECT count(*) FROM audit.decision_log " "WHERE action='TRIP_DISPATCHER_HANDOVER'",
         )[0][0]
         == 1
     )
@@ -173,8 +172,7 @@ def test_T15_handover_scoped_audited_and_rejected_without_changes(dispatcher_db:
     assert (
         fetch(
             dispatcher_db,
-            "SELECT count(*) FROM audit.decision_log "
-            "WHERE action='TRIP_DISPATCHER_HANDOVER'",
+            "SELECT count(*) FROM audit.decision_log " "WHERE action='TRIP_DISPATCHER_HANDOVER'",
         )[0][0]
         == 1
     )
