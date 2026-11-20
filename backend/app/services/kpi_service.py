@@ -261,13 +261,8 @@ async def _collect(
             bucket["planning_time_min"].add(None)
             if path in ("sales", "dispatcher"):
                 by_path["planning_time_min"][path].add(None)
-            else:
-                for group in by_path["planning_time_min"].values():
-                    group.add(None)
             if path not in ("sales", "dispatcher") or row.rank is None:
                 bucket["plan_acceptance_rate"].add(None)
-                for group in by_path["plan_acceptance_rate"].values():
-                    group.add(None)
             else:
                 accepted = Decimal(int(row.rank == 1 and not manual))
                 bucket["plan_acceptance_rate"].add(accepted)
@@ -282,9 +277,6 @@ async def _collect(
                     minutes = Decimal(str(elapsed)) / Decimal(60)
             if path in ("sales", "dispatcher"):
                 by_path["order_to_commit_min"][path].add(minutes)
-            else:
-                for group in by_path["order_to_commit_min"].values():
-                    group.add(None)
             # No explicit persisted counter commitment event exists.
             supporting["counter_commit_rate"].add(None)
         delivered_day = _day(row.delivered_at, zone) if row.status == "DELIVERED" else None

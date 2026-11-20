@@ -82,8 +82,10 @@ def kpi(api: Api) -> Api:  # noqa: F811
     return api
 
 
-def add_approval_evidence(kpi: Api) -> None:
+def add_approval_evidence(kpi: Api, plan_ids: tuple[int, ...] = (1, 2, 3, 4)) -> None:
     for plan_id, role in ((1, "sales"), (2, "dispatcher"), (3, "dispatcher"), (4, "sales")):
+        if plan_id not in plan_ids:
+            continue
         execute(
             kpi.dsn,
             "INSERT INTO audit.decision_log "
@@ -119,6 +121,18 @@ def test_US_KPI_01_AC1_AC2_AC3_five_metrics_and_path_sources(kpi: Api) -> None:
         "order_to_commit_min": {"by_path": {"sales": 30.0, "dispatcher": 30.0}},
         "counter_commit_rate": {"value": None},
         "manual_plan_count": {"value": 1},
+    }
+
+
+def test_US_KPI_01_AC2_missing_path_keeps_observed_path_rates(kpi: Api) -> None:
+    add_approval_evidence(kpi, (1, 2, 3))
+    response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
+    assert response.status_code == 200, response.text
+    acceptance = response.json()["metrics"]["plan_acceptance_rate"]
+    assert acceptance == {"value": None, "by_path": {"sales": 1.0, "dispatcher": 0.5}}
+    assert response.json()["supporting"]["order_to_commit_min"]["by_path"] == {
+        "sales": 30.0,
+        "dispatcher": 30.0,
     }
 
 
