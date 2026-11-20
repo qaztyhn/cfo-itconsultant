@@ -271,12 +271,19 @@ async def _stock_available(
         # A verified post-ACK WMS snapshot already includes this order's reserve
         # (and other WMS channels). Give this order its own held quantity back
         # exactly once; do not subtract CFO committed stock a second time.
-        available = (
-            snapshot.on_hand - snapshot.wms_reserved + entry.qty - other_held
+        available_without_other_holds = (
+            snapshot.on_hand - snapshot.wms_reserved + entry.qty
             if wms_self_reserved
-            else snapshot.on_hand - snapshot.wms_reserved - Decimal(committed or 0) - other_held
+            else snapshot.on_hand - snapshot.wms_reserved - Decimal(committed or 0)
         )
+        available = available_without_other_holds - other_held
         if entry.qty <= 0 or available < entry.qty:
+            if sales and other_held > 0 and available_without_other_holds >= entry.qty:
+                raise _fail(
+                    "PLAN_NOT_APPROVABLE",
+                    "Competing provisional stock reservations are unverified. Contact Dispatcher.",
+                    conflict="stock",
+                )
             raise _fail("RESOURCE_CONFLICT", "Insufficient stock at approval.", conflict="stock")
 
 
@@ -356,6 +363,8 @@ async def _labour_available(
                 PrepReservation.status == "committed",
             )
         )
+        committed_hours = Decimal(booked or 0)
+        other_held = Decimal(0)
         if sales:
             held = await session.scalar(
                 select(func.coalesce(func.sum(PrepReservation.hours), 0))
@@ -368,8 +377,14 @@ async def _labour_available(
                     PlanningRun.hold_expires_at > clock.now(),
                 )
             )
-            booked = Decimal(booked or 0) + Decimal(held or 0)
-        if item.hours <= 0 or capacity - Decimal(booked or 0) < item.hours:
+            other_held = Decimal(held or 0)
+        if item.hours <= 0 or capacity - committed_hours - other_held < item.hours:
+            if sales and other_held > 0 and capacity - committed_hours >= item.hours:
+                raise _fail(
+                    "PLAN_NOT_APPROVABLE",
+                    "Competing provisional warehouse capacity is unverified. Contact Dispatcher.",
+                    conflict="labour",
+                )
             raise _fail(
                 "RESOURCE_CONFLICT",
                 "Insufficient official warehouse capacity.",
