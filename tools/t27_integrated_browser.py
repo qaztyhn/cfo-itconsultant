@@ -7,6 +7,7 @@ Runs exclusively against cfo-demo-e004; never touches production resources.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -27,6 +28,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
+from tools.t27_driver_step8 import (
+    EvidenceMismatch, aware, step8_pass, verify_event_request, verify_position_request,
+)
 
 SOURCE_REF = "SE-2026-000249"
 NOW = "2026-12-01T10:05:00+01:00"
@@ -54,9 +58,22 @@ STEPS = (
 )
 
 
+def _seed_fingerprint(path: str) -> str:
+    file = ROOT / path
+    return hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else "NOT VERIFIED"
+
+
 def stage_report() -> dict:
+    try:
+        revision = os.getenv("GITHUB_SHA") or cmd("git", "rev-parse", "HEAD", env=dict(os.environ), capture=True)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+        revision = "NOT VERIFIED"
     return {
-        "revision": os.getenv("GITHUB_SHA", "NOT VERIFIED (local commit)"),
+        "revision": revision,
+        "seed": {
+            "source_t26_sha256": _seed_fingerprint("source_system/seed/se/t26.json"),
+            "backend_t26_sha256": _seed_fingerprint("backend/app/seed/t26.py"),
+        },
         "app_now": NOW,
         "market_timezone": ZONE,
         "external_ref": SOURCE_REF,
@@ -574,59 +591,302 @@ def warehouse(browser, password: str, order_id: int, trip_ids: list[int],
         page.close()
 
 
+
+def _driver_screenshot(page: Page, out: Path, name: str) -> None:
+    """Only synthetic operational UI; mask the complete delivery-address/stop block."""
+    main = page.locator("main").first
+    private_stops = page.locator('section[aria-label="Trip details"] > div.mt-4')
+    main.screenshot(path=out / name, mask=[private_stops], animations="disabled")
+
+
+def _advance_driver_clock(
+    page: Page, env: dict[str, str], seconds: int, report: dict, stage: str
+) -> dict[str, str]:
+    """R3 demo: the frozen API MUST advance with Chrome before each GPS fix."""
+    if env.get("APP_ENV") != "test" or env.get("DEMO_DISPOSABLE") != "1":
+        raise RuntimeError("Clock rollover requires the disposable synthetic demo")
+    when = aware(env["APP_NOW"]) + timedelta(seconds=seconds)
+    at = when.astimezone(ZoneInfo(ZONE)).isoformat(timespec="seconds")
+    page.clock.fast_forward(seconds * 1000)
+    updated = {**env, "APP_NOW": at}
+    compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90",
+            "cfo-api", env=updated)
+    # The process is freshly started with these settings. Fail rather than
+    # letting Chrome submit timestamps beyond its server's frozen clock.
+    configured = compose(
+        "exec", "-T", "cfo-api", "python", "-c",
+        "from app.core.config import get_settings; print(get_settings().app_now)",
+        env=updated, capture=True,
+    )
+    if configured != at:
+        raise RuntimeError("API clock not synchronized to Chrome demo clock")
+    report.setdefault("driver_clocks", {})[stage] = at
+    return updated
+
+
+def _driver_error(response: Response, report: dict, stage: str, trip_id: int,
+                  order_id: int) -> dict[str, object]:
+    info = metadata(response)
+    report["api"].append(info)
+    status = "BLOCKED" if response.status in (409, 422, 503) else "FAIL"
+    reason = "Backend rejected driver action; retain exact error code and T12/T13/T14 gate"
+    if stage == "dispatch":
+        try:
+            val = response.json().get("error", {})
+            classified = dispatch_rejection(response.status, val.get("code"), val.get("message"))
+            status = classified["status"]
+            reason = classified["reason"]
+        except (ValueError, AttributeError, Error):
+            pass
+    detail = {
+        "status": status, "order_id": order_id, "trip_id": trip_id,
+        "http": info["http"], "error_code": info["error_code"], "db_verified": False,
+    }
+    report.setdefault("driver_step8", {}).setdefault("stages", {})[stage] = detail
+    report["last_verified"] = (
+        "Warehouse LOADED" if stage == "dispatch" else
+        "Driver UI DISPATCHED and PostgreSQL" if stage == "gps" else
+        "Driver UI DISPATCHED + GPS/ETA snapshot and PostgreSQL"
+    )
+    mark(report, "8", status, f"{stage.upper()} rejected by backend: HTTP {info['http']} "
+         f"{info['error_code']}; {reason}; last={report['last_verified']}",
+         last_verified=report["last_verified"], task="T12, T13, T14, T16",
+         failed_milestone=stage, http=info)
+    return detail
+
+
 def driver(browser, password: str, trip_id: int, order_id: int,
            out: Path, report: dict, env: dict[str, str]) -> None:
+    """One real assigned-driver Chrome session and one PostgreSQL transaction chain."""
+    plan_id = report["plan_id"]
+    order_no = report["order_no"]
+    identity = sql(
+        "SELECT o.external_ref||'|'||o.order_no||'|'||o.approved_plan_id||'|'||t.id||'|'||o.status "
+        "FROM ops.customer_order o JOIN ops.trip_stop s ON s.order_id=o.id "
+        "JOIN ops.delivery_trip t ON t.id=s.trip_id "
+        "JOIN plan.plan_vehicle pv ON pv.id=t.plan_vehicle_id "
+        f"WHERE o.id={order_id} AND pv.plan_id={plan_id} AND t.id={trip_id}", env
+    )
+    if identity != f"{SOURCE_REF}|{order_no}|{plan_id}|{trip_id}|LOADED":
+        raise EvidenceMismatch("Driver continuation does not match same LOADED Source order/plan/trip")
     account = sql(
         "SELECT u.email FROM ref.app_user u JOIN ops.delivery_trip t ON t.driver_employee_id=u.employee_id "
-        f"WHERE t.id={trip_id}", env
+        f"WHERE t.id={trip_id} AND 'driver'=ANY(u.roles) AND u.is_active", env
     )
+    if not account:
+        raise EvidenceMismatch("Assigned trip has no active demo Driver account")
+    evidence = {
+        "source_ref": SOURCE_REF, "order_id": order_id, "order_no": order_no,
+        "plan_id": plan_id, "trip_id": trip_id, "stages": {},
+    }
+    report["driver_step8"] = evidence
     page = login(browser, "/driver", account, password, out, "Driver", app_now=env["APP_NOW"])
     try:
-        # Driver time is after the last warehouse event, within the server's
-        # accepted +5 minute skew without bypassing the official shift gate.
-        page.clock.fast_forward(60_000)
-        trip_label = page.get_by_text(re.compile(rf"^(Now|Later) · Trip {trip_id}$"))
+        # These are strictly browser-side synthetic coordinates. The API receives
+        # them only through the actual Driver UI, never from TestClient or a POST helper.
+        geo = sql(
+            f"SELECT delivery_lat::text||'|'||delivery_lon::text FROM ops.customer_order "
+            f"WHERE id={order_id}", env
+        ).split("|")
+        if len(geo) != 2:
+            raise EvidenceMismatch("Cannot configure synthetic Chrome geolocation")
+        latitude, longitude = float(geo[0]), float(geo[1])
+        page.context.grant_permissions(["geolocation"], origin=WEB)
+        page.context.set_geolocation({"latitude": latitude + 0.00004,
+                                      "longitude": longitude + 0.00004, "accuracy": 20})
+        # Chrome's native GeolocationPosition.timestamp can use wall-clock time
+        # despite Playwright's frozen Date. Keep the real Chrome coordinates and
+        # override ONLY the synthetic fix timestamp with the page clock in this
+        # disposable test, so it cannot be before departure or ahead of API.
+        page.add_init_script("""(() => {
+          const geo = navigator.geolocation;
+          if (!geo) return;
+          const original = geo.getCurrentPosition.bind(geo);
+          geo.getCurrentPosition = (success, failure, options) =>
+            original(fix => success({coords: fix.coords, timestamp: Date.now()}), failure, options);
+        })();""")
+        page.reload()
+        # Dispatch must happen AFTER the warehouse's last event and at the same
+        # simulated time on both the browser and FastAPI process.
+        previous = env["APP_NOW"]
+        env = _advance_driver_clock(page, env, 60, report, "dispatch")
+        trip_label = page.get_by_role("heading", name=re.compile(rf"^Trip {trip_id} · "))
         card = page.get_by_role("article").filter(has=trip_label)
         expect(card).to_be_visible(timeout=16000)
+        if not card.get_by_text(order_no, exact=False).count():
+            raise EvidenceMismatch("Assigned Driver UI trip is not the Source order")
         card.get_by_role("button", name="Review and dispatch").click()
-        screenshot(page, out, "08-driver-dispatch-ready.png")
-        with page.expect_response(lambda r: r.request.method == "POST" and
-                                  urlsplit(r.url).path == f"/api/v1/orders/{order_id}/events") as posted:
+        expect(page.get_by_role("heading", name=re.compile(rf"^Trip {trip_id} · "))).to_be_visible()
+        _driver_screenshot(page, out, "08-driver-dispatch-ready.png")
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and
+            urlsplit(r.url).path == f"/api/v1/orders/{order_id}/events"
+        ) as posted:
             page.get_by_role("button", name="Mark dispatched").click()
-        info = metadata(posted.value)
-        report["api"].append(info)
-        report["dispatch_attempt"] = {**info, "trip_id": trip_id}
-        if not posted.value.ok:
-            try:
-                error = posted.value.json().get("error", {})
-                code = error.get("code")
-                msg = error.get("message")
-            except (ValueError, AttributeError, Error):
-                code, msg = None, None
-            classified = dispatch_rejection(posted.value.status, code, msg)
-            reason = f"Driver UI Dispatch HTTP {info['http']} {info['error_code']}. {classified['reason']}"
-            report["dispatch_attempt"]["reason"] = msg if classified["status"] == "BLOCKED" else classified["reason"]
-            mark(report, "8", classified["status"], reason,
-                 task=", ".join(classified["tasks"]), http=info, trip_id=trip_id)
-            report["last_verified"] = "Assigned Driver UI trip visible; DISPATCHED rejected"
+        response = posted.value
+        report["dispatch_attempt"] = {**metadata(response), "trip_id": trip_id}
+        if response.status != 200:
+            _driver_error(response, report, "dispatch", trip_id, order_id)
             return
-        ack = posted.value.json()
-        if ack.get("order_status") != "DISPATCHED" or type(ack.get("event_id")) is not int:
-            raise RuntimeError("Driver DISPATCHED HTTP200 without state/event")
-        db = sql(
-            "SELECT event_type||'|'||trip_id||'|'||o.status FROM ops.milestone_event e "
+        event_at = verify_event_request(
+            response.request.post_data_json, event_type="DISPATCHED", trip_id=trip_id,
+            server_now=env["APP_NOW"], not_before=previous,
+        )
+        ack = response.json()
+        event_id = ack.get("event_id")
+        if type(event_id) is not int or ack.get("order_status") != "DISPATCHED":
+            raise EvidenceMismatch("HTTP 200 Dispatch lacks event_id/DISPATCHED order")
+        persisted = sql(
+            "SELECT e.event_type||'|'||e.trip_id||'|'||e.plan_id||'|'||t.status||'|'||o.status "
+            "FROM ops.milestone_event e JOIN ops.delivery_trip t ON t.id=e.trip_id "
             "JOIN ops.customer_order o ON o.id=e.order_id "
-            f"WHERE e.id={ack['event_id']} AND e.order_id={order_id}", env)
-        if db != f"DISPATCHED|{trip_id}|DISPATCHED":
-            raise RuntimeError("Driver ACK/milestone/DB status mismatched")
-        report["last_verified"] = "Driver UI DISPATCHED committed"
-        mark(report, "8", "BLOCKED", "DISPATCHED PASS via UI + PG; Round 3 manual GPS/POD remains unverified",
-             last_verified="DISPATCHED", http=info, event_id=ack["event_id"])
-        screenshot(page, out, "09-driver-dispatched.png")
-        # Never press legacy no-location DELIVERED and claim R3 mandatory GPS.
+            f"WHERE e.id={event_id} AND e.order_id={order_id}", env
+        )
+        departed = sql(
+            f"SELECT depart_actual_at::text FROM ops.delivery_trip WHERE id={trip_id}", env
+        )
+        if persisted != f"DISPATCHED|{trip_id}|{plan_id}|on_road|DISPATCHED" or not departed:
+            raise EvidenceMismatch("Dispatch HTTP200 does not match PostgreSQL trip/order/milestone")
+        if aware(event_at) < aware(departed):
+            raise EvidenceMismatch("Depart actual is newer than browser Dispatch request")
+        dispatch_stage = {
+            "status": "PASS", "order_id": order_id, "trip_id": trip_id,
+            "event_id": event_id, "http": 200, "error_code": None,
+            "server_clock": env["APP_NOW"], "occurred_at": event_at,
+            "trip_status": "on_road", "order_status": "DISPATCHED", "db_verified": True,
+        }
+        evidence["stages"]["dispatch"] = dispatch_stage
+        report["milestones"].append({"event_type": "DISPATCHED", "event_id": event_id,
+                                      "trip_id": trip_id, "http": 200})
+        report["last_verified"] = "Driver DISPATCHED HTTP200 + PostgreSQL on_road"
+        _driver_screenshot(page, out, "09-driver-dispatched.png")
+        # T13: one manual Chrome geolocation tap; snapshot DB BEFORE DELIVERED
+        # purges the points, otherwise the evidence disappears by design.
+        env = _advance_driver_clock(page, env, 60, report, "gps")
+        expect(page.get_by_role("section", name="Location privacy notice")).to_be_visible()
+        page.get_by_label("I have read the location privacy notice.").check()
+        before_eta = sql(
+            f"SELECT COALESCE(max(id),0) FROM ops.eta_forecast WHERE order_id={order_id}", env
+        )
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and
+            urlsplit(r.url).path == f"/api/v1/trips/{trip_id}/positions"
+        ) as position_post:
+            page.get_by_role("button", name="Update location").click()
+        response = position_post.value
+        if response.status != 202:
+            _driver_error(response, report, "gps", trip_id, order_id)
+            return
+        recorded = verify_position_request(
+            response.request.post_data_json, server_now=env["APP_NOW"], not_before=event_at
+        )
+        ack = response.json()
+        if ack.get("accepted") != 1 or ack.get("trip_id") != trip_id or (
+            aware(ack.get("recorded_at")) != aware(recorded)
+        ):
+            raise EvidenceMismatch("GPS HTTP202 did not accept the exact UI point and trip")
+        expect(page.get_by_role("status").filter(has_text="Position sent")).to_be_visible()
+        expect(page.get_by_text("Last position sent:", exact=False)).to_be_visible()
+        rows = sql(
+            "SELECT id||'|'||source||'|'||recorded_at::text||'|'||remaining_min||'|'||route_source "
+            f"FROM ops.vehicle_position WHERE trip_id={trip_id} ORDER BY id", env
+        ).splitlines()
+        if len(rows) != 1:
+            raise EvidenceMismatch("GPS checkpoint must contain exactly one driver_tap point")
+        point_id, source, stored_at, remaining_min, provider = rows[0].split("|")
+        forecast = sql(
+            "SELECT id||'|'||trigger||'|'||forecast_eta::text "
+            f"FROM ops.eta_forecast WHERE order_id={order_id} ORDER BY version DESC LIMIT 1", env
+        ).split("|")
+        if (source != "driver_tap" or not point_id.isdecimal() or
+            aware(stored_at) != aware(recorded) or not remaining_min.isdecimal() or
+            provider not in ("ors", "haversine_estimate") or
+            len(forecast) != 3 or not forecast[0].isdecimal() or
+            int(forecast[0]) <= int(before_eta) or forecast[1] != "position"):
+            raise EvidenceMismatch("GPS driver_tap/ETA not committed as one new forecast")
+        gps_stage = {
+            "status": "PASS", "order_id": order_id, "trip_id": trip_id, "http": 202,
+            "error_code": None, "accepted": 1, "position_id": int(point_id),
+            "recorded_at": recorded, "server_clock": env["APP_NOW"],
+            "db": {"source": "driver_tap", "count": 1, "route_source": provider,
+                   "remaining_min": int(remaining_min), "eta_id": int(forecast[0]),
+                   "eta_trigger": "position", "forecast_eta": forecast[2]},
+            "db_verified": True, "before_delivery_purge": True,
+        }
+        evidence["stages"]["gps"] = gps_stage
+        report["last_verified"] = "Driver GPS HTTP202 + driver_tap point and new ETA in PostgreSQL (pre-purge)"
+        _driver_screenshot(page, out, "10-driver-location-sent.png")
+        # T14: set a *new* Chrome fix, advance both clocks and click UI outcome.
+        # The browser captures the real Geolocation API again, not the previous point.
+        env = _advance_driver_clock(page, env, 60, report, "delivered")
+        page.context.set_geolocation({"latitude": latitude + 0.00002,
+                                      "longitude": longitude + 0.00002, "accuracy": 15})
+        page.get_by_label("Received by").fill("Synthetic Demo Recipient")
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and
+            urlsplit(r.url).path == f"/api/v1/orders/{order_id}/events"
+        ) as delivered_post:
+            page.get_by_role("button", name="Confirm delivered").click()
+        response = delivered_post.value
+        if response.status != 200:
+            _driver_error(response, report, "delivered", trip_id, order_id)
+            return
+        delivered_at = verify_event_request(
+            response.request.post_data_json, event_type="DELIVERED",
+            trip_id=trip_id, server_now=env["APP_NOW"], not_before=recorded,
+        )
+        position_at = verify_position_request(
+            response.request.post_data_json["payload"]["position"],
+            server_now=env["APP_NOW"], not_before=event_at, newer_than=recorded,
+        )
+        ack = response.json()
+        delivered_event_id = ack.get("event_id")
+        if type(delivered_event_id) is not int or ack.get("order_status") != "DELIVERED":
+            raise EvidenceMismatch("Delivered HTTP200 lacks matching event_id/DELIVERED")
+        persisted = sql(
+            "SELECT e.event_type||'|'||e.trip_id||'|'||e.plan_id||'|'||t.status||'|'||o.status "
+            "FROM ops.milestone_event e JOIN ops.delivery_trip t ON t.id=e.trip_id "
+            "JOIN ops.customer_order o ON o.id=e.order_id "
+            f"WHERE e.id={delivered_event_id} AND e.order_id={order_id}", env
+        )
+        pod = sql(
+            "SELECT p.id||'|'||p.result||'|'||COALESCE(p.site_distance_m::text,'NULL') "
+            "FROM ops.proof_of_delivery p JOIN ops.trip_stop s ON s.id=p.trip_stop_id "
+            f"WHERE p.order_id={order_id} AND s.trip_id={trip_id}", env
+        ).split("|")
+        remaining_points = sql(
+            "SELECT count(*) FROM ops.vehicle_position v JOIN ops.trip_stop s ON s.trip_id=v.trip_id "
+            f"WHERE s.order_id={order_id}", env
+        )
+        if (persisted != f"DELIVERED|{trip_id}|{plan_id}|completed|DELIVERED" or
+            len(pod) != 3 or not pod[0].isdecimal() or pod[1] != "delivered" or
+            not pod[2].isdecimal() or remaining_points != "0"):
+            raise EvidenceMismatch("POD, completed trip, DELIVERED order or GPS purge did not persist")
+        expect(page.get_by_text("Trip ended.", exact=False)).to_be_visible()
+        delivered_stage = {
+            "status": "PASS", "order_id": order_id, "trip_id": trip_id,
+            "event_id": delivered_event_id, "http": 200, "error_code": None,
+            "server_clock": env["APP_NOW"], "occurred_at": delivered_at,
+            "completion_recorded_at": position_at, "pod_id": int(pod[0]),
+            "site_distance_m": int(pod[2]), "trip_status": "completed",
+            "order_status": "DELIVERED", "remaining_gps_points": 0,
+            "db_verified": True,
+        }
+        evidence["stages"]["delivered"] = delivered_stage
+        report["milestones"].append({"event_type": "DELIVERED", "event_id": delivered_event_id,
+                                      "trip_id": trip_id, "http": 200})
+        _driver_screenshot(page, out, "11-driver-delivered.png")
+        if not step8_pass(evidence["stages"], order_id, trip_id):
+            raise EvidenceMismatch("Step8 cannot PASS without all three same-trip DB checkpoints")
+        mark(report, "8", "PASS",
+             "Same Source order/plan/trip: Driver Chrome DISPATCHED HTTP200, GPS HTTP202 "
+             "and DELIVERED HTTP200; PostgreSQL point/ETA snapshot before purge, POD "
+             "and all GPS erased at terminal state.",
+             dispatch=dispatch_stage, gps=gps_stage, delivered=delivered_stage,
+             task="T06, T12, T13, T14, T16")
+        report["last_verified"] = "Driver UI delivered; PostgreSQL POD and order GPS purge verified"
     finally:
         page.close()
-
 
 def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict[str, str]) -> None:
     order_no = report["order_no"]
@@ -812,7 +1072,13 @@ def main() -> int:
         # fixture runs, not evidence of success on SE-2026-000249.
         mark(report, "3", "BLOCKED", "One E0-04 proposal, not three ranked choices; T19/T26", task="T19, T26")
         mark(report, "9", "BLOCKED", "Requires separate E5 DELAY draft/worker plus T08/T17", task="E5, T08, T17")
-        mark(report, "10", "BLOCKED", "Lifecycle DISPATCHED/DELIVERED/DELAY not checked on this order", task="E2, T21")
+        mark(
+            report, "10", "BLOCKED",
+            "DELIVERED verified by Chrome/PostgreSQL; lifecycle email not checked"
+            if next(row for row in report["steps"] if row["step"] == "8")["status"] == "PASS"
+            else "Order lifecycle and DELAY email not fully verified on this run",
+            task="E2, T21",
+        )
         mark(report, "12b", "NOT VERIFIED", "T30 T29 fixture separate; official T26 seed not yet replayed", task="T26, T30")
         (args.output / "t27-integrated.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         rows = ["# T27 integrated attempt — fixture SE-2026-000249",
