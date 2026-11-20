@@ -92,7 +92,10 @@ def test_US_GPS_01_AC2_disabled_market_rejects_without_storing(gps: Api) -> None
 
 
 def test_US_GPS_01_AC3_privacy_notice_is_required(gps: Api) -> None:
-    execute(gps.dsn, "UPDATE ref.compliance_record SET status='missing' WHERE type='GPS_NOTICE'")
+    execute(
+        gps.dsn,
+        "UPDATE ref.compliance_record SET status='missing' WHERE type='GPS_NOTICE'",
+    )
     assert_error(send(gps, key=str(uuid4())), 403, "FORBIDDEN")
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
 
@@ -107,7 +110,9 @@ def test_US_GPS_01_AC3_privacy_notice_is_required(gps: Api) -> None:
         {**POINT, "source": "device"},
     ],
 )
-def test_US_GPS_01_AC2_invalid_point_rejected_without_write(gps: Api, invalid: dict[str, object]) -> None:
+def test_US_GPS_01_AC2_invalid_point_rejected_without_write(
+    gps: Api, invalid: dict[str, object]
+) -> None:
     assert_error(send(gps, invalid, key=str(uuid4())), 422, "VALIDATION_ERROR")
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
 
@@ -124,7 +129,10 @@ def test_US_GPS_02_AC2_other_roles_cannot_read_live(gps: Api, user_id: int) -> N
 
 
 def test_US_GPS_02_AC1_unassigned_dispatcher_gets_empty_live_list(gps: Api) -> None:
-    execute(gps.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=NULL WHERE id=1")
+    execute(
+        gps.dsn,
+        "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=NULL WHERE id=1",
+    )
     response = gps.get("/gps/live", 2)
     assert response.status_code == 200 and response.json() == []
 
