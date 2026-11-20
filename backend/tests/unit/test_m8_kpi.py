@@ -43,10 +43,14 @@ def test_US_KPI_01_AC3_capacity_is_total_booked_over_total_available() -> None:
 
 
 def test_US_KPI_01_AC1_all_contract_metrics_have_unique_keys() -> None:
-    assert len(METRICS) == len(set(METRICS)) == 10
-    assert "km_per_delivery" in METRICS
-    assert "labour_hours_per_delivery" in METRICS
-    assert "manual_plan_count" in METRICS
+    assert METRICS == (
+        "planning_time_min",
+        "on_time_rate",
+        "plan_acceptance_rate",
+        "manual_intervention_rate",
+        "eta_error_min",
+    )
+    assert len(METRICS) == len(set(METRICS))
 
 
 def test_US_KPI_01_AC1_stockholm_dst_repeated_hour_is_same_local_day() -> None:

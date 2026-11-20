@@ -308,6 +308,10 @@ def test_US_KPI_01_AC1_two_vehicle_order_counts_once_and_eta_requires_snapshot(k
     add_approval_evidence(kpi)
     execute(
         kpi.dsn,
+        "INSERT INTO ref.vehicle (home_warehouse_id, code, plate, name, capacity_kg, capacity_m3, "
+        "required_licence) VALUES "
+        "(1, 'KPI-V-1', 'KPI001', 'Synthetic truck 1', 8000, 30, 'C'), "
+        "(1, 'KPI-V-2', 'KPI002', 'Synthetic truck 2', 8000, 30, 'C')",
         rows.trip_sql(1),
         rows.trip_sql(2),
         rows.stop_sql(1, 4),
