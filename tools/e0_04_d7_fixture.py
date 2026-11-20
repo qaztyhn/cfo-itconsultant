@@ -4,6 +4,7 @@ This is fixture-only verification, never legal tachograph evidence. It does not
 write HR tables or grant driver availability; named future shifts are separate.
 """
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -33,7 +34,7 @@ def write(name: str, value: dict) -> str:
 
 
 def main() -> None:
-    ROOT.mkdir(exist_ok=True)
+    ROOT.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(VEHICLES, ROOT / "vehicles.json")
     first = TARGET - timedelta(days=56)
     hashes = {
@@ -102,8 +103,18 @@ def main() -> None:
             "source_kind": "synthetic_demo",
             "legal_verified": False,
             "verified_by": "Synthetic E0-04 Fixture Reviewer",
-            "verified_at": "2026-12-01T09:00:00+01:00",
-            "expires_at": "2026-12-02T09:00:00+01:00",
+            # The D7 demo attestation is explicitly synthetic. The execution
+            # fixture covers the completed previous day and is verified only
+            # after that day's synthetic duties have ended.
+            "verified_at": (
+                "2026-12-01T09:00:00+01:00"
+                if TARGET == date(2026, 12, 1) else stamp(TARGET, 5)
+            ),
+            "expires_at": (
+                "2026-12-02T09:00:00+01:00"
+                if TARGET == date(2026, 12, 1)
+                else stamp(TARGET + timedelta(days=1), 9)
+            ),
             "revoked": False,
             "sha256": hashes,
         },
@@ -114,4 +125,22 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target-date", choices=("2026-12-01", "2026-12-02"),
+        default="2026-12-01", help="Only the two attested E0-04 synthetic days",
+    )
+    parser.add_argument(
+        "--output", type=Path,
+        help="Optional disposable synthetic output directory; no production targets",
+    )
+    args = parser.parse_args()
+    if args.output is not None:
+        expected = (
+            Path(__file__).resolve().parents[1] / ".e0_04_d7" / "step8_dec02"
+        ).resolve()
+        if args.target_date != "2026-12-02" or args.output.resolve() != expected:
+            parser.error("Execution fixture may only be written under the isolated E0-04 directory")
+        ROOT = expected
+    TARGET = date.fromisoformat(args.target_date)
     main()
