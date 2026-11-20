@@ -33,6 +33,13 @@ const liveTrips = [
 
 const assignments = new Map<number, number>([[930, 101], [931, 101], [932, 101]]);
 
+export function resetTrackingMockAssignments(): void {
+  assignments.clear();
+  assignments.set(930, 101);
+  assignments.set(931, 101);
+  assignments.set(932, 101);
+}
+
 function dispatcher(request: Request) {
   const account = accountFromRequest(request);
   if (!account) return { account: null, denied: errorResponse(request, 401, "AUTH_INVALID", "Sign in required.") };
