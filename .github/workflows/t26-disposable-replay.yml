@@ -1,0 +1,62 @@
+name: T26 disposable 12b replay
+on:
+  push:
+    branches: [ci/t26-replay-9ca1f1f]
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9ca1f1f592afb885c9834ebe6d6d0da2d638ea6d
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up disposable demo
+        run: |
+          python -m pip install python-dotenv sqlalchemy
+          python - <<'PY'
+          from pathlib import Path
+          from tools.demo_ci import disposable_env
+
+          env = disposable_env()
+          env["COMPOSE_PROJECT_NAME"] = "cfo-demo-t26"
+          keys = (
+              "APP_ENV", "DEMO_DISPOSABLE", "APP_NOW", "COMPOSE_PROJECT_NAME",
+              "POSTGRES_PASSWORD", "DATABASE_URL", "SOURCE_SE_DATABASE_URL",
+              "SOURCE_SE_API_KEY", "JWT_SECRET", "INTERNAL_TICK_KEY",
+              "SEED_DEMO_PASSWORD", "SOURCE_DB_NAME", "SOURCE_SCHEMA",
+              "SOURCE_SE_BASE_URL", "POSTGRES_PORT", "CFO_API_PORT", "CFO_WEB_PORT",
+              "SOURCE_PORT", "MAILPIT_HTTP_PORT", "MAILPIT_SMTP_PORT",
+              "VITE_API_URL", "CORS_ORIGINS",
+          )
+          path = Path(".env")
+          path.touch(mode=0o600, exist_ok=False)
+          path.write_text("".join(f"{key}='{env[key]}'\n" for key in keys), encoding="utf-8")
+          PY
+      - name: Run T26 seed and 12b verifier on the exact head
+        run: |
+          test "$(git rev-parse HEAD)" = "9ca1f1f592afb885c9834ebe6d6d0da2d638ea6d"
+          python tools/e0_04_prepare.py --t26 --seed-report t26-seed.json
+          python tools/t26_verify.py t26-seed.json > t26-step-12b.json
+          cat t26-step-12b.json
+      - name: Retain synthetic test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t26-replay-9ca1f1f
+          path: |
+            t26-seed.json
+            t26-step-12b.json
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Remove only this runner's disposable demo
+        if: always()
+        run: |
+          if [ -f .env ]; then
+            docker compose --env-file .env -p cfo-demo-t26 down -v --remove-orphans
+          fi
