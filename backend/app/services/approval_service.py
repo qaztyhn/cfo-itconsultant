@@ -57,6 +57,7 @@ from app.domain.models.ref import Market, Vehicle
 from app.domain.models.wms import WmsReservationIntent
 from app.domain.transitions import transition
 from app.services import alert_service, notify_service, reservation_service
+from app.services.dispatcher_assignment import choose_dispatcher
 from app.services.wms_mode import require_simulated_or_off
 
 
@@ -606,6 +607,9 @@ async def _approve(
         "sales" if sales else "dispatcher",
         sales_approved_plan_id=plan.id if sales else None,
     )
+    # Acquire the market-scoped lock only after the existing approval resource locks.
+    # Keep it until ALL trips have been inserted in this approval transaction.
+    assigned_dispatcher = await choose_dispatcher(session, order.market_id)
     trips: list[int] = []
     for vehicle in selected:
         trip = DeliveryTrip(
@@ -613,12 +617,21 @@ async def _approve(
             warehouse_id=plan.warehouse_id,
             vehicle_id=vehicle.vehicle_id,
             driver_employee_id=vehicle.driver_employee_id,
+            assigned_dispatcher_employee_id=assigned_dispatcher,
             depart_planned_at=vehicle.depart_at,
         )
         session.add(trip)
         await session.flush()
         session.add(TripStop(trip_id=trip.id, order_id=order.id, seq=1, eta_planned_at=vehicle.eta_at))
         trips.append(trip.id)
+    if assigned_dispatcher is None:
+        await alert_service.raise_alert(
+            session, market_id=order.market_id,
+            type_="NO_DISPATCHER_IN_ROTATION", level="warning",
+            message="No active Dispatcher is enrolled in this market rotation.",
+            dedupe_key=f"NO_DISPATCHER_IN_ROTATION:order:{order.id}",
+            target_roles=["dispatcher", "admin"], order_id=order.id,
+        )
     session.add(
         EtaForecast(
             order_id=order.id,
