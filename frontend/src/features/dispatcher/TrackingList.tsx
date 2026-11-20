@@ -2,8 +2,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRightLeft, MapPin, RefreshCcw, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { isApiError } from "../../api/client";
 import { fetchLocations } from "../../api/locations";
+import { PATHS } from "../../app/access";
 import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { resolveTimeZone, type LocationWithTimeZone } from "../warehouse/prep-queue/timezone";
@@ -103,6 +105,10 @@ function TripRow({ trip, zone, onHandover }: {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="flex flex-col gap-2 text-sm text-inkMuted">
           <span>Quãng đường còn lại: {trip.remaining_km === null ? "Chưa xác định" : trip.remaining_km + " km"}</span>
+          {trip.risk?.status === "PREDICTED_LATE" && <Link
+            to={`${PATHS.notifications}?order_id=${trip.order_id}`} className="font-semibold underline">
+            Review delay notice
+          </Link>}
           {incident && <span role="status" className="flex items-center gap-2 text-risk-predictedLate-fg">
             <AlertTriangle aria-hidden="true" className="h-4 w-4" /> Sự cố mở: {incident}
           </span>}

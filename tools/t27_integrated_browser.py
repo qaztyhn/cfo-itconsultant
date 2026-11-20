@@ -856,12 +856,171 @@ def mailpit_lifecycle(report: dict, env: dict[str, str], templates: tuple[str, .
             if f"Order {order_no}: {PHRASES[template]}" not in message:
                 mark(report, "10", "FAIL", f"Mailpit {template} template did not match the same order.")
                 return
+            if template == "DELAY":
+                step = next(row for row in report["steps"] if row["step"] == "9")
+                start, end = step["reviewed_window"]
+                if f"Delivery window: {start} – {end}." not in message:
+                    mark(report, "10", "FAIL", "Mailpit DELAY email does not match the reviewed window.")
+                    return
     mark(report, "10", "PASS", f"{', '.join(templates)} reached Mailpit once each for the same order.",
          notifications={template: int(id_) for template, id_, *_ in sent}, worker_app_now=worker_at)
 
 
+def dispatcher_delay(browser, page: Page, password: str, order_id: int, trip_id: int,
+                     report: dict, env: dict[str, str], out: Path, last_fix: str,
+                     latitude: float, longitude: float) -> tuple[dict[str, str], str]:
+    """Two real, spaced driver fixes before the promise deadline create a real late signal."""
+    report["active_step"] = "9"
+    for index in (1, 2):
+        env = _advance_driver_clock(page, env, 360, report, f"late_position_{index}")
+        page.context.set_geolocation({"latitude": latitude + 2.5, "longitude": longitude + index / 100,
+                                      "accuracy": 20})
+        with page.expect_response(lambda r: r.request.method == "POST" and
+                                  urlsplit(r.url).path == f"/api/v1/trips/{trip_id}/positions") as sent:
+            page.get_by_role("button", name="Update location").click()
+        response = sent.value
+        report["api"].append(metadata(response))
+        if response.status != 202:
+            raise EvidenceMismatch("Risk scenario driver position was not accepted")
+        last_fix = verify_position_request(response.request.post_data_json, server_now=env["APP_NOW"],
+                                           not_before=last_fix, newer_than=last_fix)
+        expect(page.get_by_role("status").filter(has_text=re.compile(r"^Position sent"))).to_be_visible()
+
+    risk = sql(
+        "SELECT version||'|'||forecast_eta::text||'|'||risk_status||'|'||consecutive_negative "
+        f"FROM ops.eta_forecast WHERE order_id={order_id} ORDER BY version DESC LIMIT 1", env,
+    ).split("|")
+    if len(risk) != 4 or risk[2] != "PREDICTED_LATE" or int(risk[3]) < 2 or sql(
+        f"SELECT count(*) FROM ops.alert WHERE order_id={order_id} "
+        "AND type='PREDICTED_LATE' AND resolved_at IS NULL", env,
+    ) != "1":
+        raise EvidenceMismatch("Two spaced GPS events did not produce the committed predicted-late alert")
+    if sql(f"SELECT count(*) FROM ops.notification WHERE order_id={order_id} AND template='DELAY'", env) != "0":
+        raise EvidenceMismatch("Unreviewed risk unexpectedly created a customer DELAY draft")
+    account = sql(
+        "SELECT u.email FROM ref.app_user u JOIN ops.delivery_trip t "
+        "ON u.employee_id=t.assigned_dispatcher_employee_id "
+        f"WHERE t.id={trip_id} AND u.is_active AND 'dispatcher'=ANY(u.roles)", env,
+    )
+    dispatcher = login(browser, "/dispatcher/tracking", account, password, out, "Dispatcher",
+                       app_now=env["APP_NOW"])
+    try:
+        row = dispatcher.get_by_role("listitem", name=f"Chuyến {trip_id}", exact=True)
+        expect(row.get_by_text("Rủi ro: Dự kiến trễ", exact=True)).to_be_visible()
+        row.get_by_role("link", name="Review delay notice", exact=True).click()
+        form = dispatcher.get_by_role("form", name="Prepare DELAY draft")
+        start = aware(risk[1]).astimezone(ZoneInfo(ZONE))
+        end = start + timedelta(minutes=30)
+        form.get_by_label("Reviewed start", exact=False).fill(start.isoformat())
+        form.get_by_label("Reviewed end", exact=False).fill(end.isoformat())
+        with dispatcher.expect_response(lambda r: r.request.method == "POST" and
+                                        urlsplit(r.url).path == f"/api/v1/orders/{order_id}/delay-notice") as prepared:
+            form.get_by_role("button", name="Prepare draft", exact=True).click()
+        ack = body(prepared.value, report)
+        notice_id = ack.get("id")
+        if type(notice_id) is not int or ack.get("status") != "draft" or sql(
+            f"SELECT status FROM ops.notification WHERE id={notice_id} AND order_id={order_id}", env,
+        ) != "draft":
+            raise EvidenceMismatch("Dispatcher did not create the reviewed same-order DELAY draft")
+        expect(dispatcher.get_by_text("Review DELAY notice", exact=True)).to_be_visible()
+        with dispatcher.expect_response(lambda r: r.request.method == "POST" and
+                                        urlsplit(r.url).path == f"/api/v1/notifications/{notice_id}/send") as sent:
+            dispatcher.get_by_role("button", name="Send", exact=True).click()
+        if body(sent.value, report).get("status") != "queued" or sql(
+            f"SELECT status FROM ops.notification WHERE id={notice_id} AND order_id={order_id}", env,
+        ) != "queued":
+            raise EvidenceMismatch("Dispatcher did not queue the reviewed DELAY notice")
+        queued = dispatcher.get_by_text("Queued for delivery.", exact=False)
+        expect(queued).to_be_visible()
+        queued.screenshot(path=out / "09-dispatcher-delay-queued.png")
+        mark(report, "9", "PASS",
+             "Assigned Dispatcher saw same-trip live location, ETA and predicted late. "
+             "Two spaced driver fixes produced the real alert; reviewed DELAY draft was explicitly queued.",
+             tracking="PASS", trip_id=trip_id, eta_version=int(risk[0]), notification_id=notice_id,
+             reviewed_window=[start.isoformat(timespec="minutes"), end.isoformat(timespec="minutes")])
+        return env, last_fix
+    finally:
+        dispatcher.close()
+
+
+def failed_delivery(browser, page: Page, password: str, order_id: int, trip_id: int,
+                    report: dict, env: dict[str, str], out: Path, last_fix: str) -> None:
+    report["active_step"] = "13"
+    env = _advance_driver_clock(page, env, 60, report, "failed")
+    runs = f"SELECT count(*) FROM plan.planning_run WHERE order_id={order_id}"
+    before = sql(runs, env)
+    page.get_by_role("radio", name="Failed", exact=True).check()
+    page.get_by_role("combobox", name=re.compile("^Failure reason")).select_option("customer_absent")
+    with page.expect_response(lambda r: r.request.method == "POST" and
+                              urlsplit(r.url).path == f"/api/v1/orders/{order_id}/events") as posted:
+        page.get_by_role("button", name="Confirm failed", exact=True).click()
+    info = metadata(posted.value)
+    report["api"].append(info)
+    if posted.value.status != 200:
+        mark(report, "13", "FAIL", "Driver completion FAILED request was rejected.", http=info)
+        return
+    request = posted.value.request.post_data_json
+    verify_event_request(request, event_type="FAILED", trip_id=trip_id,
+                         server_now=env["APP_NOW"], not_before=last_fix)
+    verify_position_request(request["payload"]["position"], server_now=env["APP_NOW"],
+                            not_before=last_fix, newer_than=last_fix)
+    ack = posted.value.json()
+    event_id = ack["event_id"]
+    if type(event_id) is not int or ack["order_status"] != "FAILED":
+        raise EvidenceMismatch("Driver FAILED HTTP 200 lacks terminal order evidence")
+    terminal = sql(
+        "SELECT o.status||'|'||t.status||'|'||p.failure_reason FROM ops.customer_order o "
+        "JOIN ops.proof_of_delivery p ON p.order_id=o.id AND p.result='failed' "
+        "JOIN ops.trip_stop s ON s.id=p.trip_stop_id JOIN ops.delivery_trip t ON t.id=s.trip_id "
+        "JOIN ops.milestone_event e ON e.order_id=o.id AND e.trip_id=t.id AND e.event_type='FAILED' "
+        f"WHERE o.id={order_id} AND t.id={trip_id} AND e.id={event_id}", env,
+    )
+    alert = sql(
+        f"SELECT id FROM ops.alert WHERE order_id={order_id} "
+        "AND type='DELIVERY_FAILED' AND level='critical' AND resolved_at IS NULL", env,
+    )
+    if terminal != "FAILED|completed|customer_absent" or not alert.isdecimal() or sql(runs, env) != before:
+        raise EvidenceMismatch("FAILED POD, same-order alert or no-auto-replan evidence disagrees")
+    expect(page.get_by_text("Trip ended.", exact=False)).to_be_visible()
+    _driver_screenshot(page, out, "13-driver-failed.png")
+    account = sql(
+        "SELECT u.email FROM ref.app_user u JOIN ops.delivery_trip t "
+        "ON u.employee_id=t.assigned_dispatcher_employee_id "
+        f"WHERE t.id={trip_id} AND u.is_active AND 'dispatcher'=ANY(u.roles)", env,
+    )
+    dispatcher = login(browser, "/dispatcher/exceptions", account, password, out, "Dispatcher",
+                       app_now=env["APP_NOW"])
+    try:
+        with dispatcher.expect_response(lambda r: urlsplit(r.url).path == "/api/v1/alerts"
+                                        and "type=DELIVERY_FAILED" in r.url) as got:
+            dispatcher.get_by_role("button", name="Delivery failures", exact=True).click()
+        if got.value.status != 200 or not any(
+            item["id"] == int(alert) and item["order_id"] == order_id for item in got.value.json()["items"]
+        ):
+            raise EvidenceMismatch("Dispatcher did not receive the exact failed-delivery alert")
+        row = dispatcher.get_by_role("article").filter(has=dispatcher.get_by_role(
+            "heading", name=f"Delivery failed · Order #{order_id}", exact=True
+        ))
+        with dispatcher.expect_response(lambda r: r.request.method == "POST" and
+                                        urlsplit(r.url).path == f"/api/v1/alerts/{alert}/ack") as acknowledged:
+            row.get_by_role("button", name="Acknowledge delivery failure", exact=True).click()
+        if acknowledged.value.status != 200 or sql(
+            f"SELECT (acknowledged_at IS NOT NULL)::text FROM ops.alert WHERE id={alert}", env,
+        ) != "true":
+            raise EvidenceMismatch("Dispatcher acknowledgment was not committed")
+        expect(row.get_by_role("status").get_by_text("Acknowledged", exact=True)).to_be_visible()
+        row.screenshot(path=out / "13-dispatcher-failure-ack.png")
+        mark(report, "13", "PASS",
+             "Driver FAILED with a new fix and POD. Dispatcher saw and acknowledged DELIVERY_FAILED. "
+             "No automatic replanning occurred.",
+             event_id=event_id, alert_id=int(alert), order_id=order_id, trip_id=trip_id)
+        report["last_verified"] = "Delivery failure and Dispatcher acknowledgment persisted"
+    finally:
+        dispatcher.close()
+
+
 def driver(browser, password: str, trip_id: int, order_id: int,
-           out: Path, report: dict, env: dict[str, str]) -> None:
+           out: Path, report: dict, env: dict[str, str], *, fail_delivery: bool = False) -> None:
     """One real assigned-driver Chrome session and one PostgreSQL transaction chain."""
     plan_id = report["plan_id"]
     order_no = report["order_no"]
@@ -1039,6 +1198,14 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         report["last_verified"] = "Driver GPS HTTP202 + driver_tap point and new ETA in PostgreSQL (pre-purge)"
         _driver_screenshot(page, out, "10-driver-location-sent.png")
         dispatcher_tracking(browser, password, order_id, trip_id, gps_stage, report, env)
+        if fail_delivery:
+            env, recorded = dispatcher_delay(
+                browser, page, password, order_id, trip_id, report, env, out, recorded, latitude, longitude
+            )
+            page.context.set_geolocation({"latitude": latitude + 0.00002,
+                                          "longitude": longitude + 0.00002, "accuracy": 15})
+            failed_delivery(browser, page, password, order_id, trip_id, report, env, out, recorded)
+            return
         # T14: set a *new* Chrome fix, advance both clocks and click UI outcome.
         # The browser captures the real Geolocation API again, not the previous point.
         env = _advance_driver_clock(page, env, 60, report, "delivered")
@@ -1185,6 +1352,7 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scenario", choices=("complete", "failed"), default="complete")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--output", type=Path, help="Run the full Chrome scenario and save its evidence.")
     mode.add_argument("--prepare-wms", action="store_true", help="Start WMS for an existing manual demo plan.")
@@ -1280,15 +1448,23 @@ def main() -> int:
                             if not any(line.isdecimal() for line in expired.splitlines()):
                                 raise EvidenceMismatch("No exact-trip T12 qualification to expire")
                             report["t12_test_case"] = "expired_qualification_after_loading"
-                        driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env)
-                    terminal_clock = report.get("driver_clocks", {}).get("delivered")
+                        driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env,
+                               fail_delivery=args.scenario == "failed")
+                    terminal_clock = report.get("driver_clocks", {}).get(
+                        "failed" if args.scenario == "failed" else "delivered"
+                    )
                     if terminal_clock:
                         execution_env = {**execution_env, "APP_NOW": terminal_clock["api"]}
                     report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, execution_env)
-                    if next(row for row in report["steps"] if row["step"] == "8")["status"] == "PASS":
+                    terminal_step = "13" if args.scenario == "failed" else "8"
+                    if next(row for row in report["steps"] if row["step"] == terminal_step)["status"] == "PASS":
                         report["active_step"] = "10"
-                        mailpit_lifecycle(report, execution_env, ("DISPATCHED", "DELIVERED"))
+                        templates = (
+                            ("DISPATCHED", "DELAY", "FAILED") if args.scenario == "failed"
+                            else ("DISPATCHED", "DELIVERED")
+                        )
+                        mailpit_lifecycle(report, execution_env, templates)
                 else:
                     # Same order may still be available for CS even when approval
                     # was blocked; do not attempt unauthorized warehouse actions.
@@ -1301,6 +1477,11 @@ def main() -> int:
         report["step8_status"] = statuses["8"]
         if statuses["8"] == "BLOCKED":
             report["result"] = "BLOCKED_STEP8"
+        elif args.scenario == "failed":
+            report["result"] = (
+                "PASS_FAILURE_SCENARIO" if statuses["13"] == "PASS" and "FAIL" not in statuses.values()
+                else "FAIL"
+            )
         elif statuses["8"] == "NOT VERIFIED":
             report["result"] = "BLOCKED_UPSTREAM"
         else:
@@ -1328,8 +1509,9 @@ def main() -> int:
     finally:
         # Preserve blocked substeps as not completed. T30 and E5 are separate
         # fixture runs, not evidence of success on SE-2026-000249.
-        for step in ("12", "12b"):
-            mark(report, step, "NOT VERIFIED", "Run the separate T27 reporting scenario on the T26 seed.")
+        if args.scenario == "complete":
+            for step in ("12", "12b"):
+                mark(report, step, "NOT VERIFIED", "Run the separate T27 reporting scenario on the T26 seed.")
         (args.output / "t27-integrated.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         rows = ["# T27 integrated attempt — fixture SE-2026-000249",
                 "", f"Commit: {report['revision']}", f"Sales/Approve clock: {NOW} / {ZONE}",
@@ -1389,7 +1571,7 @@ def main() -> int:
         print("T27 result", report["result"], "| last verified", report["last_verified"])
         print("T27 statuses", json.dumps({s: sum(item["status"] == s for item in report["steps"])
             for s in ("PASS", "FAIL", "BLOCKED", "NOT VERIFIED")}))
-    return (0 if report["result"] == "PASS_WITH_BLOCKERS"
+    return (0 if report["result"] in {"PASS_WITH_BLOCKERS", "PASS_FAILURE_SCENARIO"}
             else 2 if report["result"].startswith("BLOCKED") else 1)
 
 

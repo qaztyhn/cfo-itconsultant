@@ -11,11 +11,13 @@ import { useAuthStore } from "../../app/store";
 import { EmptyState, LoadingState } from "../../components/StateViews";
 import { evidence, orders, skuDetails, suggestions, type Tab } from "./exceptions/model";
 import { NoFeasibleDate } from "./NoFeasibleDate";
+import { DeliveryFailures } from "./exceptions/DeliveryFailures";
 
-const TABS: { key: Tab; title: string }[] = [
+const TABS: { key: Tab | "delivery-failed"; title: string }[] = [
   { key:"no-feasible", title:"No Feasible Date" },
   { key:"replan", title:"Replan Suggested" },
   { key:"blocked", title:"Blocked / Unmapped SKU" },
+  { key:"delivery-failed", title:"Delivery failures" },
 ];
 const REF = /^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$/;
 
@@ -100,12 +102,13 @@ export function Exceptions() {
   const allowed=Boolean(user?.roles.includes("dispatcher"));
   const [params,setParams]=useSearchParams();
   const current=params.get("tab");
+  const showFailures = current === "delivery-failed";
   const tab:Tab=current === "replan" || current === "blocked" ? current : "no-feasible";
   const search=params.get("q") ?? "";
   const [detail,setDetail]=useState<{type:Tab;id:number}|null>(null);
   const list=useQuery({
     queryKey:["dispatcher-exceptions",user?.id,user?.market,tab],
-    enabled:allowed,
+    enabled:allowed && !showFailures,
     retry:false,
     queryFn:({signal})=>tab === "replan"
       ? apiGet<unknown>("/alerts",{type:"REPLAN_SUGGESTED",resolved:false},signal)
@@ -131,10 +134,11 @@ export function Exceptions() {
       <p className="mt-2 text-sm text-inkMuted">Inspect infeasible orders, proposed replans and legacy SKU blockers without changing committed work.</p>
     </header>
     <nav aria-label="Exception categories" className="flex flex-wrap gap-2">
-      {TABS.map(x=><button key={x.key} type="button" aria-current={tab===x.key?"page":undefined}
-        className={`rounded-control px-4 py-2 text-sm font-semibold ${tab===x.key?"bg-pine text-white":"border border-border bg-surface text-ink"}`}
+      {TABS.map(x=><button key={x.key} type="button" aria-current={(showFailures ? "delivery-failed" : tab) === x.key ? "page" : undefined}
+        className={`rounded-control px-4 py-2 text-sm font-semibold ${(showFailures ? "delivery-failed" : tab) === x.key ? "bg-pine text-white":"border border-border bg-surface text-ink"}`}
         onClick={()=>change("tab",x.key)}>{x.title}</button>)}
     </nav>
+    {showFailures && user ? <DeliveryFailures userId={user.id} market={user.market} /> : <>
     <div className="flex flex-wrap items-end justify-between gap-3">
       <label className="flex flex-col gap-1 text-sm font-semibold text-ink">Search order reference or reason
         <input value={search} onChange={e=>change("q",e.target.value)}
@@ -181,5 +185,6 @@ export function Exceptions() {
     {detail?.type === "no-feasible" ?
       <InfeasibleOrderDetail key={detail.id} orderId={detail.id} onClose={() => setDetail(null)} /> :
       detail && <Detail key={`${detail.type}-${detail.id}`} type={detail.type} id={detail.id} onClose={()=>setDetail(null)} />}
+    </>}
   </section>;
 }

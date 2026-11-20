@@ -1,7 +1,7 @@
 name: T27 integrated pre-Sync to Mailpit/Driver Chrome (disposable E0-04)
 on:
   push:
-    branches: [feat/r3-t27-integrated-e004, feat/r3-t27-same-order-driver-step8, feat/r3-t27-complete-replay]
+    branches: [feat/r3-t27-integrated-e004, feat/r3-t27-same-order-driver-step8, feat/r3-t27-complete-replay, feat/r3-t27-exceptions-replay]
   pull_request:
     branches: [feat/r3-t27-integrated-e004]
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [complete, expired_t12, reporting]
+        scenario: [complete, expired_t12, failed, reporting]
     env:
       APP_ENV: test
       DEMO_DISPOSABLE: "1"
@@ -97,7 +97,9 @@ jobs:
           set +a
           export APP_NOW="2026-12-01T10:05:00+01:00"
           set +e
-          python tools/t27_integrated_browser.py --output t27-integrated-e004
+          scenario="${{ matrix.scenario }}"
+          if [ "$scenario" = "expired_t12" ]; then scenario=complete; fi
+          python tools/t27_integrated_browser.py --output t27-integrated-e004 --scenario "$scenario"
           result=$?
           set -e
           python - "${{ matrix.scenario }}" "$result" <<'PY'
@@ -112,6 +114,9 @@ jobs:
               assert exit_code == 0 and report["result"] == "PASS_WITH_BLOCKERS"
               assert all(stages[name]["status"] == "PASS" for name in ("dispatch", "gps", "delivered"))
               assert all(statuses[step] == "PASS" for step in ("1", "2", "4", "5", "6", "7", "8", "10", "11"))
+          elif scenario == "failed":
+              assert exit_code == 0 and report["result"] == "PASS_FAILURE_SCENARIO"
+              assert all(statuses[step] == "PASS" for step in ("9", "10", "13"))
           else:
               assert exit_code == 2 and report["result"] == "BLOCKED_STEP8"
               assert stages["dispatch"]["status"] == "BLOCKED"
