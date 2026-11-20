@@ -254,7 +254,7 @@ describe("Approval", () => {
     await userEvent.setup().selectOptions(screen.getByLabelText(/Customer agreement for/), "19");
     await userEvent.setup().click(approveButton(1));
     await userEvent.setup().click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
-    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
+    await screen.findByText("Plan approved");
     expect(calls[0].body).toEqual({ date_negotiation_id: 19 });
   });
 
@@ -264,7 +264,7 @@ describe("Approval", () => {
     await userEvent.setup().click(approveButton(1));
     await userEvent.setup().click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
     expect(await screen.findByText("Customer date agreement required")).toBeInTheDocument();
-    expect(screen.queryByText(/Approved · order status/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan approved")).not.toBeInTheDocument();
   });
 
   it("test_US_PLN_07_AC3_blocks_when_requested_date_read_is_forbidden", async () => {
@@ -318,13 +318,38 @@ describe("Approval", () => {
     await user.click(approveButton(1));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
 
-    expect(await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/)).toBeInTheDocument();
+    const approval = (await screen.findByText("Plan approved")).closest('[role="status"]');
+    expect(approval).toHaveTextContent("Confirmation email queued");
+    expect(approval).not.toHaveTextContent(/WMS|email sent/i);
     expect(calls).toHaveLength(1);
     expect(calls[0].planId).toBe("4121");
     expect(calls[0].key).toMatch(/^[\w-]{8,}$/);
     expect(calls[0].body).toEqual({});
     expect(approveButton(1)).toBeDisabled();
-    expect(screen.getByText("CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.")).toBeInTheDocument();
+    expect(screen.getByText("Only a proposed plan can be approved.")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["sent", [{ id: 77, template: "CONFIRMED", status: "sent" }]],
+    ["suppressed", [{ id: 77, template: "CONFIRMED", status: "suppressed" }]],
+    ["another template queued", [{ id: 77, template: "DISPATCHED", status: "queued" }]],
+  ])("test_US_NOT_01_AC1_shows_plan_approved_without_queued_email_when_%s", async (_scenario, notifications) => {
+    server.use(http.post(approveUrl, () => HttpResponse.json({
+      order: { status: "APPROVED" },
+      plan: { id: 4121, status: "approved" },
+      trip_ids: [930],
+      notifications,
+    })));
+    await openPlan(MOCK_RUN_IDS.normal);
+    const user = userEvent.setup();
+
+    await user.click(approveButton(1));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
+
+    expect(await screen.findByText("Plan approved")).toBeInTheDocument();
+    expect(screen.queryByText("Confirmation email queued")).not.toBeInTheDocument();
+    expect(approveButton(1)).toBeDisabled();
   });
 
   it("test_US_APR_01_AC1_keeps_unknown_WMS_status_during_timeout_and_prevents_double_submit", async () => {
@@ -340,7 +365,7 @@ describe("Approval", () => {
     await userEvent.setup().click(confirm);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(confirm).toBeDisabled();
-    expect(screen.queryByText(/WMS reservation is unverified/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Confirmation email queued")).not.toBeInTheDocument();
     expect(screen.queryByText(/Plan approved/)).not.toBeInTheDocument();
   });
 
@@ -361,7 +386,7 @@ describe("Approval", () => {
     expect(confirm).toBeEnabled();
     await user.click(confirm);
 
-    expect(await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/)).toBeInTheDocument();
+    expect(await screen.findByText("Plan approved")).toBeInTheDocument();
     expect(calls[0].planId).toBe("4122");
     expect(calls[0].body).toEqual({ reason_code: "closest_to_customer", reason_text: "Customer site is nearer Malmö" });
   });
@@ -391,7 +416,7 @@ describe("Approval", () => {
     expect(await within(dialog).findByText("Temporary failure.")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Approve #1" }));
-    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
+    await screen.findByText("Plan approved");
 
     expect(calls).toHaveLength(2);
     expect(calls[0].key).toBeTruthy();
@@ -485,8 +510,8 @@ describe("Approval", () => {
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
 
     expect(await screen.findByText("Approval not confirmed")).toBeInTheDocument();
-    expect(screen.queryByText(/Approved · order status/)).not.toBeInTheDocument();
-    expect(screen.queryByText("CFO recorded the request; WMS reservation remains unverified. Check the order before any further action.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan approved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Confirmation email queued")).not.toBeInTheDocument();
     expect(approveButton(1)).toBeEnabled();
   });
 
@@ -495,7 +520,7 @@ describe("Approval", () => {
     const user = userEvent.setup();
     await user.click(approveButton(1));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve #1" }));
-    await screen.findByText(/CFO reports APPROVED; WMS reservation is unverified/);
+    await screen.findByText("Plan approved");
 
     const second = await fetch(`${API_BASE_URL}/plans/4122/approve`, {
       method: "POST",
@@ -546,6 +571,6 @@ describe("Latest advisory run recovery navigation (P0 regression)", () => {
     expect(screen.getByRole("link", { name: "Review replan in Exceptions" }))
       .toHaveAttribute("href", "/dispatcher/exceptions?tab=replan");
     expect(approveButton(1)).toBeDisabled();
-    expect(screen.queryByText(/CFO reports APPROVED/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan approved")).not.toBeInTheDocument();
   });
 });

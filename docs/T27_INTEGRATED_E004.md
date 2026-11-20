@@ -69,13 +69,21 @@ deadline described above. Use the backend venv with `python-dotenv` and
    click it again to restore the Open group. Stock freshness uses the last
    successful load in the Dispatcher's market. In this demo the hold uses the
    same fixed Stockholm clock as the API, so its remaining time stays fixed.
-2. Open the row's **Plan review**, select the proposed plan, then click
-   **Approve** and confirm. A feasible `tight` plan requires no separate
-   acknowledgement. Verify HTTP `200` with `trip_ids`. To verify Sales approval
-   independently, use a separate clean run with an eligible initial plan in the
-   Sales user's own store, then click **Confirm standard delivery plan**. This patch
-   implements the tight-plan clause of DEC-R3-10. Other T19 cases are tracked
-   separately.
+2. Open the row's **Plan review** and select the proposed plan. Before clicking
+   **Approve**, open DevTools → **Network**, enable **Preserve log**, and filter
+   by `/plans/{plan_id}/approve` using the ID printed by `--prepare-wms` (for
+   example, `/plans/2/approve`). Click **Approve** and confirm. A feasible
+   `tight` plan requires no separate acknowledgement. Capture the `POST` and
+   verify HTTP `200`, `order.status = APPROVED`, the selected `plan.id`,
+   `plan.status = approved` and `trip_ids`. The UI shows **Plan approved** and
+   disables Approve with **Only a proposed plan can be approved.** When the
+   response includes a `CONFIRMED` notification with status `queued`, the UI
+   also shows **Confirmation email queued**. The integrated runner verifies
+   simulated WMS separately against its reservation and accepted stock batch.
+   To verify Sales approval independently, use a separate clean run with an
+   eligible initial plan in the Sales user's own store, then click **Confirm
+   standard delivery plan**. This patch implements the tight-plan clause of
+   DEC-R3-10. Other T19 cases are tracked separately.
 3. For the confirmation email, start the existing disposable worker once
    approval has queued the message. In Git Bash or a POSIX shell:
 
