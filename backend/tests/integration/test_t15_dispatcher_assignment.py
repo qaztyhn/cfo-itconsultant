@@ -143,9 +143,10 @@ def handover_api(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
         "VALUES(1,1,'2026-01-01'),(2,1,'2026-01-01')",
         "INSERT INTO hr.driver_staff(employee_id,home_warehouse_id,licence_class,licence_expires_on) "
         "VALUES (1,1,'C','2027-01-01')",
-        "INSERT INTO hr.employee_shift_schedule "
-        "(employee_id,warehouse_id,work_date,start_time,end_time,status,assigned_by,assigned_at) "
-        "VALUES(1,1,'2026-11-04','07:00','17:00','scheduled',1,'2026-11-03T08:00:00Z')",
+        "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+        "max_driving_min,verified_by,verified_at,source,source_ref) "
+        "VALUES(1,'2026-11-04','2026-11-04T07:00Z','2026-11-04T17:00Z',540,"
+        "'synthetic-demo','2026-11-03T08:00Z','synthetic_demo','t15-availability')",
         "INSERT INTO ops.delivery_trip "
         "(warehouse_id,vehicle_id,driver_employee_id,assigned_dispatcher_employee_id,"
         "depart_planned_at,depart_actual_at,status) VALUES "

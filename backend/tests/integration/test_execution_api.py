@@ -64,9 +64,12 @@ def execution_api(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F8
 
 GPS_DUTY = (
     "UPDATE ref.market SET gps_enabled=true WHERE id=1",
-    "INSERT INTO hr.employee_shift_schedule (employee_id,warehouse_id,work_date,start_time,end_time,"
-    "assigned_by,assigned_at) VALUES (5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z'), "
-    "(11,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
+    "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+    "max_driving_min,verified_by,verified_at,source,source_ref) VALUES "
+    "(5,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+    "'synthetic-demo','2026-11-08T09:00Z','synthetic_demo','m6-availability-5'), "
+    "(11,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+    "'synthetic-demo','2026-11-08T09:00Z','synthetic_demo','m6-availability-11')",
 )
 
 

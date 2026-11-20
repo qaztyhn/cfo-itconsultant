@@ -1,6 +1,6 @@
 """T13 Round 3 single-point HTTP/PG acceptance (synthetic market only)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -50,9 +50,6 @@ def prepared(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811
         "UPDATE ref.market SET gps_enabled=true, timezone='Europe/Stockholm' WHERE id=1",
         "INSERT INTO ref.compliance_record (market_id,type,status,approved_on,reference) "
         "VALUES(1,'GPS_NOTICE','approved','2026-11-01','SYNTHETIC-T13')",
-        "INSERT INTO hr.employee_shift_schedule "
-        "(employee_id,warehouse_id,work_date,start_time,end_time,assigned_by,assigned_at) "
-        "VALUES(5,1,'2026-11-10','07:00','17:00',3,'2026-11-08T09:00Z')",
         "INSERT INTO hr.driver_availability "
         "(driver_employee_id,work_date,available_from,available_to,max_driving_min,"
         "verified_by,verified_at,source,source_ref) VALUES "
@@ -124,6 +121,8 @@ def test_US_GPS_02_AC1_assigned_dispatcher_only_live_and_hidden_after_trip_end(p
     assert item["trip_id"] == 1 and item["order_id"] == 1 and item["vehicle_code"] == "GPS-1"
     assert item["last_position"] == {"lat": 59.3, "lon": 18.1}
     assert item["updated_at"] and item["forecast_eta"]
+    assert transact(prepared.dsn, lambda session: gps_service.purge_expired(session=session, now=NOW)) == 0
+    assert prepared.get("/gps/live", 2).json()[0]["last_position"] == item["last_position"]
     assert_error(prepared.get("/gps/live", 6), 403, "FORBIDDEN")
     assert_error(prepared.get("/trips/1/positions", 2), 405, "VALIDATION_ERROR")
     execute(prepared.dsn, "UPDATE ops.delivery_trip SET assigned_dispatcher_employee_id=NULL WHERE id=1")
@@ -134,6 +133,61 @@ def test_US_GPS_02_AC1_assigned_dispatcher_only_live_and_hidden_after_trip_end(p
         "status='completed',ended_at='2026-11-10T09:00Z' WHERE id=1",
     )
     assert prepared.get("/gps/live", 2).json() == []
+
+
+def test_US_RSK_01_AC1_later_upload_with_older_recorded_time_updates_two_vehicle_eta_once(
+    prepared: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    execute(
+        prepared.dsn,
+        "INSERT INTO ref.vehicle (home_warehouse_id,code,plate,name,capacity_kg,capacity_m3,"
+        "required_licence) VALUES (1,'GPS-2','GPS-2','Second synthetic vehicle',10000,20,'B')",
+        "INSERT INTO hr.driver_staff(employee_id,home_warehouse_id,licence_class,licence_expires_on) "
+        "VALUES (4,1,'CE','2027-01-31')",
+        "UPDATE ref.app_user SET roles='{driver}' WHERE id=4",
+        "INSERT INTO hr.driver_availability (driver_employee_id,work_date,available_from,available_to,"
+        "max_driving_min,verified_by,verified_at,source,source_ref) "
+        "VALUES (4,'2026-11-10','2026-11-10T07:00Z','2026-11-10T17:00Z',540,"
+        "'synthetic-demo','2026-11-08T09:00Z','synthetic_demo','t13-avail-2')",
+        rows.plan_vehicle_sql(1, 2, 2, driver_id=4),
+        "UPDATE plan.fulfilment_plan SET vehicle_count=2 WHERE id=1",
+        "INSERT INTO ops.delivery_trip (plan_vehicle_id,warehouse_id,vehicle_id,driver_employee_id,"
+        "assigned_dispatcher_employee_id,depart_planned_at,status,depart_actual_at) "
+        "VALUES (2,1,2,4,2,'2026-11-10T07:00Z','on_road','2026-11-10T07:00Z')",
+        rows.stop_sql(2, 1),
+    )
+    clock = {"now": NOW}
+    monkeypatch.setattr(gps_service.clock, "now", lambda: clock["now"])
+
+    async def route(_provider: object, latitude: float, *_args: object, **_kwargs: object) -> RouteEstimate:
+        return RouteEstimate(Decimal("3.2"), 20 if latitude == 59.3 else 160, "ors")
+
+    monkeypatch.setattr(gps_service, "route_with_fallback", route)
+    first = send(prepared, key=str(uuid4()))
+    assert first.status_code == 202, first.text
+
+    def forecasts():
+        return fetch(
+            prepared.dsn,
+            "SELECT version,computed_at,forecast_eta FROM ops.eta_forecast ORDER BY version",
+        )
+
+    (previous,) = forecasts()
+    clock["now"] += timedelta(minutes=1)
+    older = {**POINT, "lat": 59.31, "recorded_at": "2026-11-10T08:04:00Z"}
+    key = str(uuid4())
+    second = send(prepared, older, key=key, trip=2, user=4)
+    assert second.status_code == 202, second.text
+    point_at = datetime.fromisoformat(second.json()["recorded_at"])
+    assert point_at < datetime.fromisoformat(first.json()["recorded_at"]) < previous["computed_at"]
+    both = forecasts()
+    assert [row["version"] for row in both] == [1, 2]
+    assert both[-1]["forecast_eta"] > previous["forecast_eta"]
+    assert point_at + timedelta(minutes=second.json()["remaining_min"]) <= both[-1]["forecast_eta"]
+    replay = send(prepared, older, key=key, trip=2, user=4)
+    assert replay.status_code == 202 and replay.json() == second.json()
+    assert forecasts() == both
+    assert fetch(prepared.dsn, "SELECT trip_id FROM ops.vehicle_position ORDER BY id") == [(1,), (2,)]
 
 
 def test_US_GPS_03_AC1_purge_terminal_order_and_no_history_route(prepared: Api) -> None:
