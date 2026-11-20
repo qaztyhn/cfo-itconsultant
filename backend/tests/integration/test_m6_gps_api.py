@@ -109,9 +109,7 @@ def test_US_GPS_01_AC3_privacy_notice_is_required(gps: Api) -> None:
         {**POINT, "source": "device"},
     ],
 )
-def test_US_GPS_01_AC2_invalid_point_rejected_without_write(
-    gps: Api, invalid: dict[str, object]
-) -> None:
+def test_US_GPS_01_AC2_invalid_point_rejected_without_write(gps: Api, invalid: dict[str, object]) -> None:
     assert_error(send(gps, invalid, key=str(uuid4())), 422, "VALIDATION_ERROR")
     assert fetch(gps.dsn, "SELECT count(*) FROM ops.vehicle_position")[0][0] == 0
 
