@@ -276,7 +276,11 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
                 return True
             except (AssertionError, demo.Error):
                 # Synthetic KPI text only (no customer data); recorded to explain a mismatch.
-                ui_checks[name] = {"expected": text, "actual": locator.inner_text()[:240]}
+                try:
+                    actual = locator.inner_text(timeout=3000)[:240]
+                except demo.Error:
+                    actual = "<locator matched nothing>"
+                ui_checks[name] = {"expected": text, "actual": actual}
                 return False
 
         ui_has("card_total", acc_card, percent_text(expected_acc["value"]))
@@ -290,7 +294,8 @@ def kpi(browser, password: str, output: Path, fixture: dict, env: dict[str, str]
             if value is not None:
                 trend_table = page.get_by_role("table", name="Accessible daily KPI values")
                 # Exact date cell -> its own row -> the percentage cell of that row only.
-                date_cell = trend_table.get_by_role("cell", name=day, exact=True)
+                # "has" is matched inside each candidate row, so build it from the page, not the table.
+                date_cell = page.get_by_role("cell", name=day, exact=True)
                 row = trend_table.get_by_role("row").filter(has=date_cell)
                 percent_cell = row.get_by_role("cell").nth(1)
                 if ui_has(f"daily_{day}", percent_cell, percent_text(expected_acc["days"].get(day))):
