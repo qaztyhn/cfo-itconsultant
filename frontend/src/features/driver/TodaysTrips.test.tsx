@@ -218,6 +218,39 @@ describe("R3 Driver one-fix request and event contract", () => {
     expect(await screen.findByText(/Position sent/)).toBeInTheDocument();
   });
 
+  it("test_US_GPS_01_AC4_hanging_post_times_out_and_retry_reuses_original_point_and_key", async () => {
+    const received: Array<{ key: string | null; body: unknown }> = [];
+    let releaseFirst!: (response: HttpResponse) => void;
+    const stalled = new Promise<HttpResponse>((resolve) => { releaseFirst = resolve; });
+    server.use(http.post(gpsRoute, async ({ request, params }) => {
+      const body = await request.json() as { recorded_at: string };
+      received.push({ key: request.headers.get("Idempotency-Key"), body });
+      return received.length === 1 ? stalled : HttpResponse.json({
+        accepted: 1, trip_id: Number(params.id), recorded_at: body.recorded_at,
+        remaining_km: "5.200", remaining_min: 9, provider: "fallback",
+      }, { status: 202 });
+    }));
+    await openTrip();
+    await consent();
+    // Accelerate only the component's 15s HTTP ACK deadline; MSW still stalls the first POST.
+    const rawSetTimeout = window.setTimeout.bind(window);
+    vi.spyOn(window, "setTimeout").mockImplementation(
+      (handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        rawSetTimeout(handler, timeout === 15_000 ? 60 : timeout, ...args),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Update location" }));
+    expect(await screen.findByRole("button", { name: "Retry same request" })).toBeEnabled();
+    expect(screen.queryByText(/Position sent/)).toBeNull();
+    expect(received).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Retry same request" }));
+    expect(await screen.findByText(/Position sent/)).toBeInTheDocument();
+    expect(received).toHaveLength(2);
+    expect(received[1]).toEqual(received[0]);
+    expect(geo).toHaveBeenCalledTimes(1);
+    // The timed-out original can finish later without a second UI success.
+    releaseFirst(HttpResponse.json({ accepted: 1 }));
+  });
+
   it("test_US_GPS_01_AC4_network_unknown_retry_keeps_same_key_and_body_and_does_not_resample", async () => {
     let number = 0;
     const received: Array<{ key: string | null; body: unknown }> = [];
