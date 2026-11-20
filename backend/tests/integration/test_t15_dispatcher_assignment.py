@@ -1,18 +1,14 @@
 """T15 PostgreSQL regression: rotation, atomicity, handover and GPS revocation."""
 
-import asyncio
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.core import clock
-from app.core.errors import DomainError
 from app.services import approval_service, dispatcher_assignment_service
 from tests.integration import rows
-from tests.integration.api_harness import Api, api, assert_error  # noqa: F401
-from tests.integration.conftest import async_url, execute, fetch
+from tests.integration.api_harness import Api, api as api_fixture, assert_error
+from tests.integration.conftest import execute, fetch
 from tests.integration.test_approval_service import (
     _actor,
     _hold,
@@ -20,10 +16,15 @@ from tests.integration.test_approval_service import (
     _recheck,
     _run,
     _second_order,
-    db,
+    db as approval_db_fixture,
 )
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def t15_db(approval_db_fixture: str) -> str:
+    return approval_db_fixture
 
 
 def _dispatchers(dsn: str) -> None:
@@ -35,7 +36,8 @@ def _dispatchers(dsn: str) -> None:
     )
 
 
-def test_US_GPS_02_AC3_two_vehicle_approval_assigns_once_and_retries(db: str) -> None:
+def test_US_GPS_02_AC3_two_vehicle_approval_assigns_once_and_retries(t15_db: str) -> None:
+    db = t15_db
     _dispatchers(db)
     execute(
         db,
@@ -60,7 +62,8 @@ def test_US_GPS_02_AC3_two_vehicle_approval_assigns_once_and_retries(db: str) ->
     assert _run(db, lambda s: dispatcher_assignment_service.choose_dispatcher(s, 1)) == 2
 
 
-def test_US_GPS_02_AC3_market_rotation_concurrent_approvals_no_double_turn(db: str) -> None:
+def test_US_GPS_02_AC3_market_rotation_concurrent_approvals_no_double_turn(t15_db: str) -> None:
+    db = t15_db
     _dispatchers(db)
     _hold(db)
     _second_order(db, stock=100)
@@ -83,7 +86,8 @@ def test_US_GPS_02_AC3_market_rotation_concurrent_approvals_no_double_turn(db: s
     assert _run(db, lambda s: dispatcher_assignment_service.choose_dispatcher(s, 1)) == first_audit
 
 
-def test_US_GPS_02_AC3_no_eligible_dispatcher_keeps_approval_and_alert(db: str) -> None:
+def test_US_GPS_02_AC3_no_eligible_dispatcher_keeps_approval_and_alert(t15_db: str) -> None:
+    db = t15_db
     _hold(db)
     result = _run(
         db,
@@ -100,7 +104,8 @@ def test_US_GPS_02_AC3_no_eligible_dispatcher_keeps_approval_and_alert(db: str) 
     assert len(alerts) == 1
 
 
-def test_US_GPS_02_AC3_approval_rollback_does_not_advance_rotation(db: str) -> None:
+def test_US_GPS_02_AC3_approval_rollback_does_not_advance_rotation(t15_db: str) -> None:
+    db = t15_db
     _dispatchers(db)
     _hold(db)
 
@@ -126,8 +131,9 @@ def test_US_GPS_02_AC3_approval_rollback_does_not_advance_rotation(db: str) -> N
 
 
 @pytest.fixture
-def handover_api(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811
+def handover_api(api_fixture: Api, monkeypatch: pytest.MonkeyPatch) -> Api:
     """Two active on-road trips for one order, two Dispatchers, a different market."""
+    api = api_fixture
     execute(
         api.dsn,
         *rows.REF_HR,
@@ -227,7 +233,9 @@ def test_US_GPS_02_AC3_handover_rejections_are_atomic(handover_api: Api) -> None
     execute(api.dsn, "UPDATE hr.dispatcher_staff SET in_rotation=true WHERE employee_id=2",
             "UPDATE hr.employee SET status='terminated' WHERE id=2")
     assert_error(_handover(api, 1), 422, "VALIDATION_ERROR")
-    assert fetch(api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1")[0][0] == 1
+    assert fetch(
+        api.dsn, "SELECT assigned_dispatcher_employee_id FROM ops.delivery_trip WHERE id=1"
+    )[0][0] == 1
     assert fetch(
         api.dsn, "SELECT count(*) FROM audit.decision_log WHERE action='TRIP_DISPATCHER_HANDOVER'"
     )[0][0] == 0
