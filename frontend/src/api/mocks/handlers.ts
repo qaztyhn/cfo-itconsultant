@@ -577,10 +577,9 @@ const REVENUE_DAILY = Array.from({ length: 30 }, (_, i) => {
 
 import { authHandlers, errorResponse } from "./authHandlers";
 import { planningHandlers } from "./planningHandlers";
+import { trackingHandlers } from "./trackingHandlers";
 import {
   authorize,
-  GPS_READ_ROLES,
-  visibleGpsTrips,
   ORDER_READ_ROLES,
   orderInScope,
   projectOrderDetail,
@@ -696,21 +695,8 @@ export const handlers = [
     return HttpResponse.json({ event_id: 998, status: "recorded" });
   }),
 
-  // GPS — D3: chỉ Dispatcher được phân công chuyến, tài xế trong ca, chuyến on_road
-  http.get(`${BASE}/gps/live`, ({ request }) => {
-    const auth = authorize(request, GPS_READ_ROLES);
-    if (!auth.ok) return auth.response;
-    const positions = visibleGpsTrips(auth.account.user.id).map((t) => ({
-      trip_id: t.trip_id,
-      vehicle_code: t.vehicle_code,
-      lat: t.lat,
-      lon: t.lon,
-      recorded_at: new Date(Date.now() - t.recorded_minutes_ago * 60 * 1000).toISOString(),
-      accuracy_m: t.accuracy_m,
-      source: "simulator",
-    }));
-    return HttpResponse.json({ positions });
-  }),
+  // T17: GET /gps/live array + mock-only eligible receiver discovery and handover.
+  ...trackingHandlers,
 
   // Revenue — use the current US-REV-01 read DTOs. Legacy demo responses lacked period/points/rows
   // and could crash the Revenue screen after Business owner signed in (push CI).
