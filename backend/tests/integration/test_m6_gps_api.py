@@ -60,7 +60,6 @@ def _gps_fixture(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F81
     return api
 
 
-
 def send(client: Api, point: object = POINT, *, key: str, user: int = 5):
     token = issue_token(user, {})
     return client.client.post(
