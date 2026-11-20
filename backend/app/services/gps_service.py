@@ -265,9 +265,7 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                 "order_id": order.id,
                 "vehicle_code": vehicle.code,
                 "last_position": (
-                    {"lat": float(position.lat), "lon": float(position.lon)}
-                    if position is not None
-                    else None
+                    {"lat": float(position.lat), "lon": float(position.lon)} if position is not None else None
                 ),
                 "remaining_km": (
                     float(position.remaining_km)
@@ -276,11 +274,7 @@ async def live(actor: object, *, session: AsyncSession | None = None) -> list[di
                 ),
                 "updated_at": position.recorded_at.isoformat() if position is not None else None,
                 "forecast_eta": eta.forecast_eta.isoformat() if eta is not None else None,
-                "risk": (
-                    {"status": eta.risk_status, "color": eta.risk_color}
-                    if eta is not None
-                    else None
-                ),
+                "risk": ({"status": eta.risk_status, "color": eta.risk_color} if eta is not None else None),
                 "open_incident": None,
             }
         )
