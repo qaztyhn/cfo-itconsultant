@@ -205,6 +205,27 @@ def test_US_APR_05_AC5_scope_and_manual_denials(db: str) -> None:
     assert denied.value.code == "FORBIDDEN"
 
 
+def test_US_APR_05_AC6_unverified_competing_sales_hold_requires_dispatcher(db: str) -> None:
+    _hold(db)
+    _second_order(db, stock=30)
+    with pytest.raises(DomainError) as refusal:
+        _run(
+            db,
+            lambda session: approval_service.approve(
+                1,
+                _actor("sales"),
+                {},
+                "t19-provisional-conflict",
+                session=session,
+                recheck=_recheck,
+            ),
+        )
+    assert refusal.value.code == "PLAN_NOT_APPROVABLE"
+    assert refusal.value.http_status == 409
+    assert fetch(db, "SELECT count(*) FROM ops.delivery_trip")[0][0] == 0
+    assert fetch(db, "SELECT count(*) FROM ops.notification WHERE template='CONFIRMED'")[0][0] == 0
+
+
 def test_US_APR_05_AC7_concurrent_sales_and_dispatcher_share_stock_single_winner(db: str) -> None:
     _hold(db)
     _second_order(db, stock=30)
