@@ -7,7 +7,7 @@ import { isApiError } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import {
-  GATES, GATE_LABELS, fetchInfeasibleRun, fetchNegotiations, fetchVerifiedTransfers,
+  GATES, GATE_LABELS, fetchInfeasibleRun, fetchNegotiations,
   gateStatus, readableNumber, recordNegotiation, validIsoDate,
   type GateEvidence, type NegotiationInput, type NegotiationOutcome, type WarehouseChecks,
 } from "./noFeasibleDateApi";
@@ -24,6 +24,7 @@ function GateCell({ gate }: { gate: GateEvidence | undefined }) {
     className="inline-flex flex-col gap-1 text-caption">
     <span className="font-semibold">{state === "passed" ? "✓ PASS" : state === "failed" ? "✕ FAIL" : "— UNKNOWN"}</span>
     {state !== "unknown" && gate?.code && <code className="font-mono text-inkMuted">{gate.code}</code>}
+    {state === "failed" && gate?.detail?.message && <span>{gate.detail.message}</span>}
     {state === "failed" && gate?.detail?.inbound_available_on && validIsoDate(gate.detail.inbound_available_on) &&
       <span>Inbound available on {gate.detail.inbound_available_on}</span>}
   </span>;
@@ -144,11 +145,6 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
     enabled: authorized && valid, retry: false,
   });
   const orderId = run.data?.order_id;
-  const transfers = useQuery({
-    queryKey: ["no-feasible", "transfers", orderId],
-    queryFn: ({ signal }) => fetchVerifiedTransfers(orderId as number, signal),
-    enabled: authorized && !!orderId && run.data?.result === "infeasible", retry: false,
-  });
   const history = useQuery({
     queryKey: ["no-feasible", "negotiations", orderId],
     queryFn: ({ signal }) => fetchNegotiations(orderId as number, signal),
@@ -175,7 +171,7 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
         <div className="flex flex-wrap gap-2 text-caption">
           <span className="rounded-full bg-chip px-3 py-1 font-mono">NO_FEASIBLE_DATE</span>
           <span className="rounded-full bg-chip px-3 py-1 font-mono">ORDER #{run.data.order_id} · RUN {run.data.run_no}</span>
-          <button className={outline} onClick={() => { void run.refetch(); void freshness.refetch(); void transfers.refetch(); }}
+          <button className={outline} onClick={() => { void run.refetch(); void freshness.refetch(); }}
             type="button">Refresh evidence</button>
         </div>
         {stale && <div role="alert" className="rounded-card border border-risk-predictedLate-bg bg-risk-lateRow p-4">
@@ -224,19 +220,6 @@ export function NoFeasibleDate({ runId: explicitRunId }: { runId?: number }) {
                   }) : <span>Warehouse availability unknown</span>}
                 </div></td></tr>)}</tbody>
             </table></div></> : <EmptyState message="Verified stock matrix is unavailable. Stock and shortage are UNKNOWN, not zero." />}
-        </section>
-        <section className={panel + " space-y-3"} aria-label="Transfer suggestions">
-          <h2 className="text-h2 font-semibold">Transfer suggestions</h2>
-          <p className="text-caption text-inkMuted">Read-only evidence. WMS owns physical transfers; this screen never approves or executes a transfer.</p>
-          {transfers.isPending ? <LoadingState rows={2} /> : transfers.isError ?
-            <ErrorState error={transfers.error} onRetry={() => void transfers.refetch()} /> :
-            transfers.data?.items.length ? <ul className="space-y-2">{transfers.data.items.map((s, i) =>
-              <li key={i} className="rounded-control border border-border p-3">
-                Source: {s.from_warehouse ?? (s.from_warehouse_id ? `Warehouse #${s.from_warehouse_id}` : "Unknown")}
-                {" · "}Destination: {s.to_warehouse ?? (s.to_warehouse_id ? `Warehouse #${s.to_warehouse_id}` : "Unknown")}
-                {" · "}Lead: {s.lead_days ?? "Unknown"} days · Distance: {s.distance_km ?? "Unknown"} km
-                {s.lines?.map((line, n) => <p key={n} className="font-mono text-caption">Global #{line.global_product_id} · qty {readableNumber(line.qty)}</p>)}
-              </li>)}</ul> : <EmptyState message="No verified transfer suggestions returned by the API." />}
         </section>
         {orderId && <NegotiationForm key={orderId} orderId={orderId} suggestedDate={run.data.earliest_feasible_date}
           onRecorded={(outcome, date) => setRecorded({ outcome, date })} />}

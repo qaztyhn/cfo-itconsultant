@@ -101,7 +101,6 @@ export interface PlanningRun {
   planning_reserve_min?: number | null;
   workload?: Record<string, unknown>;
   rejected_candidates?: RejectedCandidate[];
-  transfer_suggestions?: unknown[];
   // Sales only
   sales_approvable?: boolean;
   sales_block_reason?: string | null;

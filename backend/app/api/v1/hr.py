@@ -230,12 +230,6 @@ async def list_employees(
     )
 
 
-@router.post("/employees")
-async def create_employee() -> dict[str, object]:
-    """POST /employees — admin."""
-    raise NotImplementedError
-
-
 @router.get(
     "/employees/{employee_id}",
     response_model=EmployeeOut,
@@ -246,14 +240,6 @@ async def get_employee(employee_id: int, user: AuthUser, db: DbSession) -> Emplo
     """GET /employees/{employee_id} — theo phạm vi; ngoài phạm vi → 404."""
     scope = await resolve_hr_scope(db, user)
     return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
-
-
-class AssignmentIn(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"location_id": 3, "start_date": "2026-11-20"}}
-    )
-    location_id: int
-    start_date: date
 
 
 class ManagersIn(BaseModel):
@@ -274,40 +260,6 @@ _WRITE_ERRORS: dict[int | str, dict[str, object]] = {
     403: {"description": "FORBIDDEN — admin only"},
     422: {"description": "VALIDATION_ERROR — details.field names the rule that failed"},
 }
-
-
-@router.post(
-    "/employees/{employee_id}/assignments",
-    response_model=EmployeeOut,
-    response_model_exclude_unset=True,
-    responses=_WRITE_ERRORS,
-)
-async def assign_employee(employee_id: int, body: AssignmentIn, user: AuthUser, db: DbSession) -> EmployeeOut:
-    """POST /employees/{id}/assignments — admin; đóng phân công cũ (US-EMP-01 AC2)."""
-    scope = await resolve_hr_scope(db, user)
-    await hr_write_service.assign(
-        db,
-        scope,
-        employee_id,
-        body.location_id,
-        body.start_date,
-        actor_user_id=user.id,
-        actor_employee_id=user.employee_id,
-    )
-    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
-
-
-@router.post(
-    "/employees/{employee_id}/terminate",
-    response_model=EmployeeOut,
-    response_model_exclude_unset=True,
-    responses=_WRITE_ERRORS,
-)
-async def terminate_employee(employee_id: int, user: AuthUser, db: DbSession) -> EmployeeOut:
-    """POST /employees/{id}/terminate — admin; khóa tài khoản, giữ lịch sử (US-EMP-03 AC4)."""
-    scope = await resolve_hr_scope(db, user)
-    await hr_write_service.terminate(db, scope, employee_id)
-    return EmployeeOut.model_validate(await hr_read_service.get_employee(db, scope, employee_id))
 
 
 @router.get("/locations", response_model=Page[LocationOut], responses=_READ_ERRORS)
@@ -463,24 +415,6 @@ async def get_capacity(
     return CapacityOut.model_validate(await hr_service.capacity(db, scope, warehouse_id, date_from, date_to))
 
 
-@router.post("/absences")
-async def create_absence() -> dict[str, object]:
-    """POST /absences — warehouse, admin."""
-    raise NotImplementedError
-
-
-@router.get("/warehouses/{warehouse_id}/shift-templates")
-async def get_shift_templates(warehouse_id: int) -> dict[str, object]:
-    """GET /warehouses/{warehouse_id}/shift-templates — warehouse, admin."""
-    raise NotImplementedError
-
-
-@router.put("/warehouses/{warehouse_id}/shift-templates")
-async def put_shift_templates(warehouse_id: int) -> dict[str, object]:
-    """PUT /warehouses/{warehouse_id}/shift-templates — warehouse, admin."""
-    raise NotImplementedError
-
-
 @router.get("/vehicles", response_model=Page[VehicleOut], responses=_READ_ERRORS)
 async def list_vehicles(
     user: AuthUser,
@@ -514,21 +448,3 @@ async def get_vehicle(vehicle_id: int, user: AuthUser, db: DbSession) -> Vehicle
     """GET /vehicles/{id} — theo phạm vi; ngoài phạm vi → 404."""
     scope = await resolve_hr_scope(db, user)
     return VehicleOut.model_validate(await hr_read_service.get_vehicle(db, scope, vehicle_id))
-
-
-@router.post("/vehicles")
-async def create_vehicle() -> dict[str, object]:
-    """POST /vehicles — admin."""
-    raise NotImplementedError
-
-
-@router.get("/users")
-async def list_users() -> dict[str, object]:
-    """GET /users — admin."""
-    raise NotImplementedError
-
-
-@router.post("/users/{user_id}/reset-password")
-async def reset_password(user_id: int) -> dict[str, object]:
-    """POST /users/{user_id}/reset-password — admin."""
-    raise NotImplementedError

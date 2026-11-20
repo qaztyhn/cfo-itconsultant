@@ -228,14 +228,11 @@ def _position_payload(value: object) -> dict[str, object]:
 async def _record_driver_point(
     session: AsyncSession, trip_id: int, point: dict[str, object], source: str
 ) -> datetime:
-    record_point = getattr(gps_service, "record_point", None)
-    if record_point is None:
-        raise DomainError("PLAN_NOT_APPROVABLE", "Driver position service is unavailable.")
-    route = await record_point(session, trip_id, point, source)
-    recorded_at = getattr(route, "recorded_at", None)
-    remaining_km = getattr(route, "remaining_km", None)
-    remaining_min = getattr(route, "remaining_min", None)
-    provider = getattr(route, "provider", None)
+    route = await gps_service.record_point(session, trip_id, point, source)
+    recorded_at = route.recorded_at
+    remaining_km = route.remaining_km
+    remaining_min = route.remaining_min
+    provider = route.provider
     if (
         not isinstance(recorded_at, datetime)
         or recorded_at.utcoffset() is None
@@ -663,10 +660,7 @@ async def record_event(
                 await transition(session, order.id, OrderStatus.DELIVERED, "driver")
                 changed_to = "DELIVERED"
                 order.delivered_at = occurred_at
-                purge_order = getattr(gps_service, "purge_order", None)
-                if purge_order is None:
-                    raise DomainError("PLAN_NOT_APPROVABLE", "Order position cleanup is unavailable.")
-                await purge_order(session, order.id)
+                await gps_service.purge_order(session, order.id)
             else:
                 failed_reason = (
                     str(payload["failure_reason"])

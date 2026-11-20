@@ -11,7 +11,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock
@@ -102,7 +102,7 @@ async def _valid_signal(
     previous: EtaForecast | None,
     now: datetime,
     signal_at: datetime | None,
-    config: MarketConfig,
+    position_trip_id: int | None,
 ) -> bool:
     """Require an actual input change, not an unsubstantiated periodic refresh."""
     if trigger.startswith("event:"):
@@ -149,23 +149,30 @@ async def _valid_signal(
     if signal_at > now:
         raise DomainError("VALIDATION_ERROR", "Source signal cannot be in the future.")
     if trigger == "position":
-        point = await session.scalar(
-            select(VehiclePosition.id)
+        point_query = (
+            select(VehiclePosition.received_at)
             .join(DeliveryTrip, DeliveryTrip.id == VehiclePosition.trip_id)
             .join(PlanVehicle, PlanVehicle.id == DeliveryTrip.plan_vehicle_id)
             .join(TripStop, TripStop.trip_id == DeliveryTrip.id)
             .where(
                 PlanVehicle.plan_id == plan.id,
                 TripStop.order_id == order.id,
+                TripStop.status == "pending",
+                DeliveryTrip.status == "on_road",
                 VehiclePosition.source == "driver_tap",
                 VehiclePosition.recorded_at == signal_at,
                 VehiclePosition.remaining_min.is_not(None),
                 VehiclePosition.route_source.in_(("ors", "haversine_estimate")),
             )
+            .order_by(VehiclePosition.received_at.desc())
             .limit(1)
         )
-        if point is None:
-            return False
+        if position_trip_id is not None:
+            point_query = point_query.where(VehiclePosition.trip_id == position_trip_id)
+        received = await session.scalar(point_query)
+        # Recorded time describes the GPS observation, not arrival order across
+        # trips. Compare the persisted server receipt with the last forecast write.
+        return received is not None and (previous is None or received > previous.updated_at)
     return previous is None or signal_at > previous.computed_at
 
 
@@ -302,6 +309,7 @@ async def recalculate(
     *,
     session: AsyncSession | None = None,
     signal_at: datetime | None = None,
+    position_trip_id: int | None = None,
     delay_window: dict[str, object] | None = None,
     delay_actor: object | None = None,
 ) -> dict[str, object] | None:
@@ -346,7 +354,9 @@ async def recalculate(
             .order_by(MilestoneEvent.occurred_at, MilestoneEvent.id)
         )
     ).all()
-    if not await _valid_signal(session, order, plan, trigger, list(events), previous, now, signal_at, config):
+    if not await _valid_signal(
+        session, order, plan, trigger, list(events), previous, now, signal_at, position_trip_id
+    ):
         return None
     vehicle_inputs = await _vehicle_inputs(session, order, plan, market, list(events), now, config)
     try:
@@ -399,6 +409,9 @@ async def recalculate(
         order_id=order.id,
         version=(previous.version + 1 if previous else 1),
         computed_at=now,
+        # The DB transaction timestamp can precede another request that already
+        # committed while this one waited for the order lock.
+        updated_at=func.clock_timestamp(),
         trigger=trigger,
         planned_eta=plan.eta_at,
         forecast_eta=overall_eta,

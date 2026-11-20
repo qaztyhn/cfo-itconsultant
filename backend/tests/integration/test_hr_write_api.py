@@ -1,15 +1,26 @@
-"""Ghi nhân sự cho admin (06 mục 13; US-EMP-01 AC1–AC5, US-EMP-03 AC4; ASM-006).
+"""Service phân công/chấm dứt và HTTP locations cho admin.
+
+US-EMP-01 AC1–AC5, US-EMP-03 AC4; ASM-006 (06 mục 13).
 
 Dữ liệu ở hr_fixture (hôm nay = 2026-11-04 theo giờ Stockholm). WH-1 = 1: quản lý chính Wanda (3), phó
 tương lai Fay (8, phân công WH-1 từ 2026-12-01), owner = 3. Will (4) và Dora (5) làm ở WH-1; Sam (6) ở
 ST-1 (2).
 """
 
+from datetime import date
+
 import asyncpg
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import DomainError
+from app.deps import CurrentUser
+from app.services import hr_write_service
+from app.services.auth_service import load_active_profile
+from app.services.hr_scope import resolve_hr_scope
 from tests.integration.api_harness import Api, api, assert_error  # noqa: F401  (fixture)
 from tests.integration.conftest import execute, fetch, rejects
+from tests.integration.dev2_helpers import transact
 from tests.integration.hr_fixture import (
     ADMIN,
     CS,
@@ -58,22 +69,43 @@ def field_error(response: object, field: str) -> None:
     assert response.json()["error"]["details"]["field"] == field  # type: ignore[attr-defined]
 
 
+def assign(hr: Api, user_id: int, employee_id: int, location_id: int, start_date: str) -> None:
+    async def write(session: AsyncSession) -> None:
+        user = CurrentUser.from_profile(await load_active_profile(session, user_id))
+        scope = await resolve_hr_scope(session, user)
+        await hr_write_service.assign(
+            session,
+            scope,
+            employee_id,
+            location_id,
+            date.fromisoformat(start_date),
+            actor_user_id=user.id,
+            actor_employee_id=user.employee_id,
+        )
+
+    transact(hr.dsn, write)
+
+
+def terminate(hr: Api, user_id: int, employee_id: int) -> None:
+    async def write(session: AsyncSession) -> None:
+        user = CurrentUser.from_profile(await load_active_profile(session, user_id))
+        await hr_write_service.terminate(session, await resolve_hr_scope(session, user), employee_id)
+
+    transact(hr.dsn, write)
+
+
 # --- assignments ------------------------------------------------------------------------------------------
 
 
 def test_US_EMP_01_AC2_transfer_closes_old_assignment(hr: Api) -> None:
-    r = hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-10"})
-    assert r.status_code == 200, r.text
-    assert r.json()["assignment"]["location_id"] == 1  # hôm nay vẫn ở WH-1
+    assign(hr, ADMIN, 4, 3, "2026-11-10")
+    assert hr.get("/employees/4", ADMIN).json()["assignment"]["location_id"] == 1  # hôm nay vẫn ở WH-1
     assert assignments(hr.dsn, 4) == [(1, "2025-01-01", "2026-11-09"), (3, "2026-11-10", None)]
 
 
 def test_US_EMP_01_AC2_transfer_starting_today_is_effective_now(hr: Api) -> None:
-    r = hr.send(
-        "POST", "/employees/4/assignments", SYSTEM_ADMIN, {"location_id": 3, "start_date": "2026-11-04"}
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["assignment"]["location_id"] == 3
+    assign(hr, SYSTEM_ADMIN, 4, 3, "2026-11-04")
+    assert hr.get("/employees/4", SYSTEM_ADMIN).json()["assignment"]["location_id"] == 3
 
 
 def test_US_EMP_01_AC1_db_rejects_second_open_assignment(hr: Api) -> None:
@@ -101,34 +133,26 @@ def test_US_EMP_01_AC1_db_rejects_second_open_assignment(hr: Api) -> None:
 )
 def test_assignment_validation(hr: Api, employee_id: int, body: dict[str, object], field: str) -> None:
     before = assignments(hr.dsn, employee_id)
-    field_error(hr.send("POST", f"/employees/{employee_id}/assignments", ADMIN, body), field)
+    with pytest.raises(DomainError) as error:
+        assign(hr, ADMIN, employee_id, int(str(body["location_id"])), str(body["start_date"]))
+    assert (error.value.code, error.value.details["field"]) == ("VALIDATION_ERROR", field)
     assert assignments(hr.dsn, employee_id) == before
-
-
-def test_assignment_body_is_strict(hr: Api) -> None:
-    body = {"location_id": 3, "start_date": "2026-11-10", "end_date": "2027-01-01"}
-    assert_error(hr.send("POST", "/employees/4/assignments", ADMIN, body), 422, "VALIDATION_ERROR")
-    assert_error(
-        hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3}), 422, "VALIDATION_ERROR"
-    )
 
 
 @pytest.mark.parametrize("user_id", NON_ADMINS)
 def test_assignment_forbidden_for_non_admin(hr: Api, user_id: int) -> None:
-    r = hr.send("POST", "/employees/4/assignments", user_id, {"location_id": 3, "start_date": "2026-11-10"})
-    assert_error(r, 403, "FORBIDDEN")
+    with pytest.raises(DomainError) as error:
+        assign(hr, user_id, 4, 3, "2026-11-10")
+    assert error.value.code == "FORBIDDEN"
     assert assignments(hr.dsn, 4) == [(1, "2025-01-01", None)]
 
 
-def test_write_without_token_is_401(hr: Api) -> None:
-    r = hr.send("POST", "/employees/4/assignments", None, {"location_id": 3, "start_date": "2026-11-10"})
-    assert_error(r, 401, "AUTH_INVALID")
-
-
 def test_admin_cannot_touch_other_market(hr: Api) -> None:
-    r = hr.send("POST", "/employees/10/assignments", ADMIN, {"location_id": 4, "start_date": "2026-11-10"})
-    assert_error(r, 404, "NOT_FOUND")
-    assert_error(hr.send("POST", "/employees/10/terminate", ADMIN), 404, "NOT_FOUND")
+    with pytest.raises(DomainError) as assignment_error:
+        assign(hr, ADMIN, 10, 4, "2026-11-10")
+    with pytest.raises(DomainError) as termination_error:
+        terminate(hr, ADMIN, 10)
+    assert assignment_error.value.code == termination_error.value.code == "NOT_FOUND"
     assert_error(hr.send("PATCH", "/locations/4/owner", ADMIN, {"owner_employee_id": 10}), 404, "NOT_FOUND")
     assert_error(
         hr.send("PUT", "/locations/4/managers", ADMIN, {"primary_employee_id": 10}), 404, "NOT_FOUND"
@@ -140,9 +164,8 @@ def test_admin_cannot_touch_other_market(hr: Api) -> None:
 
 def test_US_EMP_03_AC4_terminate_locks_account_and_keeps_history(hr: Api) -> None:
     assert hr.get("/auth/me", 4).status_code == 200
-    r = hr.send("POST", "/employees/4/terminate", ADMIN)
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "terminated"
+    terminate(hr, ADMIN, 4)
+    assert hr.get("/employees/4", ADMIN).json()["status"] == "terminated"
     employee = fetch(hr.dsn, "SELECT status::text AS s, end_date::text AS e FROM hr.employee WHERE id = 4")[0]
     assert (employee["s"], employee["e"]) == ("terminated", "2026-11-04")
     assert assignments(hr.dsn, 4) == [(1, "2025-01-01", "2026-11-04")]
@@ -151,20 +174,24 @@ def test_US_EMP_03_AC4_terminate_locks_account_and_keeps_history(hr: Api) -> Non
 
 
 def test_terminate_also_caps_a_closed_assignment_ending_later(hr: Api) -> None:
-    hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-04"})
+    assign(hr, ADMIN, 4, 3, "2026-11-04")
     # phân công WH-1 đã đóng 2026-11-03, WH-2 mở từ hôm nay
-    assert hr.send("POST", "/employees/4/terminate", ADMIN).status_code == 200
+    terminate(hr, ADMIN, 4)
     assert assignments(hr.dsn, 4) == [(1, "2025-01-01", "2026-11-03"), (3, "2026-11-04", "2026-11-04")]
 
 
 @pytest.mark.parametrize("employee_id", [3, 8, 9])  # quản lý chính, phó tương lai, đã nghỉ
 def test_terminate_validation(hr: Api, employee_id: int) -> None:
-    field_error(hr.send("POST", f"/employees/{employee_id}/terminate", ADMIN), "employee_id")
+    with pytest.raises(DomainError) as error:
+        terminate(hr, ADMIN, employee_id)
+    assert (error.value.code, error.value.details["field"]) == ("VALIDATION_ERROR", "employee_id")
 
 
 @pytest.mark.parametrize("user_id", NON_ADMINS)
 def test_terminate_forbidden_for_non_admin(hr: Api, user_id: int) -> None:
-    assert_error(hr.send("POST", "/employees/4/terminate", user_id), 403, "FORBIDDEN")
+    with pytest.raises(DomainError) as error:
+        terminate(hr, user_id, 4)
+    assert error.value.code == "FORBIDDEN"
     assert fetch(hr.dsn, "SELECT status::text AS s FROM hr.employee WHERE id = 4")[0]["s"] == "active"
 
 
@@ -258,7 +285,7 @@ def test_unknown_location_is_404(hr: Api) -> None:
 
 
 def test_ASM_006_assignment_change_is_audited_in_same_transaction(hr: Api) -> None:
-    hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-10"})
+    assign(hr, ADMIN, 4, 3, "2026-11-10")
     [log] = fetch(
         hr.dsn,
         "SELECT action, entity, entity_id, actor_user_id, actor_employee_id, actor_role, before, after "
@@ -274,5 +301,7 @@ def test_ASM_006_assignment_change_is_audited_in_same_transaction(hr: Api) -> No
     assert '"location_id": 1' in log["before"] and '"end_date": "2026-11-09"' in log["after"]
     assert '"start_date": "2026-11-10"' in log["after"]
     # vi phạm quy tắc → không đổi dữ liệu, không ghi log
-    hr.send("POST", "/employees/4/assignments", ADMIN, {"location_id": 3, "start_date": "2026-11-03"})
+    with pytest.raises(DomainError) as error:
+        assign(hr, ADMIN, 4, 3, "2026-11-03")
+    assert error.value.code == "VALIDATION_ERROR"
     assert fetch(hr.dsn, "SELECT count(*) AS n FROM audit.decision_log")[0]["n"] == 1

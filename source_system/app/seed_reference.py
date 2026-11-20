@@ -36,7 +36,12 @@ BUSINESSES = (
 CENTRES = (("57.7089", "11.9746"), ("59.3293", "18.0686"), ("55.6050", "13.0038"))
 
 
-async def seed_customers(connection: AsyncConnection, *, now: datetime) -> None:
+async def seed_customers(
+    connection: AsyncConnection,
+    *,
+    now: datetime,
+    sites: dict[str, tuple[Decimal, Decimal]] | None = None,
+) -> None:
     """Caller owns transaction; conflict leaves existing identities/contact/addresses unchanged."""
     if now.tzinfo is None:
         raise ValueError("Seed timestamp must be timezone-aware")
@@ -62,10 +67,12 @@ async def seed_customers(connection: AsyncConnection, *, now: datetime) -> None:
             centre_lat, centre_lon = CENTRES[(index - 1) % len(CENTRES)]
             lat = Decimal(centre_lat) + Decimal(rng.randint(-10000, 10000)) / 100000
             lon = Decimal(centre_lon) + Decimal(rng.randint(-10000, 10000)) / 100000
+            address_id = f"{key}-A{address_no}"
+            lat, lon = (sites or {}).get(address_id, (lat, lon))
             await connection.execute(
                 insert(Address)
                 .values(
-                    id=f"{key}-A{address_no}",
+                    id=address_id,
                     customer_id=key,
                     address=f"Synthetic site {index:03d}-{address_no}",
                     lat=lat,
@@ -78,12 +85,25 @@ async def seed_customers(connection: AsyncConnection, *, now: datetime) -> None:
             )
 
 
-async def seed_catalog(connection: AsyncConnection, *, now: datetime) -> None:
+async def seed_catalog(
+    connection: AsyncConnection,
+    *,
+    now: datetime,
+    volumes: dict[str, Decimal] | None = None,
+) -> None:
     """Add missing SKUs only, preserving prices, metadata and timestamps of existing rows."""
     if now.tzinfo is None:
         raise ValueError("Seed timestamp must be timezone-aware")
     await connection.execute(text("SELECT pg_advisory_xact_lock(20261104)"))
-    values = [asdict(product) | {"created_at": now, "updated_at": now} for product in catalog_products()]
+    values = [
+        asdict(product)
+        | {
+            "created_at": now,
+            "updated_at": now,
+            "volume_m3": (volumes or {}).get(product.sku, product.volume_m3),
+        }
+        for product in catalog_products()
+    ]
     await connection.execute(
         insert(Product).values(values).on_conflict_do_nothing(index_elements=[Product.sku])
     )
@@ -127,11 +147,11 @@ async def seed_receiving_calendar(connection: AsyncConnection, *, now: datetime)
     )
 
 
-async def seed_sales_references(connection: AsyncConnection, *, now: datetime) -> None:
+async def seed_sales_references(connection: AsyncConnection, *, now: datetime, count: int = 25) -> None:
     """Synthetic source IDs mirror the documented CFO fixture employee numbers, not live CFO reads."""
     if now.tzinfo is None:
         raise ValueError("Seed time must be aware")
-    for number in range(1, 26):
+    for number in range(1, count + 1):
         store = f"ST-{number:03d}"
         await connection.execute(
             insert(Store)
