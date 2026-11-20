@@ -15,7 +15,7 @@ import secrets
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
@@ -27,7 +27,8 @@ from playwright.sync_api import APIResponse, Error, Page, Response, expect, sync
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from tests.e2e.t27_http_evidence import dispatch_rejection, eta_history_status
+from app.services.notification_templates import PHRASES, SUBJECTS
+from tests.e2e.t27_http_evidence import dispatch_rejection
 from tools.t27_driver_step8 import (
     EvidenceMismatch, aware, step8_pass, verify_event_request, verify_position_request,
 )
@@ -221,6 +222,8 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         report["last_verified"] = "Sales UI Sync + Check feasibility; proposed plan"
         mark(report, "2", "PASS", "Both Sync and Check clicked through Chrome; two HTTP 200 responses; plan proposed",
              order_id=order_id, run_id=run_id, plan_id=plan_id)
+        mark(report, "3", "BLOCKED", "This E0-04 case returned one feasible rank; run the T26 Sales alternatives case.",
+             visible_proposals=len(plans))
         return order_id, run_id, plan_id
     finally:
         page.close()
@@ -284,9 +287,14 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
     )
     if not account:
         raise RuntimeError("E1 Dispatcher identity not found in disposable market seed")
-    page = login(browser, f"/dispatcher/plan-review/{run_id}", account, password, out, "Dispatcher")
+    page = login(browser, "/dispatcher/orders", account, password, out, "Dispatcher")
+    report["active_step"] = "6"
     try:
+        page.get_by_label("Search", exact=True).fill(report["order_no"])
+        page.get_by_role("button", name=f"Plan review for order {report['order_no']}", exact=True).click()
+        expect(page).to_have_url(re.compile(rf"/dispatcher/plan-review/{run_id}$"))
         expect(page.get_by_role("heading", name="Plan review")).to_be_visible()
+        report["active_step"] = "4"
         # PlanReview header mounts before its async planning-run detail.
         decision = page.get_by_role("region", name="Decision")
         action = decision.get_by_role("button", name="Approve #1")
@@ -302,6 +310,21 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
                  ui_reason=why, http=None, task="E1, E4, T12")
             report["last_verified"] = "Sales Sync+Check; Dispatcher showed disabled Approve"
             return []
+        expected_dispatcher = sql(
+            "SELECT e.id FROM hr.employee e JOIN hr.dispatcher_staff ds ON ds.employee_id=e.id "
+            "JOIN ref.app_user u ON u.employee_id=e.id JOIN ops.customer_order o ON o.market_id=e.market_id "
+            "LEFT JOIN LATERAL (SELECT max(a.id) AS last_id FROM audit.decision_log a "
+            "JOIN ops.customer_order previous ON previous.id=a.order_id WHERE previous.market_id=o.market_id "
+            "AND a.action IN ('PLAN_APPROVED','TRIP_DISPATCHER_HANDOVER') "
+            "AND a.after->>'assigned_dispatcher_employee_id'=e.id::text) turns ON true "
+            "LEFT JOIN LATERAL (SELECT max(t.id) AS last_id FROM ops.delivery_trip t "
+            "JOIN ref.location l ON l.id=t.warehouse_id WHERE l.market_id=o.market_id "
+            "AND t.assigned_dispatcher_employee_id=e.id) legacy ON true "
+            f"WHERE o.id={order_id} AND e.status='active' AND ds.in_rotation "
+            "AND u.is_active AND 'dispatcher'=ANY(u.roles) "
+            "ORDER BY turns.last_id NULLS FIRST, legacy.last_id NULLS FIRST, e.id LIMIT 1",
+            env,
+        )
         screenshot(page, out, "03-dispatcher-proposed.png")
         action.click()
         dialog = page.get_by_role("dialog", name="Approve plan #1")
@@ -389,28 +412,33 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
             f"FROM ops.delivery_trip WHERE id IN ({','.join(str(i) for i in trip_ids)}) "
             "ORDER BY id", env,
         ).splitlines()
-        if len(assigned) != len(trip_ids):
-            raise RuntimeError("Post-approve Dispatcher assignment/trip count mismatch")
-        if len(set(assigned)) > 1 and "NULL" not in assigned:
-            rotation_status = "FAIL"
-        elif "NULL" in assigned:
-            rotation_status = "BLOCKED"
-        else:
-            rotation_status = "NOT VERIFIED"  # T15 fairness needs separate evidence
+        audits = sql(
+            "SELECT after->>'assigned_dispatcher_employee_id' FROM audit.decision_log "
+            f"WHERE action='PLAN_APPROVED' AND order_id={order_id} AND plan_id={plan_id}",
+            env,
+        ).splitlines()
+        rotation_status = (
+            "PASS" if expected_dispatcher and assigned == [expected_dispatcher] * len(trip_ids)
+            and audits == [expected_dispatcher] else "FAIL" if expected_dispatcher else "BLOCKED"
+        )
         report["approval_subcheck"] = "PASS"
         report["rotation_subcheck"] = {
             "status": rotation_status,
+            "expected_dispatcher_id": int(expected_dispatcher) if expected_dispatcher else None,
             "assigned_trips": sum(value != "NULL" for value in assigned),
             "expected_trips": len(trip_ids),
         }
         mark(
             report, "4", rotation_status,
-            "Dispatcher Approve UI/HTTP/DB/synthetic WMS PASS; R3 Dispatcher rotation "
-            "not independently verified (T15)",
+            "Dispatcher approval and reflected WMS batch verified. "
+            f"Rotation candidate, trip assignment and PLAN_APPROVED audit: {rotation_status}.",
             approve_subcheck="PASS", rotation_subcheck=rotation_status,
             plan_id=plan_id, trip_ids=trip_ids, wms_source="wms_synthetic",
             reflected_batch=row[3],
         )
+        expect(page.get_by_role("status").get_by_text("Plan approved", exact=True)).to_be_visible()
+        mark(report, "6", "PASS", "Dispatcher queue opened the same planning run and approved it from Plan review.",
+             run_id=run_id, plan_id=plan_id, http=info)
         report["last_verified"] = "Dispatcher UI approved; WMS synthetic batch and queued CONFIRMED verified"
         screenshot(page, out, "04-dispatcher-approved.png")
         return trip_ids
@@ -695,6 +723,105 @@ def _driver_error(response: Response, report: dict, stage: str, trip_id: int,
     return detail
 
 
+def dispatcher_tracking(browser, password: str, order_id: int, trip_id: int,
+                        gps: dict, report: dict, env: dict[str, str]) -> None:
+    account = sql(
+        "SELECT u.email FROM ref.app_user u JOIN ops.delivery_trip t "
+        "ON u.employee_id=t.assigned_dispatcher_employee_id "
+        f"WHERE t.id={trip_id} AND u.is_active AND 'dispatcher'=ANY(u.roles)", env,
+    )
+    if not account:
+        mark(report, "9", "BLOCKED", "Trip has no eligible assigned Dispatcher.")
+        return
+    page = login(browser, "/dispatcher/tracking", account, password, Path(), "Dispatcher",
+                 app_now=env["APP_NOW"])
+    try:
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/v1/gps/live") as got:
+            page.reload()
+        info = metadata(got.value)
+        report["api"].append(info)
+        if got.value.status != 200:
+            mark(report, "9", "FAIL", "Assigned Dispatcher live tracking request failed.", http=info)
+            return
+        trips = [item for item in got.value.json() if item["trip_id"] == trip_id]
+        db_risk = sql(
+            f"SELECT risk_status||'|'||risk_color FROM ops.eta_forecast WHERE id={gps['db']['eta_id']}", env,
+        )
+        if len(trips) != 1:
+            raise EvidenceMismatch("Assigned Dispatcher did not receive the exact on-road trip")
+        live = trips[0]
+        if (live["order_id"] != order_id or not live["last_position"]
+            or aware(live["updated_at"]) != aware(gps["recorded_at"])
+            or aware(live["forecast_eta"]) != aware(gps["db"]["forecast_eta"])
+            or (live["risk"]["status"] + "|" + live["risk"]["color"]) != db_risk):
+            raise EvidenceMismatch("Dispatcher live response does not match the GPS and ETA checkpoint")
+        row = page.get_by_role("listitem", name=f"Chuyến {trip_id}", exact=True)
+        expect(row.get_by_text(f"Đơn #{order_id} · đang trên đường", exact=True)).to_be_visible()
+        for label in ("Vị trí gần nhất", "Giờ cập nhật", "ETA", "Rủi ro:"):
+            expect(row.get_by_text(label, exact=label != "Rủi ro:")).to_be_visible()
+        mark(report, "9", "BLOCKED",
+             "Assigned Dispatcher UI shows last position, update time, ETA and risk for the same trip. "
+             "The customer-approved DELAY flow still needs a risk scenario.",
+             http=info, tracking="PASS", trip_id=trip_id, risk_status=live["risk"]["status"])
+    except (AssertionError, Error, EvidenceMismatch) as exc:
+        mark(report, "9", "FAIL", "Dispatcher live UI and PostgreSQL checkpoint did not agree.",
+             exception_type=type(exc).__name__)
+    finally:
+        page.close()
+
+
+def mailpit_lifecycle(report: dict, env: dict[str, str], templates: tuple[str, ...]) -> None:
+    order_id, order_no = report["order_id"], report["order_no"]
+    query = (
+        "SELECT DISTINCT n.template||'|'||n.id||'|'||n.status||'|'||n.attempts||'|'||"
+        "(SELECT count(*) FROM audit.decision_log a WHERE a.action='NOTIFICATION_SENT' "
+        "AND a.order_id=n.order_id AND a.entity_id=n.id::text) "
+        f"FROM ops.notification n WHERE n.order_id={order_id} "
+        "AND n.template IN (" + ",".join(f"'{item}'" for item in templates) + ")"
+    )
+    queued = [row.split("|") for row in sql(query, env).splitlines()]
+    if sorted(row[0] for row in queued) != sorted(templates) or any(row[2:] != ["queued","0","0"] for row in queued):
+        mark(report, "10", "FAIL", "Outbox must contain exactly one unsent row per expected lifecycle template.")
+        return
+    schedule = sql(
+        f"SELECT max(scheduled_for)::text FROM ops.notification WHERE order_id={order_id} "
+        "AND template IN (" + ",".join(f"'{item}'" for item in templates) + ")", env,
+    )
+    worker_at = max(aware(env["APP_NOW"]), aware(schedule)).isoformat()
+    compose("--profile", "demo-worker", "up", "-d", "cfo-worker", env={**env, "APP_NOW": worker_at})
+    deadline = time.monotonic() + 95
+    while time.monotonic() < deadline:
+        sent = [row.split("|") for row in sql(query, env).splitlines()]
+        if sorted(row[:2] for row in sent) == sorted(row[:2] for row in queued) and all(
+            row[2:] == ["sent", "1", "1"] for row in sent
+        ):
+            break
+        if any(row[2] in ("suppressed", "failed") for row in sent):
+            mark(report, "10", "BLOCKED", "The lifecycle outbox worker did not send all queued mail.")
+            return
+        time.sleep(2)
+    else:
+        mark(report, "10", "BLOCKED", "Lifecycle outbox did not reach sent before the worker deadline.")
+        return
+    with httpx.Client(base_url=MAILPIT, timeout=8, trust_env=False) as mailpit:
+        inbox = mailpit.get("/api/v1/messages")
+        inbox.raise_for_status()
+        messages = inbox.json().get("messages") or []
+        for template in templates:
+            matches = [row for row in messages if row["Subject"] == SUBJECTS[template].format(ref=order_no)]
+            if len(matches) != 1:
+                mark(report, "10", "FAIL", f"Mailpit count for {template} was {len(matches)}.")
+                return
+            detail = mailpit.get(f"/api/v1/message/{matches[0]['ID']}")
+            detail.raise_for_status()
+            message = detail.json().get("Text", "")
+            if f"Order {order_no}: {PHRASES[template]}" not in message:
+                mark(report, "10", "FAIL", f"Mailpit {template} template did not match the same order.")
+                return
+    mark(report, "10", "PASS", f"{', '.join(templates)} reached Mailpit once each for the same order.",
+         notifications={template: int(id_) for template, id_, *_ in sent}, worker_app_now=worker_at)
+
+
 def driver(browser, password: str, trip_id: int, order_id: int,
            out: Path, report: dict, env: dict[str, str]) -> None:
     """One real assigned-driver Chrome session and one PostgreSQL transaction chain."""
@@ -873,6 +1000,7 @@ def driver(browser, password: str, trip_id: int, order_id: int,
         evidence["stages"]["gps"] = gps_stage
         report["last_verified"] = "Driver GPS HTTP202 + driver_tap point and new ETA in PostgreSQL (pre-purge)"
         _driver_screenshot(page, out, "10-driver-location-sent.png")
+        dispatcher_tracking(browser, password, order_id, trip_id, gps_stage, report, env)
         # T14: set a *new* Chrome fix, advance both clocks and click UI outcome.
         # The browser captures the real Geolocation API again, not the previous point.
         env = _advance_driver_clock(page, env, 60, report, "delivered")
@@ -970,8 +1098,12 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
             mark(report, "11", "FAIL", "CS lookup did not return the synced CFO order; ETA not tested",
                  http=metadata(listed.value), task="T03")
             return
-        with page.expect_response(lambda r: r.request.method == "GET" and
-                                  urlsplit(r.url).path == f"/api/v1/orders/{order_id}") as got:
+        with (
+            page.expect_response(lambda r: r.request.method == "GET" and
+                                 urlsplit(r.url).path == f"/api/v1/orders/{order_id}") as got,
+            page.expect_response(lambda r: r.request.method == "GET" and
+                                 urlsplit(r.url).path == f"/api/v1/orders/{order_id}/eta-forecasts") as history,
+        ):
             page.get_by_role("button", name=re.compile(re.escape(order_no))).click()
         detail = body(got.value, report)
         if detail.get("id") != order_id or detail.get("order_no") != order_no:
@@ -981,44 +1113,34 @@ def cs(browser, password: str, order_id: int, out: Path, report: dict, env: dict
         report["cs_lookup"] = {"status": "PASS", "order_id": order_id, "order_no": order_no,
                                "http": metadata(got.value), "status_from_api": detail.get("status")}
         report["last_verified"] = "CS UI looked up same order; detail matches API"
-        # Separate API contract, distinct from the CS order projection.
-        # HTTP500 is a failure unless correlated backend logs prove a known T14 stub.
-        token = page.evaluate("localStorage.getItem('cfo_token')")
-        if not isinstance(token, str) or not token:
-            raise RuntimeError("CS authenticated browser session did not expose a token")
-        # Same authorized CS session, but this is a separate API probe, NOT a
-        # customer-visible UI action or a test of history rendering.
-        eta_path = f"/api/v1/orders/{order_id}/eta-forecasts"
-        try:
-            probe = page.request.get(API + eta_path,
-                                     headers={"Authorization": "Bearer " + token}, timeout=10_000)
-        except Error:
-            info = {"path": eta_path, "http": None, "error_code": None, "transport_error": True}
-            status, reason = "FAIL", "ETA request returned no HTTP response"
-        else:
-            info = metadata(probe)
-            report["api"].append(info)
-            correlation_id = probe.headers.get("x-correlation-id")
-            with TemporaryDirectory(prefix="t27-eta-") as temp:
-                log = Path(temp) / "api.log"
-                if (probe.status, info["error_code"]) == (500, "INTERNAL_ERROR") and correlation_id:
-                    try:
-                        api_log = compose("logs", "--no-color", "--no-log-prefix", "--tail", "200",
-                                          "cfo-api", env=env, capture=True)
-                    except RuntimeError:
-                        pass  # Without a matching log the shared classifier returns FAIL.
-                    else:
-                        log.write_text(api_log, encoding="utf-8")
-                status = eta_history_status(probe.status, info["error_code"], log, eta_path, correlation_id)
-            if status == "BLOCKED":
-                reason = "T14 ETA stub confirmed by a correlated backend NotImplementedError"
-            elif status == "FAIL":
-                reason = f"Unexpected ETA response HTTP {info['http']} {info['error_code']}"
+        info = metadata(history.value)
+        report["api"].append(info)
+        status = "FAIL"
+        reason = f"Unexpected ETA history HTTP {info['http']} {info['error_code']}"
+        if history.value.status == 200:
+            versions = sql(
+                "SELECT version||'|'||forecast_eta::text||'|'||risk_status FROM ops.eta_forecast "
+                f"WHERE order_id={order_id} ORDER BY version", env,
+            ).splitlines()
+            payload = history.value.json()
+            forecasts = payload.get("items", []) if isinstance(payload, dict) else payload
+            db_versions = [(int(v), aware(at), risk) for v, at, risk in
+                           (row.split("|") for row in versions)]
+            if db_versions and [(item["version"], aware(item["forecast_eta"]), item["risk_status"])
+                                for item in forecasts] == db_versions:
+                section = page.get_by_role("region", name="ETA history", exact=True)
+                for version, at, _ in db_versions:
+                    row = section.get_by_role("listitem").filter(
+                        has=page.get_by_text(f"Version {version}", exact=True)
+                    )
+                    expect(row.get_by_text(f"ETA {at.astimezone(UTC):%Y-%m-%d %H:%M} UTC",
+                                           exact=True)).to_be_visible()
+                status, reason = "PASS", "Browser-rendered ETA versions match PostgreSQL."
             else:
-                reason = "ETA probe returned HTTP 200; history rendering not verified"
+                reason = "No matching PostgreSQL versions in the ETA history UI response."
         report["eta_history"] = {**info, "status": status, "reason": reason}
-        mark(report, "11", status, f"CS lookup PASS for {order_no}. ETA {status}. {reason}.",
-             cs_lookup="PASS", eta_history=report["eta_history"], task="T14")
+        mark(report, "11", status, f"CS lookup PASS for {order_no}. {reason}",
+             cs_lookup="PASS", eta_history=report["eta_history"], task="T03, T14")
     finally:
         page.close()
 
@@ -1108,8 +1230,14 @@ def main() -> int:
                                 raise EvidenceMismatch("No exact-trip T12 qualification to expire")
                             report["t12_test_case"] = "expired_qualification_after_loading"
                         driver(browser, password, trip_ids[0], order_id, args.output, report, execution_env)
+                    terminal_clock = report.get("driver_clocks", {}).get("delivered")
+                    if terminal_clock:
+                        execution_env = {**execution_env, "APP_NOW": terminal_clock["api"]}
                     report["active_step"] = "11"
                     cs(browser, password, order_id, args.output, report, execution_env)
+                    if next(row for row in report["steps"] if row["step"] == "8")["status"] == "PASS":
+                        report["active_step"] = "10"
+                        mailpit_lifecycle(report, execution_env, ("DISPATCHED", "DELIVERED"))
                 else:
                     # Same order may still be available for CS even when approval
                     # was blocked; do not attempt unauthorized warehouse actions.
@@ -1149,16 +1277,8 @@ def main() -> int:
     finally:
         # Preserve blocked substeps as not completed. T30 and E5 are separate
         # fixture runs, not evidence of success on SE-2026-000249.
-        mark(report, "3", "BLOCKED", "One E0-04 proposal, not three ranked choices; T19/T26", task="T19, T26")
-        mark(report, "9", "BLOCKED", "Requires separate E5 DELAY draft/worker plus T08/T17", task="E5, T08, T17")
-        mark(
-            report, "10", "BLOCKED",
-            "DELIVERED verified by Chrome/PostgreSQL; lifecycle email not checked"
-            if next(row for row in report["steps"] if row["step"] == "8")["status"] == "PASS"
-            else "Order lifecycle and DELAY email not fully verified on this run",
-            task="E2, T21",
-        )
-        mark(report, "12b", "NOT VERIFIED", "T30 T29 fixture separate; official T26 seed not yet replayed", task="T26, T30")
+        for step in ("12", "12b"):
+            mark(report, step, "NOT VERIFIED", "Run the separate T27 reporting scenario on the T26 seed.")
         (args.output / "t27-integrated.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         rows = ["# T27 integrated attempt — fixture SE-2026-000249",
                 "", f"Commit: {report['revision']}", f"Sales/Approve clock: {NOW} / {ZONE}",
