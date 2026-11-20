@@ -34,7 +34,7 @@ MAILPIT = "http://127.0.0.1:8025"
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "--env-file", str(ROOT / ".env"), "-p", "cfo-demo-e004"]
 STEPS = (
-    ("1", "POS submit at Source (outside CFO-start browser run)", "E0, T26"),
+    ("1", "Open CFO Sales Sync & Check and enter Source reference", "E0, T26"),
     ("2", "Sales Sync and feasibility", "E0, E1"),
     ("3", "Sales rank alternatives", "T19, T26"),
     ("4", "Dispatcher Approve + WMS", "E1, T12, T15"),
@@ -156,9 +156,9 @@ def sales(browser, password: str, out: Path, report: dict, env: dict[str, str]) 
         external_ref.fill(SOURCE_REF)
         expect(external_ref).to_have_value(SOURCE_REF)
         mark(
-            report, "1", "NOT VERIFIED",
-            "Source pre-submitted fixture exists, but no POS UI submit click was exercised. "
-            "Sales entered the external reference in the CFO UI (counted under step 2).",
+            report, "1", "PASS",
+            "Chrome opened CFO Sales Sync & Check and entered/verified the Source "
+            "reference. POS submission was separate pre-run fixture setup.",
             source_ref=SOURCE_REF, origin="Source pre-SUBMITTED fixture",
         )
         report["last_verified"] = "Sales entered the Source reference in CFO Sync & Check"
@@ -345,8 +345,34 @@ def approve(browser, password: str, run_id: int, plan_id: int, order_id: int,
         if (row[:3] != ["APPROVED", "approved", "wms_synthetic"] or row[3] != row[4]
             or trips_db != [str(t) for t in trip_ids] or queued != "CONFIRMED|queued"):
             raise RuntimeError("Approve/SQL/WMS batch or notification IDs did not agree")
-        mark(report, "4", "PASS", "Dispatcher UI Approve HTTP 200; PostgreSQL APPROVED, trip, synthetic WMS ACK reflected in signed batch",
-             plan_id=plan_id, trip_ids=trip_ids, wms_source="wms_synthetic", reflected_batch=row[3])
+        # Step 4 requires T15 rotation assignment as well as approval.
+        assigned = sql(
+            "SELECT COALESCE(assigned_dispatcher_employee_id::text,'NULL') "
+            f"FROM ops.delivery_trip WHERE id IN ({','.join(str(i) for i in trip_ids)}) "
+            "ORDER BY id", env,
+        ).splitlines()
+        if len(assigned) != len(trip_ids):
+            raise RuntimeError("Post-approve Dispatcher assignment/trip count mismatch")
+        if len(set(assigned)) > 1 and "NULL" not in assigned:
+            rotation_status = "FAIL"
+        elif "NULL" in assigned:
+            rotation_status = "BLOCKED"
+        else:
+            rotation_status = "NOT VERIFIED"  # T15 fairness needs separate evidence
+        report["approval_subcheck"] = "PASS"
+        report["rotation_subcheck"] = {
+            "status": rotation_status,
+            "assigned_trips": sum(value != "NULL" for value in assigned),
+            "expected_trips": len(trip_ids),
+        }
+        mark(
+            report, "4", rotation_status,
+            "Dispatcher Approve UI/HTTP/DB/synthetic WMS PASS; R3 Dispatcher rotation "
+            "not independently verified (T15)",
+            approve_subcheck="PASS", rotation_subcheck=rotation_status,
+            plan_id=plan_id, trip_ids=trip_ids, wms_source="wms_synthetic",
+            reflected_batch=row[3],
+        )
         report["last_verified"] = "Dispatcher UI approved; WMS synthetic batch and queued CONFIRMED verified"
         screenshot(page, out, "04-dispatcher-approved.png")
         return trip_ids
@@ -705,10 +731,11 @@ def main() -> int:
             finally:
                 browser.close()
         statuses = {row["step"]: row["status"] for row in report["steps"]}
-        required = ("2", "4", "5", "7")
+        required = ("1", "2", "5", "7")
         report["result"] = (
             "PASS_WITH_BLOCKERS"
             if all(statuses[step] == "PASS" for step in required)
+            and report.get("approval_subcheck") == "PASS"
             and report.get("dispatch_attempt")
             and "FAIL" not in statuses.values()
             else "FAIL"

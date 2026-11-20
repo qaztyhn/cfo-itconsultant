@@ -62,10 +62,10 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 
 ## Acceptance boundaries
 
-- **Step 1 (POS)** is **NOT VERIFIED** for the POS UI: Source `SE-2026-000249`
-  is submitted by a synthetic seed **before** the browser starts, and the
-  runner never clicks POS Create/Submit. Source fixture existence is setup
-  evidence, not a user-interface PASS.
+- **Step 1 (CFO Sales input)** is **PASS** only when Chrome opens CFO
+  **Sync & Check**, enters the external order reference and verifies the
+  field value. The task board defines step 1 this way. POS Create/Submit
+  is separate synthetic Source setup, not a scored CFO UI step.
 - **Step 2 (Sales)**: Chrome opens CFO Sync & Check, enters the Source
   reference and clicks both Sync and Check; HTTP 200 and the still-proposed
   plan are checked. The E0
@@ -75,7 +75,10 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 - **Dispatcher**: Approve must be on a still-proposed unexpired plan.
   HTTP 200 must match `APPROVED`, same trip IDs, one queued `CONFIRMED`
   notification ID, synthetic ACK and signed stock batch in PostgreSQL.
-  If blocked, preserve HTTP status/error.code and latest verified state.
+  Task-board step 4 **also requires T15 market rotation**; the approval
+  subcheck may PASS while whole-step status remains BLOCKED (NULL assignment)
+  or NOT VERIFIED (assignment exists but rotation fairness/eligibility
+  untested). If Approve fails, preserve HTTP/error.code and last state.
 - **E2**: same notification ID must be `sent` with one DB audit and
   exactly one Mailpit message matching the CFO order number and both
   endpoints of the persisted commitment, formatted in Stockholm time;
@@ -121,21 +124,26 @@ Chrome and the above path, uploads only sanitized evidence, then destroys
 **Assumptions:** existing DEC-R3 and WMS-simulation gates reviewed; no new
 business decisions, no data-gate or privacy bypass. No merge/deployment by QA.
 
-## Strict T27 14-row accounting (after 2026-11-20 QA correction)
+## Task-board-aligned 14-row QA accounting (2026-11-20)
 
-The previous runner called CFO Sales reference entry “step 1 PASS”. The task
-board's **step 1 is POS submit**, so that historical label was too broad.
-The current runner leaves step 1 `NOT VERIFIED` and records the real CFO
-Sales actions in step 2. A successful current-head same-order run should show
-**4 PASS, 4 BLOCKED, 6 NOT VERIFIED, 0 FAIL** in the real Chrome run
-[`d809ed8`](https://github.com/qaztyhn/cfo-itconsultant/actions/runs/44655314259).
-CS order lookup is an independent PASS subcheck under step 11, while its ETA
-version-history rendering is NOT VERIFIED despite HTTP 200 from the history API.
-Step 8 remains BLOCKED (D7 56-day verified history missing for the trip day).
-Always correlate a report with its exact commit and disposable run; a later
-document-only SHA is not a newly executed browser test.
+The authoritative [Round 3 task board](TASK_BOARD_R3_E2E_DEMO.md)
+defines step 1 as **opening CFO Sales Sync & Check and entering the reference**
+and step 2 as **Sync now → Check feasibility**. Earlier PR notes incorrectly
+relabelled step 1 as POS submission, which is only synthetic setup. When real
+Chrome verifies the CFO form, step 1 is PASS.
 
-The Source external reference `SE-2026-000249` and CFO-generated
-`SE-2026-000001` are **different identifiers** linked by the persisted
-`external_ref`. Mailpit, Prep Queue, Driver and CS assertions follow the
-single CFO order ID; the test must never count them as two orders.
+Step 4 also includes T15 Dispatcher rotation. Successful UI Approve with
+WMS ACK and PostgreSQL evidence is **approval subcheck PASS** but not whole
+step PASS. NULL `assigned_dispatcher_employee_id` makes full step BLOCKED;
+when all trips have assignments but fairness/turn provenance is not tested,
+full step remains NOT VERIFIED. The runner preserves both subcheck statuses.
+
+A current-main replay with approval success and unassigned trips is expected
+to report **4 PASS / 5 BLOCKED / 5 NOT VERIFIED / 0 FAIL**. This count must
+be confirmed by an exact-head Chrome run, not assumed from code edits.
+CS lookup separately PASS under step 11; ETA API HTTP 200 is not proof
+of version-history rendering. Dispatch 409 retains its exact D7 blocker.
+Keep Source external ref and generated CFO order number distinct.
+
+Assumptions: reviewed; new decisions none. No WMS production writes,
+actual GPS or unverified driving-duty bypass.
