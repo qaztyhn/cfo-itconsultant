@@ -10,8 +10,8 @@ import { canViewKpi } from "../../app/access";
 import { apiFetch, apiGet, isApiError } from "../../api/client";
 import { EmptyState, LoadingState } from "../../components/StateViews";
 import {
-  CARDS, DIAGNOSTICS, METRICS, dailyPoints, decisions, diagnosticValue,
-  displayValue, metricValue, pageNumber, validDate, validId, type MetricKey,
+  BASELINE_METRICS, CARDS, METRICS, dailyPoints, decisions,
+  displayValue, metricValue, supportingValue, pageNumber, validDate, validId, type MetricKey,
 } from "./model";
 
 const PAGE_SIZE=25;
@@ -27,32 +27,47 @@ function SafeError({error,retry,title}:{error:unknown;retry:()=>void;title:strin
   </div>;
 }
 function KpiCards({data}:{data:unknown}) {
+  const commit=supportingValue(data,"order_to_commit_min");
+  const counter=supportingValue(data,"counter_commit_rate");
+  const manual=supportingValue(data,"manual_plan_count");
   return <div aria-label="Operational KPIs" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-    {CARDS.map((keys,i)=><section key={i} className="rounded-card border border-border bg-surface p-5">
-      <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkMuted">
-        {keys.map(key=>METRICS.find(m=>m.key===key)?.label).join(" · ")}
-      </p>
-      <div className="mt-4 space-y-3">{keys.map(key=>{
-        const meta=METRICS.find(m=>m.key===key)!;
-        const value=metricValue(data,key);
-        return <div key={key} data-metric={key} className="space-y-1">
-          {keys.length>1&&<p className="text-xs text-inkMuted">{meta.label}</p>}
+    {CARDS.map(([key])=>{
+      const meta=METRICS.find(m=>m.key===key)!;
+      const value=metricValue(data,key);
+      return <section key={key} data-metric={key} className="rounded-card border border-border bg-surface p-5">
+        <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkMuted">{meta.label}</p>
+        {key==="eta_error_min"?<div className="mt-4 space-y-2">
+          <p className="font-mono text-2xl font-bold text-ink">Median {displayValue(value.median,"min")}</p>
+          <p>P90 {displayValue(value.p90,"min")}</p>
+          <p className="text-xs text-inkMuted">Target: median {displayValue(value.targetMedian,"min")} · P90 {displayValue(value.targetP90,"min")}</p>
+          <p className="text-xs text-inkMuted">Forecast before trip Dispatch vs proof of delivery.</p>
+        </div>:<div className="mt-4 space-y-2">
           <p className="font-mono text-2xl font-bold text-ink">{displayValue(value.value,meta.unit)}</p>
           <p className="text-xs text-inkMuted">{meta.direction==="lower"?"Lower is better":"Higher is better"}</p>
-          <p className="text-xs text-inkMuted">Baseline: {displayValue(value.baseline,meta.unit)}</p>
-          {value.change!==null&&<p className="text-xs font-semibold text-pine">
-            Server-reported baseline change: {value.change.toLocaleString("en-US",{maximumFractionDigits:2})}
+          {(key==="planning_time_min"||key==="manual_intervention_rate")&&
+            <p className="text-xs text-inkMuted">Baseline: {displayValue(value.baseline,meta.unit)}</p>}
+          {(key==="planning_time_min"||key==="plan_acceptance_rate")&&
+            <p className="text-sm">Sales {displayValue(value.sales,meta.unit)} · Dispatcher {displayValue(value.dispatcher,meta.unit)}</p>}
+          {key==="planning_time_min"&&<p className="text-xs text-inkMuted">
+            Submit → confirmed: Sales {displayValue(commit.sales,"min")} · Dispatcher {displayValue(commit.dispatcher,"min")}
           </p>}
-        </div>;
-      })}</div>
-    </section>)}
+          {key==="on_time_rate"&&<p className="text-xs text-inkMuted">Delivered inside the promised window. Failed deliveries excluded.</p>}
+          {key==="plan_acceptance_rate"&&<p className="text-xs text-inkMuted">
+            Committed at the counter: {displayValue(counter.value,"percent")}
+          </p>}
+          {key==="manual_intervention_rate"&&<p className="text-xs text-inkMuted">
+            Manual plans: {displayValue(manual.value,"count")}
+          </p>}
+        </div>}
+      </section>;
+    })}
   </div>;
 }
 function Trend({data,metric}:{data:unknown;metric:MetricKey}) {
   const points=dailyPoints(data);
   const supplied=points.filter(point=>point.value!==null);
   const meta=METRICS.find(x=>x.key===metric)!;
-  if(!supplied.length)return <EmptyState message="No verified daily KPI points for this selection."/>;
+  if(!supplied.length)return <EmptyState message="Chưa có dữ liệu"/>;
   const values=supplied.map(point=>point.value as number);
   const high=Math.max(...values),low=Math.min(...values);
   const span=Math.max(high-low,Math.abs(high)||1);
@@ -106,7 +121,7 @@ function BaselineEditor({onSaved}:{onSaved:()=>void}) {
       <label className="flex min-w-56 flex-col gap-1 text-sm">Metric
         <select aria-label="Baseline metric" className="rounded-control border border-border p-2"
           value={metric} onChange={e=>{setMetric(e.target.value as MetricKey);setSaved(false);mutation.reset();}}>
-          {METRICS.map(item=><option value={item.key} key={item.key}>{item.label}</option>)}
+          {BASELINE_METRICS.map(item=><option value={item.key} key={item.key}>{item.label}</option>)}
         </select>
       </label>
       <label className="flex flex-col gap-1 text-sm">Baseline value (API metric unit)
@@ -136,7 +151,8 @@ export function KpiDashboard() {
   const to=validDate(params.get("to"));
   const fromRaw=params.get("from"),toRaw=params.get("to");
   const invalidRange=(Boolean(fromRaw)&&from===null)||(Boolean(toRaw)&&to===null)||
-    Boolean(from&&to&&from>to);
+    Boolean(from&&to&&(from>to||
+      (Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86400000>=366));
   const warehouseRaw=params.get("warehouse_id"),storeRaw=params.get("store_id");
   const warehouseId=validId(warehouseRaw),storeId=validId(storeRaw);
   const invalidLocation=Boolean(warehouseRaw&&!warehouseId)||Boolean(storeRaw&&!storeId);
@@ -162,9 +178,6 @@ export function KpiDashboard() {
   const daily=useQuery({queryKey:["ops-kpi","daily",user?.id,user?.market,metric,from,to],
     enabled:ready,retry:false,
     queryFn:({signal})=>apiGet<unknown>("/kpi/daily",{metric,...filters},signal)});
-  const diagnostics=useQuery({queryKey:["ops-kpi","diagnostics",user?.id,user?.market,from,to],
-    enabled:ready,retry:false,
-    queryFn:({signal})=>apiGet<unknown>("/kpi/diagnostics",undefined,signal)});
   const audit=useQuery({queryKey:["ops-kpi","audit",user?.id,user?.market,from,to,action,orderId,logPage],
     enabled:ready&&auditAllowed&&!invalidLogFilter,retry:false,
     queryFn:({signal})=>apiGet<unknown>("/audit/decisions",{
@@ -225,20 +238,6 @@ export function KpiDashboard() {
         {daily.isError&&<SafeError title="Daily KPI trend unavailable" error={daily.error} retry={()=>void daily.refetch()}/>}
         {daily.isSuccess&&<Trend data={daily.data} metric={metric}/>}
       </div>
-    </section>}
-    {ready&&<section className="rounded-card border border-border bg-deepPine p-5 text-white">
-      <h2 className="text-lg font-bold">Operational diagnostics</h2>
-      <p className="mt-1 text-xs">Unsupported diagnostics are not zero.</p>
-      {diagnostics.isPending&&<p role="status" className="mt-3">Loading diagnostics…</p>}
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">
-        {DIAGNOSTICS.map(item=><div key={item.key} data-diagnostic={item.key}>
-          <p className="font-mono text-xs uppercase">{item.label}</p>
-          <p className="mt-2 font-mono text-xl font-bold">
-            {diagnostics.isSuccess?displayValue(diagnosticValue(diagnostics.data,item.key),item.unit):"Unavailable"}
-          </p>
-        </div>)}
-      </div>
-      {diagnostics.isError&&<p role="status" className="mt-3 text-xs">Diagnostic endpoint unavailable; values withheld.</p>}
     </section>}
     <section className="space-y-3">
       <h2 className="text-xl font-bold">Decision log</h2>

@@ -10,7 +10,7 @@ import {KpiDashboard} from "./KpiDashboard";
 const OPS:AuthUser={id:10,employee_id:null,name:"Demo ops",roles:["viewer"],market:"SE",
   location_ids:[],locale:"en",kpi_scopes:["ops"]};
 function signIn(user:AuthUser) {useAuthStore.getState().setAuth({access_token:"synthetic",token_type:"bearer",expires_in:3600,user},"unit@synthetic.invalid");}
-type MockOptions={failure?:string;empty?:boolean;pending?:boolean;nullDiagnostics?:boolean;failBaseline?:boolean};
+type MockOptions={failure?:string;empty?:boolean;pending?:boolean;failBaseline?:boolean};
 function api(options:MockOptions={}) {
   const calls:{path:string;search:URLSearchParams;method:string;body?:BodyInit|null}[]=[];
   vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -19,19 +19,16 @@ function api(options:MockOptions={}) {
     if(path.includes("/kpi/baseline/")) return options.failBaseline ? new Response(JSON.stringify({error:{code:"FORBIDDEN",message:"PRIVATE"}}),{status:403}) : Response.json({metric:path.split("/").pop(),value:15});
     if(options.pending)return new Promise<Response>(()=>{});
     if(path.endsWith(options.failure??"__no_failure__"))return new Response(JSON.stringify({error:{code:"FORBIDDEN",message:"SECRET PRIVATE REASON"}}),{status:403});
-    if(path.endsWith("/kpi/summary"))return Response.json(options.empty?{metrics:{}}:{metrics:{
-      planning_time_min:{value:4.2,baseline:15,change:-10.8},
-      on_time_rate:{value:0.94},labour_hours_per_delivery:{value:9.8},
-      km_per_delivery:{value:31.4},prep_error_min:{value:11},
-      eta_error_min:{value:14},plan_acceptance_rate:{value:0.81},
-      manual_plan_count:{value:2},failed_delivery_rate:{value:0.03},
-      capacity_utilisation:{value:0.71},
-    }});
+    if(path.endsWith("/kpi/summary"))return Response.json(options.empty?{metrics:{},supporting:{}}:{metrics:{
+      planning_time_min:{value:4.2,baseline:15,by_path:{sales:2.1,dispatcher:6}},
+      on_time_rate:{value:0.94},
+      plan_acceptance_rate:{value:0.81,by_path:{sales:0.88,dispatcher:0.72}},
+      manual_intervention_rate:{value:0.09,baseline:0.35},
+      eta_error_min:{median:14,p90:38,target:{median:20,p90:60}},
+    },supporting:{order_to_commit_min:{by_path:{sales:6,dispatcher:95}},
+      counter_commit_rate:{value:0.42},manual_plan_count:{value:2}}});
     if(path.endsWith("/kpi/daily"))return Response.json(options.empty?{points:[]}:{points:[
       {day:"2026-11-08",value:0.91},{day:"2026-11-09",value:0.94}]});
-    if(path.endsWith("/kpi/diagnostics"))return Response.json({
-      hard_constraint_violations:options.nullDiagnostics?null:0,event_to_alert_latency_s_median:null,
-    });
     if(path.endsWith("/audit/decisions"))return Response.json(options.empty?{items:[],total:0}:{items:[
       {id:13,created_at:"2026-11-09T10:00:00Z",action:"ALT_SELECTED",order_id:42,
         actor_name:"PRIVATE ACTOR",reason_text:"PRIVATE REASON",snapshot:{phone:"PRIVATE PHONE"}},
@@ -48,16 +45,21 @@ function mount(url="/kpi") {
 }
 beforeEach(()=>signIn(OPS));
 afterEach(()=>vi.unstubAllGlobals());
-describe("US-KPI-01 AC1 cards, trend and diagnostics",()=>{
-  it("shows eight server-authoritative KPI cards and verified baseline without revenue",async()=>{
+describe("US-KPI-01 AC1 five cards and trend",()=>{
+  it("shows five KPI cards, path splits, supporting values and no Diagnostics request",async()=>{
     const calls=api();mount();
     expect(await screen.findByText("4.2 min")).toBeInTheDocument();
     const cards=screen.getByLabelText("Operational KPIs");
-    expect(within(cards).getAllByText(/Baseline:/)).toHaveLength(10);
-    expect(within(cards).getAllByText(/Baseline: Unavailable/)).toHaveLength(9);
-    expect(within(cards).getByText("15 min",{exact:false})).toBeInTheDocument();
-    expect(screen.queryByText(/profit|revenue/i)).not.toBeInTheDocument();
-    expect(calls.every(c=>c.method==="GET")).toBe(true);
+    expect(cards.querySelectorAll("[data-metric]")).toHaveLength(5);
+    expect(within(cards).getByText(/Sales 2.1 min/)).toBeInTheDocument();
+    expect(within(cards).getByText(/Dispatcher 72%/)).toBeInTheDocument();
+    expect(within(cards).getByText(/Committed at the counter: 42%/)).toBeInTheDocument();
+    expect(within(cards).getByText(/Manual plans: 2/)).toBeInTheDocument();
+    expect(within(cards).getByText(/Median 14 min/)).toBeInTheDocument();
+    expect(within(cards).getByText(/P90 38 min/)).toBeInTheDocument();
+    expect(within(cards).getAllByText(/Baseline:/)).toHaveLength(2);
+    expect(within(cards).queryByText(/Labour \/ delivery/)).not.toBeInTheDocument();
+    expect(calls.every(c=>!c.path.endsWith("/kpi/diagnostics"))).toBe(true);
   });
   it("shows daily trend and switches metric via API without calculating KPI",async()=>{
     const calls=api();mount();
@@ -65,15 +67,9 @@ describe("US-KPI-01 AC1 cards, trend and diagnostics",()=>{
     await userEvent.selectOptions(screen.getByRole("combobox",{name:"Trend metric"}),"eta_error_min");
     await waitFor(()=>expect(calls.some(c=>c.path.endsWith("/kpi/daily")&&c.search.get("metric")==="eta_error_min")).toBe(true));
   });
-  it("shows null diagnostics as unavailable and never promotes unknown to zero",async()=>{
-    api({nullDiagnostics:true});mount();
-    const item=await screen.findByText("Hard-constraint violations");
-    expect(item.closest("[data-diagnostic]")).toHaveTextContent("Unavailable");
-    expect(screen.getByText("Event → alert latency (median)").closest("[data-diagnostic]")).toHaveTextContent("Unavailable");
-  });
   it("shows empty daily and audit states without synthesized points",async()=>{
     api({empty:true});mount();
-    expect(await screen.findByText(/No verified daily KPI points/)).toBeInTheDocument();
+    expect(await screen.findByText(/Chưa có dữ liệu/)).toBeInTheDocument();
     expect(await screen.findByText(/No decisions reported/)).toBeInTheDocument();
   });
 });
