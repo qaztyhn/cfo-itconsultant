@@ -65,11 +65,7 @@ async def handover_trip(
         raise DomainError("FORBIDDEN", "Active dispatcher identity required.")
     if not isinstance(reason_text, str) or not reason_text.strip():
         raise DomainError("REASON_REQUIRED", "Handover reason is required.")
-    if (
-        not isinstance(to_employee_id, int)
-        or isinstance(to_employee_id, bool)
-        or to_employee_id <= 0
-    ):
+    if not isinstance(to_employee_id, int) or isinstance(to_employee_id, bool) or to_employee_id <= 0:
         raise DomainError("VALIDATION_ERROR", "Invalid receiving employee.")
 
     row = (
