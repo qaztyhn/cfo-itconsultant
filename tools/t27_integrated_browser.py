@@ -825,7 +825,7 @@ def driver(browser, password: str, trip_id: int, order_id: int,
             aware(ack.get("recorded_at")) != aware(recorded)
         ):
             raise EvidenceMismatch("GPS HTTP202 did not accept the exact UI point and trip")
-        expect(page.get_by_role("status").filter(has_text="Position sent")).to_be_visible()
+        expect(page.get_by_role("status").filter(has_text=re.compile(r"^Position sent"))).to_be_visible()
         expect(page.get_by_text("Last position sent:", exact=False)).to_be_visible()
         rows = sql(
             "SELECT id||'|'||source||'|'||recorded_at::text||'|'||remaining_min||'|'||route_source "
