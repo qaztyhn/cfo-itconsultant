@@ -97,10 +97,7 @@ async def _context(
     session: AsyncSession, user: CurrentUser, *, audit: bool = False
 ) -> tuple[Market, ZoneInfo]:
     roles = set(user.roles)
-    if not (
-        ("admin" in roles)
-        or ("ops" in user.kpi_scopes and bool(roles.intersection({"dispatcher", "warehouse", "viewer"})))
-    ):
+    if "admin" not in roles and "ops" not in user.kpi_scopes:
         raise DomainError("FORBIDDEN", "Operational KPI access denied.")
     if audit and not roles.intersection({"admin", "dispatcher", "viewer"}):
         raise DomainError("FORBIDDEN", "Decision-log access denied.")

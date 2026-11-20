@@ -187,7 +187,8 @@ def test_US_KPI_02_AC1_admin_baseline_write_compare_and_audit(kpi: Api) -> None:
     assert fetch(kpi.dsn, "SELECT count(*) FROM audit.kpi_baseline")[0][0] == 0
     assert_error(
         kpi.send("PUT", "/kpi/baseline/eta_error_min", ADMIN, {"value": "20"}),
-        422, "VALIDATION_ERROR",
+        422,
+        "VALIDATION_ERROR",
     )
     response = kpi.send("PUT", "/kpi/baseline/planning_time_min", ADMIN, {"value": "15"})
     assert response.status_code == 200, response.text
