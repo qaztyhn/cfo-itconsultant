@@ -250,3 +250,36 @@ continues to produce an actual backend BLOCKED/FAIL checkpoint.
 Run via the isolated `t27-integrated-e004.yml` workflow on branch
 `feat/r3-t27-same-order-driver-step8` or by the full `--output` invocation
 above, never against a non-disposable environment.
+
+## Round 3 acceptance replay
+
+Use the `t27-integrated-e004.yml` job matrix. Each job starts a fresh disposable
+project. The `complete` job follows the original successful delivery. The
+`expired_t12` job preserves the Dispatch rejection regression. The `failed`
+job follows the same Source order in a fresh project: two spaced position
+updates cause the predicted-late alert, the appointed Dispatcher reviews a
+same-day window and explicitly sends the DELAY draft, and the Driver completes
+with FAILED. Dispatcher acknowledges the resulting critical alert in Exceptions.
+The `reporting` job uses the official T26 project for KPI, revenue and the Sales
+rank alternative probe. Read the JSON ledgers from all applicable jobs.
+
+| Step | Acceptance result on the disposable replays |
+|---|---|
+| 1 | PASS. Sales entered the submitted Source reference in CFO. |
+| 2 | PASS. Browser Sync and feasibility requests returned HTTP 200. |
+| 3 | BLOCKED. Current main's T26 case SE-2026-000123 returned only rank 1. Complete the T19 rank-2 approval trace with #244. |
+| 4 | PASS. Approval and reflected synthetic WMS batch agree with the expected rotation candidate, trip assignment and PLAN_APPROVED audit. |
+| 5 | PASS. A single CONFIRMED email with the committed window reached Mailpit. |
+| 6 | PASS. Dispatcher opened the exact planning run from the order queue and approved it. |
+| 7 | PASS. Warehouse preparation, ready and loaded events match PostgreSQL. |
+| 8 | PASS. Same-trip Dispatch, one-point GPS checkpoint, delivery POD and terminal GPS purge. |
+| 9 | PASS. Assigned live tracking and predicted-late risk, reviewed DELAY draft and explicit Send. |
+| 10 | PASS. Each expected lifecycle template reached Mailpit once with the same order reference. DELAY also matches the reviewed window. |
+| 11 | PASS. CS order lookup and every rendered ETA version match the scoped API and PostgreSQL. |
+| 12 | BLOCKED. The live KPI API still returns the legacy metrics. T22 needs the five R3 metrics, approval-path breakdown and ETA median/P90/target. |
+| 12b | PASS. Actual T26 seed showed six orders, five groups, SEK 303 recognised and the ST-001 approved-order drilldown. |
+| 13 | PASS at the task-board demo checkpoint. Driver FAILED with a POD. Dispatcher saw and acknowledged the critical alert, and no new planning run appeared. Full T18 recovery stays outside this checkpoint. |
+
+The demo worker uses the latest stored scheduled-send instant for terminal
+mail, preserving quiet hours. The risk and failure artifacts omit coordinates,
+recipient data and authentication data. No decision IDs changed.

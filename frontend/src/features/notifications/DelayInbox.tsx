@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { isApiError, newIdempotencyKey } from "../../api/client";
+import { apiGet, apiPost, isApiError, newIdempotencyKey } from "../../api/client";
 import { useAuthStore } from "../../app/store";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateViews";
 import { formatInstant } from "../tracking-risk-ui/format";
@@ -30,6 +30,49 @@ function localDate(time: number, timeZone: string): string | null {
 
 function windowText(start: string, end: string, timeZone: string): string {
   return `${formatInstant(start, timeZone)} – ${formatInstant(end, timeZone)}`;
+}
+
+function PrepareDelayDraft({ orderId, onPrepared }: { orderId: number; onPrepared: (id: number) => void }) {
+  const user = useAuthStore((state) => state.user);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const forecasts = useQuery({
+    queryKey: ["delay-forecast", user?.id, user?.market, orderId],
+    queryFn: ({ signal }) => apiGet<{
+      version: number; forecast_eta: string; risk_status: string;
+    }[]>(`/orders/${orderId}/eta-forecasts`, undefined, signal),
+    retry: false,
+  });
+  const current = forecasts.data?.at(-1);
+  const draft = useMutation({
+    mutationFn: (version: number) => apiPost<{ id: number | null; status: string }>(
+      `/orders/${orderId}/delay-notice`, { start, end, version },
+    ),
+    onSuccess: (result) => { if (result.id && result.status === "draft") onPrepared(result.id); },
+  });
+  if (forecasts.isError) return <ErrorState error={forecasts.error} title="ETA forecast unavailable"
+    onRetry={() => void forecasts.refetch()} />;
+  if (current?.risk_status !== "PREDICTED_LATE") return null;
+  const startTime = instant(start);
+  const endTime = instant(end);
+  return <form aria-label="Prepare DELAY draft" className="mt-4 space-y-3"
+    onSubmit={(event) => { event.preventDefault(); draft.mutate(current.version); }}>
+    <p>Latest predicted ETA: {current.forecast_eta}. Enter a reviewed window on the committed date.</p>
+    <label className="block text-sm">Reviewed start · ISO 8601 with offset
+      <input className="block w-full rounded-control border p-2" value={start}
+        onChange={(event) => setStart(event.target.value)} required />
+    </label>
+    <label className="block text-sm">Reviewed end · ISO 8601 with offset
+      <input className="block w-full rounded-control border p-2" value={end}
+        onChange={(event) => setEnd(event.target.value)} required />
+    </label>
+    <button type="submit" className="rounded-control bg-pine px-4 py-2 font-semibold text-white disabled:opacity-50"
+      disabled={draft.isPending || startTime === null || endTime === null || endTime <= startTime}>
+      Prepare draft
+    </button>
+    {draft.isError && <ErrorState error={draft.error} title="Could not prepare the DELAY draft" />}
+    {draft.data?.status === "unchanged" && <p role="status">The approved window does not require a new draft.</p>}
+  </form>;
 }
 
 export function NotificationInbox() {
@@ -181,7 +224,11 @@ export function NotificationInbox() {
           </div>
           {list.isPending ? <LoadingState rows={3} /> : list.isError ?
             <ErrorState title="Drafts unavailable" error={list.error} onRetry={() => void list.refetch()} /> :
-            list.data.length === 0 ? <EmptyState message="No DELAY drafts are waiting for review." /> :
+            list.data.length === 0 ? <>
+              <EmptyState message="No DELAY drafts are waiting for review." />
+              {canAct && orderId && <PrepareDelayDraft key={orderId} orderId={orderId}
+                onPrepared={(id) => { select(id); void list.refetch(); }} />}
+            </> :
               <ul className="space-y-2">{list.data.map((item) => (
                 <li key={item.id}>
                   <button type="button" onClick={() => select(item.id)} aria-current={activeId === item.id ? "true" : undefined}
