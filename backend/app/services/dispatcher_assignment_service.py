@@ -43,10 +43,10 @@ async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None
                 Employee.status == "active",
                 DispatcherStaff.in_rotation.is_(True),
                 AppUser.is_active.is_(True),
-                AppUser.roles.any("dispatcher"),
+                AppUser.roles.contains(["dispatcher"]),
             )
             .order_by(Employee.id)
-            .with_for_update(of=(Employee, DispatcherStaff, AppUser))
+            .with_for_update(read=True, of=(Employee, DispatcherStaff, AppUser))
         )
     ).all()
     if not eligible:
@@ -66,6 +66,9 @@ async def choose_dispatcher(session: AsyncSession, market_id: int) -> int | None
         )
     ).all()
     last_audit = {employee_id: last for employee_id, last in history}
+    # FOR SHARE on candidate rows intentionally coexists with the FK KEY SHARE
+    # taken by an in-flight approval idempotency insert on ref.app_user.
+    # FOR UPDATE would deadlock while the other approval waits for market lock.
     # Old trips may have a valid assigned employee but no T15 audit evidence yet.
     # Only use these as fallback; newly written immutable turn evidence is primary.
     legacy = (
@@ -140,9 +143,9 @@ async def handover(
             Employee.status == "active",
             DispatcherStaff.in_rotation.is_(True),
             AppUser.is_active.is_(True),
-            AppUser.roles.any("dispatcher"),
+            AppUser.roles.contains(["dispatcher"]),
         )
-        .with_for_update(of=(Employee, DispatcherStaff, AppUser))
+        .with_for_update(read=True, of=(Employee, DispatcherStaff, AppUser))
     )
     if recipient is None:
         raise DomainError("VALIDATION_ERROR", "Receiving Dispatcher is not eligible.")
