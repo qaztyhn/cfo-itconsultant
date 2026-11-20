@@ -2,6 +2,7 @@
 
 All functions join the caller's PostgreSQL transaction. No commits here.
 """
+
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,7 +65,11 @@ async def handover_trip(
         raise DomainError("FORBIDDEN", "Active dispatcher identity required.")
     if not isinstance(reason_text, str) or not reason_text.strip():
         raise DomainError("REASON_REQUIRED", "Handover reason is required.")
-    if not isinstance(to_employee_id, int) or isinstance(to_employee_id, bool) or to_employee_id <= 0:
+    if (
+        not isinstance(to_employee_id, int)
+        or isinstance(to_employee_id, bool)
+        or to_employee_id <= 0
+    ):
         raise DomainError("VALIDATION_ERROR", "Invalid receiving employee.")
 
     row = (
@@ -82,16 +87,23 @@ async def handover_trip(
     actor_ok = await session.scalar(
         select(Employee.id)
         .join(DispatcherStaff, DispatcherStaff.employee_id == Employee.id)
-        .where(Employee.id == actor_employee_id, Employee.market_id == market.id,
-               Employee.status == "active")
+        .where(
+            Employee.id == actor_employee_id,
+            Employee.market_id == market.id,
+            Employee.status == "active",
+        )
     )
     if actor_ok is None:
         raise DomainError("FORBIDDEN", "Active market Dispatcher required.")
     recipient = await session.scalar(
         select(Employee.id)
         .join(DispatcherStaff, DispatcherStaff.employee_id == Employee.id)
-        .where(Employee.id == to_employee_id, Employee.market_id == market.id,
-               Employee.status == "active", DispatcherStaff.in_rotation.is_(True))
+        .where(
+            Employee.id == to_employee_id,
+            Employee.market_id == market.id,
+            Employee.status == "active",
+            DispatcherStaff.in_rotation.is_(True),
+        )
     )
     if recipient is None:
         raise DomainError("VALIDATION_ERROR", "Receiving Dispatcher is not eligible.")
@@ -99,13 +111,21 @@ async def handover_trip(
     if previous == to_employee_id:
         raise DomainError("VALIDATION_ERROR", "Trip is already assigned to this Dispatcher.")
     trip.assigned_dispatcher_employee_id = to_employee_id
-    order_id = await session.scalar(select(TripStop.order_id).where(TripStop.trip_id == trip.id).limit(1))
+    order_id = await session.scalar(
+        select(TripStop.order_id).where(TripStop.trip_id == trip.id).limit(1)
+    )
     await record_decision(
-        session, Action.TRIP_DISPATCHER_HANDOVER, "delivery_trip", str(trip.id),
-        order_id=order_id, reason_text=reason_text.strip(),
+        session,
+        Action.TRIP_DISPATCHER_HANDOVER,
+        "delivery_trip",
+        str(trip.id),
+        order_id=order_id,
+        reason_text=reason_text.strip(),
         before={"assigned_dispatcher_employee_id": previous},
         after={"assigned_dispatcher_employee_id": to_employee_id},
-        actor_user_id=user_id, actor_employee_id=actor_employee_id, actor_role="dispatcher",
+        actor_user_id=user_id,
+        actor_employee_id=actor_employee_id,
+        actor_role="dispatcher",
     )
     await session.flush()
     return {"trip_id": trip.id, "assigned_dispatcher_employee_id": to_employee_id}
