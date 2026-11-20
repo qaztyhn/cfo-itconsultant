@@ -150,6 +150,30 @@ def test_US_KPI_01_AC1_market_local_midnight_determines_daily_bucket(kpi: Api) -
     )
 
 
+def test_US_KPI_01_AC1_delivery_before_promise_start_is_late(kpi: Api) -> None:
+    execute(
+        kpi.dsn,
+        "UPDATE ops.customer_order SET promise_start='2026-11-10T22:55Z' WHERE id=1",
+    )
+    response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
+    assert response.status_code == 200, response.text
+    assert response.json()["metrics"]["on_time_rate"]["value"] == 0.0
+
+
+def test_US_KPI_01_AC2_first_confirmed_is_used(kpi: Api) -> None:
+    add_approval_evidence(kpi)
+    execute(
+        kpi.dsn,
+        "INSERT INTO ops.notification (order_id, template, body, status, scheduled_for, "
+        "sent_at, dedupe_key) VALUES "
+        "(1,'CONFIRMED','Later synthetic notice','sent','2026-11-10T09:20Z',"
+        "'2026-11-10T09:20Z','kpi-confirm-later')",
+    )
+    response = kpi.get("/kpi/summary", DISPATCHER, **PERIOD)
+    assert response.status_code == 200, response.text
+    assert response.json()["supporting"]["order_to_commit_min"]["by_path"]["sales"] == 30.0
+
+
 def test_US_KPI_01_AC4_operational_scope_excludes_revenue_owner(kpi: Api) -> None:
     for user_id in (VIEWER, SALES, CS):
         assert_error(kpi.get("/kpi/summary", user_id, **PERIOD), 403, "FORBIDDEN")
