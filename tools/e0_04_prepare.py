@@ -76,7 +76,11 @@ def sql(env: dict[str, str], query: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stop-before-sync", action="store_true")
+    parser.add_argument(
+        "--stop-before-sync",
+        action="store_true",
+        help="T27: stop after fully scoped stock/roster/Source prep; CFO order stays absent.",
+    )
     parser.add_argument(
         "--seed-report", type=Path, help="Write T26 seed IDs and counts to JSON."
     )
@@ -85,9 +89,9 @@ def main() -> int:
         action="store_true",
         help="Seed R3 on the dedicated cfo-demo-t26 project.",
     )
-    args = parser.parse_args()
-    fixture = json.loads(T26_FIXTURE.read_text(encoding="utf-8")) if args.t26 else None
-    project = "cfo-demo-t26" if args.t26 else PROJECT
+    cli = parser.parse_args()
+    fixture = json.loads(T26_FIXTURE.read_text(encoding="utf-8")) if cli.t26 else None
+    project = "cfo-demo-t26" if cli.t26 else PROJECT
     values = dotenv_values(ROOT / ".env")
     base = {**os.environ, **{k: v for k, v in values.items() if v is not None}}
     if base.get("APP_ENV") != "test" or base.get("DEMO_DISPOSABLE") != "1":
@@ -340,9 +344,9 @@ def main() -> int:
                 capture=True,
             )
             print(report)
-            if args.seed_report:
-                args.seed_report.write_text(report + "\n", encoding="utf-8")
-        if args.stop_before_sync or fixture:
+            if cli.seed_report:
+                cli.seed_report.write_text(report + "\n", encoding="utf-8")
+        if cli.stop_before_sync or fixture:
             if (
                 sql(
                     future,
@@ -353,9 +357,14 @@ def main() -> int:
                 raise RuntimeError(
                     "Main order already present in CFO before Sales Sync"
                 )
-            print(
-                f"PASS: enter Source external_ref={REF} in Sales → Sync & Check; APP_NOW={E0_NOW}."
-            )
+            if fixture:
+                print(
+                    f"PASS: enter Source external_ref={REF} in Sales → Sync & Check; APP_NOW={E0_NOW}."
+                )
+            else:
+                print(
+                    "PASS: E0-04 stock/roster/Source prepared, CFO order absent; browser must Sync and Plan"
+                )
             return 0
         execute([sys.executable, "tools/e0_04_check.py", "--sync-only"], future)
         order_id = sql(
